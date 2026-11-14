@@ -1,0 +1,44 @@
+{
+  "name": "soha-source-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "workspaces": [
+    "contracts",
+    "web",
+    "connectors",
+    "cli/npm/cli"
+  ],
+  "overrides": {
+    "geojson-flatten": {
+      "minimist": "1.2.8"
+    },
+    "dompurify": "^3.4.17",
+    "katex": "^0.18.2",
+    "minimatch@>=7 <11.0.1": "^11.0.8",
+    "zod": "^4.6.7",
+    "@midscene/web": {
+      "puppeteer-core": "25.17.0"
+    },
+    "undici@>=6 <7": "^6.29.1",
+    "undici@>=8 <8.12.2": "^8.12.2",
+    "fast-uri": "^3.1.9",
+    "playwright": "1.63.0",
+    "playwright-core": "1.63.0",
+    "fetch-socks": {
+      "undici": "^7.30.2"
+    }
+  },
+  "scripts": {
+    "check:workspace": "python3 scripts/source-workspace.py check-npm",
+    "build:web": "npm run check:workspace && npm run check:generated --workspace contracts && npm run generate --workspace contracts && npm run build --workspace web && python3 scripts/source-workspace.py stage-web",
+    "check:go-source": "python3 scripts/source-workspace.py check-go && python3 scripts/source-workspace.py tidy",
+    "check:internal-consumers": "node contracts/scripts/check-consumers.mjs --internal-source --require-all",
+    "test:workspace": "python3 -m unittest discover -s scripts -p test_source_workspace.py",
+    "postinstall": "node web/scripts/apply-dependency-patches.mjs",
+    "check:dependencies": "npm audit --audit-level=low",
+    "check:connectors": "npm run check --workspace connectors && npm run package:check --workspace connectors",
+    "test:cli-launcher": "npm test --workspace cli/npm/cli",
+    "check:skills": "python3 skills/tools/validate_assets.py --package-dry-run"
+  }
+}

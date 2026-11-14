@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "opensoha.dev/gateway-capability-catalog/v1",
+  "version": "0.1.0",
+  "source": {
+    "repository": "github.com/opensoha/soha",
+    "path": "internal/application/aigateway/catalog.go",
+    "syncStrategy": "stable-runtime entries are checked against runtime Gateway catalog output before release."
+  },
+  "plannedSkills": ["gateway-governance"],
+  "tools": [
+    {
+      "name": "delivery.execution_logs.list",
+      "title": "List Execution Logs",
+      "domain": "delivery",
+      "owningWorkbench": "delivery",
+      "owningService": "internal/application/delivery.Service",
+      "action": "logs",
+      "riskLevel": "read",
+      "permissionKeys": ["ai.gateway.invoke", "delivery.execution-tasks.view"],
+      "requiredScopes": ["application", "environment", "executionTask"],
+      "mcpAdapterId": "delivery.v1",
+      "mcpToolName": "delivery.execution_logs.list",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": ["delivery-tester"],
+      "resourceRefs": ["soha://delivery/execution-tasks"],
+      "promptRefs": ["soha.delivery.plan_release"],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": ["taskId"]
+      },
+      "redaction": ["logs"],
+      "moduleId": "delivery",
+      "routeEvidence": ["registerDeliveryRoutes", "registerAIGatewayRoutes"]
+    }
+  ],
+  "resources": [
+    {
+      "name": "soha://delivery/execution-tasks",
+      "description": "Durable delivery execution tasks, callbacks, artifacts, and logs.",
+      "permissionKeys": ["ai.gateway.invoke", "delivery.execution-tasks.view"],
+      "requiredScopes": ["application", "environment"],
+      "status": "stable-runtime",
+      "skillRefs": ["delivery-tester"],
+      "toolRefs": ["delivery.execution_logs.list"],
+      "promptRefs": ["soha.delivery.plan_release"]
+    }
+  ],
+  "prompts": [
+    {
+      "name": "soha.delivery.plan_release",
+      "description": "Build a release or rollback plan from delivery evidence.",
+      "permissionKeys": ["ai.gateway.invoke", "delivery.applications.view"],
+      "requiredScopes": ["application", "environment"],
+      "status": "stable-runtime",
+      "skillRefs": ["delivery-tester"],
+      "toolRefs": ["delivery.execution_logs.list"],
+      "resourceRefs": ["soha://delivery/execution-tasks"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "accessProfile": "full",
+  "createdAt": "2026-09-02T05:00:00Z",
+  "deviceStatuses": ["active"],
+  "effect": "allow",
+  "enabled": true,
+  "id": "policy-engineering",
+  "modes": ["internal_ztna", "external_vpn_ztna"],
+  "name": "Engineering protected access",
+  "postureStatuses": ["compliant"],
+  "priority": 100,
+  "resourceIds": ["resource-git"],
+  "siteIds": ["site-hq"],
+  "subjects": {
+    "tags": ["employee"],
+    "teams": ["team-engineering"],
+    "users": []
+  },
+  "updatedAt": "2026-09-02T05:20:00Z",
+  "version": 2
+}

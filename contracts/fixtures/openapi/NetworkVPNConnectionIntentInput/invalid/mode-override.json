@@ -1,0 +1,7 @@
+{
+  "deviceId": "device-1",
+  "profileId": "profile-1",
+  "selection": "manual",
+  "gatewayId": "gateway-a",
+  "mode": "external_vpn"
+}

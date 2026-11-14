@@ -1,0 +1,11 @@
+{
+  "data": {
+    "status": "success",
+    "providerKind": "openai",
+    "httpStatus": 200,
+    "durationMs": 42,
+    "modelCount": 2,
+    "models": ["gpt-5.6-luna", "gpt-5.6-sol"],
+    "checkedAt": "2026-09-02T03:04:05Z"
+  }
+}

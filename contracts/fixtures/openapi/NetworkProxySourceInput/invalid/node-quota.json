@@ -1,0 +1,912 @@
+{
+  "expectedRevision": 0,
+  "name": "safe-source",
+  "format": "mihomo_yaml",
+  "deliveryMode": "mapped_nodes",
+  "content": "proxies: []",
+  "nodes": [
+    {
+      "nodeId": "n0",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n1",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n2",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n3",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n4",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n5",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n6",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n7",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n8",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n9",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n10",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n11",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n12",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n13",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n14",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n15",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n16",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n17",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n18",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n19",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n20",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n21",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n22",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n23",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n24",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n25",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n26",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n27",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n28",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n29",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n30",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n31",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n32",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n33",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n34",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n35",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n36",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n37",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n38",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n39",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n40",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n41",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n42",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n43",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n44",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n45",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n46",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n47",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n48",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n49",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n50",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n51",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n52",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n53",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n54",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n55",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n56",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n57",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n58",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n59",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n60",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n61",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n62",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n63",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n64",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n65",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n66",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n67",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n68",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n69",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n70",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n71",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n72",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n73",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n74",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n75",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n76",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n77",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n78",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n79",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n80",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n81",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n82",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n83",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n84",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n85",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n86",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n87",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n88",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n89",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n90",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n91",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n92",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n93",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n94",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n95",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n96",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n97",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n98",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n99",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n100",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n101",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n102",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n103",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n104",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n105",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n106",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n107",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n108",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n109",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n110",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n111",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n112",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n113",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n114",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n115",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n116",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n117",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n118",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n119",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n120",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n121",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n122",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n123",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n124",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n125",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n126",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n127",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    },
+    {
+      "nodeId": "n128",
+      "label": "Node 1",
+      "protocol": "socks5",
+      "server": "upstream.example.invalid",
+      "port": 1080
+    }
+  ]
+}

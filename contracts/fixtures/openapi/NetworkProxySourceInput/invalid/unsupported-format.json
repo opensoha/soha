@@ -1,0 +1,7 @@
+{
+  "expectedRevision": 0,
+  "name": "safe-source",
+  "format": "arbitrary_yaml",
+  "deliveryMode": "mapped_nodes",
+  "content": "proxies: []"
+}

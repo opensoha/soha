@@ -8,6 +8,7 @@ import (
 )
 
 func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerOutpostLifecycleRoutes(protected, deps)
 	if deps.ProviderPortal == nil {
 		return
 	}

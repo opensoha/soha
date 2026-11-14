@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

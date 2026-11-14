@@ -1,0 +1,14 @@
+{
+  "id": "session-01",
+  "subjectId": "user-01",
+  "deviceId": "device-01",
+  "mode": "external_vpn",
+  "path": "wireguard",
+  "accessProfile": "full",
+  "status": "connected",
+  "policyVersion": 9,
+  "networkLeaseIds": ["network-lease-01"],
+  "resourceLeaseIds": [],
+  "startedAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T09:00:00Z"
+}

@@ -1,0 +1,48 @@
+{
+  "name": "docker.projects.deploy.trigger",
+  "title": "Deploy Docker project",
+  "description": "Start a durable Compose deployment.",
+  "domain": "docker",
+  "action": "execute",
+  "riskLevel": "execute",
+  "permissionKeys": [
+    "platform.pods.view"
+  ],
+  "requiresApproval": true,
+  "inputSchema": {
+    "type": "object",
+    "required": [
+      "projectId",
+      "idempotencyKey"
+    ],
+    "properties": {
+      "projectId": {
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "type": "string"
+      }
+    }
+  },
+  "version": "1",
+  "execution": {
+    "mode": "async",
+    "idempotent": true,
+    "idempotencyKeyField": "idempotencyKey",
+    "taskKind": "docker.operation",
+    "statusTool": "docker.operations.get",
+    "checks": [
+      {
+        "purpose": "precondition",
+        "toolName": "docker.projects.deploy.plan",
+        "capabilityVersion": "1"
+      },
+      {
+        "purpose": "verification",
+        "toolName": "docker.projects.runtime.assess",
+        "capabilityVersion": "1"
+      }
+    ],
+    "recoveryMode": "original_call"
+  }
+}

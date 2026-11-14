@@ -1,0 +1,47 @@
+# No listen block: PAP is reachable only from the EAP-TTLS tunnel.
+server soha-inner-tunnel {
+	authorize {
+		if (!&outer.request:EAP-Message || &EAP-Message || !&User-Password || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&outer.request:NAS-Identifier || &outer.request:NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}") {
+			reject
+		}
+		# The REST verifier consumes a six-octet colon MAC. Keep the outer request intact.
+		if (&outer.request:Calling-Station-Id && (&outer.request:Calling-Station-Id =~ /^([0-9a-f]{2})([:-])([0-9a-f]{2})\2([0-9a-f]{2})\2([0-9a-f]{2})\2([0-9a-f]{2})\2([0-9a-f]{2})$/i)) {
+			update control {
+				&Tmp-String-0 := "%{tolower:%{1}:%{3}:%{4}:%{5}:%{6}:%{7}}"
+			}
+		}
+		else {
+			reject
+		}
+		if (!&control:Tmp-String-0 || &control:Tmp-String-0 !~ /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) {
+			reject
+		}
+		update control {
+			&Auth-Type := soha_verify_password
+		}
+	}
+	authenticate {
+		Auth-Type soha_verify_password {
+			soha_verify_password {
+				updated = 1
+				ok = 1
+			}
+			if (fail || invalid || notfound || reject || userlock || !&control:Tmp-String-4 || !&control:Tmp-String-5) {
+				reject
+			}
+			# REST attribute decoding returns updated; authenticate requires OK.
+			ok {
+				ok = return
+			}
+		}
+	}
+	post-auth {
+		if (!&control:Tmp-String-4 || &control:Tmp-String-4 !~ /^[A-Za-z0-9_-]{43}$/ || !&control:Tmp-String-5 || &control:Tmp-String-5 != &User-Name) {
+			reject
+		}
+		update outer.session-state {
+			&Tmp-String-4 := &control:Tmp-String-4
+			&Tmp-String-5 := &control:Tmp-String-5
+		}
+	}
+}

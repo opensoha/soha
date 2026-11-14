@@ -1,0 +1,15 @@
+{
+  "clusterId": "",
+  "namespace": "",
+  "workloadName": "project-1",
+  "targetKind": "host_service",
+  "executorKind": "docker_compose",
+  "enabled": true,
+  "docker": {
+    "hostId": "host-1",
+    "projectId": "project-1",
+    "imageMappings": {
+      "api": "main"
+    }
+  }
+}

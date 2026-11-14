@@ -1,0 +1,4 @@
+{
+  "SchemaVersion": "opensoha.dev/knowledge-source-import-policy/v1",
+  "scope": { "visibility": "public" }
+}

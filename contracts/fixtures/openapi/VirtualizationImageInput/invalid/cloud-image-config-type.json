@@ -1,0 +1,6 @@
+{
+  "connectionId": "task51-pve",
+  "name": "Debian13",
+  "sourceKind": "cloud_image",
+  "config": "invalid"
+}

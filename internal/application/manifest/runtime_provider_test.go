@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/helmrelease"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"

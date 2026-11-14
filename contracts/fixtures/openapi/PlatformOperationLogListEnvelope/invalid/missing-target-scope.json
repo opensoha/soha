@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "operation-01",
+      "actorId": "user-01",
+      "operationType": "platform.pod.delete",
+      "result": "success",
+      "summary": "deleted pod for rebuild",
+      "metadata": {},
+      "createdAt": "2026-08-10T08:00:00Z"
+    }
+  ]
+}

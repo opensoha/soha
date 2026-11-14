@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-provider-rollout/v1","id":"rollout-1","desiredRevision":2,"previousRevision":1,"target":{"platforms":["linux"]},"status":"canary","createdAt":"2026-07-15T00:00:00Z"}

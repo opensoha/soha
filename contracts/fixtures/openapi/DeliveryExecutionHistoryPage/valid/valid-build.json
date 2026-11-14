@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "build-1",
+      "kind": "build",
+      "createdAt": "2026-09-15T00:00:00Z",
+      "build": {
+        "id": "build-1",
+        "applicationId": "app",
+        "sourceSystem": "repository",
+        "status": "succeeded",
+        "createdAt": "2026-09-15T00:00:00Z"
+      }
+    }
+  ]
+}

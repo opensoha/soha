@@ -1,0 +1,27 @@
+{
+  "version": "v1",
+  "scope": {
+    "workspaceId": "default",
+    "clusterId": "cluster-1",
+    "environment": "production",
+    "namespace": "payments",
+    "service": "checkout-api"
+  },
+  "resource": {
+    "kind": "service",
+    "name": "checkout-api"
+  },
+  "timeRange": {
+    "from": "2026-08-13T00:00:00Z",
+    "to": "2026-08-13T01:00:00Z",
+    "timezone": "Asia/Shanghai"
+  },
+  "filter": {
+    "text": "error",
+    "labels": {
+      "deployment.environment.name": "production"
+    },
+    "traceId": "trace-1"
+  },
+  "scopeRestricted": true
+}

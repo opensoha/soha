@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	identity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

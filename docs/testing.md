@@ -1,12 +1,13 @@
 # 后端质量验收
 
-普通 Go 验证沿用仓库 AGENTS/CI 的 `GOWORK=off`、test/race/vet/复杂度/漏洞/lint/构建入口，
-Web/Midscene 不成为 Go 测试依赖。公开协议仍由 contracts 所有，无协议变更不改 SDK/生成物。
+同仓 Go 源码验证使用根 `go.work` 和 `scripts/source-workspace.py` 的整洁性检查，
+保留 test/race/vet/复杂度/漏洞/lint/构建入口；对外声明依赖与分发另以 `GOWORK=off` 验证。
+Web/Midscene 不成为普通 Go 测试依赖。公开协议仍由 `contracts/` 所有，无协议变更不改 SDK/生成物。
 
 本机 `make test/lint/build` 自动检查容量；工作区 npm 脚本由本机 script-shell 接入。本机按 PATH 直接调用 go/npm/docker 的有限命令同样自动接入；其他工具或临时命令的本机验证通过 `opensoha-verify run -- <原验证命令>` 执行，复用统一工具缓存并在前后检查容量。
 本地 Docker 验证使用 `opensoha-verify image -- <原 build 参数和 context>`，由工具管理临时 tag 和清理；
 正式发布构建保持原入口。未安装命令时使用 `python3 scripts/local-verify.py`。
-操作与保护边界见工作区 [缓存手册](../../docs/guides/local-build-cache/runbook.md)。
+处于 OpenSoha 工作区时，操作与保护边界见其 `docs/guides/local-build-cache/runbook.md`；独立克隆保留本仓验证入口。
 `python3 -m unittest discover -s scripts -p "test_local_*.py"` 验证缓存、归属、容量与失败清理保护。
 
 `python3 scripts/run-deletion-integration.py` 复用已有 deletion-integration 测试，
@@ -35,6 +36,34 @@ deletion-integration CI同步执行此父测试，上传原始Go JSON。资源�
 HTTP黑盒/真实UI归 Web real入口；数据库与持久化冲突/副作用归本仓，不让Web直接SQL。
 
 安全和OCR的实际用法见 [OCR与信任边界](../.agents/skills/soha-security/references/ocr.md)。
+
+## 真实代理内核隔离门禁
+
+完整 Core 验收取普通 `go test ./...`、`go test -race ./...` 与此必需门禁的并集。
+两个真实内核测试文件使用 `soha_native_integration` tag；`make test` 只验证 host unit 层。
+CI、同源 consumer 检查和 release 均执行隔离门禁，不能以普通 Go 测试通过代替。
+
+```bash
+mkdir -p .tmp/quality
+opensoha-verify run -- python3 scripts/run-proxy-native-tests.py --sdk-mode source --out .tmp/quality/proxy-native-source.json
+```
+
+输出路径须尚不存在；receipt 和同名前缀的准备日志、原始 Go JSON/错误日志记录本轮源码摘要、
+SDK 身份及清理结果。`source` 使用根 `go.work` 的同源 SDK；`declared` 使用 `GOWORK=off`，
+验证无 replace 的声明版本及 checksum。release 分别验证两种身份，不相互替代。
+固定外部 Core 输入没有这两个测试文件时，consumer 报告明确记录不适用；仅缺一个文件则失败。
+
+helper 在 Linux amd64 Docker 中准备 Go 1.27.4 和固定三内核，下载、编译结束后才执行
+`-race -count=1 -json`：TCP/UDP 使用本轮独占 internal `172.16/12` bridge，parser 使用
+`network=none`。不发布端口、不使用 host network、不挂载宿主目录或 Docker socket。
+测试仍保护 `10.0.0.0/8`，不依赖或改变宿主网络；23 个数据面和3个 parser 终端子测试及其
+全部父项必须实际 run/pass，遗漏、skip、缓存、非零退出均失败。
+
+默认仅接受本机 Docker。已授权的远端隔离验证须显式传 `--allow-remote-docker`，并满足既有
+远端容量与归属保护；CI/release 不允许此例外。资源按本轮 label 和精确容器、镜像、网络 ID
+清理，身份不符会失败并保留交接信息。此用例不证明真实 VPN、硬件、站点或发布验收通过。
+离线反例入口为 `test_proxy_native_tests.py`、`test_proxy_test_engines.py` 与
+`test_go_test_evidence.py` 的 unittest discover。
 
 ## 专用真实验收环境
 

@@ -6,6 +6,7 @@ import (
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appaudit "github.com/opensoha/soha/internal/application/audit"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
@@ -25,4 +26,10 @@ func newNetworkProxyServices(cfg cfgpkg.Config, repos *repositories, permissions
 		return nil, nil, fmt.Errorf("build proxy management service: %w", err)
 	}
 	return query, management, nil
+}
+
+func bindNetworkProxyMetrics(query apiHandlers.NetworkTelemetryService, vpn *appnetworkaccess.VPNService) {
+	if metrics, ok := query.(appnetworkaccess.VPNMetricsReader); ok {
+		vpn.SetVPNMetricsReader(metrics)
+	}
 }

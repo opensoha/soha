@@ -1,0 +1,25 @@
+{
+  "source": "ai",
+  "applicationDraft": {
+    "name": "Checkout",
+    "key": "checkout",
+    "group": "commerce",
+    "language": "go",
+    "enabled": true
+  },
+  "services": [
+    {
+      "key": "api",
+      "name": "Checkout API",
+      "serviceKind": "kubernetes_workload",
+      "enabled": true,
+      "containers": [
+        {
+          "name": "api",
+          "runtimePorts": [8080]
+        }
+      ]
+    }
+  ],
+  "postCreateActions": ["review_delivery_plan"]
+}

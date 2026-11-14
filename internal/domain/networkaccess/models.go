@@ -312,6 +312,10 @@ type GatewayInput struct {
 }
 
 type MihomoProfile struct {
+	DeliveryMode              string    `json:"deliveryMode,omitempty"`
+	BundleID                  string    `json:"bundleId,omitempty"`
+	OrgRevision               int64     `json:"orgRevision,omitempty"`
+	SourceRevision            int64     `json:"sourceRevision,omitempty"`
 	ID                        string    `json:"id"`
 	DeviceID                  string    `json:"deviceId"`
 	Name                      string    `json:"name"`
@@ -337,6 +341,10 @@ type MihomoProfile struct {
 }
 
 type MihomoProfileInput struct {
+	DeliveryMode    string
+	BundleID        string
+	OrgRevision     int64
+	SourceRevision  int64
 	DeviceID        string
 	Name            string
 	Mode            string

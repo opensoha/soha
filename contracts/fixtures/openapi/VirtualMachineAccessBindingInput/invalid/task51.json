@@ -1,0 +1,10 @@
+{
+  "expectedRevision": 0,
+  "username": "soha",
+  "port": 0,
+  "address": "192.0.2.10",
+  "credentialRef": "private-key",
+  "executionClusterId": "c",
+  "executionAgentId": "a",
+  "trustedHostKey": "x"
+}

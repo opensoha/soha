@@ -1,0 +1,146 @@
+schemaVersion: opensoha.dev/mcp-preset/v1
+id: k8s-readonly
+name: Kubernetes Readonly Diagnosis
+version: 0.1.0
+description: Read-only AI Gateway tools for scoped Kubernetes workload diagnosis.
+riskLevel: read
+skillRefs:
+  - k8s-sre
+platformCapabilityRefs:
+  - cluster.inventory
+  - workload.read
+  - configuration.inventory
+  - network.inventory
+  - storage.inventory
+  - pod.logs
+requiredScopes:
+  - cluster
+  - namespace
+tools:
+  - name: k8s.namespaces.list
+    description: List namespace metadata in a scoped cluster.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.workloads.overview
+    description: Read workload health totals and bounded problematic pod summaries.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.configmaps.list
+    description: List ConfigMap metadata without configuration content.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.secrets.metadata
+    description: List Secret metadata without Secret data.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.helm.releases.list
+    description: List Helm release metadata without release values or manifests.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+  - name: k8s.pods.list
+    description: List pods in a scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.pods.logs
+    description: Read recent pod logs in a scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - pod
+  - name: k8s.pods.describe
+    description: Read pod status and describe context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - pod
+  - name: k8s.deployments.list
+    description: List deployments in a scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.deployments.rollout_status
+    description: Read deployment rollout status.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - deployment
+  - name: k8s.deployments.events
+    description: Read deployment events.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - deployment
+      - timeRange
+  - name: k8s.services.list
+    description: List services in a scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.services.backends
+    description: Read service backend health context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - service
+  - name: k8s.routes.context
+    description: Read route and ingress context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - service
+  - name: k8s.storage.context
+    description: Read PVC and storage binding context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - storage
+  - name: k8s.nodes.detail
+    description: Read node status and scheduling context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - node
+  - name: k8s.events.list
+    description: Read recent Kubernetes events.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - timeRange
+resources:
+  - name: soha://k8s/runtime
+    description: Scoped Kubernetes runtime context for the selected cluster and namespace.
+    requiredScopes:
+      - cluster
+      - namespace
+prompts:
+  - name: soha.k8s.diagnose_workload
+    description: Workload diagnosis prompt bounded to Gateway evidence.
+    requiredScopes:
+      - cluster
+      - namespace
+guardrails:
+  - read_only
+  - no_kubeconfig
+  - no_secret_output
+  - scoped_cluster_namespace

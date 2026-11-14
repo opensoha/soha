@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	identity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"

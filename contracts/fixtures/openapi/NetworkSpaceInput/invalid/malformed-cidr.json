@@ -1,0 +1,6 @@
+{
+  "siteId": "site-shanghai",
+  "name": "Corporate LAN",
+  "status": "active",
+  "cidrs": ["10.999.0.0/16"]
+}

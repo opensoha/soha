@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate required uncached PostgreSQL test evidence, not merely package success."""
+"""Validate required uncached integration test evidence, not merely package success."""
 import argparse
 import json
 from pathlib import Path
@@ -135,6 +135,31 @@ def validate_service_references(raw, exit_code=0):
     return {"result": "PASS", "scopes": [validate(raw, exit_code, **scope) for scope in SERVICE_REFERENCES_SCOPES]}
 
 
+PROXY_NATIVE_PACKAGE = "github.com/opensoha/soha/internal/networkproxyruntime"
+PROXY_NATIVE_DATAPLANE_SCOPES = [
+    {"package": PROXY_NATIVE_PACKAGE, "parent": "TestRealEngineIntegration", "children": [
+        child for engine in ("mihomo", "sing-box", "v2ray", "external-reference")
+        for child in [engine, *[engine + "/" + scenario for scenario in (
+            "tcp-observe-close", "protected-fixed-listener", "invalid-replacement-fail-closed",
+            "process-exit-fail-closed")],
+            *([engine + "/select-maps-B"] if engine in ("mihomo", "external-reference") else [])]]},
+    {"package": PROXY_NATIVE_PACKAGE, "parent": "TestRealUDPIntegration", "children": [
+        "mihomo", "external-reference", "malicious-relay", *["malicious-relay/" + name
+        for name in ("different-ip", "protected-ip", "domain")]]},
+]
+PROXY_NATIVE_PARSER_SCOPE = {"package": PROXY_NATIVE_PACKAGE,
+    "parent": "TestRealKernelPreflightIntegration", "children": ["mihomo", "sing-box", "v2ray"]}
+
+
+def validate_proxy_native(raw, exit_code=0, parser=False):
+    scopes = [PROXY_NATIVE_PARSER_SCOPE] if parser else PROXY_NATIVE_DATAPLANE_SCOPES
+    results = [validate(raw, exit_code, **scope) for scope in scopes]
+    events = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    if any(e.get("Action") == "skip" or "(cached)" in e.get("Output", "") for e in events):
+        raise ValueError("Native gate requires zero skips and uncached evidence")
+    return {"result": "PASS", "scopes": results, "terminalTests": 3 if parser else 23}
+
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")
@@ -178,6 +203,9 @@ if __name__ == "__main__":
     parser.add_argument("--template-migration", action="store_true")
     parser.add_argument("--manifest-migration", action="store_true")
     parser.add_argument("--manifest-control", action="store_true")
+    native = parser.add_mutually_exclusive_group()
+    native.add_argument("--proxy-native-dataplane", action="store_true")
+    native.add_argument("--proxy-native-parser", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
@@ -207,7 +235,9 @@ if __name__ == "__main__":
             scope = MANIFEST_MIGRATION_SCOPE
         if args.manifest_control:
             scope = MANIFEST_CONTROL_SCOPE
-        if args.service_references:
+        if args.proxy_native_dataplane or args.proxy_native_parser:
+            print(json.dumps(validate_proxy_native(args.log.read_text(), args.exit_code, args.proxy_native_parser)))
+        elif args.service_references:
             print(json.dumps(validate_service_references(args.log.read_text(), args.exit_code)))
         else:
             print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))

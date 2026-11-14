@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	"time"
 
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"

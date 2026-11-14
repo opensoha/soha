@@ -1,0 +1,57 @@
+name: connectors-ci
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Record same-Root source and installation inputs
+        run: |
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
+          sha256sum package-lock.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Install Root npm workspace
+        run: npm ci
+      - name: Verify npm source workspace
+        run: npm run check:workspace
+      - name: Validate connector scaffold
+        run: |
+          test -f connectors/README.md
+          test -d connectors/connectors
+      - name: Build, test, and validate connectors
+        run: npm run check --workspace connectors
+      - name: Verify same-Root package provenance
+        run: node --test connectors/scripts/source-provenance.checks.mjs
+      - name: Verify package artifact contents
+        run: npm run package:check --workspace connectors
+      - name: Pack connector artifact
+        run: npm pack --json --workspace connectors --pack-destination "$RUNNER_TEMP"
+      - name: Prepare and verify release artifacts without publishing
+        run: |
+          npm run release:artifacts --workspace connectors
+          version="$(node -p "require('./connectors/package.json').version")"
+          npm run release:verify --workspace connectors -- "dist/release/opensoha-connectors-${version}.tgz"
+      - name: Upload verified connector package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: opensoha-connectors-package
+          path: |
+            ${{ runner.temp }}/opensoha-connectors-*.tgz
+            connectors/dist/release/*
+          if-no-files-found: error

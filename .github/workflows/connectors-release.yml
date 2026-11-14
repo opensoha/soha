@@ -1,0 +1,127 @@
+name: connectors-release
+
+on:
+  push:
+    tags:
+      - "connectors/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Dispatch with --ref this immutable connectors/v<version> tag (also used for recovery)"
+        required: true
+      sha:
+        description: "Exact 40-character main commit of that tag"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connectors-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_SHA: ${{ inputs.sha || github.sha }}
+  RELEASE_CONNECTORS_ENABLED: ${{ vars.RELEASE_CONNECTORS_ENABLED }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Validate exact component tag and source identity
+        id: identity
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+          python3 scripts/release-control.py identity --component connectors --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --github-output
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify bundled npm and install Root workspace
+        run: |
+          set -euo pipefail
+          case "$(npm --version)" in 10.*) ;; *) exit 1 ;; esac
+          npm ci
+          npm run check:workspace
+      - name: Build, test, and validate connectors
+        run: npm run check --workspace connectors
+      - name: Verify package contents and same-Root provenance
+        run: |
+          set -euo pipefail
+          node --test connectors/scripts/source-provenance.checks.mjs
+          npm run package:check --workspace connectors
+      - name: Prepare and verify release artifacts
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm run release:artifacts --workspace connectors -- --version "$VERSION"
+          npm run release:verify --workspace connectors -- "dist/release/opensoha-connectors-${VERSION}.tgz"
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: connectors-release-assets
+          path: |
+            connectors/dist/release/opensoha-connectors-${{ steps.identity.outputs.version }}.tgz
+            connectors/dist/release/opensoha-connectors-${{ steps.identity.outputs.version }}.tgz.sha256
+            connectors/dist/release/opensoha-connectors-${{ steps.identity.outputs.version }}.release-manifest.json
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release-connectors
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.4'
+      - uses: actions/download-artifact@v7
+        with:
+          name: connectors-release-assets
+          path: connectors/dist/release
+      - name: Verify staged release artifacts
+        run: |
+          set -euo pipefail
+          test "$(find connectors/dist/release -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 3
+          npm run release:verify --workspace connectors -- "dist/release/opensoha-connectors-${VERSION}.tgz"
+      - name: Verify protected release authority before attestation
+        run: python3 scripts/release-control.py verify --component connectors --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            connectors/dist/release/opensoha-connectors-${{ env.VERSION }}.tgz
+            connectors/dist/release/opensoha-connectors-${{ env.VERSION }}.tgz.sha256
+            connectors/dist/release/opensoha-connectors-${{ env.VERSION }}.release-manifest.json
+      - name: Verify protected release authority before GitHub writes
+        run: python3 scripts/release-control.py verify --component connectors --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Publish immutable release assets
+        run: python3 scripts/publish-release-assets.py --component connectors --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory connectors/dist/release --title "Soha Connectors ${VERSION}"

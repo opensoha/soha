@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/projects/project-manifest.schema.json",
+  "title": "Soha Project Manifest",
+  "description": "A small dependency graph of permission-filtered Soha capability invocations.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "opensoha.io/v1alpha1" },
+    "kind": { "const": "Project" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63 }
+      },
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/Step" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "required": ["id", "tool", "input"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "maxLength": 64 },
+        "tool": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$", "maxLength": 128 },
+        "input": {
+          "type": "object",
+          "description": "Tool input. Inline credentials are forbidden; use secretRefs.",
+          "propertyNames": {
+            "pattern": "^(?!.*(?:[Pp]assword|[Ss]ecret|[Tt]oken|[Kk]ubeconfig|[Pp]rivate[Kk]ey)).+$"
+          },
+          "additionalProperties": true
+        },
+        "secretRefs": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^soha://secrets/[A-Za-z0-9._/-]+$"
+          }
+        },
+        "dependsOn": {
+          "type": "array",
+          "maxItems": 49,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "maxLength": 64 }
+        },
+        "wait": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    }
+  }
+}

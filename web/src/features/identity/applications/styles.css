@@ -1,0 +1,255 @@
+.soha-identity-application-catalog {
+  container-type: inline-size;
+  min-width: 0;
+  padding: 0 16px 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+}
+
+.soha-identity-catalog-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 48px;
+  padding-block: 8px;
+  box-sizing: border-box;
+}
+
+.soha-identity-application-list {
+  display: grid;
+  gap: 8px;
+}
+
+.soha-identity-application-card {
+  min-width: 0;
+}
+
+.soha-identity-application-card .soha-identity-application-card-body {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.5fr) minmax(0, 1fr) 52px 60px
+    minmax(0, 1fr) 96px 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.soha-identity-application-card-heading,
+.soha-identity-application-card-field,
+.soha-identity-application-card-access,
+.soha-identity-application-card-controls {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.soha-identity-application-card-field > .ant-tag {
+  justify-self: start;
+}
+
+.soha-identity-application-card-field > .ant-typography-secondary,
+.soha-identity-application-card-access > .ant-typography-secondary {
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-identity-application-card-controls .soha-identity-inline-switch {
+  justify-content: space-between;
+}
+
+.soha-identity-application-card-access .ant-space-item,
+.soha-identity-application-card-access .soha-metadata-tag {
+  max-width: 100%;
+}
+
+.soha-identity-application-card-access .soha-metadata-tag {
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.soha-identity-catalog-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 8px;
+  margin-top: 16px;
+}
+
+.soha-identity-catalog-pagination .ant-pagination-total-text {
+  margin-inline-end: auto;
+}
+
+@container (max-width: 600px) {
+  .soha-identity-application-card .soha-identity-application-card-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .soha-identity-application-card-heading {
+    grid-column: 1 / -1;
+  }
+
+  .soha-identity-application-card-access,
+  .soha-identity-application-card-controls,
+  .soha-identity-application-card-actions {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+.soha-identity-app-name-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.soha-identity-app-name-cell .ant-avatar {
+  flex: 0 0 auto;
+  border: 1px solid var(--soha-border-color);
+  color: var(--soha-color-primary);
+  background: var(--soha-fill-weak);
+}
+
+.soha-identity-app-name-copy {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.soha-identity-app-description.ant-typography {
+  margin: 0;
+  color: var(--soha-text-secondary);
+}
+
+.soha-identity-app-form {
+  margin-top: 8px;
+}
+
+.soha-identity-app-form [hidden] {
+  display: none;
+}
+
+.soha-identity-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-identity-publish-controls {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 20px;
+  min-height: 32px;
+}
+
+.soha-identity-inline-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.soha-identity-app-icon-field {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-identity-app-icon-field .ant-avatar {
+  border: 1px solid var(--soha-border-color);
+  background: var(--soha-fill-weak);
+}
+
+.soha-identity-app-icon-file-input {
+  display: none !important;
+}
+
+.soha-identity-access-control-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-identity-access-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-identity-assignment-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-identity-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) minmax(180px, 1fr) minmax(100px, 120px) 34px;
+  gap: 8px;
+  align-items: start;
+}
+
+.soha-identity-policy-conditions-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-identity-policy-conditions {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(240px, 1fr);
+  gap: 12px;
+}
+
+.soha-identity-policy-conditions > .ant-alert,
+.soha-identity-policy-time-window {
+  grid-column: 1 / -1;
+}
+
+.soha-identity-policy-time-window {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-identity-assignment-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.soha-identity-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 760px) {
+  .soha-identity-form-grid,
+  .soha-identity-assignment-row,
+  .soha-identity-policy-conditions,
+  .soha-identity-policy-time-window {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-identity-publish-controls {
+    flex-wrap: wrap;
+  }
+
+  .soha-identity-assignment-row .ant-btn {
+    width: 100%;
+  }
+}

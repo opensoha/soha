@@ -126,9 +126,10 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 	if !strings.HasPrefix(path, "/api/v1/network-access/") {
 		return nonPlatformMutationSecuritySurfaceEntry{}, false
 	}
-	if entry, ok := proxyMutationSecuritySurface(method, path); ok {
+	if entry, ok := admissionRuntimeMutationSurface(method, path); ok {
 		return entry, true
 	}
+
 	action := nonPlatformMutationAction(method, path)
 	switch {
 	case strings.HasPrefix(path, "/api/v1/network-access/devices/"):
@@ -165,6 +166,14 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 func proxyMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	if strings.HasPrefix(path, "/api/v1/network-access/proxy-instances/") && strings.HasSuffix(path, "/close") {
 		return nonPlatformMutationEntry("NetworkProxyConnection", "close", appaccess.PermNetworkAccessProxyConnectionsClose, false), true
+	}
+	if method == "POST" && strings.HasPrefix(path, "/api/v1/network-access/proxy-instances/") && strings.HasSuffix(path, "/commands") {
+		entry := nonPlatformMutationEntry("NetworkProxyCommand", "execute", "network_access.proxy_instances.<command>", true)
+		entry.DynamicPermission = true
+		return entry, true
+	}
+	if strings.HasPrefix(path, "/api/v1/network-access/proxy-instances/") {
+		return nonPlatformMutationEntry("NetworkProxyInstance", "update", appaccess.PermNetworkAccessProxyInstancesUpdate, true), true
 	}
 	if strings.HasPrefix(path, "/api/v1/network-access/proxy-instances") {
 		return nonPlatformMutationEntry("NetworkProxyInstance", nonPlatformMutationAction(method, path), networkAccessPermission(method, appaccess.PermNetworkAccessProxyInstancesCreate, appaccess.PermNetworkAccessProxyInstancesUpdate, ""), false), true
@@ -704,7 +713,7 @@ func identityMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 	case strings.HasPrefix(path, "/api/v1/identity/users/") && strings.Contains(path, "/mfa/"):
 		return nonPlatformMutationEntry("MFACredential", nonPlatformMutationAction(method, path), appaccess.PermAccessUsersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/outposts"):
-		return nonPlatformMutationEntry("IdentityOutpost", nonPlatformMutationAction(method, path), appaccess.PermIdentityOutpostsManage, false), true
+		return nonPlatformMutationEntry("IdentityOutpost", identityOutpostMutationAction(method, path), appaccess.PermIdentityOutpostsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/providers") && strings.Contains(path, "/oidc-clients"):
 		return nonPlatformMutationEntry("IdentityOIDCClient", nonPlatformMutationAction(method, path), appaccess.PermIdentityProvidersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/providers"):
@@ -797,6 +806,14 @@ func accessRouteAction(method, path string) string {
 	default:
 		return nonPlatformMutationAction(method, path)
 	}
+}
+
+func identityOutpostMutationAction(method, path string) string {
+	if method == "PUT" && strings.HasSuffix(path, "/runtime") ||
+		method == "POST" && strings.HasSuffix(path, "/runtime/control") {
+		return "update"
+	}
+	return nonPlatformMutationAction(method, path)
 }
 
 func nonPlatformMutationAction(method, path string) string {
@@ -1041,4 +1058,15 @@ func personalGuestMutationSecuritySurface(path string) (nonPlatformMutationSecur
 		return nonPlatformMutationEntry("PersonalGuest", "reconcile", appaccess.PermObserveAIChatUse, true), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func admissionRuntimeMutationSurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/network-access/radius-pools") {
+		action := "update"
+		if method == "POST" && path == "/api/v1/network-access/radius-pools" {
+			action = "create"
+		}
+		return nonPlatformMutationEntry("NetworkRADIUSPool", action, "network_access.nas_bindings."+action, true), true
+	}
+	return proxyMutationSecuritySurface(method, path)
 }

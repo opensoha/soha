@@ -1,0 +1,81 @@
+{
+  "data": {
+    "generatedAt": "2026-06-09T12:00:00Z",
+    "windowHours": 24,
+    "health": {
+      "status": "ok",
+      "message": "healthy"
+    },
+    "metrics": {
+      "totalCalls": 0,
+      "successCount": 0,
+      "denyCount": 0,
+      "failureCount": 0,
+      "pendingApprovalCount": 0,
+      "dryRunCount": 0
+    },
+    "tokens": {
+      "personalAccessTokens": {
+        "total": 0,
+        "active": 0,
+        "revoked": 0,
+        "expired": 0,
+        "expiringSoon": 0,
+        "stale": 0,
+        "neverUsed": 0
+      },
+      "serviceAccountTokens": {
+        "total": 0,
+        "active": 0,
+        "revoked": 0,
+        "expired": 0,
+        "expiringSoon": 0,
+        "stale": 0,
+        "neverUsed": 0
+      },
+      "lastUsedTrackingState": "enabled"
+    },
+    "clients": {
+      "total": 0,
+      "active": 0,
+      "disabled": 0,
+      "pendingApproval": 0,
+      "registrationApproval": "disabled"
+    },
+    "approvals": {
+      "pending": 0,
+      "dueSoon": 0,
+      "stalePending": 0,
+      "overdue": 0
+    },
+    "policyCoverage": {
+      "accessPolicies": 0,
+      "toolGrants": 0,
+      "skillBindings": 0,
+      "activeAccessPolicies": 0,
+      "activeToolGrants": 0,
+      "activeSkillBindings": 0,
+      "budgetPolicies": 0,
+      "rateLimitPolicies": 0,
+      "redactionPolicies": 0,
+      "resourceScopedAccessPolicies": 0,
+      "resourceScopedToolGrants": 0,
+      "budgetState": "not_configured",
+      "rateLimitState": "not_configured",
+      "redactionPolicyState": "not_configured",
+      "resourceScopeState": "not_configured"
+    },
+    "redaction": {
+      "totalMatches": 0,
+      "auditsWithRedaction": 0,
+      "inputAudits": 0,
+      "outputAudits": 0,
+      "fieldMatches": 0,
+      "sensitiveKeyMatches": 0,
+      "sensitiveTextMatches": 0,
+      "valuePatternMatches": 0,
+      "secretClassifierMatches": 0,
+      "structuredSecretMatches": 0
+    }
+  }
+}

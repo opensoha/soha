@@ -1,0 +1,5 @@
+{
+  "sequential": true,
+  "irreversible": true,
+  "guide": "先备份，再按相邻版本发布；完成业务检查后继续。"
+}

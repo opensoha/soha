@@ -1,0 +1,17 @@
+{
+  "data": {
+    "principal": {
+      "userId": "user-1",
+      "userName": "OpenSoha",
+      "email": "opensoha@example.com",
+      "roles": [],
+      "teams": [],
+      "projects": [],
+      "tags": []
+    },
+    "applications": [],
+    "favorites": [],
+    "recent": [],
+    "categories": []
+  }
+}

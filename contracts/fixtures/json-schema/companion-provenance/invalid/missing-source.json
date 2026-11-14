@@ -1,0 +1,8 @@
+{
+  "subjectSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "builderId": "local",
+  "builtAt": "2026-08-08T00:00:00Z",
+  "signingKeyId": "opensoha.release",
+  "signatureAlgorithm": "ed25519",
+  "signature": "c2lnbmF0dXJl"
+}

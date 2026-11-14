@@ -1,0 +1,368 @@
+.soha-plugin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-plugin-name-cell {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.soha-plugin-summary {
+  margin-bottom: 0;
+  color: var(--ant-color-text-secondary);
+}
+
+.soha-plugin-market-page-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  margin: 0;
+}
+
+.soha-plugin-market-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 2px;
+}
+
+.soha-plugin-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.soha-plugin-market-card {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  border-radius: 6px;
+}
+
+.soha-plugin-market-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.soha-plugin-market-card-link {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.soha-plugin-market-card-link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.soha-plugin-market-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.soha-plugin-market-card-actions .ant-btn {
+  flex-shrink: 0;
+}
+
+.soha-plugin-market-card-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.soha-plugin-market-card-title-row {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.soha-plugin-market-card-title-row .ant-tag {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.soha-plugin-market-card-title {
+  display: -webkit-box;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+.soha-plugin-market-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.soha-plugin-market-card-detail {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 26px;
+  white-space: nowrap;
+}
+
+.soha-plugin-market-card-detail,
+.soha-plugin-market-card-link:hover .soha-plugin-market-card-title {
+  color: color-mix(in srgb, var(--ant-color-link) 80%, var(--ant-color-text));
+}
+
+.soha-plugin-market-card-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-plugin-market-card-meta > .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-plugin-market-card-summary {
+  display: -webkit-box;
+  min-height: 40px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.soha-plugin-market-card-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: auto;
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 10px;
+}
+
+.soha-plugin-market-card-metrics > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.soha-plugin-market-card-metrics strong {
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.soha-plugin-detail-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.soha-plugin-detail-heading .soha-plugin-name-cell {
+  flex: 1 1 320px;
+}
+
+.soha-plugin-detail-actions {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+.soha-plugin-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.soha-plugin-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 12px;
+}
+
+.soha-plugin-facts dt,
+.soha-plugin-value-groups dt {
+  color: var(--ant-color-text-secondary);
+}
+
+.soha-plugin-facts dd {
+  margin-top: 4px;
+  margin-inline-start: 0;
+  font-weight: 600;
+}
+
+.soha-plugin-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-plugin-page .ant-card,
+.soha-plugin-page .ant-space-item {
+  min-width: 0;
+}
+
+.soha-plugin-page .ant-descriptions-item-content,
+.soha-plugin-page .ant-tag,
+.soha-plugin-values .ant-tag {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.soha-plugin-values,
+.soha-plugin-values .ant-space-item,
+.soha-plugin-values .ant-tag {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.soha-plugin-section-title,
+.soha-plugin-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.soha-plugin-section + .soha-plugin-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 16px;
+}
+
+.soha-plugin-section h3 {
+  margin-bottom: 10px;
+}
+
+.soha-plugin-value-groups,
+.soha-plugin-secret-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soha-plugin-value-groups > div + div,
+.soha-plugin-secret-list > li + li {
+  margin-top: 10px;
+}
+
+.soha-plugin-value-groups dd {
+  margin: 4px 0 0;
+}
+
+.soha-plugin-value-groups ul {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.soha-plugin-value-groups li,
+.soha-plugin-secret-list li {
+  overflow-wrap: anywhere;
+}
+
+.soha-plugin-permission-note {
+  margin: 8px 0 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.soha-plugin-json {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 6px;
+  background: var(--soha-fill-weak);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.soha-plugin-extension-list {
+  width: 100%;
+}
+
+.soha-plugin-extension-row {
+  display: flex;
+  min-height: 36px;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid var(--soha-border-color);
+  padding-bottom: 8px;
+}
+
+.soha-plugin-extension-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+@media (max-width: 960px) {
+  .soha-plugin-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-plugin-detail-heading {
+    flex-direction: column;
+  }
+
+  .soha-plugin-detail-heading .soha-plugin-name-cell {
+    flex-basis: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .soha-plugin-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-plugin-market-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-plugin-market-query .soha-management-query-field .ant-form-item-label {
+    max-width: 112px !important;
+    flex: 0 0 112px !important;
+  }
+
+  .soha-plugin-market-query .soha-management-query-field .ant-form-item-control {
+    max-width: calc(100% - 112px) !important;
+    flex: 1 1 0 !important;
+  }
+}

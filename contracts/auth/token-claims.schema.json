@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/auth/token-claims.schema.json",
+  "title": "Soha Token Claims",
+  "description": "JWT/access-token claims shared by Soha core, CLI, agent runtime, and future cloud edge services.",
+  "type": "object",
+  "required": ["sub", "exp", "iat", "tokenId", "tokenKind", "subjectType", "subjectId"],
+  "properties": {
+    "iss": { "type": "string" },
+    "sub": { "type": "string", "minLength": 1 },
+    "aud": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      ]
+    },
+    "exp": { "type": "integer" },
+    "nbf": { "type": "integer" },
+    "iat": { "type": "integer" },
+    "jti": { "type": "string" },
+    "tenantId": {
+      "type": "string",
+      "default": "default"
+    },
+    "workspaceId": {
+      "type": "string",
+      "default": "default"
+    },
+    "tokenId": { "type": "string", "minLength": 1 },
+    "tokenKind": {
+      "type": "string",
+      "enum": [
+        "session",
+        "personal_access_token",
+        "service_account",
+        "runtime_execution_runner",
+        "stream_ticket"
+      ]
+    },
+    "sessionId": { "type": "string" },
+    "authzVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Authorization version at session access-token issuance. A version mismatch invalidates this token even after its session refreshes. Legacy tokens without this field require an authoritative current-identity lookup; their embedded roles must not restore revoked grants."
+    },
+    "subjectType": {
+      "type": "string",
+      "enum": ["user", "service_account", "runner", "anonymous"]
+    },
+    "subjectId": { "type": "string", "minLength": 1 },
+    "userId": { "type": "string" },
+    "userName": { "type": "string" },
+    "email": { "type": "string" },
+    "roles": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "teams": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "projects": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "permissionKeys": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "aiClientId": { "type": "string" },
+    "skillId": { "type": "string" },
+    "path": { "type": "string" }
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,11 @@
+{
+  "batchId": "batch-1",
+  "targetId": "api",
+  "applicationId": "app-1",
+  "serviceId": "service-1",
+  "applicationEnvironmentId": "env-1",
+  "verdict": "inconclusive",
+  "summary": "Post-deployment evidence is missing",
+  "evidence": [],
+  "access": []
+}

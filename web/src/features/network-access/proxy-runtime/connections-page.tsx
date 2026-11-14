@@ -1,0 +1,420 @@
+import { rateText } from './traffic-model'
+import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementKeywordField,
+  ManagementQueryActions,
+  ManagementQueryPanel,
+  ManagementState,
+} from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
+import { formatBytes } from '@/components/resource-metrics-format'
+import { useOperationMutation } from '@/components/use-operation-mutation'
+import { hasPermission } from '@/features/auth'
+import { useI18n } from '@/i18n'
+import { ApiError } from '@/services/api-error'
+import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
+import { formatDateTime } from '@/utils/time'
+import { ReloadOutlined } from '@ant-design/icons'
+import type {
+  NetworkProxyCloseCommandEnvelope,
+  NetworkProxyConnection,
+} from '@opensoha/contracts/gen/ts/sohaapi'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TableColumnsType } from 'antd'
+import { Alert, Button, Card, Popconfirm, Typography } from 'antd'
+import { useEffect, useState } from 'react'
+import { closeConnection } from './api'
+import { ProxyInstanceHeader, useProxyContext } from './context'
+import { proxyKeys, proxyQueries } from './queries'
+import './styles.css'
+type CloseTarget = { instanceId: string; connectionId: string; epoch: string; requestId: string }
+function matchesClose(target: CloseTarget, receipt?: NetworkProxyCloseCommandEnvelope) {
+  return (
+    receipt?.commandId === target.requestId &&
+    receipt.connectionId === target.connectionId &&
+    receipt.processEpoch === target.epoch
+  )
+}
+export default function ProxyConnectionsPage() {
+  const { t, localeCode } = useI18n()
+  const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
+
+  const queryClient = useQueryClient()
+  const context = useProxyContext('network_access.proxy_instances.view')
+  const canView =
+    context.allowed &&
+    hasPermission(context.permissions.data?.data, 'network_access.proxy_connections.view')
+  const canClose = hasPermission(
+    context.permissions.data?.data,
+    'network_access.proxy_connections.close',
+  )
+  const selected = context.selected
+  const snapshot = useQuery(proxyQueries.connections(selected?.id, canView))
+  const visibleSnapshotData = snapshot.isEnabled === false ? undefined : readableQueryData(snapshot)
+  const traffic = useQuery(proxyQueries.traffic(selected?.id, canView))
+  const visibleTrafficData = traffic.isEnabled === false ? undefined : readableQueryData(traffic)
+  const samples = visibleTrafficData?.samples ?? []
+  const latest = samples[samples.length - 1]
+  const [draft, setDraft] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [lastCommand, setLastCommand] = useState<CloseTarget>()
+  const [confirmation, setConfirmation] = useState<CloseTarget>()
+  const close = useOperationMutation(
+    {
+      mutationFn: async (target: CloseTarget) => {
+        const now = Date.now()
+        const result = await closeConnection(target.instanceId, target.connectionId, {
+          requestId: target.requestId,
+          processEpoch: target.epoch,
+          issuedAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 30000).toISOString(),
+        })
+        if (!matchesClose(target, result))
+          throw new ApiError(0, '返回的关闭回执与原请求不符，请读取原回执。', { method: 'POST' })
+        return result
+      },
+      onMutate: setLastCommand,
+      onError: (error, target) => {
+        if (!writeOutcomeUnknown(error))
+          setLastCommand((current) => (current === target ? undefined : current))
+      },
+      onSuccess: (result, target) => {
+        queryClient.setQueryData(
+          proxyKeys.closeCommand(target.instanceId, target.requestId),
+          result,
+        )
+        void queryClient.invalidateQueries({ queryKey: proxyKeys.connections(target.instanceId) })
+      },
+    },
+    {
+      label: ['执行会话命令 代理连接', 'Execute session command proxy connection'],
+      target: (v) => v.connectionId,
+      receipt: (result) => ({
+        message: text(
+          '关闭命令已排队，等待运行时回执。',
+          'Close command queued; waiting for the runtime receipt.',
+        ),
+        evidence: result.commandId,
+      }),
+    },
+  )
+  const currentCommand = canView ? lastCommand : undefined
+  const command = useQuery(
+    proxyQueries.closeCommand(
+      currentCommand?.instanceId,
+      currentCommand?.requestId,
+      canView && !close.isPending,
+    ),
+  )
+  const candidate = command.isEnabled === false ? undefined : readableQueryData(command)
+  const receipt = currentCommand && matchesClose(currentCommand, candidate) ? candidate : undefined
+  const terminal = Boolean(
+    receipt && ['closed', 'not-found', 'failed', 'expired'].includes(receipt.status),
+  )
+  const { outcomeUnknown, resolveUnknown } = close
+  useEffect(() => {
+    if (currentCommand && terminal && !command.isError && outcomeUnknown)
+      resolveUnknown(currentCommand)
+  }, [currentCommand, terminal, command.isError, outcomeUnknown, resolveUnknown])
+  useEffect(() => {
+    if (!canView || !context.allowed) {
+      void queryClient.cancelQueries({ queryKey: proxyKeys.all })
+      queryClient.removeQueries({ queryKey: proxyKeys.all })
+      setConfirmation(undefined)
+    }
+  }, [canView, context.allowed, queryClient])
+  const operationBlocked = close.blocked || Boolean(currentCommand && !terminal) || snapshot.isError
+  const rows = (visibleSnapshotData?.connections ?? []).filter(
+    (item) =>
+      !keyword ||
+      [item.id, item.destination, item.network].some((value) =>
+        value.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()),
+      ),
+  )
+  const columns: TableColumnsType<NetworkProxyConnection> = [
+    {
+      title: t('networkAccess.proxyRuntime.destination', '目的地'),
+      dataIndex: 'destination',
+      ellipsis: true,
+    },
+    { title: t('networkAccess.proxyRuntime.network', '网络'), dataIndex: 'network', width: 90 },
+    {
+      title: t('networkAccess.proxyRuntime.uploadBytes', '上传'),
+      dataIndex: 'uploadBytes',
+      width: 120,
+      render: formatBytes,
+    },
+    {
+      title: t('networkAccess.proxyRuntime.downloadBytes', '下载'),
+      dataIndex: 'downloadBytes',
+      width: 120,
+      render: formatBytes,
+    },
+    {
+      title: t('networkAccess.proxyRuntime.startedAt', '开始时间'),
+      dataIndex: 'startedAt',
+      width: 185,
+      render: (value?: string) => (value ? formatDateTime(value) : '—'),
+    },
+    ...(canClose &&
+    selected?.processEpoch &&
+    visibleSnapshotData?.freshness !== 'stale' &&
+    visibleSnapshotData?.freshness !== 'unavailable' &&
+    visibleSnapshotData?.processEpoch === selected.processEpoch &&
+    selected?.capabilities.includes('close_connection')
+      ? [
+          {
+            title: t('common.actions', '操作'),
+            key: 'actions',
+            className: 'soha-table-actions-column',
+            width: 110,
+            render: (_: unknown, record: NetworkProxyConnection) => (
+              <Popconfirm
+                title={t('networkAccess.proxyRuntime.confirmClose', '确认断开此连接？')}
+                description={record.destination}
+                okText={t('networkAccess.proxyRuntime.disconnect', '断开')}
+                okButtonProps={{ ...{ danger: true }, disabled: operationBlocked }}
+                onOpenChange={(open) => {
+                  if (open && selected?.processEpoch) {
+                    setConfirmation({
+                      instanceId: selected.id,
+                      connectionId: record.id,
+                      epoch: selected.processEpoch,
+                      requestId: crypto.randomUUID(),
+                    })
+                  }
+                }}
+                onConfirm={() => {
+                  const target = confirmation
+                  setConfirmation(undefined)
+                  if (
+                    !canView ||
+                    !canClose ||
+                    operationBlocked ||
+                    !target ||
+                    target.instanceId !== selected?.id ||
+                    target.epoch !== selected.processEpoch ||
+                    target.connectionId !== record.id ||
+                    visibleSnapshotData?.processEpoch !== target.epoch ||
+                    (record.processEpoch && record.processEpoch !== target.epoch)
+                  )
+                    return
+                  close.mutate(target)
+                }}
+                disabled={
+                  operationBlocked ||
+                  (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
+                }
+              >
+                <Button
+                  danger
+                  disabled={
+                    operationBlocked ||
+                    (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
+                  }
+                  size="small"
+                  loading={close.isPending && close.variables?.connectionId === record.id}
+                >
+                  {t('networkAccess.proxyRuntime.disconnect', '断开')}
+                </Button>
+              </Popconfirm>
+            ),
+          },
+        ]
+      : []),
+  ]
+  if (!context.allowed || !canView) {
+    return <ManagementState kind={context.permissions.isLoading ? 'loading' : 'no-permission'} />
+  }
+  if (context.instances.isLoading) return <ManagementState kind="loading" />
+  if (context.instances.isError && !context.instances.data) {
+    return (
+      <ManagementState
+        kind="error"
+        actions={
+          <Button onClick={() => void context.instances.refetch()}>
+            {t('networkAccess.refresh', '刷新')}
+          </Button>
+        }
+      />
+    )
+  }
+  if (!selected)
+    return (
+      <ManagementState
+        kind="empty"
+        description={t(
+          'networkAccess.proxyRuntime.noInstances',
+          '尚无代理实例。请先在代理实例页面创建并登记运行时。',
+        )}
+      />
+    )
+  return (
+    <main className="soha-server-proxy-page">
+      {close.feedback}
+      {currentCommand && (
+        <>
+          <ReadFeedback
+            canRead={command.isEnabled}
+            query={command}
+            label={text('关闭命令回执', 'Close command receipt')}
+          />
+          <Alert
+            showIcon
+            type={
+              receipt?.status === 'closed' || receipt?.status === 'not-found'
+                ? 'success'
+                : receipt?.status === 'failed' || receipt?.status === 'expired'
+                  ? 'warning'
+                  : 'info'
+            }
+            title={`${text('关闭命令', 'Close command')} · ${receipt?.status ?? text('未知', 'Unknown')}`}
+            description={
+              <>
+                {currentCommand.instanceId} · {currentCommand.requestId} ·{' '}
+                {currentCommand.connectionId} ·{' '}
+                {receipt?.reasonCode ||
+                  text(
+                    '等待运行时确认；连接采样不替代回执。',
+                    'Waiting for runtime confirmation; a connection sample does not replace the receipt.',
+                  )}
+              </>
+            }
+            action={
+              <Button loading={command.isFetching} onClick={() => void command.refetch()}>
+                {t('networkAccess.refresh', '刷新')}
+              </Button>
+            }
+          />
+        </>
+      )}
+
+      <ReadFeedback canRead={snapshot.isEnabled} query={snapshot} label="连接采样" />
+      <ReadFeedback canRead={traffic.isEnabled} query={traffic} label="流量采样" />
+
+      <ProxyInstanceHeader
+        instances={context.instances.data ?? []}
+        selected={selected}
+        onSelect={context.select}
+      />
+      <div className="soha-server-proxy-actions">
+        <div>
+          <h2>{t('networkAccess.proxyRuntime.connections', '活动连接')}</h2>
+          <Typography.Text type="secondary">
+            {visibleSnapshotData?.observedAt
+              ? `${t('networkAccess.proxyRuntime.sampledAt', '最近采样')}：${formatDateTime(visibleSnapshotData.observedAt)} · 已返回 ${visibleSnapshotData.returnedCount ?? visibleSnapshotData.connections.length} / 活动总数 ${visibleSnapshotData.totalActive ?? '未知'} · ${visibleSnapshotData.truncated ? '已截断，仅筛选返回范围' : '仅筛选已返回范围'} · ${visibleSnapshotData.freshness ?? '新鲜度未知'}`
+              : t('networkAccess.proxyRuntime.noSample', '未采集')}
+          </Typography.Text>
+        </div>
+        <Button
+          icon={<ReloadOutlined />}
+          loading={snapshot.isFetching}
+          onClick={() => void (snapshot.isEnabled === false ? undefined : snapshot.refetch())}
+        >
+          {t('networkAccess.refresh', '刷新')}
+        </Button>
+      </div>
+      {snapshot.isError && visibleSnapshotData ? null : null}
+      {snapshot.isError && !visibleSnapshotData ? null : snapshot.isLoading ? (
+        <ManagementState kind="loading" />
+      ) : visibleSnapshotData?.state === 'unsupported' ? (
+        <ManagementState
+          kind="empty"
+          description={t(
+            'networkAccess.proxyRuntime.connectionsUnsupported',
+            '此引擎不提供逐连接详情和断开操作。',
+          )}
+        />
+      ) : visibleSnapshotData?.state === 'unavailable' ? (
+        <ManagementState
+          kind="empty"
+          description={t(
+            'networkAccess.proxyRuntime.connectionsUnavailable',
+            '暂无新鲜连接快照，请检查实例状态。',
+          )}
+        />
+      ) : (
+        <>
+          <div className="soha-server-proxy-metrics soha-server-proxy-connection-metrics">
+            <Card size="small">
+              <span>{t('networkAccess.proxyRuntime.activeConnections', '活动连接')}</span>
+              <strong>{visibleSnapshotData?.totalActive ?? '—'}</strong>
+              <small>
+                {latest
+                  ? t('networkAccess.proxyRuntime.sampleCount', '最新快照')
+                  : t('networkAccess.proxyRuntime.noSample', '未采集')}
+              </small>
+            </Card>
+            <Card size="small">
+              <span>{t('networkAccess.proxyRuntime.visibleConnections', '已展示连接')}</span>
+              <strong>{visibleSnapshotData?.connections.length ?? 0}</strong>
+              <small>{t('networkAccess.proxyRuntime.maxConnections', '最多展示 200 条')}</small>
+            </Card>
+            <Card size="small">
+              <span>{t('networkAccess.proxyRuntime.uploadRate', '上传速率')}</span>
+              <strong>
+                {latest
+                  ? rateText(latest.uploadBytesPerSecond, formatBytes, latest.rateState)
+                  : '—'}
+              </strong>
+              <small>
+                {latest
+                  ? formatDateTime(latest.observedAt)
+                  : t('networkAccess.proxyRuntime.noSample', '未采集')}
+              </small>
+            </Card>
+            <Card size="small">
+              <span>{t('networkAccess.proxyRuntime.downloadRate', '下载速率')}</span>
+              <strong>
+                {latest
+                  ? rateText(latest.downloadBytesPerSecond, formatBytes, latest.rateState)
+                  : '—'}
+              </strong>
+              <small>
+                {latest
+                  ? formatDateTime(latest.observedAt)
+                  : t('networkAccess.proxyRuntime.noSample', '未采集')}
+              </small>
+            </Card>
+          </div>
+          <ManagementQueryPanel
+            onFinish={() => setKeyword(draft.trim())}
+            actions={
+              <ManagementQueryActions
+                disabledReset={!draft && !keyword}
+                onReset={() => {
+                  setDraft('')
+                  setKeyword('')
+                }}
+              />
+            }
+          >
+            <ManagementKeywordField
+              value={draft}
+              onChange={setDraft}
+              placeholder={t(
+                'networkAccess.proxyRuntime.searchConnections',
+                '搜索目的地、网络或连接 ID',
+              )}
+            />
+          </ManagementQueryPanel>
+          <AdminTable
+            columns={columns}
+            dataSource={rows}
+            rowKey="id"
+            localSorting
+            loading={snapshot.isLoading}
+            refreshing={snapshot.isFetching}
+            onRefresh={() => void (snapshot.isEnabled === false ? undefined : snapshot.refetch())}
+            pagination={{ pageSize: 15, showSizeChanger: false }}
+            empty={
+              keyword
+                ? t('networkAccess.proxyRuntime.noMatch', '没有符合条件的连接。')
+                : t('networkAccess.proxyRuntime.noConnections', '当前没有活动连接。')
+            }
+          />
+        </>
+      )}
+    </main>
+  )
+}

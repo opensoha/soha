@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/mcp/gateway-capability-baseline.schema.json",
+  "title": "Soha AI Gateway Capability Baseline",
+  "description": "Release-governed AI Gateway capability baseline used by skills, CLI/MCP validation, and product release review. Unlike the runtime manifest, this catalog may include approved or reserved capabilities before they are visible to a caller.",
+  "type": "object",
+  "required": ["schemaVersion", "version", "source", "tools"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": "opensoha.dev/gateway-capability-catalog/v1"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository", "path", "syncStrategy"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "syncStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "plannedSkills": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ToolRecord"
+      },
+      "uniqueItems": true
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResourceRecord"
+      },
+      "uniqueItems": true
+    },
+    "prompts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PromptRecord"
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "RiskLevel": {
+      "type": "string",
+      "enum": ["read", "analyze", "mutate", "execute", "high"]
+    },
+    "BaselineStatus": {
+      "type": "string",
+      "enum": ["stable-runtime", "baseline-approved", "baseline-proposed", "reserved", "deprecated"]
+    },
+    "StringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "StringArrayAllowEmpty": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "AuditRecord": {
+      "type": "object",
+      "required": ["resourceKind", "relatedIds"],
+      "properties": {
+        "resourceKind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relatedIds": {
+          "$ref": "#/$defs/StringArray"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolRecord": {
+      "type": "object",
+      "required": [
+        "name",
+        "title",
+        "domain",
+        "owningWorkbench",
+        "owningService",
+        "action",
+        "riskLevel",
+        "permissionKeys",
+        "requiredScopes",
+        "mcpAdapterId",
+        "mcpToolName",
+        "requiresApproval",
+        "status",
+        "skillRefs",
+        "audit",
+        "redaction",
+        "moduleId",
+        "routeEvidence"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owningWorkbench": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owningService": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "riskLevel": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "permissionKeys": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "requiredScopes": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "mcpAdapterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mcpToolName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiresApproval": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/BaselineStatus"
+        },
+        "skillRefs": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "resourceRefs": {
+          "$ref": "#/$defs/StringArrayAllowEmpty"
+        },
+        "promptRefs": {
+          "$ref": "#/$defs/StringArrayAllowEmpty"
+        },
+        "audit": {
+          "$ref": "#/$defs/AuditRecord"
+        },
+        "redaction": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "moduleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "routeEvidence": {
+          "$ref": "#/$defs/StringArray"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceRecord": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "permissionKeys",
+        "requiredScopes",
+        "status",
+        "skillRefs",
+        "toolRefs",
+        "promptRefs"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permissionKeys": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "requiredScopes": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "status": {
+          "$ref": "#/$defs/BaselineStatus"
+        },
+        "skillRefs": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "toolRefs": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "promptRefs": {
+          "$ref": "#/$defs/StringArrayAllowEmpty"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PromptRecord": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "permissionKeys",
+        "requiredScopes",
+        "status",
+        "skillRefs",
+        "toolRefs",
+        "resourceRefs"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permissionKeys": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "requiredScopes": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "status": {
+          "$ref": "#/$defs/BaselineStatus"
+        },
+        "skillRefs": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "toolRefs": {
+          "$ref": "#/$defs/StringArray"
+        },
+        "resourceRefs": {
+          "$ref": "#/$defs/StringArrayAllowEmpty"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	"net/http"
 	"net/http/httptest"
 	"strings"

@@ -1,0 +1,59 @@
+/* Application access lists share the K8s 48px chrome and 32px controls.
+   Keep these Antd layout overrides scoped away from drawers and form dialogs. */
+.soha-identity-access-page {
+  gap: 12px;
+}
+
+.soha-identity-access-page .soha-management-query-card.ant-card {
+  min-height: 48px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--soha-border-color);
+}
+
+.soha-identity-access-page .soha-management-query-card .ant-card-body {
+  padding: 8px 17px;
+}
+
+.soha-identity-access-page .soha-management-query-field .ant-form-item-label {
+  flex: 0 0 auto;
+  padding-inline-end: 8px;
+  text-align: left;
+  height: 32px;
+  line-height: 32px;
+}
+
+.soha-identity-access-page
+  .soha-admin-table-shell.is-panel
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar) {
+  min-height: 48px;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.soha-identity-access-page .soha-admin-table-header-main:empty {
+  display: none;
+}
+
+.soha-identity-access-page .soha-admin-table-header-extra {
+  margin-inline-start: auto;
+}
+
+.soha-identity-access-page
+  :is(.soha-management-query-card, .soha-admin-table-header, .soha-identity-catalog-toolbar)
+  :is(.ant-btn, .ant-input-affix-wrapper, .ant-select, .ant-picker, .ant-segmented) {
+  height: 32px;
+  min-height: 32px;
+}
+
+.soha-identity-access-page
+  :is(.soha-admin-table-header, .soha-identity-catalog-toolbar)
+  .ant-btn-icon-only {
+  width: 32px;
+  min-width: 32px;
+}
+
+.soha-identity-access-page .soha-management-query-scope .ant-segmented-item-label {
+  min-height: 28px;
+  line-height: 28px;
+}

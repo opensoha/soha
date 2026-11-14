@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

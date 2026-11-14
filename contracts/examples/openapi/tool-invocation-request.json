@@ -1,0 +1,14 @@
+{
+  "toolName": "k8s.pods.list",
+  "input": {
+    "clusterId": "default",
+    "namespace": "default"
+  },
+  "aiClientId": "cli",
+  "aiClientName": "Soha CLI",
+  "skillId": "k8s-sre",
+  "requestId": "req-01",
+  "secretRefs": {
+    "REGISTRY_TOKEN": "soha://secrets/registry-token/versions/2"
+  }
+}

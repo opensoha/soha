@@ -1,0 +1,11 @@
+{
+  "data": {
+    "challengeId": "challenge-01",
+    "challenge": "b25lLXRpbWUtY2hhbGxlbmdl",
+    "rpId": "soha.example.com",
+    "timeoutMilliseconds": 60000,
+    "userVerification": "required",
+    "allowCredentialIds": ["credential-01"],
+    "expiresAt": "2026-07-27T10:01:00Z"
+  }
+}

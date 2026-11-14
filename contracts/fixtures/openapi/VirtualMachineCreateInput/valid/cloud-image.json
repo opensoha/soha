@@ -1,0 +1,12 @@
+{
+  "connectionId": "task51-pve",
+  "name": "task51-debian13-test",
+  "sourceMode": "cloud_image",
+  "imageId": "verified-debian13",
+  "cpu": 2,
+  "memoryMiB": 2048,
+  "diskGiB": 20,
+  "node": "popicorns-4",
+  "requireCapacity": true,
+  "startAfterCreate": true
+}

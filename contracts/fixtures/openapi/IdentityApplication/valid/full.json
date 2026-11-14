@@ -1,0 +1,30 @@
+{
+  "id": "app-example",
+  "name": "Example App",
+  "slug": "example-app",
+  "description": "Example identity application",
+  "iconUrl": "https://app.example.com/icon.png",
+  "tags": ["platform"],
+  "launchUrl": "https://app.example.com",
+  "providerId": "provider-example",
+  "providerType": "oidc",
+  "portalVisible": true,
+  "featured": false,
+  "sortOrder": 100,
+  "status": "enabled",
+  "metadata": {
+    "owner": "platform"
+  },
+  "assignments": [
+    {
+      "id": "assignment-example",
+      "applicationId": "app-example",
+      "subjectType": "role",
+      "subjectId": "platform-admin",
+      "effect": "allow",
+      "createdAt": "2026-08-24T08:00:00Z"
+    }
+  ],
+  "createdAt": "2026-08-24T08:00:00Z",
+  "updatedAt": "2026-08-24T08:00:00Z"
+}

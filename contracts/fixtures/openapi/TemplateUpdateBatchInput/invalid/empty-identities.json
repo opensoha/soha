@@ -1,0 +1,10 @@
+{
+  "previewDigest": "",
+  "candidateIds": [
+    ""
+  ],
+  "waveSize": 2,
+  "stopOnFailure": true,
+  "acknowledgeHistoryGaps": false,
+  "idempotencyKey": ""
+}

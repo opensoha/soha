@@ -1,0 +1,35 @@
+{
+  "data": {
+    "application": {
+      "id": "app-1",
+      "key": "payments",
+      "name": "Payments",
+      "created": true
+    },
+    "environment": {
+      "id": "env-1",
+      "key": "prod",
+      "name": "Production",
+      "created": false
+    },
+    "applicationEnvironmentId": "app-env-1",
+    "applicationEnvironmentCreated": true,
+    "ownershipMode": "managed",
+    "services": [
+      {
+        "id": "service-1",
+        "key": "helm-payments",
+        "name": "payments",
+        "releaseName": "payments",
+        "created": true
+      }
+    ],
+    "targets": [
+      {
+        "id": "target-1",
+        "releaseName": "payments",
+        "created": true
+      }
+    ]
+  }
+}

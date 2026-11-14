@@ -1,0 +1,24 @@
+{
+  "data": {
+    "clusterId": "cluster-a",
+    "provider": "kubescape",
+    "status": "available",
+    "generatedAt": "2026-08-23T08:00:00Z",
+    "counts": {
+      "critical": 0,
+      "high": 1,
+      "medium": 0,
+      "low": 0,
+      "unknown": 0
+    },
+    "findings": [
+      {
+        "id": "broken",
+        "category": "configuration",
+        "title": "Missing severity",
+        "status": "failed"
+      }
+    ],
+    "warnings": []
+  }
+}

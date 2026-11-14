@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

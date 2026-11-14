@@ -1,0 +1,13 @@
+{
+  "id": "personal",
+  "name": "Personal Docker",
+  "mode": "restricted-write",
+  "leaseSeconds": 600,
+  "quota": {
+    "diskBytes": 33554432,
+    "memoryBytes": 67108864,
+    "cpuUnits": 250,
+    "maxProcesses": 16,
+    "networkEgress": true
+  }
+}

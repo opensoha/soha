@@ -170,34 +170,33 @@ def build(s):
         shutil.rmtree(builddir)
     builddir.mkdir()
     packed = json.loads(run('npm', 'pack', '--ignore-scripts', '--json', '--pack-destination', str(builddir),
-                            cwd=ROOT / 'soha-contracts'))[0]
+                            cwd=ROOT / 'soha/contracts'))[0]
     archive = builddir / packed['filename']
     with tarfile.open(archive) as tar:
         tar.extractall(builddir, filter='data')
     sdk = builddir / 'package'
     s['sources'] = {
-        'contracts': {'commit': run('git', '-C', str(ROOT / 'soha-contracts'), 'rev-parse', 'HEAD').strip(),
+        'contracts': {'commit': run('git', '-C', str(ROOT / 'soha/contracts'), 'rev-parse', 'HEAD').strip(),
                       'artifactDigest': hashlib.sha256(archive.read_bytes()).hexdigest()},
         'core': snapshot(ROOT / 'soha', builddir / 'core'),
-        'agent': snapshot(ROOT / 'soha-agent', builddir / 'agent'),
+        'agent': snapshot(ROOT / 'soha/agent', builddir / 'agent'),
     }
-    web = ROOT / 'soha-web/dist'
+    web = ROOT / 'soha/web/dist'
     if not (web / 'index.html').is_file():
         raise RuntimeError('Build Web first using its existing npm run build')
     digest = hashlib.sha256()
     for path in sorted(web.rglob('*')):
         if path.is_file():
             digest.update(str(path.relative_to(web)).encode() + b'\0' + path.read_bytes())
-    s['sources']['web'] = {'commit': run('git', '-C', str(ROOT / 'soha-web'), 'rev-parse', 'HEAD').strip(),
+    s['sources']['web'] = {'commit': run('git', '-C', str(ROOT / 'soha/web'), 'rev-parse', 'HEAD').strip(),
                            'artifactDigest': digest.hexdigest()}
     shutil.copytree(web, builddir / 'core/internal/staticassets/web/dist')
-    # Real owner Dockerfiles consume this extracted SDK package, never sibling source.
-    for kind, repo, target in [('core', 'soha', 'soha-runtime'), ('agent', 'soha-agent', 'agent-runtime')]:
+    # Both Dockerfiles consume the complete same-Root snapshot and contracts source.
+    for kind, dockerfile, target in [('core', 'deploy/Dockerfile', 'soha-runtime'), ('agent', 'agent/deploy/Dockerfile', 'agent-runtime')]:
         image = s['name'] + '-' + kind
         with (LAB / (kind + '-build.log')).open('w') as log:
-            result = subprocess.run(docker_build() + ['--build-context', f'contracts={sdk}',
-                                     '--target', target, '-f', str(builddir / kind / 'deploy/Dockerfile'),
-                                     '-t', image, str(builddir / kind)], stdout=log, stderr=subprocess.STDOUT,
+            result = subprocess.run(docker_build() + ['--target', target, '-f', str(builddir / 'core' / dockerfile),
+                                     '-t', image, str(builddir / 'core')], stdout=log, stderr=subprocess.STDOUT,
                                     env=ENV, timeout=1200)
         if result.returncode:
             raise RuntimeError(f'{kind} Docker build failed; see private build log')
@@ -206,7 +205,7 @@ def build(s):
     mod = LAB / 'core.mod'
     shutil.copy(ROOT / 'soha/go.mod', mod)
     shutil.copy(ROOT / 'soha/go.sum', mod.with_suffix('.sum'))
-    run('go', 'mod', 'edit', '-modfile=' + str(mod), '-replace=github.com/opensoha/soha-contracts=' + str(sdk),
+    run('go', 'mod', 'edit', '-modfile=' + str(mod), '-replace=github.com/opensoha/soha/contracts=' + str(sdk),
         cwd=ROOT / 'soha', env=dict(ENV, GOWORK='off'))
     with (LAB / 'isolated-resource-tests.json').open('w') as log:
         result = subprocess.run(['go', 'test', '-modfile=' + str(mod), '-race', '-count=1', '-json',
@@ -366,13 +365,12 @@ def provision(s):
     inspect(s, 'coreId')
     if not s.get('tunnelPorts'):
         remote = inspect(s, 'k3sId', remote=True)
-        # Agent runs on middleware amd64, from the same packed SDK and snapshot as Core.
+        # Agent runs on middleware amd64, from the same Root source snapshot as Core.
         image = s['name'] + '-agent-amd64'
         builddir = LAB / 'build'
         with (LAB / 'agent-amd64-build.log').open('w') as log:
-            result = subprocess.run(docker_build() + ['--platform', 'linux/amd64', '--build-context',
-                     f'contracts={builddir / "package"}', '--target', 'agent-runtime', '-f',
-                     str(builddir / 'agent/deploy/Dockerfile'), '-t', image, str(builddir / 'agent')],
+            result = subprocess.run(docker_build() + ['--platform', 'linux/amd64', '--target', 'agent-runtime', '-f',
+                     str(builddir / 'core/agent/deploy/Dockerfile'), '-t', image, str(builddir / 'core')],
                      stdout=log, stderr=subprocess.STDOUT, env=ENV, timeout=1200)
         if result.returncode:
             raise RuntimeError('Agent amd64 build failed; retain exact production Dockerfile and retry after registry recovery')
@@ -535,7 +533,7 @@ def seed(s, modes=None):
 def kube_api(s, method, path, body=None):
     config = json.loads(run('node', '--input-type=module', '-e',
               "import {parse} from 'yaml'; let s='';for await(const c of process.stdin)s+=c;process.stdout.write(JSON.stringify(parse(s)))",
-              data=(LAB / 'kubeconfig').read_bytes(), cwd=ROOT / 'soha-web'))
+              data=(LAB / 'kubeconfig').read_bytes(), cwd=ROOT / 'soha/web'))
     ca = config['clusters'][0]['cluster']['certificate-authority-data']
     user = config['users'][0]['user']
     for filename, encoded in [('client.crt', user['client-certificate-data']), ('client.key', user['client-key-data'])]:
@@ -591,8 +589,8 @@ def test(s, mode, role, flow):
                SOHA_E2E_PASSWORD=s['secrets'][role], SOHA_E2E_MUTATIONS='1' if role == 'writer' else '0',
                SOHA_E2E_TASK_ID=task_id, SOHA_E2E_EXECUTION_ID=execution_id)
     args = ['npm', 'run', 'test:flow:real' if flow else 'test:api:real']
-    output = ROOT / 'soha-web/test-results/tasks' / task_id / execution_id / 'run-manifest.json'
-    result = subprocess.run(args, cwd=ROOT / 'soha-web', env=env, timeout=300)
+    output = ROOT / 'soha/web/test-results/tasks' / task_id / execution_id / 'run-manifest.json'
+    result = subprocess.run(args, cwd=ROOT / 'soha/web', env=env, timeout=300)
     if result.returncode:
         raise RuntimeError(f'Real {mode}/{role} test failed ({result.returncode})')
     if not output.exists():

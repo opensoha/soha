@@ -1,0 +1,23 @@
+{
+  "assistantId": "assistant-a",
+  "state": "ready",
+  "version": 3,
+  "dataInitialized": true,
+  "templateId": "personal",
+  "quota": {
+    "diskBytes": 33554432,
+    "memoryBytes": 67108864,
+    "cpuUnits": 250,
+    "maxProcesses": 16,
+    "networkEgress": true
+  },
+  "usage": {
+    "diskBytes": 0,
+    "memoryBytes": 8192,
+    "cpuTimeNanos": 0,
+    "processes": 1
+  },
+  "observedAt": "2026-10-08T04:00:00Z",
+  "expiresAt": "2026-10-08T04:10:00Z",
+  "updatedAt": "2026-10-08T04:00:00Z"
+}

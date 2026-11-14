@@ -1,0 +1,21 @@
+{
+  "sourceMode": "runtime",
+  "selector": {
+    "namespace": "payments",
+    "workloadKind": "Deployment",
+    "workloadName": "checkout-api",
+    "containers": ["api"],
+    "allContainers": false
+  },
+  "from": "2026-07-31T08:00:00Z",
+  "to": "2026-07-31T08:15:00Z",
+  "tail": 200,
+  "limit": 1000,
+  "direction": "backward",
+  "text": "request failed",
+  "severities": ["error", "warn"],
+  "runtimeOptions": {
+    "previous": false,
+    "sinceSeconds": 900
+  }
+}

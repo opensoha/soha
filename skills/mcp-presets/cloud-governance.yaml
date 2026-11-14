@@ -1,0 +1,142 @@
+schemaVersion: opensoha.dev/mcp-preset/v1
+id: cloud-governance
+name: Cloud Governance Operations
+version: 0.1.0
+description: Cloud-compatible governance preset for onboarding, incident handoff, plugin administration, and approved delivery actions.
+riskLevel: execute
+skillRefs:
+  - onboarding
+  - incident-handoff
+  - plugin-administration
+  - security-change
+  - cloud-local-presets
+platformCapabilityRefs:
+  - cluster.inventory
+  - workload.read
+  - network.inventory
+  - delivery.actions
+  - metrics
+requiredScopes:
+  - application
+  - environment
+  - cluster
+  - namespace
+tools:
+  - name: delivery.applications.list
+    description: List applications for onboarding or cloud scope checks.
+    riskLevel: read
+    requiredScopes:
+      - businessLine
+      - application
+  - name: delivery.applications.detail
+    description: Read application detail for onboarding.
+    riskLevel: read
+    requiredScopes:
+      - businessLine
+      - application
+  - name: delivery.application_environments.list
+    description: List application environment bindings.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.application_services.list
+    description: List application services.
+    riskLevel: read
+    requiredScopes:
+      - application
+  - name: delivery.build_sources.list
+    description: List build sources for onboarding readiness.
+    riskLevel: read
+    requiredScopes:
+      - application
+  - name: delivery.release_targets.list
+    description: List release targets for deployment readiness.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.workflow_templates.list
+    description: Read workflow templates for governed plugin or delivery changes.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.execution_tasks.list
+    description: List execution tasks for incident or plugin administration evidence.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.execution_logs.list
+    description: Read execution logs for handoff evidence.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+      - executionTask
+  - name: delivery.release_context.diff
+    description: Compare release context for incident handoff.
+    riskLevel: analyze
+    requiredScopes:
+      - application
+      - environment
+      - releaseBundle
+  - name: delivery.rollback.context
+    description: Read rollback context before plugin or delivery change.
+    riskLevel: analyze
+    requiredScopes:
+      - application
+      - environment
+      - releaseBundle
+      - executionTask
+  - name: delivery.actions.trigger
+    description: Trigger approved delivery or plugin administration workflow.
+    riskLevel: execute
+    requiredScopes:
+      - application
+      - environment
+  - name: diagnosis.release_failure.analyze
+    description: Analyze release failure with scoped evidence.
+    riskLevel: analyze
+    requiredScopes:
+      - application
+      - environment
+      - executionTask
+  - name: k8s.pods.list
+    description: List pods for onboarding and scope validation.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.services.list
+    description: List services for onboarding and scope validation.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.events.list
+    description: Read events for incident handoff and governance context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - timeRange
+resources:
+  - name: soha://governance/context
+    description: Governed cloud operation context for application, environment, cluster, and namespace.
+    requiredScopes:
+      - application
+      - environment
+prompts:
+  - name: soha.governance.plan_change
+    description: Change planning prompt bounded to approval, rollback, and audit evidence.
+    requiredScopes:
+      - application
+      - environment
+guardrails:
+  - approval_required_for_execute
+  - no_secret_output
+  - preserve_audit_context
+  - verify_plugin_source_checksum
+  - separate_cloud_and_local_scope

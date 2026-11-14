@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/evaluation/gate-decision.schema.json",
+  "title": "Evaluation Gate Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "policyId", "policyVersion", "baselineRunId", "candidateRunId", "decision", "reasons", "evidenceRefs", "evaluatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/evaluation-gate-decision/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "policyId": { "type": "string", "minLength": 1 },
+    "policyVersion": { "type": "string", "minLength": 1 },
+    "baselineRunId": { "type": "string" },
+    "candidateRunId": { "type": "string" },
+    "decision": { "enum": ["pass", "warn", "block", "error"] },
+    "reasons": { "type": "array", "maxItems": 128, "items": { "type": "object" } },
+    "evidenceRefs": { "type": "array", "maxItems": 128, "items": { "type": "string" } },
+    "evaluatedAt": { "type": "string", "format": "date-time" }
+  }
+}

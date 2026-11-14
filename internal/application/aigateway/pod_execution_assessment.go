@@ -3,8 +3,8 @@ package aigateway
 import (
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 )
 

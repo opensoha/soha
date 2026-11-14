@@ -1,0 +1,29 @@
+{
+  "id": "manifest-package-1",
+  "name": "checkout-api-ingress",
+  "description": "Service-level delivery extensions",
+  "applicationId": "app-1",
+  "serviceId": "service-checkout-api",
+  "renderer": "raw_yaml",
+  "status": "draft",
+  "currentRevision": 0,
+  "files": [
+    {
+      "path": "ingress.yaml",
+      "content": "apiVersion: networking.k8s.io/v1\nkind: Ingress\n"
+    }
+  ],
+  "bindings": [
+    {
+      "id": "binding-1",
+      "applicationEnvironmentId": "app-env-prod",
+      "environmentKey": "prod",
+      "clusterId": "cluster-prod",
+      "namespace": "checkout",
+      "overlay": { "host": "checkout.example.com" },
+      "status": "ready"
+    }
+  ],
+  "createdAt": "2026-08-27T00:00:00Z",
+  "updatedAt": "2026-08-27T00:00:00Z"
+}

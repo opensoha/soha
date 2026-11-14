@@ -1,0 +1,268 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  verify:
+    name: Verify release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify tag version
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          test "$(node -p "require('./npm/cli/package.json').version")" = "${version}"
+          grep -F "cmd/soha@${GITHUB_REF_NAME}" README.md
+          grep -F "soha_${version}_linux_amd64.tar.gz" README.md
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Test
+        run: GOWORK=off go test ./...
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          NAME="soha_${VERSION}_${GOOS}_${GOARCH}"
+          EXT=""
+          if [[ "${GOOS}" == "windows" ]]; then
+            EXT=".exe"
+          fi
+          mkdir -p out dist
+          GOWORK=off go build -trimpath -ldflags "-s -w -X github.com/opensoha/soha-cli/internal/sohacli.version=${VERSION} -X github.com/opensoha/soha-cli/internal/sohacli.commit=${GITHUB_SHA} -X github.com/opensoha/soha-cli/internal/sohacli.date=${BUILD_DATE}" -o "out/soha${EXT}" ./cmd/soha
+          cp "out/soha${EXT}" "dist/${NAME}${EXT}"
+          if [[ "${GOOS}" == "windows" ]]; then
+            (cd out && zip -q "../dist/${NAME}.zip" "soha${EXT}")
+          else
+            tar -C out -czf "dist/${NAME}.tar.gz" soha
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  checksums:
+    name: Checksums
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - release-smoke
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find dist -type f -name "soha_*" -exec cp {} release/ \;
+          (cd release && sha256sum * > checksums.txt)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums
+          path: release/checksums.txt
+
+  release-smoke:
+    name: Release binary smoke
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - name: Checkout official skills
+        uses: actions/checkout@v7
+        with:
+          repository: opensoha/soha-skills
+          path: release-skills
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-linux-amd64
+          path: smoke
+      - name: Package official skills
+        run: |
+          set -euo pipefail
+          skills_version="$(jq -r '.skillsVersion' release-skills/catalog/compatibility-matrix.json)"
+          package_dir="${RUNNER_TEMP}/soha-skills-release"
+          python3 release-skills/tools/validate_assets.py \
+            --release-version "${skills_version}" \
+            --package-output-dir "${package_dir}" \
+            --report-output "${package_dir}/soha-skills-${skills_version}.validation-report.json"
+          echo "SOHA_SKILLS_ARTIFACT=${package_dir}/soha-skills-${skills_version}.tar.gz" >> "${GITHUB_ENV}"
+      - name: Smoke test Linux release archive
+        run: |
+          set -euo pipefail
+          archive="$(find smoke -type f -name 'soha_*_linux_amd64.tar.gz' -print -quit)"
+          ./scripts/release-smoke.sh "${archive}"
+
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: checksums
+    if: github.ref_type == 'tag'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: downloaded
+      - name: Download checksums
+        uses: actions/download-artifact@v7
+        with:
+          name: checksums
+          path: downloaded/checksums
+      - name: Publish release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find downloaded -type f \( -name "soha_*" -o -name "checksums.txt" \) -exec cp {} release/ \;
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find release -type f -print0 | sort -z)
+          if [[ "${#files[@]}" -ne 13 ]]; then
+            printf 'expected 13 release assets, found %s\n' "${#files[@]}" >&2
+            printf '%s\n' "${files[@]}" >&2
+            exit 1
+          fi
+
+          if ! timeout 30s gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            timeout 30s gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes
+          fi
+          timeout 30s gh release edit "${GITHUB_REF_NAME}" --draft=false --prerelease=false --latest
+
+          release_state="$(timeout 30s gh release view "${GITHUB_REF_NAME}" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | @tsv')"
+          if [[ "${release_state}" != $'false\tfalse' ]]; then
+            printf 'release must be published and non-prerelease, got: %s\n' "${release_state}" >&2
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            echo "Uploading $(basename "${file}")"
+            timeout 120s gh release upload "${GITHUB_REF_NAME}" "${file}" --clobber
+          done
+
+          expected_assets="${RUNNER_TEMP}/expected-release-assets.txt"
+          actual_assets="${RUNNER_TEMP}/actual-release-assets.txt"
+          printf '%s\n' "${files[@]##*/}" | sort > "${expected_assets}"
+          timeout 30s gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name' | sort > "${actual_assets}"
+          diff -u "${expected_assets}" "${actual_assets}"
+
+  npm-publish:
+    name: npm package
+    runs-on: ubuntu-latest
+    needs: github-release
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20.x"
+          registry-url: "https://registry.npmjs.org"
+      - name: Test and set package version
+        working-directory: npm/cli
+        run: |
+          npm test
+          npm version "${GITHUB_REF_NAME#v}" --allow-same-version --no-git-tag-version
+          npm pack --dry-run
+      - name: Publish @opensoha/cli
+        working-directory: npm/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "::error::NPM_TOKEN is required to publish @opensoha/cli"
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$(npm view "@opensoha/cli@${version}" version 2>/dev/null || true)" == "${version}" ]]; then
+            echo "@opensoha/cli@${version} is already published"
+          else
+            npm publish --access public --provenance
+          fi
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve binary version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "${GITHUB_OUTPUT}"
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/opensoha/soha-cli:${{ github.ref_name }}
+            ghcr.io/opensoha/soha-cli:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}

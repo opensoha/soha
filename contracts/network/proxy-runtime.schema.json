@@ -1,0 +1,2244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/network/proxy-runtime.schema.json",
+  "title": "OpenSoha Proxy Runtime Message",
+  "description": "Messages on the authenticated proxy runtime channel. Configuration content is delivered only to the enrolled runtime and is never returned by management reads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runtimeId",
+    "messageType",
+    "occurredAt",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "proxy-runtime/v1alpha1"
+    },
+    "runtimeId": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "messageType": {
+      "enum": [
+        "configuration.desired",
+        "configuration.applied",
+        "observation",
+        "connections.snapshot",
+        "connection.close.request",
+        "connection.close.result",
+        "command.request",
+        "command.result",
+        "projection.desired",
+        "projection.applied",
+        "deployment.control",
+        "deployment.ack",
+        "publication.ready",
+        "ingress.check",
+        "ingress.check.result"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConfigurationDesired"
+        },
+        {
+          "$ref": "#/$defs/ConfigurationApplied"
+        },
+        {
+          "$ref": "#/$defs/Observation"
+        },
+        {
+          "$ref": "#/$defs/ConnectionsSnapshot"
+        },
+        {
+          "$ref": "#/$defs/ConnectionCloseRequest"
+        },
+        {
+          "$ref": "#/$defs/ConnectionCloseResult"
+        },
+        {
+          "$ref": "#/$defs/RuntimeCommandInput"
+        },
+        {
+          "$ref": "#/$defs/RuntimeCommandReceipt"
+        },
+        {
+          "$ref": "#/$defs/EmployeeProjection"
+        },
+        {
+          "$ref": "#/$defs/ProjectionApplied"
+        },
+        {
+          "$ref": "#/$defs/DeploymentRuntimeControl"
+        },
+        {
+          "$ref": "#/$defs/DeploymentRuntimeAck"
+        },
+        {
+          "$ref": "#/$defs/BundleReadback"
+        },
+        {
+          "$ref": "#/$defs/IngressCheckInput"
+        },
+        {
+          "$ref": "#/$defs/IngressCheckResult"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "configuration.desired"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ConfigurationDesired"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "configuration.applied"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ConfigurationApplied"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "observation"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/Observation"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "connections.snapshot"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ConnectionsSnapshot"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "connection.close.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ConnectionCloseRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "connection.close.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ConnectionCloseResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "command.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/RuntimeCommandInput"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "command.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/RuntimeCommandReceipt"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "projection.desired"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/EmployeeProjection"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "projection.applied"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ProjectionApplied"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "deployment.control"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/DeploymentRuntimeControl"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "deployment.ack"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/DeploymentRuntimeAck"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "publication.ready"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/BundleReadback"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "ingress.check"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/IngressCheckInput"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "ingress.check.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/IngressCheckResult"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Engine": {
+      "enum": [
+        "mihomo",
+        "sing-box",
+        "v2ray",
+        "external"
+      ]
+    },
+    "Hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "ConfigurationDesired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "engine",
+        "enabled",
+        "contentHash",
+        "content",
+        "validUntil"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "engine": {
+          "$ref": "#/$defs/Engine"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/Hash"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1048576,
+          "writeOnly": true
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "binding": {
+          "$ref": "#/$defs/Binding"
+        },
+        "protection": {
+          "$ref": "#/$defs/Protection"
+        },
+        "engineDescriptor": {
+          "$ref": "#/$defs/EngineDescriptor"
+        },
+        "publication": {
+          "$ref": "#/$defs/ServerPublication"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engine": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "engine"
+            ]
+          },
+          "then": {
+            "required": [
+              "engineDescriptor"
+            ]
+          }
+        }
+      ]
+    },
+    "ConfigurationApplied": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "status",
+        "readbackHash"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "rejected",
+            "rolled-back"
+          ]
+        },
+        "readbackHash": {
+          "$ref": "#/$defs/Hash"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "Observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engineVersion",
+        "health",
+        "capabilities",
+        "uptimeSeconds",
+        "uploadTotal",
+        "downloadTotal"
+      ],
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/Engine"
+        },
+        "engineVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "health": {
+          "enum": [
+            "healthy",
+            "degraded",
+            "unhealthy"
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "traffic",
+              "connections",
+              "close_connection",
+              "protected_destinations_v1",
+              "protection_rules_readback",
+              "guarded_dns_tcp_v1",
+              "groups",
+              "select",
+              "probe",
+              "refresh",
+              "rules",
+              "dns",
+              "logs",
+              "diagnostics",
+              "guarded_udp_v1"
+            ]
+          },
+          "description": "Advertise guarded_udp_v1 only after the real bounded datagram gate/transport/owned backend and current authorization enforcement are installed and verified; individual upstream protocols may remain TCP-only."
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "uptimeSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uploadTotal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854776000
+        },
+        "downloadTotal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854776000
+        },
+        "activeConnections": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "engineDescriptor": {
+          "$ref": "#/$defs/EngineDescriptor"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "sampleSequence": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engine": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "engine"
+            ]
+          },
+          "then": {
+            "required": [
+              "engineDescriptor"
+            ]
+          }
+        }
+      ]
+    },
+    "Connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "destination",
+        "network",
+        "uploadBytes",
+        "downloadBytes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "network": {
+          "enum": [
+            "tcp",
+            "udp",
+            "other"
+          ]
+        },
+        "uploadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "downloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ConnectionsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "connections"
+      ],
+      "properties": {
+        "engine": {
+          "enum": [
+            "mihomo",
+            "sing-box",
+            "external"
+          ]
+        },
+        "connections": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/Connection"
+          }
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "sampleSequence": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "totalActive": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "returnedCount": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "freshness": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unavailable"
+          ]
+        }
+      }
+    },
+    "ConnectionCloseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "connectionId",
+        "expiresAt"
+      ],
+      "properties": {
+        "commandId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "connectionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ConnectionCloseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "status"
+      ],
+      "properties": {
+        "commandId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "status": {
+          "enum": [
+            "closed",
+            "not-found",
+            "failed"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "Binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "siteId",
+        "deviceId",
+        "resourceIds"
+      ],
+      "properties": {
+        "siteId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "resourceIds": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
+        }
+      }
+    },
+    "Protection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyVersion",
+        "cidrs",
+        "hosts"
+      ],
+      "properties": {
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cidrs": {
+          "type": "array",
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/IPCIDR"
+              },
+              {
+                "not": {
+                  "enum": [
+                    "0.0.0.0/0",
+                    "::/0"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "maxItems": 2048,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[A-Za-z0-9])$"
+          }
+        }
+      }
+    },
+    "IPCIDR": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(?:(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/(?:[1-9]|[12][0-9]|3[0-2])|(?:(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){7}(?:0|[1-9a-f][0-9a-f]{0,3})|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,7}:|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,6}:(?:0|[1-9a-f][0-9a-f]{0,3})|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,5}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,2}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,4}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,3}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,3}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,4}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,2}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,5}|(?:0|[1-9a-f][0-9a-f]{0,3}):(?:(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,6})|:(?:(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,7}|:))/(?:[1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$",
+      "description": "Non-default IPv4 or IPv6 CIDR syntax. Core additionally validates canonical network-address bits and compressed address spelling with netip."
+    },
+    "EngineDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineId",
+        "adapterId",
+        "version",
+        "protocolMajor",
+        "protocolMinor",
+        "capabilities"
+      ],
+      "properties": {
+        "engineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "adapterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "protocolMajor": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "protocolMinor": {
+          "type": "integer",
+          "enum": [
+            0
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "label",
+        "type",
+        "nodeIds"
+      ],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "select",
+            "url_test",
+            "fallback",
+            "load_balance"
+          ]
+        },
+        "nodeIds": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          }
+        },
+        "selectedNodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "RuleMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "domain",
+            "domain_suffix",
+            "cidr",
+            "process_name",
+            "process_path",
+            "all"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "description": "domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "all"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "domain",
+                "domain_suffix",
+                "cidr",
+                "process_name",
+                "process_path"
+              ]
+            }
+          },
+          "required": [
+            "value"
+          ]
+        }
+      ]
+    },
+    "RuleAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "reject",
+            "direct",
+            "node",
+            "group"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "description": "node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "reject",
+                "direct"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "targetId"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "node",
+                "group"
+              ]
+            }
+          },
+          "required": [
+            "targetId"
+          ]
+        }
+      ]
+    },
+    "Rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "source",
+        "order",
+        "enabled",
+        "matcher",
+        "action"
+      ],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "protection",
+            "organization_required",
+            "personal",
+            "organization_default",
+            "fallback"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "matcher": {
+          "$ref": "#/$defs/RuleMatcher"
+        },
+        "action": {
+          "$ref": "#/$defs/RuleAction"
+        }
+      }
+    },
+    "EmployeeNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "label",
+        "endpointId"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "endpointId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "EmployeeEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpointId",
+        "url"
+      ],
+      "properties": {
+        "endpointId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://[^/@?#]+(?::[0-9]+)?(?:/[^?#]*)?$"
+        }
+      },
+      "description": "Operator approved internal endpoint; validate against approved endpoint set before delivery. HTTP CONNECT supports TCP only."
+    },
+    "EmployeeCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "userId",
+        "deviceId",
+        "nodeIds",
+        "credentialEpoch",
+        "secret",
+        "expiresAt"
+      ],
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nodeIds": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          }
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "password"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Only delivered through scoped device mTLS channel with private/no-store caching; never administrator list/read response."
+    },
+    "EmployeeProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runtimeId",
+        "profileId",
+        "bundleId",
+        "revision",
+        "sourceRevision",
+        "orgRevision",
+        "activeRevision",
+        "projectionHash",
+        "deliveryMode",
+        "processEpoch",
+        "credentialEpoch",
+        "expiresAt",
+        "nodes",
+        "groups",
+        "endpoints",
+        "credential",
+        "rules"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "proxy-projection/v1"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyEmployeeProjectionSchemaVersionProxyProjectionV1"
+          ]
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "sourceRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "orgRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "activeRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "projectionHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "deliveryMode": {
+          "type": "string",
+          "enum": [
+            "mapped_nodes",
+            "gateway"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyEmployeeProjectionDeliveryModeMappedNodes",
+            "NetworkProxyEmployeeProjectionDeliveryModeGateway"
+          ]
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "description": "Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce."
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/EmployeeNode"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "endpoints": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/EmployeeEndpoint"
+          }
+        },
+        "credential": {
+          "$ref": "#/$defs/EmployeeCredential"
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 10240,
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        }
+      },
+      "description": "Separate employee DTO. Safe aliases only; no upstream parameters/source URL. Fail closed on expiry, epoch change, unreachable internal endpoint. Never fetch direct source as fallback."
+    },
+    "ProjectionApplied": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleId",
+        "revision",
+        "projectionHash",
+        "processEpoch",
+        "status"
+      ],
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "projectionHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "description": "Exact endpoint-service boot nonce from the delivered projection, bound to endpoint credential; stale or mismatched echoes are rejected."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "applied",
+            "rejected"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyProjectionAppliedStatusApplied",
+            "NetworkProxyProjectionAppliedStatusRejected"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "RuntimeCommandKind": {
+      "type": "string",
+      "enum": [
+        "groups",
+        "select",
+        "probe",
+        "refresh",
+        "rules",
+        "dns",
+        "logs",
+        "diagnostics"
+      ]
+    },
+    "RuntimeCommandInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "processEpoch",
+        "kind",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeCommandKind"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "probeProfileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "description": "Single typed bounded operation. Select requires groupId/nodeId; probe requires registered probeProfileId, never arbitrary URL. No controller path/body/shell. Expiry <=30 seconds; epoch must match.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "select"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "groupId",
+              "nodeId"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "probe"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "probeProfileId"
+            ]
+          }
+        }
+      ]
+    },
+    "RuntimeCommandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "dns": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "addresses",
+              "expiresAt"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              },
+              "addresses": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "logs": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "level",
+              "message",
+              "occurredAt"
+            ],
+            "properties": {
+              "sequence": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "debug",
+                  "info",
+                  "warn",
+                  "error"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "occurredAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "latencyMilliseconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selectedNodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "state",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "unsupported",
+                  "unavailable"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      },
+      "description": "Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets."
+    },
+    "RuntimeCommandReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commandId",
+        "requestId",
+        "processEpoch",
+        "kind",
+        "status",
+        "expiresAt"
+      ],
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeCommandKind"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "expired",
+            "cancelled",
+            "unknown",
+            "unsupported",
+            "unavailable"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyRuntimeCommandReceiptStatusPending",
+            "NetworkProxyRuntimeCommandReceiptStatusRunning",
+            "NetworkProxyRuntimeCommandReceiptStatusSucceeded",
+            "NetworkProxyRuntimeCommandReceiptStatusFailed",
+            "NetworkProxyRuntimeCommandReceiptStatusExpired",
+            "NetworkProxyRuntimeCommandReceiptStatusCancelled",
+            "NetworkProxyRuntimeCommandReceiptStatusUnknown",
+            "NetworkProxyRuntimeCommandReceiptStatusUnsupported",
+            "NetworkProxyRuntimeCommandReceiptStatusUnavailable"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "result": {
+          "$ref": "#/$defs/RuntimeCommandResult"
+        }
+      },
+      "description": "Durable idempotent receipt; same requestId with different intent conflicts. Accepted does not mean applied. commandId equals requestId; durable uniqueness is scoped to (instanceID, requestId). Reuse by another actor or for a different intent returns conflict; no cross-actor receipt disclosure."
+    },
+    "DeploymentRuntimeControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "controlRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "acceptingRequests": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stopRequired": {
+          "type": "boolean",
+          "description": "Optional, false omitted. True authorizes bounded confirmation that the exact owned engine and ingress have stopped, only under this newly issued controlRevision with acceptingRequests=false. Core issues a higher revision after the fixed drain expiry; confirmation expires within 30 seconds and no later than the original 240-second task deadline or certificate expiry. It never extends old-flow authorization or allows new traffic."
+        }
+      },
+      "required": [
+        "controlRevision",
+        "ownerEpoch",
+        "instanceId",
+        "runtimeId",
+        "processEpoch",
+        "credentialId",
+        "credentialEpoch",
+        "acceptingRequests",
+        "expiresAt",
+        "issuedAt"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stopRequired": {
+                "const": true
+              }
+            },
+            "required": [
+              "stopRequired"
+            ]
+          },
+          "then": {
+            "properties": {
+              "acceptingRequests": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DeploymentRuntimeAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "controlRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "acceptingRequests": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "activeCountKnown": {
+          "type": "boolean"
+        },
+        "activeConnections": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "processStopped": {
+          "type": "boolean",
+          "description": "Optional, false omitted. True proves the exact owned engine and ingress exited under the current stopRequired control revision, not merely a stopped Pod or a zero default. Requires explicit known activeConnections=0 and acceptingRequests=false. Old or late ACKs cannot confirm a newer revision; no positive proof means no scale-down."
+        }
+      },
+      "required": [
+        "controlRevision",
+        "ownerEpoch",
+        "instanceId",
+        "runtimeId",
+        "processEpoch",
+        "credentialId",
+        "credentialEpoch",
+        "acceptingRequests",
+        "expiresAt",
+        "activeCountKnown",
+        "observedAt"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "processStopped": {
+                "const": true
+              }
+            },
+            "required": [
+              "processStopped"
+            ]
+          },
+          "then": {
+            "required": [
+              "activeConnections"
+            ],
+            "properties": {
+              "acceptingRequests": {
+                "const": false
+              },
+              "activeCountKnown": {
+                "const": true
+              },
+              "activeConnections": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ServerPublicationNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "outboundId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "required": [
+        "nodeId",
+        "outboundId"
+      ],
+      "description": "Logical node and host-compiled outbound reference only. Never a caller-selected listener, controller path or upstream configuration."
+    },
+    "ServerPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "sourceRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "orgRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "serverHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "memberSetHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "converterVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "deliveryMode": {
+          "type": "string",
+          "enum": [
+            "mapped_nodes",
+            "gateway"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyServerPublicationDeliveryModeMappedNodes",
+            "NetworkProxyServerPublicationDeliveryModeGateway"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ServerPublicationNode"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 10240,
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "bundleId",
+        "revision",
+        "sourceRevision",
+        "orgRevision",
+        "credentialEpoch",
+        "serverHash",
+        "memberSetHash",
+        "converterVersion",
+        "deliveryMode",
+        "nodes",
+        "groups",
+        "rules",
+        "validUntil"
+      ],
+      "description": "Server-runtime-only publication metadata, delivered with ConfigurationDesired. Real upstream remains in encrypted server configuration content; never send this DTO through employee/admin command results. The host independently compiles/validates outbound references and enforces lease, protection and ingress authorization."
+    },
+    "BundleReadback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "serverHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "ingressReady": {
+          "type": "boolean"
+        },
+        "protectionReady": {
+          "type": "boolean"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "bundleId",
+        "revision",
+        "configurationRevision",
+        "serverHash",
+        "processEpoch",
+        "ingressReady",
+        "protectionReady",
+        "observedAt"
+      ],
+      "description": "Authenticated real proxy runtime observation only. Core compares current desired/applied configuration revision/hash, bundle revision, process/member and credential identity. Caller flags alone never activate a bundle; reject stale, mismatched or unauthorized observations."
+    },
+    "IngressCheckInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialSecret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "password",
+          "writeOnly": true
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "destinationHost": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:]+)$"
+        },
+        "destinationPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyIngressCheckInputNetworkTCP",
+            "NetworkProxyIngressCheckInputNetworkUDP"
+          ]
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "required": [
+        "bundleId",
+        "revision",
+        "nodeId",
+        "credentialId",
+        "credentialSecret",
+        "credentialEpoch",
+        "destinationHost",
+        "destinationPort",
+        "network",
+        "processEpoch"
+      ],
+      "description": "Online authorization request from enrolled runtime. Core derives identity from real mTLS, resolves current user/device/profile/scope and rechecks bundle/node/epoch and destination protection. No caller field grants identity or authorization. Never log, audit, echo or include credentialSecret in errors. UDP is explicitly unsupported unless the verified ingress transport provides it; never silently convert to TCP or DIRECT."
+    },
+    "IngressCheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialEpoch": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "allowed",
+        "bundleId",
+        "revision",
+        "nodeId",
+        "credentialEpoch",
+        "expiresAt"
+      ],
+      "description": "Scoped, short-lived decision, not a reusable grant. Revalidate active flows against current authorization; old epoch/lease cannot preserve revoked access. Denials/errors never expose credential or upstream values."
+    }
+  }
+}

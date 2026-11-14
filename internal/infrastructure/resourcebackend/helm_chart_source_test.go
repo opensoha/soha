@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
 )
 
 func TestLoadHelmChartPrivateHTTPSAndOCI(t *testing.T) {

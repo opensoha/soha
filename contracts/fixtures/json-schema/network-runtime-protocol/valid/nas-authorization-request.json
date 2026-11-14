@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-nas-authorize-0001",
+  "messageType": "nas.authorization.request",
+  "producerId": "freeradius-site-a",
+  "runtimeId": "freeradius-site-a",
+  "runtimeKind": "nas",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:00:05Z",
+  "payload": {
+    "requestId": "radius-request-0001",
+    "nasId": "nas-site-a-wifi",
+    "subjectId": "user-alice",
+    "stationId": "AA-BB-CC-DD-EE-FF",
+    "authenticationMethod": "eap-tls",
+    "clientCertificateSerial": "753484ff6e444ae9d86814989e85cb2fdd462193",
+    "clientCertificateAuthorityKeyId": "E9:00:0C:AE:78:0F:99:45:07:FF:4D:B0:49:E4:20:84:C7:5A:7A:BA"
+  }
+}

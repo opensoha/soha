@@ -1,0 +1,7 @@
+{
+  "operationId": "op-1",
+  "workerId": "worker-1",
+  "status": "succeeded",
+  "payload": {},
+  "logs": "started container"
+}

@@ -1,0 +1,10 @@
+{
+  "subjectSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "builderId": "https://github.com/opensoha/soha-cloud/actions/runs/1",
+  "sourceUri": "https://github.com/opensoha/companion-packs",
+  "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+  "builtAt": "2026-08-08T00:00:00Z",
+  "signingKeyId": "opensoha.release",
+  "signatureAlgorithm": "ed25519",
+  "signature": "c2lnbmF0dXJl"
+}

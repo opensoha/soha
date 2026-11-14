@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "batch-radius-0001",
+  "producerId": "freeradius-site-a",
+  "producerKind": "freeradius",
+  "sentAt": "2026-09-02T08:01:00Z",
+  "events": [
+    {
+      "id": "event-accounting-0001",
+      "type": "radius.accounting",
+      "sequence": 31,
+      "occurredAt": "2026-09-02T08:00:58Z",
+      "payload": {
+        "statusType": "start",
+        "accountingSessionId": "radius-session-0001",
+        "nasId": "nas-site-a-wifi",
+        "userId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "sessionTimeSeconds": 0,
+        "inputOctets": 0,
+        "outputOctets": 0
+      }
+    }
+  ]
+}

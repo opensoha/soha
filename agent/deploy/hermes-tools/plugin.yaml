@@ -1,0 +1,5 @@
+name: soha-tools
+version: 1.0.0
+description: Read-only Soha tools with per-run authorization and audit.
+provides_tools:
+  - soha_query

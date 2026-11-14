@@ -1,0 +1,32 @@
+{
+  "key": "go-http",
+  "name": "Go HTTP",
+  "enabled": true,
+  "applicationDraft": {
+    "key": "",
+    "name": "",
+    "group": "",
+    "language": "go",
+    "enabled": true
+  },
+  "services": [
+    {
+      "key": "web",
+      "name": "Web",
+      "serviceKind": "kubernetes_workload",
+      "enabled": true,
+      "deploymentTemplate": {
+        "templateId": "soha-http",
+        "version": 1,
+        "parameters": {
+          "port": 8080
+        }
+      },
+      "containers": [
+        {
+          "name": "main"
+        }
+      ]
+    }
+  ]
+}

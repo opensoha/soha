@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func TestIdentifyMetadataWithoutInventingWebFrameworks(t *testing.T) {

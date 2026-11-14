@@ -1,0 +1,134 @@
+@import '../styles/shared.css';
+
+.soha-delivery-blueprint-list__item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soha-delivery-blueprint-list__item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soha-delivery-blueprint-list__item-main strong,
+.soha-delivery-blueprint-list__item-main .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-delivery-blueprint-list__item-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.soha-delivery-blueprint-list__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-delivery-blueprint-list__item-meta .ant-tag {
+  margin-inline-end: 0;
+}
+
+.soha-delivery-blueprint-form {
+  height: 100%;
+  min-height: 0;
+}
+
+.soha-delivery-blueprint-tabs {
+  height: 100%;
+  min-height: 0;
+}
+
+.soha-delivery-blueprint-tabs > .ant-tabs-content-holder {
+  min-height: 0;
+  overflow: auto;
+}
+
+.soha-delivery-blueprint-form .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.soha-delivery-blueprint-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-delivery-blueprint-form-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.soha-delivery-blueprint-switch-field .ant-form-item-control-input-content {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.soha-delivery-blueprint-repeat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-delivery-blueprint-repeat-list__toolbar,
+.soha-delivery-blueprint-repeat-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-delivery-blueprint-repeat-list__toolbar .ant-typography {
+  min-width: 0;
+}
+
+.soha-delivery-blueprint-file-preset-actions {
+  flex: 0 0 auto;
+}
+
+.soha-delivery-blueprint-file-preset-actions .ant-select {
+  min-width: 180px;
+}
+
+.soha-delivery-blueprint-repeat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-delivery-blueprint-repeat-item__head strong {
+  color: var(--soha-text-primary);
+}
+
+.soha-delivery-blueprint-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-delivery-blueprint-json-preview {
+  min-height: 280px;
+  max-height: calc(100vh - 420px);
+  margin: 0;
+  overflow: auto;
+}
+
+.soha-delivery-blueprint-code-area textarea,
+.soha-delivery-blueprint-code-area.ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}

@@ -1,0 +1,37 @@
+{
+  "name": "soha-ai-gateway",
+  "version": "0.1.0",
+  "generatedAt": "2026-06-09T12:00:00Z",
+  "principal": {
+    "userId": "u-1",
+    "userName": "admin",
+    "email": "admin@example.com",
+    "roles": [],
+    "teams": [],
+    "projects": [],
+    "tags": []
+  },
+  "caller": {
+    "identityMode": "user"
+  },
+  "permissionKeys": [],
+  "tools": [
+    {
+      "name": "dangerous.tool",
+      "title": "Dangerous tool",
+      "description": "Invalid risk level should fail.",
+      "domain": "test",
+      "action": "mutate",
+      "riskLevel": "catastrophic",
+      "permissionKeys": [],
+      "requiresApproval": true
+    }
+  ],
+  "summary": {
+    "toolCount": 1,
+    "resourceCount": 0,
+    "promptCount": 0,
+    "skillCount": 0,
+    "deniedCount": 0
+  }
+}

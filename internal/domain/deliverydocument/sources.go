@@ -3,8 +3,8 @@ package deliverydocument
 import (
 	"time"
 
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type Source = contractsapi.DeliveryTemplateSource

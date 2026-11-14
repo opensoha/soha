@@ -1,0 +1,22 @@
+.soha-identity-overview-page .soha-overview-summary-grid {
+  align-items: stretch;
+}
+
+.soha-identity-overview-audit-card.ant-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.soha-identity-overview-audit-card.ant-card .ant-card-body {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.soha-identity-overview-audit-list {
+  position: absolute;
+  inset: 14px;
+  overflow-y: auto;
+}

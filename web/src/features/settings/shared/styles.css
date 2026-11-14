@@ -1,0 +1,15 @@
+.soha-settings-table-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-settings-table-section + .soha-settings-table-section,
+.soha-settings-table-section + .ant-card,
+.ant-card + .soha-settings-table-section {
+  margin-top: 16px;
+}
+
+.soha-settings-table-shell.soha-management-table-shell.soha-admin-table-shell.is-panel {
+  border-radius: 8px;
+}

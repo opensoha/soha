@@ -1,0 +1,23 @@
+{
+  "id": "audit-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "actorType": "user",
+  "actorId": "user-123",
+  "actorName": "Ada",
+  "aiClientId": "codex-local",
+  "skillId": "k8s-sre",
+  "toolName": "k8s.deployments.restart",
+  "riskLevel": "high",
+  "resourceScope": {
+    "clusterId": "cluster-prod",
+    "namespace": "payments"
+  },
+  "action": "tool.invoke",
+  "result": "denied",
+  "summary": "High-risk deployment restart was denied because approval is required.",
+  "requestId": "req-audit-123",
+  "sourceIp": "203.0.113.10",
+  "metadata": {
+    "approvalRequestId": "approval-01HZW9WJQ3Y7QH3QZW2KN4T4GX"
+  },
+  "createdAt": "2026-06-12T02:31:00Z"
+}

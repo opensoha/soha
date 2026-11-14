@@ -1,0 +1,32 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { fixtureSchemaNames, validateFixtureDirectory } from "./validate-fixtures.mjs";
+
+test("discovers unlisted schemas, requires both fixture kinds, and never ignores misplaced files", async (t) => {
+  const path = await mkdtemp(join(tmpdir(), "soha-fixtures-"));
+  t.after(() => rm(path, { recursive: true, force: true }));
+  const root = pathToFileURL(path + "/");
+  const schema = new URL("NewSchema/", root);
+  await mkdir(new URL("valid/", schema), { recursive: true });
+  await mkdir(new URL("invalid/", schema));
+  assert.deepEqual(await fixtureSchemaNames(root, ["RequiredSchema"]), ["NewSchema", "RequiredSchema"]);
+  await assert.rejects(validateFixtureDirectory(new URL("RequiredSchema/", root), Boolean), { code: "ENOENT" });
+  await assert.rejects(validateFixtureDirectory(schema, Boolean), /at least one fixture/);
+  await writeFile(new URL("valid/example.json", schema), "true");
+  await writeFile(new URL("invalid/example.json", schema), "false");
+  assert.equal(await validateFixtureDirectory(schema, Boolean), 2);
+  await writeFile(new URL("valid/example.json", schema), "false");
+  await assert.rejects(validateFixtureDirectory(schema, Boolean), /should be valid/);
+  await writeFile(new URL("valid/example.json", schema), "true");
+  await writeFile(new URL("invalid/example.json", schema), "true");
+  await assert.rejects(validateFixtureDirectory(schema, Boolean), /should be invalid/);
+  await writeFile(new URL("invalid/example.json", schema), "false");
+  await writeFile(new URL("valid.json", schema), "true");
+  await assert.rejects(validateFixtureDirectory(schema, Boolean), /inside valid\/ or invalid\//);
+  await writeFile(new URL("stray.json", root), "{}");
+  await assert.rejects(fixtureSchemaNames(root, []), /schema directory/);
+});

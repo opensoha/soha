@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.opensoha.io/runner/docker-container-identity.schema.json",
+  "title": "Docker immutable container identity v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "hostUid",
+    "projectUid",
+    "namespace",
+    "serviceName",
+    "containerId"
+  ],
+  "properties": {
+    "protocol": {
+      "$ref": "docker-project-identity.schema.json#/properties/protocol"
+    },
+    "hostUid": {
+      "$ref": "docker-project-identity.schema.json#/properties/hostUid"
+    },
+    "projectUid": {
+      "$ref": "docker-project-identity.schema.json#/properties/projectUid"
+    },
+    "namespace": {
+      "$ref": "docker-project-identity.schema.json#/properties/namespace"
+    },
+    "serviceName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "containerId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

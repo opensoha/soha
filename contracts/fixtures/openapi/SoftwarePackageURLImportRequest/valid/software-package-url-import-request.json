@@ -1,0 +1,16 @@
+{
+  "softwareId": "soha-desktop",
+  "name": "Soha Desktop",
+  "description": "Desktop client for Soha.",
+  "publisher": "OpenSoha",
+  "category": "Developer Tools",
+  "tenantId": "default",
+  "workspaceId": "default",
+  "visibility": "workspace",
+  "version": "0.2.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "storageIntegrationId": "software-object-storage",
+  "url": "https://downloads.opensoha.dev/soha-desktop-0.2.0-arm64.dmg",
+  "fileName": "soha-desktop-0.2.0-arm64.dmg"
+}

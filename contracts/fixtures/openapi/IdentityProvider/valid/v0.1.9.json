@@ -1,0 +1,14 @@
+{
+  "id": "provider-1",
+  "applicationId": "application-1",
+  "name": "Example OIDC",
+  "type": "oidc",
+  "enabled": true,
+  "config": {},
+  "secretRefs": {
+    "CLIENT_SECRET": "soha://secrets/oidc-client"
+  },
+  "status": "active",
+  "createdAt": "2026-08-01T00:00:00Z",
+  "updatedAt": "2026-08-01T00:00:00Z"
+}

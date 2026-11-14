@@ -1,0 +1,41 @@
+.soha-webhook-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.soha-webhook-content-card {
+  min-width: 0;
+}
+.soha-webhook-heading {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.soha-webhook-name {
+  overflow-wrap: anywhere;
+}
+.soha-webhook-secondary {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.soha-webhook-rules {
+  display: grid;
+  gap: 20px;
+}
+.soha-webhook-rules h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.soha-webhook-workspace > .soha-management-searchable-list-pane {
+  max-height: min(72vh, 760px);
+}
+@media (max-width: 1000px) {
+  .soha-webhook-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-webhook-workspace > .soha-management-searchable-list-pane {
+    max-height: 280px;
+  }
+}

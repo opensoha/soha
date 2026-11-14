@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 )

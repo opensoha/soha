@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

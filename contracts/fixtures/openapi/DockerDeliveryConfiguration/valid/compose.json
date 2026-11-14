@@ -1,0 +1,7 @@
+{
+  "hostId": "host-1",
+  "projectId": "project-1",
+  "imageMappings": {
+    "api": "main"
+  }
+}

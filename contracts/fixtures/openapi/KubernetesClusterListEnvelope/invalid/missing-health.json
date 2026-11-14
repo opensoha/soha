@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "edge-prod",
+      "name": "Edge Production",
+      "region": "cn-east",
+      "environment": "production",
+      "labels": {},
+      "connectionMode": "agent"
+    }
+  ]
+}

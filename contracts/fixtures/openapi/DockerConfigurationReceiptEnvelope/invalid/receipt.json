@@ -1,0 +1,16 @@
+{
+  "data": {
+    "id": "request-1",
+    "requestKey": "original-request-1",
+    "action": "update",
+    "resource": {
+      "resourceKind": "docker.host",
+      "id": "host-1",
+      "uid": "invalid",
+      "configurationRevision": "22222222-2222-4222-8222-222222222222"
+    },
+    "status": "committed",
+    "deleted": false,
+    "createdAt": "2026-10-28T00:00:00Z"
+  }
+}

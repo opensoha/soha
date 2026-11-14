@@ -1,0 +1,6 @@
+{
+  "allowedActions": [
+    "list",
+    "view"
+  ]
+}

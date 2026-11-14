@@ -1,0 +1,1 @@
+{"data":{"items":[{"id":"event-1","sessionId":"session-1","runId":"agent-1","sequence":1,"createdAt":"2026-10-08T00:00:00Z","type":"agent.status","providerId":"internal","providerKind":"native","status":"queued"}],"nextSequence":1,"hasMore":false,"resyncRequired":false}}

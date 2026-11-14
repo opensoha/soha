@@ -3,7 +3,7 @@ package resourcebackend
 import (
 	"context"
 
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

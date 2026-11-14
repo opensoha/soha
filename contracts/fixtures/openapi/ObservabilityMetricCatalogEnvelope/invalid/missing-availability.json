@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "key": "http.server.request.duration",
+      "label": "HTTP server request duration",
+      "unit": "s",
+      "signal": "metrics"
+    }
+  ]
+}

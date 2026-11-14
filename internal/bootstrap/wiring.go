@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
+	outpostruntimehandler "github.com/opensoha/soha/internal/api/handlers/outpostruntime"
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
+	radiushandler "github.com/opensoha/soha/internal/api/handlers/radiusdeployment"
 	apiRoutes "github.com/opensoha/soha/internal/api/routes"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appagentharness "github.com/opensoha/soha/internal/application/agentharness"
@@ -55,6 +57,7 @@ import (
 	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	appobservability "github.com/opensoha/soha/internal/application/observability"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
+	appoutpostruntime "github.com/opensoha/soha/internal/application/outpostruntime"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	appproviderportal "github.com/opensoha/soha/internal/application/providerportal"
 	appregistryconn "github.com/opensoha/soha/internal/application/registry"
@@ -229,6 +232,8 @@ type repositories struct {
 }
 
 type coreServices struct {
+	outpostLifecycle               *appoutpostruntime.Service
+	outpostExecutor                *appoutpostruntime.ExecutorService
 	managedContent                 *appcontenttransfer.Service
 	endpointControls               *appendpointcontrol.Service
 	permissionResolver             *appaccess.PermissionResolver
@@ -254,6 +259,8 @@ type coreServices struct {
 	networkAccessGrantService      *appnetworkaccess.AccessGrantService
 	networkIngestQuery             apiHandlers.NetworkTelemetryService
 	networkProxyManagement         *appnetworkproxy.Management
+	proxyWorkspace                 *proxyWorkspaceServices
+	radiusDeployment               *radiusDeploymentServices
 	clusterService                 *appcluster.Service
 	resourceService                *appresource.Service
 	eventService                   *appevent.Service
@@ -619,9 +626,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, err
 	}
-	if metrics, ok := networkIngestQuery.(appnetworkaccess.VPNMetricsReader); ok {
-		networkVPNService.SetVPNMetricsReader(metrics)
-	}
+	bindNetworkProxyMetrics(networkIngestQuery, networkVPNService)
 	directorySyncService := appdirectorysync.New(repos.directorySyncRepository, directorysyncrepo.NewDatabaseProjector(infra.databaseStore.DB()))
 	directoryConnections, err := appdirectorysync.NewConnectionService(repos.directorySyncRepository, directorySyncConnectors, permissionResolver, auditService, operationService)
 	if err != nil {
@@ -649,6 +654,12 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		return nil, err
 	}
+	proxyWorkspace, radiusDeployment, err := newAdmissionRuntimeServices(cfg, infra, repos, permissionResolver, accessService, auditService, operationService, deliveryCore.execution, networkProxyManagement)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build proxy workspace services: %w", err)
+	}
+	networkAccessService.SetMihomoBundleValidator(proxyWorkspace.bundles)
 	deliveryCore.identityProvider.SetPublicAccessURL(runtimeConfigService.AccessURL)
 	companionService, err := appcompanion.New(repos.companionRepository, repos.pluginRepository, permissionResolver, auditService)
 	if err != nil {
@@ -723,6 +734,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		networkAccessGrantService:      networkAccessGrantService,
 		networkIngestQuery:             networkIngestQuery,
 		networkProxyManagement:         networkProxyManagement,
+		proxyWorkspace:                 proxyWorkspace,
+		radiusDeployment:               radiusDeployment,
 		clusterService:                 platformCore.cluster,
 		resourceService:                platformCore.resources,
 		eventService:                   platformCore.events,
@@ -741,6 +754,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		contentDLPService:              contentSecurity.content,
 		companionService:               companionService,
 		pluginExtensions:               deliveryCore.pluginExtensions,
+		outpostLifecycle:               deliveryCore.outpostLifecycle,
+		outpostExecutor:                deliveryCore.outpostExecutor,
 		identityProviderService:        deliveryCore.identityProvider,
 		providerPortalService:          deliveryCore.providerPortal,
 		applicationOnboardingService:   appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
@@ -862,6 +877,8 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 }
 
 type deliveryCoreServices struct {
+	outpostLifecycle *appoutpostruntime.Service
+	outpostExecutor  *appoutpostruntime.ExecutorService
 	applications     *appregistry.Service
 	execution        *appexecution.Service
 	builds           *appbuild.Service
@@ -886,6 +903,10 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		cfg.Runtime.ExecutionJobTTLSeconds, cfg.Runtime.ExecutionRunnerToken, permissions,
 	)
 	executionService.SetSecretLeaseService(secretService)
+	outpostLifecycle, outpostExecutor, err := newOutpostRuntimeServices(cfg, infra, permissions, audit, executionService)
+	if err != nil {
+		return nil, fmt.Errorf("build Outpost lifecycle services: %w", err)
+	}
 	releases := apprelease.New(
 		repos.releaseRepository, repos.applicationRepository, repos.catalogRepository, repos.clusterRepository, executionService, access, permissions,
 		repos.eventRepository, audit, operations, releasebackendinfra.NewDirectRuntime(infra.clusterManager),
@@ -941,6 +962,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	if len(outpostSigningKey) > 0 {
 		identityProvider.SetOutpostSigningKey(outpostKeyID, outpostSigningKey)
 	}
+	identityProvider.SetOutpostRuntimeControl(outpostLifecycle)
 	providerPortal := appproviderportal.New(repos.providerPortalRepository, permissions, audit)
 	providerPortal.SetOutpostRuntimeCapability(len(outpostSigningKey) > 0, "Outpost runtime signing key is not configured")
 	providerPortal.SetProfileReader(identity)
@@ -954,6 +976,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	buildService := appbuild.New(repos.buildRepository, repos.applicationRepository, repos.catalogRepository, executionService, access, repos.eventRepository, audit, operations)
 	buildService.SetBuildpacksRuntime(buildpacksRuntime, secretService)
 	return &deliveryCoreServices{
+		outpostLifecycle: outpostLifecycle, outpostExecutor: outpostExecutor,
 		applications: applications, execution: executionService,
 		builds:      buildService,
 		catalog:     catalogService,
@@ -1053,6 +1076,14 @@ func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, i
 	return virtualizationService
 }
 
+func personalEnvironmentClient(ctx context.Context, principal domainidentity.Principal, nodeID string, infra *infrastructure, core *coreServices) (*agentinfra.Client, error) {
+	connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return infra.agentRegistry.ClientFor(connection)
+}
+
 func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *deliveryServices {
 	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	runtimeResources := core.resourceService.Runtime()
@@ -1089,22 +1120,14 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 			},
 			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
 			OpenMCPStdio: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.PersonalMCPStdioRequest) (appcopilot.DSHPersonalStdioPeer, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return nil, err
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return nil, err
 				}
 				return client.OpenPersonalMCPStdio(ctx, request)
 			},
 			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return err
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return err
 				}
@@ -1112,22 +1135,14 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 				return err
 			},
 			Invoke: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request) (contractenv.Result, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
 				}
 				return client.PersonalEnvironment(ctx, request)
 			},
 			Export: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request, target io.Writer) (contractenv.ExportResult, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
 				}
@@ -1680,6 +1695,13 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 	}, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery)
 	dependencies.NetworkEndpointResponse = apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService)
 	dependencies.NetworkProxy = apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement)
+	dependencies.ProxyCommands = apiHandlers.NewNetworkProxyCommandsHandler(core.networkProxyManagement)
+	dependencies.ProxySources = apiHandlers.NewProxyPublicationSourcesHandler(core.proxyWorkspace.sources)
+	dependencies.ProxyRules = apiHandlers.NewProxyPublicationRulesHandler(core.proxyWorkspace.rules, core.proxyWorkspace.sources)
+	dependencies.ProxyBundles = apiHandlers.NewProxyPublicationBundlesHandler(core.proxyWorkspace.bundles)
+	dependencies.ProxyDeployment = apiHandlers.NewProxyDeploymentHandler(core.proxyWorkspace.deployment, core.proxyWorkspace.executor)
+	dependencies.RadiusDeployment = radiushandler.New(core.radiusDeployment.management, nil)
+	dependencies.RadiusExecutor = radiushandler.NewExecutor(core.radiusDeployment.executor)
 	dependencies.NetworkVPN = apiHandlers.NewNetworkVPNHandler(core.networkVPNService)
 	dependencies.Access = accesshandler.New(accesshandler.Services{
 		Users: core.accessConsoleService, Catalog: core.accessConsoleService,
@@ -1695,6 +1717,7 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 	dependencies.Secrets = apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys)
 	dependencies.Auth = newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth)
 	dependencies.MFA = apiHandlers.NewMFAHandler(core.identityMFAService)
+	dependencies.OutpostLifecycle = outpostruntimehandler.New(core.outpostLifecycle, core.outpostExecutor)
 	dependencies.ProviderPortal = providerportalhandler.New(providerportalhandler.Services{
 		PortalReader:           core.providerPortalService,
 		PortalInteractor:       core.providerPortalService,

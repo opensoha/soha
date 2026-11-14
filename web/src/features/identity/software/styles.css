@@ -1,0 +1,167 @@
+.soha-software-library-shell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-software-source-segmented {
+  margin-bottom: 20px;
+}
+
+.soha-software-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.soha-software-object-storage-config {
+  display: grid;
+  gap: 12px;
+}
+
+.soha-software-modal-footer {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.soha-software-config-section-title {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.soha-software-switch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 4px;
+  column-gap: 16px;
+}
+
+.soha-software-file-link {
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-software-file-detail-head {
+  display: grid;
+  gap: 8px;
+}
+
+.soha-software-upload-form .ant-upload-list {
+  max-width: 100%;
+}
+
+.soha-software-publish-mode {
+  margin-bottom: 20px;
+}
+
+.soha-software-package-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.soha-software-package-list {
+  display: grid;
+}
+
+.soha-software-package-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-software-package-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.soha-software-batch-package {
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-software-batch-package-head,
+.soha-software-batch-package-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-software-batch-package-head {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.soha-software-batch-package-title .ant-form-item {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.soha-software-batch-package-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 12px;
+}
+
+.soha-software-batch-package-grid .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.soha-software-batch-field-double {
+  grid-column: span 2;
+}
+
+.soha-software-batch-description {
+  grid-column: 1 / -1;
+}
+
+.soha-software-package-file {
+  display: block;
+  min-height: var(--ant-control-height);
+  line-height: var(--ant-control-height);
+}
+
+.soha-software-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .soha-software-batch-package-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .soha-software-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-software-switch-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-software-package-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-software-batch-package-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-software-batch-field-double,
+  .soha-software-batch-description {
+    grid-column: auto;
+  }
+}

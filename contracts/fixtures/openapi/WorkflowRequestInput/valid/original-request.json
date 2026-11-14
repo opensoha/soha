@@ -1,0 +1,7 @@
+{
+  "idempotencyKey": "original-request-1",
+  "workflow": {
+    "applicationId": "app-1",
+    "triggerBuild": true
+  }
+}

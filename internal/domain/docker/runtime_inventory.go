@@ -3,7 +3,7 @@ package docker
 import (
 	"errors"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 func RuntimeContainerSnapshot(binding dockerruntime.ProjectBinding, hostID, projectID string, services []Service) ([]dockerruntime.ContainerBinding, error) {

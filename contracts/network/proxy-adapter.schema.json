@@ -1,0 +1,1018 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/network/proxy-adapter.schema.json",
+  "title": "Proxy Adapter v1 frame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "major",
+    "minor",
+    "requestId",
+    "deadline",
+    "processEpoch",
+    "method"
+  ],
+  "properties": {
+    "major": {
+      "const": 1
+    },
+    "minor": {
+      "const": 0
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "processEpoch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "handshake",
+        "prepare",
+        "apply",
+        "observe",
+        "close",
+        "select",
+        "probe",
+        "refresh",
+        "logs",
+        "diagnostics",
+        "stop"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "challenge": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "descriptor": {
+          "$ref": "#/$defs/EngineDescriptor"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1048576,
+          "writeOnly": true
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "command": {
+          "$ref": "#/$defs/RuntimeCommandInput"
+        },
+        "connectionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "challenge": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "descriptor": {
+          "$ref": "#/$defs/EngineDescriptor"
+        },
+        "readbackHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "observation": {
+          "$ref": "#/$defs/AdapterObservation"
+        },
+        "command": {
+          "$ref": "#/$defs/RuntimeCommandResult"
+        },
+        "closeStatus": {
+          "enum": [
+            "closed",
+            "not-found",
+            "failed"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "unsupported",
+            "unavailable",
+            "invalid_request",
+            "expired",
+            "epoch_mismatch",
+            "incompatible_version",
+            "failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "payload"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "result"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "payload"
+            ]
+          },
+          {
+            "required": [
+              "error"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "error"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "result"
+            ]
+          },
+          {
+            "required": [
+              "payload"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "handshake"
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "challenge"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "prepare",
+              "apply"
+            ]
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "revision",
+              "contentHash",
+              "content",
+              "validUntil"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "close"
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "connectionId",
+              "issuedAt",
+              "expiresAt"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "handshake"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "required": [
+              "challenge",
+              "descriptor"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "apply"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "required": [
+              "revision",
+              "readbackHash"
+            ],
+            "properties": {
+              "revision": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "observe"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "required": [
+              "observation"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "close"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "required": [
+              "closeStatus"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "EngineDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineId",
+        "adapterId",
+        "version",
+        "protocolMajor",
+        "protocolMinor",
+        "capabilities"
+      ],
+      "properties": {
+        "engineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "adapterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "protocolMajor": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "protocolMinor": {
+          "type": "integer",
+          "enum": [
+            0
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "label",
+        "type",
+        "nodeIds"
+      ],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "select",
+            "url_test",
+            "fallback",
+            "load_balance"
+          ]
+        },
+        "nodeIds": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          }
+        },
+        "selectedNodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "RuleMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "domain",
+            "domain_suffix",
+            "cidr",
+            "process_name",
+            "process_path",
+            "all"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "description": "domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "all"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "domain",
+                "domain_suffix",
+                "cidr",
+                "process_name",
+                "process_path"
+              ]
+            }
+          },
+          "required": [
+            "value"
+          ]
+        }
+      ]
+    },
+    "RuleAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "reject",
+            "direct",
+            "node",
+            "group"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "description": "node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "reject",
+                "direct"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "targetId"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "node",
+                "group"
+              ]
+            }
+          },
+          "required": [
+            "targetId"
+          ]
+        }
+      ]
+    },
+    "Rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "source",
+        "order",
+        "enabled",
+        "matcher",
+        "action"
+      ],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "protection",
+            "organization_required",
+            "personal",
+            "organization_default",
+            "fallback"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "matcher": {
+          "$ref": "#/$defs/RuleMatcher"
+        },
+        "action": {
+          "$ref": "#/$defs/RuleAction"
+        }
+      }
+    },
+    "RuntimeCommandKind": {
+      "type": "string",
+      "enum": [
+        "groups",
+        "select",
+        "probe",
+        "refresh",
+        "rules",
+        "dns",
+        "logs",
+        "diagnostics"
+      ]
+    },
+    "RuntimeCommandInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "processEpoch",
+        "kind",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeCommandKind"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "groupId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "probeProfileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "description": "Single typed bounded operation. Select requires groupId/nodeId; probe requires registered probeProfileId, never arbitrary URL. No controller path/body/shell. Expiry <=30 seconds; epoch must match.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "select"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "groupId",
+              "nodeId"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "probe"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "probeProfileId"
+            ]
+          }
+        }
+      ]
+    },
+    "RuntimeCommandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Group"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        },
+        "dns": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "addresses",
+              "expiresAt"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              },
+              "addresses": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "logs": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "level",
+              "message",
+              "occurredAt"
+            ],
+            "properties": {
+              "sequence": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "debug",
+                  "info",
+                  "warn",
+                  "error"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "occurredAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "latencyMilliseconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selectedNodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "state",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "unsupported",
+                  "unavailable"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      },
+      "description": "Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets."
+    },
+    "Connection": {
+      "type": "object",
+      "required": [
+        "id",
+        "destination",
+        "network",
+        "uploadBytes",
+        "downloadBytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp",
+            "other"
+          ],
+          "x-enum-varnames": [
+            "NetworkProxyConnectionNetworkTCP",
+            "NetworkProxyConnectionNetworkUDP",
+            "NetworkProxyConnectionNetworkOther"
+          ]
+        },
+        "uploadBytes": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "downloadBytes": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdapterObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sampleSequence": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "uploadTotal": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "downloadTotal": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "totalActive": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "returnedCount": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "freshness": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unavailable"
+          ]
+        },
+        "connections": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/Connection"
+          }
+        }
+      },
+      "required": [
+        "sampleSequence",
+        "uploadTotal",
+        "downloadTotal",
+        "totalActive",
+        "returnedCount",
+        "truncated",
+        "freshness",
+        "connections"
+      ]
+    }
+  }
+}

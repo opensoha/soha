@@ -1,0 +1,17 @@
+{
+  "data": {
+    "id": "session-1",
+    "title": "Investigate checkout latency",
+    "createdBy": "user-1",
+    "metadata": {
+      "mode": "root_cause",
+      "status": "active",
+      "scope": {
+        "clusterId": "prod",
+        "namespace": "checkout"
+      }
+    },
+    "createdAt": "2026-08-19T08:00:00Z",
+    "updatedAt": "2026-08-19T08:01:00Z"
+  }
+}

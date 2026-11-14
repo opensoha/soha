@@ -1,0 +1,31 @@
+{
+  "data": {
+    "principal": {
+      "userId": "user-1",
+      "userName": "OpenSoha",
+      "email": "opensoha@example.com",
+      "roles": [],
+      "teams": [],
+      "projects": [],
+      "tags": []
+    },
+    "applications": [],
+    "favorites": [],
+    "recent": [],
+    "categories": [],
+    "security": {
+      "principal": {
+        "userId": "user-1",
+        "userName": "OpenSoha",
+        "email": "opensoha@example.com",
+        "roles": [],
+        "teams": [],
+        "projects": [],
+        "tags": []
+      },
+      "mfaEnabled": false,
+      "linkedSources": [],
+      "activeSession": 1
+    }
+  }
+}

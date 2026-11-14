@@ -1,0 +1,231 @@
+.soha-realtime-session-dock {
+  position: fixed;
+  z-index: 900;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  height: var(--soha-realtime-session-height, clamp(300px, 44vh, 520px));
+  max-height: calc(100dvh - 64px);
+  min-height: min(240px, calc(100dvh - 64px));
+  flex-direction: column;
+  border-top: 1px solid var(--soha-border-color-strong);
+  background: var(--soha-bg-surface-elevated);
+  box-shadow: var(--soha-shadow-strong);
+}
+
+.soha-realtime-session-dock[hidden] {
+  display: none;
+}
+
+.soha-realtime-session-dock.is-maximized {
+  max-height: none;
+  min-height: 0;
+  height: 100dvh;
+}
+
+body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion-shell {
+  display: none !important;
+}
+
+.soha-realtime-session-dock__resize-handle {
+  position: absolute;
+  z-index: 1;
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 10px;
+  outline: none;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.soha-realtime-session-dock__resize-handle::after {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--soha-border-color-strong);
+  content: '';
+  transform: translateX(-50%);
+}
+
+.soha-realtime-session-dock__resize-handle:hover::after,
+.soha-realtime-session-dock__resize-handle:focus-visible::after {
+  background: var(--soha-primary);
+}
+
+.soha-realtime-session-dock__header {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface-elevated);
+}
+
+.soha-realtime-session-dock__identity,
+.soha-realtime-session-dock__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.soha-realtime-session-dock__identity {
+  gap: 8px;
+  font-size: 13px;
+}
+
+.soha-realtime-session-dock__identity > .anticon {
+  color: var(--soha-primary);
+}
+
+.soha-realtime-session-dock__scope {
+  max-width: min(36vw, 320px);
+  overflow: hidden;
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-realtime-session-dock__actions {
+  gap: 2px;
+}
+
+.soha-realtime-session-dock__body,
+.soha-realtime-session-cluster,
+.soha-realtime-session-cluster > .ant-tabs,
+.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-body-holder,
+.soha-realtime-session-tabs-body,
+.soha-realtime-session-tab-content,
+.soha-realtime-session-pane {
+  min-height: 0;
+  height: 100%;
+}
+
+.soha-realtime-session-dock__body {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.soha-realtime-session-cluster > .ant-tabs {
+  display: flex;
+  flex-direction: column;
+}
+
+.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-nav {
+  min-height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-body-holder {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.soha-realtime-session-tab-content {
+  padding: 8px 10px 10px;
+  overflow: hidden;
+}
+
+.soha-realtime-session-tab-label {
+  display: inline-flex;
+  max-width: 280px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.soha-realtime-session-tab-label__pod,
+.soha-realtime-session-tab-label__container {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-realtime-session-tab-label__pod {
+  color: var(--soha-text-primary);
+}
+
+.soha-realtime-session-tab-label__container {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-realtime-session-pane > .soha-detail-card.ant-card {
+  height: 100%;
+  margin-top: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.soha-realtime-session-pane > .soha-detail-card.ant-card > .ant-card-body {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.soha-realtime-session-pane .soha-terminal-toolbar {
+  margin-bottom: 0;
+}
+
+.soha-realtime-session-pane .soha-terminal-shell,
+.soha-realtime-session-pane .soha-log-shell {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.soha-realtime-session-loading,
+.soha-realtime-session-empty {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.soha-realtime-session-empty {
+  flex-direction: column;
+  gap: 10px;
+  color: var(--soha-text-tertiary);
+  font-size: 13px;
+}
+
+.soha-realtime-session-empty > .anticon {
+  color: var(--soha-text-quaternary);
+  font-size: 24px;
+}
+
+@media (max-width: 768px) {
+  .soha-realtime-session-dock {
+    height: var(--soha-realtime-session-height, 56dvh);
+  }
+
+  .soha-realtime-session-dock__header {
+    padding-inline: 10px 6px;
+  }
+
+  .soha-realtime-session-tab-content {
+    padding: 8px 6px 6px;
+  }
+
+  .soha-realtime-session-tab-label {
+    max-width: 220px;
+  }
+}

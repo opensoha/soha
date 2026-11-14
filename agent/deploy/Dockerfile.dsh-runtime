@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.7
+FROM node:24.14.0-bookworm-slim AS dependencies
+WORKDIR /app/runtimes/dsh
+COPY agent/runtimes/dsh/package.json agent/runtimes/dsh/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+FROM node:24.14.0-bookworm-slim
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.revision=$COMMIT
+ENV NODE_ENV=production SOHA_DSH_MODEL_AUTH_MODE=core SOHA_DSH_MODELS=soha-workbench SOHA_DSH_HOST=0.0.0.0 SOHA_DSH_PORT=8097 \
+    SOHA_DSH_DATA_DIR=/var/lib/soha-dsh \
+    SOHA_DSH_SCHEMA_PATH=/app/contracts/agent/dsh-runtime.schema.json
+WORKDIR /app/runtimes/dsh
+COPY --from=dependencies /app/runtimes/dsh/node_modules ./node_modules
+COPY agent/runtimes/dsh/package.json agent/runtimes/dsh/service.mjs agent/runtimes/dsh/protocol.mjs agent/runtimes/dsh/worker.mjs agent/runtimes/dsh/bridge-plugin.mjs agent/runtimes/dsh/assembly-plugin.mjs agent/runtimes/dsh/chat-restricted.patch.yml ./
+COPY agent/runtimes/dsh/mcp-assets.mjs agent/runtimes/dsh/skill-assets.mjs ./
+COPY contracts/agent/dsh-runtime.schema.json /app/contracts/agent/dsh-runtime.schema.json
+RUN mkdir -p /var/lib/soha-dsh && chown node:node /var/lib/soha-dsh
+USER node
+EXPOSE 8097
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e 'const fs=require("node:fs");fetch("http://127.0.0.1:8097/v1/health",{headers:{authorization:"Bearer "+fs.readFileSync(process.env.SOHA_DSH_SERVICE_TOKEN_FILE,"utf8").trim()},signal:AbortSignal.timeout(3000)}).then(async r=>process.exit(r.ok&&(await r.json()).ready?0:1)).catch(()=>process.exit(1))'
+CMD ["npm", "start"]

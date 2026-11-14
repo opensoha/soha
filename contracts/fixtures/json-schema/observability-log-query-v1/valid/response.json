@@ -1,0 +1,13 @@
+{
+  "sourceId": "source-1",
+  "records": [
+    {
+      "timestamp": "2026-08-02T10:14:00Z",
+      "severity": "info",
+      "message": "request complete",
+      "service": "checkout",
+      "attributes": { "trace_id": "trace-123" }
+    }
+  ],
+  "truncated": false
+}

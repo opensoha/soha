@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"time"
 )
+
+var proxyProcessEpochPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 const (
 	RuntimeSchemaVersion          = "network-runtime/v1alpha1"
@@ -116,8 +119,11 @@ type EAPCertificateResult struct {
 }
 
 type EAPCertificateActivateRequest struct {
-	CredentialID string `json:"credentialId"`
-	Fingerprint  string `json:"fingerprint"`
+	RequestID       string `json:"requestId,omitempty"`
+	ProfileID       string `json:"profileId,omitempty"`
+	ProfileRevision string `json:"profileRevision,omitempty"`
+	CredentialID    string `json:"credentialId"`
+	Fingerprint     string `json:"fingerprint"`
 }
 
 type EAPCertificateActivateResult struct {
@@ -133,6 +139,10 @@ type AdmissionConfiguration struct {
 }
 
 type AdmissionProfile struct {
+	EAPMethod                    string   `json:"eapMethod,omitempty"`
+	InnerMethod                  string   `json:"innerMethod,omitempty"`
+	CredentialSource             string   `json:"credentialSource,omitempty"`
+	ProfileRevision              string   `json:"profileRevision,omitempty"`
 	ID                           string   `json:"id"`
 	SiteID                       string   `json:"siteId"`
 	AccessMedium                 string   `json:"accessMedium"`
@@ -189,6 +199,10 @@ type RuntimeIntervals struct {
 }
 
 type MihomoConfiguration struct {
+	DeliveryMode    string            `json:"deliveryMode,omitempty"`
+	BundleID        string            `json:"bundleId,omitempty"`
+	OrgRevision     int64             `json:"orgRevision,omitempty"`
+	SourceRevision  int64             `json:"sourceRevision,omitempty"`
 	Protection      *MihomoProtection `json:"protection,omitempty"`
 	Mode            string            `json:"mode"`
 	SourceType      string            `json:"sourceType,omitempty"`
@@ -336,14 +350,16 @@ type RadiusAttributes struct {
 }
 
 type NASAuthorizationRequest struct {
-	RequestID                       string `json:"requestId"`
-	NASID                           string `json:"nasId"`
-	SubjectID                       string `json:"subjectId"`
-	DeviceID                        string `json:"deviceId,omitempty"`
-	StationID                       string `json:"stationId,omitempty"`
-	AuthenticationMethod            string `json:"authenticationMethod"`
-	ClientCertificateSerial         string `json:"clientCertificateSerial,omitempty"`
-	ClientCertificateAuthorityKeyID string `json:"clientCertificateAuthorityKeyId,omitempty"`
+	RuntimeProof                    *ManagedNASProof `json:"runtimeProof,omitempty"`
+	AuthenticationReceipt           string           `json:"authenticationReceipt,omitempty"`
+	RequestID                       string           `json:"requestId"`
+	NASID                           string           `json:"nasId"`
+	SubjectID                       string           `json:"subjectId"`
+	DeviceID                        string           `json:"deviceId,omitempty"`
+	StationID                       string           `json:"stationId,omitempty"`
+	AuthenticationMethod            string           `json:"authenticationMethod"`
+	ClientCertificateSerial         string           `json:"clientCertificateSerial,omitempty"`
+	ClientCertificateAuthorityKeyID string           `json:"clientCertificateAuthorityKeyId,omitempty"`
 }
 
 type NASAuthorizationResult struct {
@@ -445,6 +461,8 @@ type ProxyFlowAggregate struct {
 }
 
 type ProxyRuntimeSample struct {
+	ProcessEpoch      string `json:"processEpoch,omitempty"`
+	SampleSequence    int64  `json:"sampleSequence,omitempty"`
 	Engine            string `json:"engine"`
 	UptimeSeconds     int64  `json:"uptimeSeconds"`
 	UploadTotal       int64  `json:"uploadTotal"`
@@ -533,9 +551,11 @@ func validateProxyRuntimeSample(event IngestEvent) error {
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode proxy runtime sample: %w", err)
 	}
-	if (payload.Engine != "mihomo" && payload.Engine != "sing-box" && payload.Engine != "v2ray") ||
+	if (payload.Engine != "mihomo" && payload.Engine != "sing-box" && payload.Engine != "v2ray" && payload.Engine != "external") ||
 		payload.UptimeSeconds < 0 || payload.UploadTotal < 0 || payload.DownloadTotal < 0 ||
 		payload.UploadTotal > 9007199254740991 || payload.DownloadTotal > 9007199254740991 ||
+		(payload.ProcessEpoch == "" && payload.SampleSequence != 0) ||
+		(payload.ProcessEpoch != "" && (!proxyProcessEpochPattern.MatchString(payload.ProcessEpoch) || payload.SampleSequence < 1 || payload.SampleSequence > 9007199254740991)) ||
 		(payload.ActiveConnections != nil && (*payload.ActiveConnections < 0 || *payload.ActiveConnections > 1000000)) {
 		return fmt.Errorf("proxy runtime sample %q is invalid", event.ID)
 	}

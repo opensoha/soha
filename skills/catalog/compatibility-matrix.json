@@ -1,0 +1,94 @@
+{
+  "$schema": "../schemas/compatibility-matrix.schema.json",
+  "schemaVersion": "opensoha.dev/skills-compatibility-matrix/v1",
+  "skillsVersion": "0.1.4",
+  "gatewayCapabilityCatalogVersion": "0.1.1",
+  "platformCapabilityCatalogVersion": "0.1.0",
+  "requiredScopes": [
+    "aiClient",
+    "application",
+    "applicationEnvironment",
+    "approval",
+    "audit",
+    "businessLine",
+    "cluster",
+    "computeDomain",
+    "computeResource",
+    "computeTask",
+    "dataSource",
+    "deployment",
+    "device",
+    "dockerHost",
+    "dockerOperation",
+    "dockerProject",
+    "dockerService",
+    "enrollment",
+    "environment",
+    "executionTask",
+    "gateway",
+    "grant",
+    "namespace",
+    "node",
+    "pod",
+    "policy",
+    "producer",
+    "relayCache",
+    "relayCall",
+    "relayRoute",
+    "relayUpstream",
+    "releaseBundle",
+    "repository",
+    "resource",
+    "runtime",
+    "service",
+    "serviceAccount",
+    "session",
+    "site",
+    "skill",
+    "storage",
+    "subject",
+    "timeRange",
+    "token",
+    "tool",
+    "virtualizationConnection",
+    "vm",
+    "workerPool"
+  ],
+  "supportedVersions": {
+    "soha-core": ">=0.1.0 <0.2.0",
+    "soha-cli": ">=0.1.0 <0.3.0",
+    "soha-agent": ">=0.1.0 <0.3.0"
+  },
+  "contractSchemas": {
+    "preferred": "../contracts",
+    "fallback": "../node_modules/@opensoha/contracts",
+    "policy": "Validate this source tree against ../contracts. The root npm workspace link ../node_modules/@opensoha/contracts identifies the same producer; missing or redirected source inputs fail. Published release installation remains independent from source validation.",
+    "assets": {
+      "skillManifest": {
+        "preferred": "../contracts/skills/skill-manifest.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/skills/skill-manifest.schema.json"
+      },
+      "mcpPreset": {
+        "preferred": "../contracts/presets/mcp-preset.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/presets/mcp-preset.schema.json"
+      },
+      "agentProfile": {
+        "preferred": "../contracts/profiles/agent-profile.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/profiles/agent-profile.schema.json"
+      }
+    }
+  },
+  "installStrategy": {
+    "wrapperPackage": {
+      "install": "Install the versioned soha-skills release package that matches skillsVersion.",
+      "upgrade": "Upgrade only after validating the release manifest, checksum, compatibility matrix, and validation report.",
+      "rollback": "Reinstall the previous versioned wrapper package and restore its matching validation report and manifest."
+    },
+    "rawSkillsRuntime": {
+      "path": "~/.soha/skills",
+      "install": "Expand the verified skills runtime from the release package into a versioned staging directory before activating it.",
+      "upgrade": "Switch the active runtime pointer only after validation passes and the target CLI can load the new index.",
+      "rollback": "Switch the active runtime pointer back to the previous verified directory and keep the failed version for audit."
+    }
+  }
+}

@@ -39,6 +39,12 @@ func reconcileNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) 
 
 func evaluateNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) domain.NASAdmissionMutation {
 	session := snapshot.Session
+	if snapshot.AuthenticationMethod == networkprotocol.NASAuthenticationTTLS {
+		snapshot.Policies = domain.PasswordAdmissionPolicies(snapshot.Policies)
+		if snapshot.Binding.EAPServerTrust == nil || snapshot.Binding.EAPServerTrust.EapMethod != "ttls" {
+			snapshot.CredentialActive = false
+		}
+	}
 	preview := EvaluateAdmission(AdmissionInput{SubjectUserID: session.SubjectID, DeviceID: session.DeviceID, SiteID: session.SiteID, Mode: domain.ModeInternalDirect}, snapshot.Subject, snapshot.Device, snapshot.Site, snapshot.Policies)
 	profile, reason := preview.NetworkProfile, "nas_admission_revalidated"
 	if preview.Decision != domain.DecisionAllow {

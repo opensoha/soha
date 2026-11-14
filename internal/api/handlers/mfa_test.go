@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func TestValidWebAuthnResponseRejectsOversizedAttestation(t *testing.T) {

@@ -1,0 +1,5 @@
+{
+  "name": "agent",
+  "connectionMode": "agent",
+  "agentActionProfile": "read-only"
+}

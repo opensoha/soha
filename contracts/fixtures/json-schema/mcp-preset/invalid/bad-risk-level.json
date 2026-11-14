@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "opensoha.dev/mcp-preset/v1",
+  "id": "k8s-readonly",
+  "name": "Kubernetes Readonly Diagnosis",
+  "version": "0.1.0",
+  "description": "Read-only AI Gateway tools for scoped Kubernetes workload diagnosis.",
+  "riskLevel": "admin",
+  "skillRefs": ["k8s-sre"],
+  "platformCapabilityRefs": ["cluster.inventory"],
+  "requiredScopes": ["cluster"],
+  "tools": [
+    {
+      "name": "k8s.pods.list",
+      "description": "List pods in a scoped namespace.",
+      "riskLevel": "read",
+      "requiredScopes": ["cluster"]
+    }
+  ],
+  "guardrails": ["read_only"]
+}

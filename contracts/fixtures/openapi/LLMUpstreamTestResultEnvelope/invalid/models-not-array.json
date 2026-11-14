@@ -1,0 +1,9 @@
+{
+  "data": {
+    "status": "success",
+    "providerKind": "openai",
+    "durationMs": 42,
+    "modelCount": 1,
+    "models": "gpt-5.6-luna"
+  }
+}

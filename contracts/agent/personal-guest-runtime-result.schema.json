@@ -1,0 +1,164 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "bindingId",
+    "environment"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-runtime-result/v1"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "bindingId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "environment": {
+      "$ref": "personal-environment-result.schema.json"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\x00\\r\\n\\\\]+$"
+        },
+        "contentBase64": {
+          "type": "string",
+          "maxLength": 60076
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 45056
+        }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controlId",
+        "generation",
+        "instanceId",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "controlId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "instanceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "jpegBase64": {
+          "type": "string",
+          "maxLength": 49152
+        },
+        "width": {
+          "const": 800
+        },
+        "height": {
+          "const": 600
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId",
+        "artifactSHA256",
+        "filesystemId",
+        "dockerImage",
+        "command",
+        "fileRead",
+        "fileWrite",
+        "browser",
+        "docker",
+        "credentialsHidden",
+        "namespacesIsolated"
+      ],
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "artifactSHA256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "filesystemId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "dockerImage": {
+          "type": "string",
+          "pattern": "^docker\\.io/library/debian@sha256:[a-f0-9]{64}$"
+        },
+        "command": {
+          "type": "boolean"
+        },
+        "fileRead": {
+          "type": "boolean"
+        },
+        "fileWrite": {
+          "type": "boolean"
+        },
+        "browser": {
+          "type": "boolean"
+        },
+        "docker": {
+          "type": "boolean"
+        },
+        "credentialsHidden": {
+          "type": "boolean"
+        },
+        "namespacesIsolated": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-runtime-result.schema.json",
+  "title": "personal-guest-runtime-result",
+  "description": "Frozen owner-authorized VM operation. Current mTLS pin, user authorization, resource scope and original reservation must all be valid. SSH launches only a fixed broker; tools installation cannot format, delete or accept model commands. Runtime policy and receipt correlation are additionally validated by the typed protocol."
+}

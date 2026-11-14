@@ -1,0 +1,20 @@
+{
+  "operationId": "create-1",
+  "clusterId": "cluster-1",
+  "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "running",
+  "documents": [
+    {
+      "index": 0,
+      "resource": {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "name": "api",
+        "namespace": "team",
+        "namespaced": true,
+        "content": "must not return manifest"
+      },
+      "status": "not_started"
+    }
+  ]
+}

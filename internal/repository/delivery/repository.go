@@ -629,14 +629,24 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 	if len(providerKinds) == 0 {
 		return domaindelivery.ExecutionTask{}, ErrNotFound
 	}
+	if err := authorizeRadiusClaimProviders(ctx, providerKinds, agentID); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	privateExecutor, proxyExecutor, err := authorizeExecutionClaimProviders(ctx, providerKinds, agentID)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 
 	var task domaindelivery.ExecutionTask
-	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		row := tx.Raw(`
 			SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 			FROM execution_tasks
 			WHERE status = 'queued' AND provider_kind IN ?
+			  AND (provider_kind NOT LIKE 'outpost_runtime.%' OR provider_kind = ?)
+ AND (provider_kind NOT LIKE 'proxy_deployment.%' OR provider_kind = ?)
+ AND (provider_kind NOT LIKE 'radius_deployment.%' OR provider_kind = ?)
 			  AND provider_kind NOT LIKE 'external_pipeline.%'
 			  AND (provider_kind NOT LIKE 'vm_ssh.%' OR payload->>'executionAgentId' = ?)
 			  AND (COALESCE(payload->>'workflowScope', '') <> 'delivery_batch' OR EXISTS (
@@ -646,7 +656,7 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
-		`, providerKinds, strings.TrimSpace(agentID)).Row()
+		`, providerKinds, "outpost_runtime."+privateExecutor, "proxy_deployment."+proxyExecutor, "radius_deployment."+domaindelivery.RadiusDeploymentClaimExecutor(ctx), strings.TrimSpace(agentID)).Row()
 		item, scanErr := scanExecutionTaskRow(row)
 		if scanErr != nil {
 			return fmt.Errorf("claim execution task query: %w", scanErr)
@@ -694,6 +704,31 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 		return domaindelivery.ExecutionTask{}, err
 	}
 	return task, nil
+}
+
+// authorizeExecutionClaimProviders keeps installation-bound claims out of other
+// provider namespaces before the queue transaction starts.
+func authorizeExecutionClaimProviders(ctx context.Context, providerKinds []string, agentID string) (string, string, error) {
+	proxyExecutor := domaindelivery.ProxyDeploymentClaimExecutor(ctx)
+	if proxyExecutor != "" && (domaindelivery.OutpostRuntimeClaimExecutor(ctx) != "" || len(providerKinds) != 1 || providerKinds[0] != "proxy_deployment."+proxyExecutor || agentID != proxyExecutor) {
+		return "", "", apperrors.ErrAccessDenied
+	}
+	for _, kind := range providerKinds {
+		if strings.HasPrefix(kind, "proxy_deployment.") && proxyExecutor == "" {
+			return "", "", apperrors.ErrAccessDenied
+		}
+	}
+	privateExecutor := domaindelivery.OutpostRuntimeClaimExecutor(ctx)
+	if privateExecutor != "" && (len(providerKinds) != 1 || providerKinds[0] != "outpost_runtime."+privateExecutor || agentID != privateExecutor) {
+		return "", "", apperrors.ErrAccessDenied
+	}
+	for _, kind := range providerKinds {
+		if strings.HasPrefix(kind, "outpost_runtime.") && privateExecutor == "" {
+			return "", "", apperrors.ErrAccessDenied
+		}
+	}
+
+	return privateExecutor, proxyExecutor, nil
 }
 
 func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
@@ -797,7 +832,16 @@ func (r *Repository) updateExecutionTask(ctx context.Context, item domaindeliver
 	if !deliveryLocked {
 		query += ` AND COALESCE(payload->>'workflowScope', '') <> 'delivery_batch'`
 	}
-	res := dbtx.DB(ctx, r.db).Exec(query, item.Status, item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.UpdatedAt, item.ID)
+	args := []any{item.Status, item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.UpdatedAt, item.ID}
+	if domaindelivery.IsPrivateRuntimeTask(item) {
+		query += ` AND task_kind=? AND provider_kind=? AND status NOT IN ('completed','failed','canceled','callback_timeout')`
+		args = append(args, item.TaskKind, item.ProviderKind)
+		if item.Status == "callback_timeout" {
+			query += ` AND callback_token IS NOT DISTINCT FROM ? AND last_heartbeat_at IS NOT DISTINCT FROM ?`
+			args = append(args, nullableString(item.CallbackToken), item.LastHeartbeatAt)
+		}
+	}
+	res := dbtx.DB(ctx, r.db).Exec(query, args...)
 	if res.Error != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("update execution task: %w", res.Error)
 	}
@@ -2100,4 +2144,17 @@ func normalizedStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func authorizeRadiusClaimProviders(ctx context.Context, kinds []string, agentID string) error {
+	id := domaindelivery.RadiusDeploymentClaimExecutor(ctx)
+	if id != "" && (domaindelivery.OutpostRuntimeClaimExecutor(ctx) != "" || domaindelivery.ProxyDeploymentClaimExecutor(ctx) != "" || len(kinds) != 1 || kinds[0] != "radius_deployment."+id || agentID != id) {
+		return apperrors.ErrAccessDenied
+	}
+	for _, kind := range kinds {
+		if strings.HasPrefix(kind, "radius_deployment.") && id == "" {
+			return apperrors.ErrAccessDenied
+		}
+	}
+	return nil
 }

@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "directory-event-42",
+      "providerEventId": "feishu-event-42",
+      "eventType": "contact.user.updated_v3",
+      "status": "retrying",
+      "attempts": 1,
+      "occurredAt": "2026-07-28T08:08:00Z",
+      "receivedAt": "2026-07-28T08:08:01Z"
+    }
+  ]
+}

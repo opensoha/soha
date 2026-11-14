@@ -1,0 +1,9 @@
+{
+  "data": {
+    "hostId": "runtime-host-01",
+    "operationId": "host-sync-01",
+    "agentId": "docker-agent-01",
+    "agentBearerToken": "agent-secret-012345678901234567890",
+    "issuedAt": "2026-08-14T10:15:00Z"
+  }
+}

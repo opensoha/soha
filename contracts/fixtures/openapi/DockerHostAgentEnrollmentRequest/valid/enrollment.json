@@ -1,0 +1,4 @@
+{
+  "agentId": "docker-agent-01",
+  "enrollmentToken": "enrollment-secret-0123456789012345"
+}

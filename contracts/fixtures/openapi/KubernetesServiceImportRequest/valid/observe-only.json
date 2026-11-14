@@ -1,0 +1,15 @@
+{
+  "clusterId": "cluster-prod",
+  "namespace": "payments",
+  "applicationKey": "payments",
+  "applicationName": "Payments",
+  "environmentKey": "prod",
+  "environmentName": "Production",
+  "ownershipMode": "observe_only",
+  "workloads": [
+    {
+      "workloadKind": "Deployment",
+      "workloadName": "payments-api"
+    }
+  ]
+}

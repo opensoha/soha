@@ -1,0 +1,9 @@
+{
+  "id": "service-1",
+  "expectedVersion": 4,
+  "key": "api",
+  "name": "API",
+  "serviceKind": "kubernetes_workload",
+  "enabled": true,
+  "deploymentTemplate": { "templateId": "http", "version": 2, "parameters": { "replicas": 0, "enabled": false } }
+}

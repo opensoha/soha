@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 	domain "github.com/opensoha/soha/internal/domain/docker"
 )
 

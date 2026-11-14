@@ -3,7 +3,7 @@ package aigateway
 import (
 	"encoding/json"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 )
 

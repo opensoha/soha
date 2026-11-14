@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 // BuildResourceRelations interprets only resource identity and explicit evidence.

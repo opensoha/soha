@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 )
 
 type openAPICapability struct {

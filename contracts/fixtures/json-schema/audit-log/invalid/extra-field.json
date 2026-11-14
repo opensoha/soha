@@ -1,0 +1,10 @@
+{
+  "id": "audit-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "actorType": "user",
+  "actorId": "user-123",
+  "action": "tool.invoke",
+  "result": "denied",
+  "summary": "High-risk deployment restart was denied because approval is required.",
+  "createdAt": "2026-06-12T02:31:00Z",
+  "secretToken": "must-not-be-here"
+}

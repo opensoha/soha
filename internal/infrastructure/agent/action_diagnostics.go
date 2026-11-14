@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func (c *Client) GetActionChecks(ctx context.Context) ([]contractresource.AgentActionCheck, error) {

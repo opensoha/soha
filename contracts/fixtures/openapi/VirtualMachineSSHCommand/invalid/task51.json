@@ -1,0 +1,9 @@
+{
+  "id": "command-one",
+  "vmId": "vm-one",
+  "bindingRevision": 1,
+  "status": "callback_timeout",
+  "outcome": "unknown",
+  "terminal": true,
+  "unrecognizedPrivateValue": "must reject"
+}

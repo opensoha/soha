@@ -1,0 +1,7 @@
+{
+  "expectedUid": "reviewed",
+  "argv": [
+    "printf",
+    "bad\u0000value"
+  ]
+}

@@ -1,0 +1,22 @@
+package: sohaapi
+generate:
+  models: true
+output-options:
+  name-normalizer: ToCamelCaseWithInitialisms
+  prefer-skip-optional-pointer: true
+  prefer-skip-optional-pointer-on-container-types: true
+  additional-initialisms:
+    - AI
+    - API
+    - ID
+    - IDs
+    - IP
+    - JWT
+    - MCP
+    - MIME
+    - OIDC
+    - RBAC
+    - SSO
+    - TTL
+    - URI
+    - URL

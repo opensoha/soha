@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-10T17:46:35.356Z",
+  "filesScanned": 683,
+  "violations": 0,
+  "byRule": {
+    "page-direct-api-client": 0,
+    "bare-query-key": 0,
+    "cross-feature-deep-import": 0,
+    "aggregate-route-module": 0,
+    "route-page-barrel": 0,
+    "shared-capability-page-dependency": 0
+  },
+  "counts": {}
+}

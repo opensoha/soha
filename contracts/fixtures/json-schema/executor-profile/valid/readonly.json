@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/evaluation-executor-profile/v1","id":"readonly","environmentPolicy":"evaluation-readonly","isolationMode":"read-only","timeoutSeconds":120,"enabled":true}

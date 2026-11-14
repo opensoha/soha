@@ -1,0 +1,33 @@
+{
+  "id": "workflow:task-1",
+  "version": 1,
+  "planVersion": 1,
+  "status": "queued",
+  "createdBy": "user-1",
+  "plan": {
+    "goal": "Inspect the existing operation",
+    "steps": [
+      {
+        "id": "read",
+        "call": {
+          "toolName": "docker.operations.get",
+          "capabilityVersion": "1",
+          "input": {
+            "operationId": "operation-1"
+          }
+        }
+      }
+    ],
+    "verificationSteps": [
+      "read"
+    ],
+    "timeoutSeconds": 300
+  },
+  "nodes": [
+    {
+      "id": "read"
+    }
+  ],
+  "createdAt": "2026-09-15T10:00:00Z",
+  "updatedAt": "2026-09-15T10:00:00Z"
+}

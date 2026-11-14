@@ -1,0 +1,44 @@
+.soha-cluster-nodes-page .soha-admin-table .ant-table-cell.soha-table-cell-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.soha-cluster-nodes-page .soha-node-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-cluster-nodes-page .soha-node-taints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.soha-cluster-nodes-page .soha-node-taint-trigger {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.soha-cluster-nodes-page .soha-node-taint-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+  border-radius: var(--soha-radius-control);
+}
+.soha-cluster-nodes-page .soha-node-taint-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-node-taint-full {
+  display: block;
+  max-width: min(560px, calc(100vw - 64px));
+  overflow-wrap: anywhere;
+}

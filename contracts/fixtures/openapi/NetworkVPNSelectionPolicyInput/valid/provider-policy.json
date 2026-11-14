@@ -1,0 +1,21 @@
+{
+  "expectedRevision": 0,
+  "configuration": {
+    "name": "Carrier preference",
+    "strategy": "provider",
+    "providerOrder": [
+      "telecom",
+      "unicom"
+    ],
+    "providerPreference": "prefer",
+    "maxLatencyMs": 200,
+    "maxTimeoutPercent": 50,
+    "maxSampleAgeSeconds": 60,
+    "minSamples": 2,
+    "missingMeasurements": "priority",
+    "maxAttempts": 3,
+    "retryCooldownSeconds": 30,
+    "failoverOnDisconnect": true,
+    "allowManualFallback": false
+  }
+}

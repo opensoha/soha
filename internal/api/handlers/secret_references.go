@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	middleware "github.com/opensoha/soha/internal/api/middleware"
 	response "github.com/opensoha/soha/internal/api/response"
 	identity "github.com/opensoha/soha/internal/domain/identity"

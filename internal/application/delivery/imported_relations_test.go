@@ -3,7 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	dc "github.com/opensoha/soha/internal/domain/catalog"
 	di "github.com/opensoha/soha/internal/domain/identity"
 	dr "github.com/opensoha/soha/internal/domain/resource"

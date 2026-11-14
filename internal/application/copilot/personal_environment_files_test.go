@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

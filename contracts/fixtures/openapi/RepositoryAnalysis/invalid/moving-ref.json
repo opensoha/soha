@@ -1,0 +1,11 @@
+{
+  "applicationId": "app",
+  "repositoryId": "repo",
+  "projectPath": ".",
+  "resolvedCommit": "main",
+  "ruleVersion": "1",
+  "status": "unrecognized",
+  "candidates": [],
+  "evidencePaths": [],
+  "warnings": []
+}

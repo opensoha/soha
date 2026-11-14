@@ -86,8 +86,6 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_IMAGE:-ghcr.io/opensoha/soha:local}
     depends_on:
       postgres:
@@ -207,8 +205,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: radius-runtime
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_RADIUS_IMAGE:-ghcr.io/opensoha/soha-freeradius:local}
     depends_on:
       network-control:
@@ -326,8 +322,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: network-gateway-runtime
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
     depends_on:
       network-control:
@@ -384,8 +378,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: network-gateway-runtime
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
     depends_on:
       network-control:
@@ -442,8 +434,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: network-gateway-runtime
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
     depends_on:
       network-control:
@@ -521,8 +511,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: network-test-runtime
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_NETWORK_TEST_CLIENT_IMAGE:-ghcr.io/opensoha/soha-network-test-client:local}
     depends_on:
       mihomo-test:
@@ -552,7 +540,7 @@ services:
       context: ${SOHA_AGENT_DIR:-../../soha-agent}
       dockerfile: deploy/Dockerfile.hermes-agent-runner
       additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+        contracts: ${SOHA_CONTRACTS_DIR:-../contracts}
     image: ${SOHA_HERMES_IMAGE:-ghcr.io/opensoha/soha-hermes-agent:local}
     container_name: ${SOHA_HERMES_CONTAINER_NAME:-soha-hermes-agent-runner}
     restart: unless-stopped

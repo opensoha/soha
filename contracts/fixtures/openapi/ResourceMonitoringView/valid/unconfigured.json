@@ -1,0 +1,12 @@
+{
+  "clusterId": "c",
+  "view": "overview",
+  "from": "2026-10-18T23:00:00Z",
+  "to": "2026-10-19T00:00:00Z",
+  "stepSeconds": 60,
+  "generatedAt": "2026-10-19T00:00:00Z",
+  "snapshotQuality": "partial",
+  "unscheduledPendingPods": null,
+  "nodes": [],
+  "panels": []
+}

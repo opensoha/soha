@@ -1,0 +1,9 @@
+{
+  "source": "ai",
+  "applicationDraft": {
+    "name": "Checkout",
+    "group": "commerce",
+    "language": "go",
+    "enabled": true
+  }
+}

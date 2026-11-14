@@ -1,0 +1,14 @@
+.soha-identity-outposts-page {
+  gap: 12px;
+}
+
+.soha-identity-outpost-detail-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.soha-identity-outpost-detail-tab .soha-json-block {
+  max-height: 420px;
+}

@@ -1,0 +1,10 @@
+{
+  "name": "vm-builder",
+  "scope": "custom",
+  "capabilities": [],
+  "permissionKeys": [
+    "virtualization.vms.view",
+    "virtualization.vms.create",
+    "virtualization.vms.resize"
+  ]
+}

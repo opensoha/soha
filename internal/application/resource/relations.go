@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	da "github.com/opensoha/soha/internal/domain/access"
 	dc "github.com/opensoha/soha/internal/domain/cluster"
 	di "github.com/opensoha/soha/internal/domain/identity"

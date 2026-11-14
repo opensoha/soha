@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/runner/operation-lifecycle.schema.json",
+  "title": "OpenSoha Runner Operation Lifecycle",
+  "description": "Shared lifecycle event contract for long-running delivery, Docker, VM, AI provider, and agent runner operations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operationId", "operationKind", "runnerId", "state", "occurredAt"],
+  "properties": {
+    "operationId": { "type": "string", "minLength": 1 },
+    "operationKind": {
+      "type": "string",
+      "enum": ["delivery", "docker", "vm", "ai_provider", "agent_run", "connector_action"]
+    },
+    "runnerId": { "type": "string", "minLength": 1 },
+    "agentId": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": [
+        "claimed",
+        "heartbeat",
+        "cancel_requested",
+        "cancelled",
+        "timed_out",
+        "succeeded",
+        "failed",
+        "late_callback_ignored"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic event sequence per operation when available."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intervalSeconds": { "type": "integer", "minimum": 1 },
+        "nextDueAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/OperationEvidence" }
+    },
+    "finalState": {
+      "$ref": "#/$defs/FinalOperationState"
+    },
+    "callback": {
+      "$ref": "#/$defs/CallbackContext"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "OperationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["log", "event", "artifact", "callback_payload", "approval", "user_action"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "format": "uri" },
+        "redacted": { "type": "boolean" },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "FinalOperationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["succeeded", "failed", "cancelled", "timed_out"]
+        },
+        "reason": { "type": "string" },
+        "message": { "type": "string" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CallbackContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "callbackId": { "type": "string", "minLength": 1 },
+        "accepted": { "type": "boolean" },
+        "late": { "type": "boolean" },
+        "dedupeKey": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

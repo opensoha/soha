@@ -1,0 +1,7 @@
+{
+  "id": "log-1",
+  "executionTaskId": "task-1",
+  "logLevel": "info",
+  "message": "Task115 fixture line",
+  "createdAt": "2026-10-25T00:00:00Z"
+}

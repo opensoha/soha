@@ -1,0 +1,23 @@
+{
+  "data": {
+    "toolName": "k8s.pods.list",
+    "riskLevel": "read",
+    "requiresApproval": false,
+    "result": "succeeded",
+    "output": {
+      "items": [
+        {
+          "namespace": "default",
+          "name": "api-0",
+          "phase": "Running"
+        }
+      ]
+    },
+    "relatedIds": {
+      "clusterId": "default"
+    },
+    "audit": {
+      "requestId": "req-01"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "network-lease-01",
+  "sessionId": "session-01",
+  "subjectId": "user-01",
+  "deviceId": "device-01",
+  "networkSpaceId": "space-corp",
+  "cidrs": [],
+  "policyVersion": 9,
+  "status": "active",
+  "issuedAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T09:00:00Z"
+}

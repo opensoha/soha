@@ -1,0 +1,18 @@
+{
+  "category": "storage",
+  "providerType": "s3",
+  "name": "Software object storage",
+  "description": "S3-compatible storage for managed software packages.",
+  "enabled": true,
+  "configuration": [
+    { "key": "endpoint", "value": "https://minio.example.com" },
+    { "key": "bucket", "value": "soha-software" },
+    { "key": "region", "value": "us-east-1" },
+    { "key": "path_style", "value": "true" },
+    { "key": "allow_private", "value": "false" }
+  ],
+  "credentials": [
+    { "key": "access_key_id", "value": "fixture-access-key" },
+    { "key": "secret_access_key", "value": "fixture-secret-key" }
+  ]
+}

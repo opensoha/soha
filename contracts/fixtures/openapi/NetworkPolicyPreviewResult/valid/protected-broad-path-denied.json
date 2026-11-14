@@ -1,0 +1,9 @@
+{
+  "decision": "deny",
+  "path": "deny",
+  "policyVersion": 8,
+  "protected": true,
+  "networkLeaseRequired": false,
+  "resourceLeaseRequired": false,
+  "reasons": ["protected_resource_requires_ztna"]
+}

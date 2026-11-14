@@ -1,0 +1,11 @@
+{
+  "runId": "run-01",
+  "callbackToken": "callback-token",
+  "agentId": "agent-01",
+  "toolBindingId": "binding-01",
+  "adapterId": "builtin.kubernetes",
+  "toolName": "k8s.pods.list",
+  "input": {
+    "namespace": "default"
+  }
+}

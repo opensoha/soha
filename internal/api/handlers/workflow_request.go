@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

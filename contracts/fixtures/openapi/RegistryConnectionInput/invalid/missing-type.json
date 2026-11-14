@@ -1,0 +1,4 @@
+{
+  "name": "Harbor Production",
+  "endpoint": "https://harbor.example.com"
+}

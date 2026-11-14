@@ -1,0 +1,6 @@
+{
+  "idempotencyKey": "short",
+  "workflow": {
+    "applicationId": "app-1"
+  }
+}

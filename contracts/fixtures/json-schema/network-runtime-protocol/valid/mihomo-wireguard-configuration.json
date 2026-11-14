@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-mihomo-0001",
+  "messageType": "configuration.desired",
+  "producerId": "network-control",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z",
+  "payload": {
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "validUntil": "2026-09-03T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": ["resource-payroll"],
+    "networkLeases": [{
+      "id": "network-lease-0001",
+      "sessionId": "session-0001",
+      "subjectId": "user-alice",
+      "deviceId": "device-alice-laptop",
+      "networkSpaceId": "space-site-a",
+      "cidrs": ["10.20.0.0/16"],
+      "policyVersion": 7,
+      "issuedAt": "2026-09-03T08:00:00Z",
+      "expiresAt": "2026-09-03T08:05:00Z"
+    }],
+    "resourceLeases": [],
+    "wireguard": {
+      "role": "endpoint",
+      "interfaceName": "soha0",
+      "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "addresses": ["100.96.10.2/32"],
+      "mtu": 1380,
+      "routingMode": "routed",
+      "firewallDefault": "deny",
+      "peers": [{
+        "runtimeId": "gateway-site-a",
+        "publicKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+        "endpointHost": "vpn.example.com",
+        "endpointPort": 51820,
+        "allowedIPs": ["10.20.0.0/16"],
+        "persistentKeepaliveSeconds": 25
+      }],
+      "routes": ["10.20.0.0/16"],
+      "dnsServers": ["10.20.0.53"],
+      "firewallRules": [{
+        "id": "allow-network-lease-0001",
+        "effect": "allow",
+        "leaseId": "network-lease-0001",
+        "sourceCidr": "100.96.10.2/32",
+        "destinationCidr": "10.20.0.0/16",
+        "protocol": "any",
+        "expiresAt": "2026-09-03T08:05:00Z"
+      }]
+    },
+    "mihomo": {
+      "mode": "managed_follow",
+      "profileId": "profile-corporate-egress",
+      "profileRevision": 4,
+      "mixedPort": 7890,
+      "controllerPort": 9090,
+      "dnsMode": "disabled",
+      "selectorGroup": "SOHA",
+      "selectedProxy": "corporate-hk",
+      "bypassCidrs": ["10.20.0.0/16"],
+      "bypassHosts": ["network-control.example.com", "vpn.example.com"],
+      "failClosed": true
+    }
+  }
+}

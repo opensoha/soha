@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-nas-eap-without-certificate",
+  "messageType": "nas.authorization.request",
+  "producerId": "freeradius-site-a",
+  "runtimeId": "freeradius-site-a",
+  "runtimeKind": "nas",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:00:05Z",
+  "payload": {
+    "requestId": "radius-request-eap-without-certificate",
+    "nasId": "nas-site-a-wifi",
+    "subjectId": "user-alice",
+    "stationId": "AA-BB-CC-DD-EE-FF",
+    "authenticationMethod": "eap-tls"
+  }
+}

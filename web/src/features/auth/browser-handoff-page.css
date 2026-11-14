@@ -1,0 +1,66 @@
+.soha-browser-handoff-page {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+  place-items: center;
+  background: var(--soha-bg-layout);
+}
+
+.soha-browser-handoff-card {
+  width: min(440px, 100%);
+  box-shadow: var(--soha-shadow-panel);
+}
+
+.soha-browser-handoff-brand,
+.soha-browser-handoff-binding > div,
+.soha-browser-handoff-actions {
+  display: flex;
+  align-items: center;
+}
+
+.soha-browser-handoff-brand {
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.soha-browser-handoff-brand img {
+  width: 28px;
+  height: 28px;
+}
+
+.soha-browser-handoff-heading h3,
+.soha-browser-handoff-heading p {
+  margin-top: 0;
+}
+
+.soha-browser-handoff-binding {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-browser-handoff-binding > div {
+  gap: 12px;
+}
+
+.soha-browser-handoff-binding span {
+  display: grid;
+  min-width: 0;
+}
+
+.soha-browser-handoff-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.soha-browser-handoff-loading {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+}

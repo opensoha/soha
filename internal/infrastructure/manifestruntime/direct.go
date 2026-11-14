@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"

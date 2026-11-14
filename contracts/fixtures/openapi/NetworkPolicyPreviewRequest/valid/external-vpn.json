@@ -1,0 +1,6 @@
+{
+  "subjectUserId": "user-01",
+  "deviceId": "device-01",
+  "resourceId": "resource-intranet",
+  "mode": "external_vpn"
+}

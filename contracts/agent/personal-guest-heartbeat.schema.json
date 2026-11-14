@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-heartbeat.schema.json",
+  "title": "Personal VM Guest Heartbeat",
+  "description": "Guest-specific mTLS certificate required. Core checks pinned credential, current owner/access, unrevoked binding, validity, identity revision, compute generation and strictly increasing sequence atomically. Observation must fall within binding validity and 30 seconds of server time. Heartbeat is liveness only: provider, data mount/UUID/hard quota, command/file/browser probes remain independent; this message has no readiness or arbitrary capabilities field. POST /api/personal-guest/v1/bindings/{bindingId}/heartbeats returns 204 only after atomic monotonic sequence storage, current authority and pinned mTLS checks. Replayed/stale sequence or mismatched binding/generation: 409; rejected current authority: 403; wrong/expired certificate registration: 401. Body is bounded to 4096 UTF-8 bytes; duplicate keys and noncanonical field casing are rejected. Heartbeat never sets environment/data/tool readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bindingId",
+    "bindingVersion",
+    "computeGeneration",
+    "sequence",
+    "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-heartbeat/v1"
+    },
+    "bindingId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "bindingVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "computeGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

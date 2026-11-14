@@ -1,0 +1,17 @@
+{
+  "accessProfile": "full",
+  "deviceStatuses": ["active"],
+  "effect": "allow",
+  "enabled": true,
+  "modes": ["internal_ztna"],
+  "name": "Duplicate team selector",
+  "postureStatuses": ["compliant"],
+  "priority": 100,
+  "resourceIds": [],
+  "siteIds": [],
+  "subjects": {
+    "tags": [],
+    "teams": ["team-engineering", "team-engineering"],
+    "users": []
+  }
+}

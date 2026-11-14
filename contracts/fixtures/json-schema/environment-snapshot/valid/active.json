@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/environment-snapshot/v1","leaseId":"lease-1","runId":"run-1","state":"active","resourceUsage":{"diskBytes":10,"memoryBytes":20,"cpuTimeNanos":30,"processes":1},"artifactRefs":["artifact:1"],"observedAt":"2026-07-14T08:00:00Z"}

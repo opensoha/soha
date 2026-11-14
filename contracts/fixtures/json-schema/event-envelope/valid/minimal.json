@@ -1,0 +1,14 @@
+{
+  "id": "evt-1",
+  "tenantId": "default",
+  "workspaceId": "default",
+  "source": "soha-core",
+  "category": "audit",
+  "eventType": "plugin.installed",
+  "severity": "info",
+  "summary": "Plugin was installed.",
+  "timestamp": "2026-06-09T12:00:00Z",
+  "payload": {
+    "pluginId": "opensoha.k8s-sre"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "siteId": "site-a",
+  "siteName": "上海总部",
+  "accessMedium": "wifi",
+  "ssid": "Soha-Staff",
+  "authentication": "radius_802_1x",
+  "accessProfile": "full",
+  "policyVersion": 7
+}

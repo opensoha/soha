@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -14,35 +14,48 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type Repository struct{ db *gorm.DB }
+type Repository struct {
+	db         *gorm.DB
+	batchFence BatchFence
+}
 
 func New(db *gorm.DB) *Repository { return &Repository{db: db} }
 
 type instanceRow struct {
-	SecurityRestricted      bool
-	BindingJSON             []byte `gorm:"column:binding;type:jsonb"`
-	ProtectionJSON          []byte `gorm:"column:desired_protection;type:jsonb"`
-	ObservedPolicyVersion   int
-	ID                      string `gorm:"primaryKey"`
-	TenantID                string
-	WorkspaceID             string
-	Name                    string
-	Engine                  string
-	Host                    string
-	Enabled                 bool
-	DesiredRevision         int64
-	DesiredContentEncrypted string
-	DesiredHash             string
-	ObservedRevision        int64
-	EngineVersion           string
-	CapabilitiesJSON        string `gorm:"column:capabilities;type:jsonb"`
-	Health                  string
-	ReasonCode              string
-	LastSeenAt              *time.Time
-	LastSampleAt            *time.Time
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	Registered              bool `gorm:"->;-:migration"`
+	ConfigurationValidUntil    *time.Time
+	ConfigurationLeaseRevision int64
+	ConfigurationLeaseHash     string
+	ObservedHash               string
+	BundleID                   string
+	BundleRevision             int64
+	RetiredEpochs              []byte `gorm:"type:jsonb"`
+	ProcessEpoch               string
+	SampleSequence             int64
+	EngineDescriptor           []byte `gorm:"type:jsonb"`
+	SecurityRestricted         bool
+	BindingJSON                []byte `gorm:"column:binding;type:jsonb"`
+	ProtectionJSON             []byte `gorm:"column:desired_protection;type:jsonb"`
+	ObservedPolicyVersion      int
+	ID                         string `gorm:"primaryKey"`
+	TenantID                   string
+	WorkspaceID                string
+	Name                       string
+	Engine                     string
+	Host                       string
+	Enabled                    bool
+	DesiredRevision            int64
+	DesiredContentEncrypted    string
+	DesiredHash                string
+	ObservedRevision           int64
+	EngineVersion              string
+	CapabilitiesJSON           string `gorm:"column:capabilities;type:jsonb"`
+	Health                     string
+	ReasonCode                 string
+	LastSeenAt                 *time.Time
+	LastSampleAt               *time.Time
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+	Registered                 bool `gorm:"->;-:migration"`
 }
 
 func (instanceRow) TableName() string { return "network_proxy_instances" }
@@ -58,7 +71,9 @@ func (row instanceRow) domain() domain.Instance {
 	if protection != nil {
 		policyVersion = protection.PolicyVersion
 	}
-	return domain.Instance{
+	var descriptor *domain.EngineDescriptor
+	_ = json.Unmarshal(row.EngineDescriptor, &descriptor)
+	return domain.Instance{BundleID: row.BundleID, BundleRevision: row.BundleRevision, EngineDescriptor: descriptor, ProcessEpoch: row.ProcessEpoch, SampleSequence: row.SampleSequence,
 		SecurityRestricted: row.SecurityRestricted, Binding: binding, Protection: protection, PolicyVersion: policyVersion, ObservedPolicyVersion: row.ObservedPolicyVersion,
 		ID: row.ID, Name: row.Name, Engine: row.Engine, Host: row.Host, EngineVersion: row.EngineVersion,
 		Capabilities:    capabilities,
@@ -77,7 +92,8 @@ const instanceColumns = `network_proxy_instances.*, EXISTS (
   ) AS registered`
 
 func (r *Repository) Create(ctx context.Context, input domain.InstanceInput, now time.Time) (domain.Instance, error) {
-	row := instanceRow{ID: input.ID, TenantID: "default", WorkspaceID: "default", Name: input.Name,
+	descriptor, _ := json.Marshal(input.EngineDescriptor)
+	row := instanceRow{EngineDescriptor: descriptor, ID: input.ID, TenantID: "default", WorkspaceID: "default", Name: input.Name,
 		Engine: input.Engine, Host: input.Host, Enabled: true, CapabilitiesJSON: "[]", CreatedAt: now, UpdatedAt: now}
 	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
 		var pg *pgconn.PgError
@@ -124,50 +140,62 @@ func (r *Repository) List(ctx context.Context, search, engine string, limit, off
 }
 
 func (r *Repository) UpdateConfiguration(ctx context.Context, id string, expectedRevision int64, enabled bool, encrypted, hash string, binding *domain.Binding, clearBinding bool, now time.Time) (domain.Instance, error) {
+	if r.batchFence == nil {
+		return domain.Instance{}, apperrors.ErrServiceUnavailable
+	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockedInstance(tx, id)
-		if err != nil {
+		if err := r.batchFence.LockSingleDesired(ctx, tx, id); err != nil {
 			return err
 		}
-		if row.DesiredRevision != expectedRevision {
-			return apperrors.ErrConflict
-		}
-		changes := map[string]any{"desired_revision": gorm.Expr("desired_revision + 1"), "enabled": enabled, "desired_content_encrypted": encrypted, "desired_hash": hash, "updated_at": now}
-		if binding != nil {
-			if err := lockBinding(tx, *binding); err != nil {
-				return err
-			}
-			resolved, err := New(tx).ResolveBinding(ctx, *binding)
-			if err != nil {
-				return err
-			}
-			if resolved.AuthorizationHash != binding.AuthorizationHash {
-				return apperrors.ErrConflict
-			}
-			raw, err := json.Marshal(resolved)
-			if err != nil {
-				return err
-			}
-			changes["binding"] = gorm.Expr("?::jsonb", string(raw))
-		}
-		if clearBinding {
-			if enabled || binding != nil {
-				return apperrors.ErrConflict
-			}
-			changes["binding"] = nil
-		}
-		if enabled && binding == nil && row.domain().Binding == nil {
-			return apperrors.ErrConflict
-		}
-		if err := tx.Model(&row).Updates(changes).Error; err != nil {
-			return err
-		}
-		return saveConfigurationHistory(tx, id, expectedRevision+1, encrypted, hash, now)
+		return writeConfiguration(ctx, tx, id, expectedRevision, enabled, encrypted, hash, binding, clearBinding, now)
 	})
 	if err != nil {
 		return domain.Instance{}, err
 	}
 	return r.Get(ctx, id)
+}
+
+// writeConfiguration is private: callers must hold either the single-instance
+// ownership fence or the exact approved-pool batch fence in this transaction.
+func writeConfiguration(ctx context.Context, tx *gorm.DB, id string, expectedRevision int64, enabled bool, encrypted, hash string, binding *domain.Binding, clearBinding bool, now time.Time) error {
+	row, err := lockedInstance(tx, id)
+	if err != nil {
+		return err
+	}
+	if row.DesiredRevision != expectedRevision {
+		return apperrors.ErrConflict
+	}
+	changes := map[string]any{"desired_revision": gorm.Expr("desired_revision + 1"), "enabled": enabled, "desired_content_encrypted": encrypted, "desired_hash": hash, "updated_at": now}
+	if binding != nil {
+		if err := lockBinding(tx, *binding); err != nil {
+			return err
+		}
+		resolved, err := New(tx).ResolveBinding(ctx, *binding)
+		if err != nil {
+			return err
+		}
+		if resolved.AuthorizationHash != binding.AuthorizationHash {
+			return apperrors.ErrConflict
+		}
+		raw, err := json.Marshal(resolved)
+		if err != nil {
+			return err
+		}
+		changes["binding"] = gorm.Expr("?::jsonb", string(raw))
+	}
+	if clearBinding {
+		if enabled || binding != nil {
+			return apperrors.ErrConflict
+		}
+		changes["binding"] = nil
+	}
+	if enabled && binding == nil && row.domain().Binding == nil {
+		return apperrors.ErrConflict
+	}
+	if err := tx.Model(&row).Updates(changes).Error; err != nil {
+		return err
+	}
+	return saveConfigurationHistory(tx, id, expectedRevision+1, encrypted, hash, now)
 }
 
 func (r *Repository) Touch(ctx context.Context, id string, now time.Time) error {
@@ -206,11 +234,25 @@ func (r *Repository) Observe(ctx context.Context, id string, observedAt time.Tim
 		if row.Engine != observation.Engine || (row.LastSampleAt != nil && !observedAt.After(*row.LastSampleAt)) {
 			return apperrors.ErrConflict
 		}
+		if row.ProcessEpoch != "" && observation.ProcessEpoch == "" || row.ProcessEpoch == observation.ProcessEpoch && observation.ProcessEpoch != "" && observation.SampleSequence <= row.SampleSequence {
+			return apperrors.ErrConflict
+		}
+		var retired []string
+		_ = json.Unmarshal(row.RetiredEpochs, &retired)
+		for _, epoch := range retired {
+			if epoch == observation.ProcessEpoch {
+				return apperrors.ErrConflict
+			}
+		}
+		if row.ProcessEpoch != "" && row.ProcessEpoch != observation.ProcessEpoch {
+			retired = append(retired, row.ProcessEpoch)
+		}
+		retiredJSON, _ := json.Marshal(retired)
 		capabilities, err := json.Marshal(observation.Capabilities)
 		if err != nil {
 			return err
 		}
-		return tx.Model(&row).Updates(map[string]any{"engine_version": observation.EngineVersion, "health": observation.Health,
+		return tx.Model(&row).Updates(map[string]any{"retired_epochs": gorm.Expr("?::jsonb", string(retiredJSON)), "process_epoch": observation.ProcessEpoch, "sample_sequence": observation.SampleSequence, "engine_version": observation.EngineVersion, "health": observation.Health,
 			"capabilities": gorm.Expr("?::jsonb", string(capabilities)),
 			"reason_code":  observation.ReasonCode, "last_seen_at": observedAt, "last_sample_at": observedAt, "updated_at": observedAt}).Error
 	})
@@ -230,8 +272,9 @@ func (r *Repository) Apply(ctx context.Context, id string, applied domain.Applie
 		}
 		changes := map[string]any{"last_seen_at": now, "reason_code": applied.ReasonCode, "updated_at": now}
 		item := row.domain()
-		expected := domain.Configuration{ContentHash: row.DesiredHash, Enabled: row.Enabled, Binding: item.Binding, Protection: item.Protection}.Digest()
+		expected := configurationForDigest(row).Digest()
 		if applied.Status == "applied" && applied.ReadbackHash == expected {
+			changes["observed_hash"] = applied.ReadbackHash
 			changes["observed_revision"] = applied.Revision
 			changes["observed_policy_version"] = 0
 			if row.Enabled {
@@ -247,22 +290,18 @@ func (r *Repository) Apply(ctx context.Context, id string, applied domain.Applie
 }
 
 type connectionsRow struct {
-	InstanceID  string `gorm:"primaryKey"`
-	ObservedAt  time.Time
-	Connections []byte `gorm:"type:jsonb"`
+	ProcessEpoch   string
+	SampleSequence int64
+	TotalActive    *int
+	InstanceID     string `gorm:"primaryKey"`
+	ObservedAt     time.Time
+	Connections    []byte `gorm:"type:jsonb"`
 }
 
 func (connectionsRow) TableName() string { return "network_proxy_connections" }
 
 func (r *Repository) PutConnections(ctx context.Context, id string, observedAt time.Time, connections []domain.Connection) error {
-	raw, err := json.Marshal(connections)
-	if err != nil {
-		return err
-	}
-	return r.db.WithContext(ctx).Exec(`INSERT INTO network_proxy_connections (instance_id, observed_at, connections)
-		VALUES (?, ?, ?::jsonb) ON CONFLICT (instance_id) DO UPDATE SET
-		observed_at = EXCLUDED.observed_at, connections = EXCLUDED.connections
-		WHERE network_proxy_connections.observed_at < EXCLUDED.observed_at`, id, observedAt, string(raw)).Error
+	return r.PutConnectionsSnapshot(ctx, id, observedAt, domain.ConnectionsSnapshot{Connections: connections})
 }
 
 func (r *Repository) Connections(ctx context.Context, id string) (domain.ConnectionsSnapshot, error) {
@@ -278,10 +317,13 @@ func (r *Repository) Connections(ctx context.Context, id string) (domain.Connect
 	if err := json.Unmarshal(row.Connections, &connections); err != nil {
 		return domain.ConnectionsSnapshot{}, err
 	}
-	return domain.ConnectionsSnapshot{InstanceID: id, State: "available", ObservedAt: &row.ObservedAt, Connections: connections}, nil
+	count := len(connections)
+	truncated := row.TotalActive != nil && *row.TotalActive > count
+	return domain.ConnectionsSnapshot{ProcessEpoch: row.ProcessEpoch, SampleSequence: row.SampleSequence, TotalActive: row.TotalActive, ReturnedCount: &count, Truncated: &truncated, Freshness: "fresh", InstanceID: id, State: "available", ObservedAt: &row.ObservedAt, Connections: connections}, nil
 }
 
 type closeRow struct {
+	ProcessEpoch string
 	ID           string `gorm:"primaryKey"`
 	InstanceID   string
 	ConnectionID string
@@ -291,22 +333,29 @@ type closeRow struct {
 	CreatedBy    string
 	CreatedAt    time.Time
 	CompletedAt  *time.Time
+	CallerInput  *domain.CloseInput `gorm:"serializer:json;type:jsonb"`
 }
 
 func (closeRow) TableName() string { return "network_proxy_close_commands" }
 
 func (row closeRow) domain() domain.CloseCommand {
-	return domain.CloseCommand{ID: row.ID, InstanceID: row.InstanceID, ConnectionID: row.ConnectionID,
+	if row.CallerInput != nil {
+		row.ExpiresAt = row.CallerInput.ExpiresAt
+	}
+	return domain.CloseCommand{ProcessEpoch: row.ProcessEpoch, ID: row.ID, InstanceID: row.InstanceID, ConnectionID: row.ConnectionID,
 		Status: row.Status, ExpiresAt: row.ExpiresAt, ReasonCode: row.ReasonCode}
 }
 
-func (r *Repository) QueueClose(ctx context.Context, id, connectionID, actorID string, now time.Time) (domain.CloseCommand, error) {
-	row := closeRow{ID: uuid.NewString(), InstanceID: id, ConnectionID: connectionID, Status: "pending",
-		ExpiresAt: now.Add(30 * time.Second), CreatedBy: actorID, CreatedAt: now}
-	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return domain.CloseCommand{}, err
+func (row closeRow) receipt(now time.Time) domain.CloseCommand {
+	command := row.domain()
+	if command.Status == "pending" && !command.ExpiresAt.After(now) {
+		command.Status, command.ReasonCode = "expired", "receipt_timeout"
 	}
-	return row.domain(), nil
+	return command
+}
+
+func (r *Repository) QueueClose(ctx context.Context, id, connectionID, actorID string, now time.Time) (domain.CloseCommand, error) {
+	return r.QueueCloseEpoch(ctx, id, connectionID, actorID, "", now)
 }
 
 func (r *Repository) GetClose(ctx context.Context, id, commandID string, now time.Time) (domain.CloseCommand, error) {
@@ -317,16 +366,12 @@ func (r *Repository) GetClose(ctx context.Context, id, commandID string, now tim
 		}
 		return domain.CloseCommand{}, err
 	}
-	command := row.domain()
-	if command.Status == "pending" && !command.ExpiresAt.After(now) {
-		command.Status, command.ReasonCode = "expired", "receipt_timeout"
-	}
-	return command, nil
+	return row.receipt(now), nil
 }
 
 func (r *Repository) NextClose(ctx context.Context, id string, now time.Time) (*domain.CloseCommand, error) {
 	var row closeRow
-	err := r.db.WithContext(ctx).Where("instance_id = ? AND status = 'pending' AND expires_at > ?", id, now).
+	err := r.db.WithContext(ctx).Where("instance_id = ? AND status = 'pending' AND expires_at > ? AND process_epoch = (SELECT process_epoch FROM network_proxy_instances WHERE id=?)", id, now, id).
 		Order("created_at ASC").Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -340,7 +385,7 @@ func (r *Repository) NextClose(ctx context.Context, id string, now time.Time) (*
 
 func (r *Repository) CompleteClose(ctx context.Context, id, commandID, status, reason string, now time.Time) error {
 	result := r.db.WithContext(ctx).Model(&closeRow{}).
-		Where("id = ? AND instance_id = ? AND status = 'pending' AND expires_at > ?", commandID, id, now).
+		Where("id = ? AND instance_id = ? AND status = 'pending' AND expires_at > ? AND process_epoch = '' AND process_epoch=(SELECT process_epoch FROM network_proxy_instances WHERE id=?)", commandID, id, now, id).
 		Updates(map[string]any{"status": status, "reason_code": reason, "completed_at": now})
 	if result.Error != nil {
 		return result.Error
@@ -353,6 +398,12 @@ func (r *Repository) CompleteClose(ctx context.Context, id, commandID, status, r
 
 func (r *Repository) Cleanup(ctx context.Context, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&commandRow{}).Where("status IN ? AND expires_at <= ?", []string{"pending", "running"}, now).Updates(map[string]any{"status": "expired", "reason_code": "receipt_timeout"}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("created_at < ?", now.Add(-24*time.Hour)).Delete(&commandRow{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("observed_at < ?", now.Add(-24*time.Hour)).Delete(&sampleRow{}).Error; err != nil {
 			return err
 		}
@@ -365,4 +416,13 @@ func (r *Repository) Cleanup(ctx context.Context, now time.Time) error {
 		}
 		return tx.Where("created_at < ?", now.Add(-24*time.Hour)).Delete(&closeRow{}).Error
 	})
+}
+
+func configurationForDigest(row instanceRow) domain.Configuration {
+	item := row.domain()
+	desired := domain.Configuration{ContentHash: row.DesiredHash, Enabled: row.Enabled && !row.SecurityRestricted, Binding: item.Binding, Protection: item.Protection}
+	if row.BundleID != "" {
+		desired.Publication = &api.NetworkProxyServerPublication{BundleID: row.BundleID, Revision: row.BundleRevision}
+	}
+	return desired
 }

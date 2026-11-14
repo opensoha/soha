@@ -1,0 +1,14 @@
+{
+  "data": {
+    "application": {
+      "id": "app-1",
+      "name": "Soha Console",
+      "slug": "soha-console",
+      "status": "enabled",
+      "createdAt": "2026-08-31T00:00:00Z",
+      "updatedAt": "2026-08-31T00:00:00Z"
+    },
+    "providerType": "oidc",
+    "decision": "allow"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "runId": "run-1",
+  "callbackToken": "agent-run-token",
+  "agentId": "agent-1",
+  "status": "succeeded",
+  "payload": {
+    "summary": "Completed"
+  },
+  "events": [
+    {
+      "type": "thinking.delta",
+      "textDelta": "Checking recent deployment events."
+    },
+    {
+      "type": "agent.status",
+      "status": "running"
+    },
+    {
+      "type": "tool.delta",
+      "toolCallId": "tool-1",
+      "logDelta": "kubectl get events returned 12 rows"
+    },
+    {
+      "type": "tool.completed",
+      "toolCall": {
+        "id": "tool-1",
+        "adapterId": "kubernetes",
+        "toolName": "events.list",
+        "status": "success",
+        "summary": "Collected recent warning events"
+      }
+    },
+    {
+      "type": "message.done",
+      "role": "assistant",
+      "content": "The rollout failed because the new pod image could not be pulled."
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/memory-policy/v1","id":"user-memory","version":"v1","ownerTypes":["user"],"defaultTtlSeconds":86400,"maximumTtlSeconds":604800,"minimumConfidence":0.9,"explicitWriteOnly":true,"enabled":true}

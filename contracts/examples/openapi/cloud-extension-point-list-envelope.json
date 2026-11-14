@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "cloud.managed-connector",
+      "name": "Managed Connector Runtime",
+      "kind": "managed-connector",
+      "boundary": "event-sink",
+      "description": "Cloud-hosted connector runtime event sink backed by the public connector event envelope.",
+      "contractRefs": ["connectors/connector-event-envelope.schema.json"],
+      "supportedConsumers": ["connectors", "cloud", "web"],
+      "eventTypes": ["connector.event.received", "connector.action.completed"],
+      "excludedCloudOnlyDomains": ["billing", "quota", "saas-iam"]
+    }
+  ]
+}

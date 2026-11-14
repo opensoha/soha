@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
@@ -2102,7 +2102,10 @@ func (r *memoryRepo) RecordOutpostClaim(ctx context.Context, item domainprovider
 	}
 	current.Status = domainprovider.OutpostStatusOnline
 	current.LastSeenAt, current.UpdatedAt = item.LastSeenAt, item.UpdatedAt
-	current.ClaimedAgentID, current.ProtocolVersion = item.ClaimedAgentID, item.ProtocolVersion
+	current.ClaimedAgentID = item.ClaimedAgentID
+	if item.ProtocolVersion != "" {
+		current.ProtocolVersion = item.ProtocolVersion
+	}
 	if item.Version != "" {
 		current.Version = item.Version
 	}
@@ -2147,11 +2150,22 @@ func (r *memoryRepo) RotateOutpostToken(ctx context.Context, item domainprovider
 	}
 	current.TokenHash, current.UpdatedBy, current.UpdatedAt = item.TokenHash, item.UpdatedBy, item.UpdatedAt
 	current.Status, current.RuntimeStatus, current.RuntimeReason = domainprovider.OutpostStatusOffline, "unavailable", ""
-	current.ClaimedAgentID, current.ProtocolVersion, current.RuntimeVersion = "", "", ""
+	current.ClaimedAgentID, current.RuntimeVersion = "", ""
 	current.LastHeartbeatAt, current.ConfigurationExpiresAt = nil, nil
 	current.AppliedConfigurationVersion = 0
 	r.outposts[item.ID] = current
 	return current, nil
+}
+
+func (r *memoryRepo) AuthorizeLegacyOutpostAccess(ctx context.Context, outpostID, tokenHash string) error {
+	item, err := r.GetOutpost(ctx, outpostID)
+	if err != nil {
+		return err
+	}
+	if item.TokenHash != tokenHash || item.Mode == domainprovider.OutpostModeEmbedded || item.ProtocolVersion != "" {
+		return apperrors.ErrAccessDenied
+	}
+	return nil
 }
 
 func (r *memoryRepo) DeleteOutpost(_ context.Context, outpostID string) error {

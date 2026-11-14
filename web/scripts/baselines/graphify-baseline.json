@@ -1,0 +1,64 @@
+{
+  "version": 3,
+  "capturedAt": "2026-07-11",
+  "graph": "../../graphify-out/graph.json",
+  "summary": {
+    "nodes": 5760,
+    "edges": 17572,
+    "communities": 227
+  },
+  "health": {
+    "missingNodeIds": 0,
+    "duplicateNodeIds": 0,
+    "missingEndpointEdges": 0,
+    "selfLoopEdges": 0,
+    "duplicateUndirectedRelationEdges": 0
+  },
+  "removedSourceMatches": [
+    { "source": "src/routes/route-lazy-pages.tsx", "nodes": 0 },
+    { "source": "src/routes/route-meta-data.ts", "nodes": 0 },
+    { "source": "src/features/copilot/ai-gateway-page.tsx", "nodes": 0 },
+    { "source": "src/features/copilot/ai-gateway-model.ts", "nodes": 0 },
+    { "source": "src/features/copilot/workbench-page.tsx", "nodes": 0 },
+    { "source": "src/features/copilot/ai-observe-pages.tsx", "nodes": 0 },
+    { "source": "src/features/copilot/workbench-stream.ts", "nodes": 0 },
+    { "source": "src/features/copilot/workbench-toolset.ts", "nodes": 0 }
+  ],
+  "highDegreeNodes": [
+    { "source": "src/types/index.ts", "degree": 217, "community": 78 },
+    { "source": "src/components/management-list.tsx", "degree": 188, "community": 46 },
+    { "source": "src/features/copilot/gateway/types.ts", "degree": 162, "community": 4 },
+    {
+      "source": "src/features/copilot/gateway/page-coordinator.tsx",
+      "degree": 138,
+      "community": 3
+    },
+    {
+      "source": "src/features/copilot/workbench/controller.tsx",
+      "degree": 107,
+      "community": 21
+    },
+    { "source": "src/features/delivery/types.ts", "degree": 103, "community": 16 },
+    { "source": "src/services/api-client.ts", "degree": 85, "community": 47 },
+    { "source": "src/features/delivery/api.ts", "degree": 72, "community": 16 },
+    { "source": "src/routes/meta.ts", "degree": 64, "community": 9 },
+    { "source": "src/routes/definitions.ts", "degree": 55, "community": 124 }
+  ],
+  "communityCohesion": [
+    { "id": 78, "nodes": 30, "internalEdges": 65, "cohesion": 0.149425 },
+    { "id": 46, "nodes": 47, "internalEdges": 67, "cohesion": 0.06198 },
+    { "id": 4, "nodes": 70, "internalEdges": 111, "cohesion": 0.045963 },
+    { "id": 3, "nodes": 71, "internalEdges": 126, "cohesion": 0.050704 },
+    { "id": 21, "nodes": 53, "internalEdges": 115, "cohesion": 0.083454 },
+    { "id": 16, "nodes": 113, "internalEdges": 220, "cohesion": 0.034766 },
+    { "id": 47, "nodes": 40, "internalEdges": 77, "cohesion": 0.098718 },
+    { "id": 9, "nodes": 76, "internalEdges": 196, "cohesion": 0.068772 },
+    { "id": 124, "nodes": 17, "internalEdges": 26, "cohesion": 0.191176 }
+  ],
+  "audit": [
+    "The graph root is the soha-web repository, not the opensoha multi-repository workspace.",
+    "Former route and aggregate-page source nodes are absent.",
+    "Current high-degree UI nodes are explicit shared contracts or coordinators, not multi-route page implementations.",
+    "HTML generation is skipped because the graph exceeds the 5000-node visualization limit."
+  ]
+}

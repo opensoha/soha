@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -119,11 +120,13 @@ func (client *Client) Samples(ctx context.Context, instanceID string, from, to t
 	}
 	samples := make([]domainnetworkproxy.TrafficSample, 0, len(envelope.Data.Samples))
 	for _, item := range envelope.Data.Samples {
-		samples = append(samples, domainnetworkproxy.TrafficSample{ObservedAt: item.ObservedAt, UptimeSeconds: item.UptimeSeconds,
+		samples = append(samples, domainnetworkproxy.TrafficSample{ProcessEpoch: item.ProcessEpoch, SampleSequence: item.SampleSequence, ObservedAt: item.ObservedAt, UptimeSeconds: item.UptimeSeconds,
 			UploadTotal: item.UploadTotal, DownloadTotal: item.DownloadTotal, ActiveConnections: item.ActiveConnections})
 	}
 	return samples, nil
 }
+
+var proxyEpochPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 func validateProxySamples(series domainnetworkingest.ProxyRuntimeSeries, instanceID string, from, to time.Time) error {
 	if series.InstanceID != instanceID || series.Samples == nil || len(series.Samples) > 1440 {
@@ -131,6 +134,9 @@ func validateProxySamples(series domainnetworkingest.ProxyRuntimeSeries, instanc
 	}
 	var previous time.Time
 	for _, sample := range series.Samples {
+		if sample.ProcessEpoch == "" && sample.SampleSequence != 0 || sample.ProcessEpoch != "" && (!proxyEpochPattern.MatchString(sample.ProcessEpoch) || sample.SampleSequence < 1 || sample.SampleSequence > 9007199254740991) {
+			return fmt.Errorf("invalid sample epoch")
+		}
 		if sample.ObservedAt.Before(from) || sample.ObservedAt.After(to) || !sample.ObservedAt.After(previous) ||
 			sample.UptimeSeconds < 0 || sample.UploadTotal < 0 || sample.DownloadTotal < 0 ||
 			(sample.ActiveConnections != nil && (*sample.ActiveConnections < 0 || *sample.ActiveConnections > 1000000)) {

@@ -1,0 +1,48 @@
+{
+  "clusterId": "cluster-prod",
+  "namespace": "payments",
+  "applicationKey": "payments",
+  "applicationName": "Payments",
+  "environmentKey": "prod",
+  "environmentName": "Production",
+  "ownershipMode": "observe_only",
+  "workloads": [
+    {
+      "workloadKind": "Deployment",
+      "workloadName": "deployment",
+      "expectedUid": "",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "workloadKind": "StatefulSet",
+      "workloadName": "statefulset",
+      "expectedUid": "uid-StatefulSet",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "workloadKind": "DaemonSet",
+      "workloadName": "daemonset",
+      "expectedUid": "uid-DaemonSet",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "workloadKind": "Job",
+      "workloadName": "job",
+      "expectedUid": "uid-Job",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "workloadKind": "CronJob",
+      "workloadName": "cronjob",
+      "expectedUid": "uid-CronJob",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "workloadKind": "CustomResource",
+      "workloadName": "customresource",
+      "expectedUid": "uid-CustomResource",
+      "expectedSpecDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "crdName": "elasticsearches.elasticsearch.k8s.elastic.co"
+    }
+  ]
+}

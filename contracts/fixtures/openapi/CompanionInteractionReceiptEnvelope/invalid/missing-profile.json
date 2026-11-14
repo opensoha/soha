@@ -1,0 +1,9 @@
+{
+  "data": {
+    "idempotencyKey": "interaction-0001",
+    "applied": true,
+    "xpAwarded": 2,
+    "affinityAwarded": 1,
+    "unlockedIds": []
+  }
+}

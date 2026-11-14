@@ -356,6 +356,7 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessMihomoProfilesView,
 			appaccess.PermNetworkAccessTelemetryView,
 			appaccess.PermNetworkAccessEnrollmentsView,
+			"network_access.nas_bindings.view",
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
 			"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view",
@@ -371,8 +372,8 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEndpointDevicesView}}, true
 	case "network-access-user-admission", "network-access-sites", "network-access-ssids", "network-access-wifi", "network-access-wired", "network-access-nas-bindings", "network-access-site-profile-bindings", "network-access-sessions":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView}}, true
-	case "network-access-settings":
-		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView, appaccess.PermNetworkAccessEnrollmentsView}}, true
+	case "network-access-settings", "network-access-radius-services":
+		return networkAccessAdmissionMenuRule(id), true
 	case "network-access-content-transfers":
 		return visibilityRule{permissions: []string{"network_access.content_transfers.view", "network_access.content_destinations.view", "network_access.content_transfer_events.view"}}, true
 	case "network-access-endpoint-response":
@@ -389,7 +390,7 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessTelemetryView}}, true
 	case "network-access-proxy-instances", "network-access-proxy-overview", "network-access-proxy-connections":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessProxyInstancesView}}, true
-	case "network-access-enrollments", "network-access-radius-services":
+	case "network-access-enrollments":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEnrollmentsView}}, true
 	case "network-access-access-grants":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessAccessGrantsView}}, true
@@ -398,6 +399,14 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 	default:
 		return visibilityRule{}, false
 	}
+}
+
+func networkAccessAdmissionMenuRule(id string) visibilityRule {
+	permissions := []string{appaccess.PermNetworkAccessEnrollmentsView, "network_access.nas_bindings.view"}
+	if id == "network-access-settings" {
+		permissions = append(permissions, appaccess.PermNetworkAccessSitesView)
+	}
+	return visibilityRule{permissions: permissions}
 }
 
 func identitySystemMenuRule(id string) (visibilityRule, bool) {

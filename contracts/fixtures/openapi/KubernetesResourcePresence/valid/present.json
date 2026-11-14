@@ -1,0 +1,12 @@
+{
+  "protocol": "resource-presence-v1",
+  "apiVersion": "v1",
+  "resource": "configmaps",
+  "kind": "ConfigMap",
+  "namespace": "team-a",
+  "name": "app",
+  "collectionResourceVersion": "opaque-v",
+  "uid": "original-uid",
+  "resourceVersion": "object-rv",
+  "state": "present"
+}

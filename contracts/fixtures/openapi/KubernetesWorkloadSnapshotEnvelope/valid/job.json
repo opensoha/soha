@@ -1,0 +1,14 @@
+{
+  "data": {
+    "content": "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: report\n",
+    "sourceUid": "a17fd246-9f85-4a1f-8bb0-c6c1f844b17e",
+    "selectedContainer": "worker",
+    "containers": [
+      {
+        "name": "worker",
+        "image": "registry.example.com/report:2026.08"
+      }
+    ],
+    "warnings": []
+  }
+}

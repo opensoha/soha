@@ -1,0 +1,6 @@
+{
+  "action": "scale",
+  "replicas": -1,
+  "expectedGeneration": 1,
+  "requestId": "x"
+}

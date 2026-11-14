@@ -1,0 +1,14 @@
+{
+  "deviceId": "device-bob-laptop",
+  "name": "Personal subscription",
+  "mode": "app_subscription",
+  "status": "active",
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "fake_ip",
+  "fakeIpRange": "198.18.0.0/15",
+  "selectorGroup": "SOHA",
+  "bypassCidrs": [],
+  "bypassHosts": ["network-control.example.com"],
+  "failClosed": false
+}

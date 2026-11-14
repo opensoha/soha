@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	resource "github.com/opensoha/soha-contracts/resource"
+	resource "github.com/opensoha/soha/contracts/resource"
 	"net/http"
 	"slices"
 )

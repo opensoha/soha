@@ -1,0 +1,15 @@
+{
+  "data": {
+    "id": "sec-registry-token",
+    "name": "registry-token",
+    "value": "must-not-be-returned",
+    "scopeType": "project",
+    "scopeId": "demo",
+    "status": "active",
+    "currentVersion": 1,
+    "bindings": [],
+    "createdBy": "user-admin",
+    "createdAt": "2026-08-03T10:00:00Z",
+    "updatedAt": "2026-08-03T10:00:00Z"
+  }
+}

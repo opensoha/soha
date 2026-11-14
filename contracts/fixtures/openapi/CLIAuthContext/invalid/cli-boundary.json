@@ -1,0 +1,13 @@
+{
+  "credentialKind": "service_account_token",
+  "subjectType": "service_account",
+  "subjectId": "sa-test",
+  "displayName": "CI runner",
+  "permissionKeys": [
+    "ai.gateway.invoke"
+  ],
+  "scopes": [
+    "llm"
+  ],
+  "unexpectedSecret": "must-be-rejected"
+}

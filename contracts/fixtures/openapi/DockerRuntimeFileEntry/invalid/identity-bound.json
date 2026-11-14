@@ -1,0 +1,8 @@
+{
+  "name": "link",
+  "path": "link",
+  "kind": "symlink",
+  "sizeBytes": 0,
+  "readSupported": true,
+  "listSupported": false
+}

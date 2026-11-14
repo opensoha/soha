@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/evaluation-result.schema.json",
+  "title": "Evaluation Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sampleId", "scores", "passed"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/evaluation-result/v1" },
+    "sampleId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "retrievedSources": { "type": "array", "maxItems": 512, "items": { "type": "string", "maxLength": 512 } },
+    "producedFacts": { "type": "array", "maxItems": 512, "items": { "type": "string", "maxLength": 4096 } },
+    "actions": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 256 } },
+    "scores": { "type": "object", "maxProperties": 128, "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+    "passed": { "type": "boolean" },
+    "failureReasons": { "type": "array", "maxItems": 128, "items": { "type": "string", "maxLength": 256 } }
+  }
+}

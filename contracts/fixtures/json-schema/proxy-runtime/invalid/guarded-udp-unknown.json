@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "proxy-runtime/v1alpha1",
+  "runtimeId": "runtime1",
+  "messageType": "observation",
+  "occurredAt": "2026-11-08T11:00:00Z",
+  "payload": {
+    "engine": "mihomo",
+    "engineVersion": "v1.19.30",
+    "health": "healthy",
+    "capabilities": [
+      "guarded_udp_v2"
+    ],
+    "uptimeSeconds": 0,
+    "uploadTotal": 0,
+    "downloadTotal": 0,
+    "processEpoch": "epoch1",
+    "sampleSequence": 1
+  }
+}

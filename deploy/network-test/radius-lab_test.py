@@ -1,3 +1,4 @@
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -15,11 +16,40 @@ class RadiusLabTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.previous_state = lab.STATE
-        lab.STATE = Path(self.temp.name) / 'lab'
+        lab.configure(argparse.Namespace(legacy_task53=False, project='task122-test', owner='task122-b3-l02-a01',
+                      state=str(Path(self.temp.name).resolve() / 'lab'), core_image='lab/core:test', radius_image='lab/radius:test',
+                      eap_image='lab/eap:test', api='http://127.0.0.1:29180/api/v1', runtime_id='radius-task122',
+                      nas_id='nas-task122', device_id='device-task122', api_port=29180, control_port=29182, ingest_port=29183))
+        lab.STATE = Path(self.temp.name).resolve() / 'lab'
 
     def tearDown(self):
         lab.STATE = self.previous_state
         self.temp.cleanup()
+
+    def test_configuration_marker_rejects_changed_owner_or_port(self):
+        lab.owned_state(create=True)
+        lab.OWNER = 'someone-else'
+        with self.assertRaises(RuntimeError):
+            lab.owned_state()
+        self.assertEqual(json.loads((lab.STATE / 'lab.json').read_text())['owner'], 'task122-b3-l02-a01')
+
+    def test_compose_refuses_foreign_container_before_mutation(self):
+        lab.prepare()
+        def command(*args, **kwargs):
+            if args[:3] == ('docker', 'ps', '-aq'):
+                return 'foreign-container'
+            if args[:3] == ('docker', 'container', 'inspect'):
+                return json.dumps([{'Config': {'Labels': {'io.opensoha.lab.owner': 'other'}}}])
+            self.fail('Unexpected external command: ' + str(args[:3]))
+        with patch.object(lab, 'run', side_effect=command):
+            with self.assertRaises(RuntimeError):
+                lab.compose('stop')
+
+    def test_request_uses_current_configured_api(self):
+        with patch.object(lab.urllib.request, 'urlopen') as call:
+            call.return_value.__enter__.return_value.read.return_value = b'{}'
+            lab.request('GET', '/test')
+        self.assertEqual(call.call_args.args[0].full_url, lab.API + '/test')
 
     def test_refuses_unowned_existing_directory(self):
         lab.STATE.mkdir()
@@ -36,7 +66,7 @@ class RadiusLabTest(unittest.TestCase):
         self.assertEqual((lab.STATE / 'secrets.json').read_text(), credentials)
         self.assertEqual((lab.STATE / 'tls' / 'ca.crt').read_text(), ca)
         config = json.loads((lab.STATE / 'compose.json').read_text())
-        self.assertEqual(config['name'], 'soha-task53-radius-lab')
+        self.assertEqual(config['name'], 'task122-test')
         ports = []
         for service in config['services'].values():
             self.assertNotIn('container_name', service)
@@ -51,11 +81,13 @@ class RadiusLabTest(unittest.TestCase):
                     self.assertTrue(source.startswith(str(lab.STATE) + '/'))
                     self.assertNotEqual(source, str(lab.STATE / 'tls'))
         self.assertEqual(len(ports), len(set(ports)))
-        self.assertEqual(config['volumes'], {'postgres-data': {}, 'ingest-postgres-data': {}, 'core-data': {}})
+        self.assertEqual(set(config['volumes']), {'postgres-data', 'ingest-postgres-data', 'core-data'})
+        for volume in config['volumes'].values():
+            self.assertEqual(volume['labels']['io.opensoha.lab.owner'], lab.OWNER)
         for key in (lab.STATE / 'tls').glob('**/*.key'):
             self.assertEqual(key.stat().st_mode & 0o777, 0o600)
         certificate = lab.run('openssl', 'x509', '-in', str(lab.STATE / 'tls' / 'freeradius-ingest' / 'tls.crt'), '-noout', '-text')
-        self.assertIn('spiffe://opensoha.local/network-ingest/freeradius/radius-task53-lab', certificate)
+        self.assertIn('spiffe://opensoha.local/network-ingest/freeradius/radius-task122', certificate)
         self.assertNotIn('/ca.key:', json.dumps(config))
         issuer = lab.STATE / 'tls' / 'eap-issuer' / 'ca.crt'
         self.assertNotEqual(issuer.read_text(), ca)

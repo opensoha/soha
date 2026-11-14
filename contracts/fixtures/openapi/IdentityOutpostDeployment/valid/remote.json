@@ -1,0 +1,6 @@
+{
+  "protocolVersion": "v1",
+  "controlPlaneUrl": "https://soha.example.com",
+  "trustKeyId": "key1",
+  "trustPublicKey": "public-key"
+}

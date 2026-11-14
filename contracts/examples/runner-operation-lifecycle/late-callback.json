@@ -1,0 +1,27 @@
+{
+  "operationId": "op-ai-provider-789",
+  "operationKind": "ai_provider",
+  "runnerId": "runner-ai-1",
+  "agentId": "agent-ai-1",
+  "state": "late_callback_ignored",
+  "sequence": 11,
+  "occurredAt": "2026-06-12T00:10:00.000Z",
+  "callback": {
+    "callbackId": "callback-789-late",
+    "accepted": false,
+    "late": true,
+    "dedupeKey": "op-ai-provider-789:late"
+  },
+  "finalState": {
+    "status": "timed_out",
+    "reason": "deadline_exceeded",
+    "completedAt": "2026-06-12T00:09:00.000Z"
+  },
+  "evidence": [
+    {
+      "kind": "callback_payload",
+      "message": "Late provider callback ignored after timeout.",
+      "redacted": true
+    }
+  ]
+}

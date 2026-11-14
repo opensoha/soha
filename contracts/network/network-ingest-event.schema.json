@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/network/network-ingest-event.schema.json",
+  "title": "OpenSoha Network Ingest Event Batch",
+  "description": "Strict bounded telemetry batches for runtime heartbeat, RADIUS Accounting, flow aggregates and connection summaries. Ingest events are not authorization facts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "batchId", "producerId", "producerKind", "sentAt", "events"],
+  "properties": {
+    "schemaVersion": { "const": "network-ingest/v1alpha1" },
+    "batchId": { "$ref": "#/$defs/Identifier" },
+    "producerId": { "$ref": "#/$defs/Identifier" },
+    "producerKind": { "enum": ["endpoint", "gateway", "freeradius", "network-control", "proxy"] },
+    "sentAt": { "type": "string", "format": "date-time" },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/Event" }
+    }
+  },
+  "$defs": {
+    "VPNProbeBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intentId",
+        "profileId",
+        "profileRevision",
+        "selectionPolicyRevision",
+        "batchId",
+        "networkEpoch",
+        "windowStartedAt",
+        "windowEndedAt",
+        "results"
+      ],
+      "properties": {
+        "intentId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selectionPolicyRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batchId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "networkEpoch": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "windowStartedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "windowEndedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "gatewayId",
+              "sentCount",
+              "rttSamplesMs"
+            ],
+            "properties": {
+              "gatewayId": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "sentCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "rttSamplesMs": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 10,
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 10000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "VPNTunnelStats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "profileId",
+        "gatewayId",
+        "endpointRuntimeId",
+        "epoch",
+        "windowStartedAt",
+        "windowEndedAt",
+        "uploadBytes",
+        "downloadBytes"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gatewayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "endpointRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "epoch": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "windowStartedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "windowEndedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "uploadBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "downloadBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastHandshakeAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "VPNGatewayHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gatewayId",
+        "ready",
+        "activeEndpointPeers",
+        "configurationVersion",
+        "observedAt"
+      ],
+      "properties": {
+        "gatewayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "activeEndpointPeers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "sequence", "occurredAt", "payload"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Identifier" },
+        "type": {
+          "enum": [
+            "vpn.probe.batch",
+            "vpn.tunnel.stats",
+            "vpn.gateway.health",
+            "runtime.heartbeat",
+            "radius.accounting",
+            "network.flow.aggregate",
+            "network.connection.summary",
+            "proxy.flow.aggregate",
+            "proxy.runtime.sample"
+          ]
+        },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "payload": {
+          "oneOf": [
+            { "$ref": "#/$defs/VPNProbeBatch" },
+            { "$ref": "#/$defs/VPNTunnelStats" },
+            { "$ref": "#/$defs/VPNGatewayHealth" },
+            { "$ref": "#/$defs/Heartbeat" },
+            { "$ref": "#/$defs/RadiusAccounting" },
+            { "$ref": "#/$defs/FlowAggregate" },
+            { "$ref": "#/$defs/ConnectionSummary" },
+            { "$ref": "#/$defs/ProxyFlowAggregate" },
+            { "$ref": "#/$defs/ProxyRuntimeSample" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "vpn.probe.batch"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/VPNProbeBatch"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "vpn.tunnel.stats"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/VPNTunnelStats"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "vpn.gateway.health"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/VPNGatewayHealth"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "runtime.heartbeat" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/Heartbeat" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "radius.accounting" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/RadiusAccounting" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "network.flow.aggregate" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/FlowAggregate" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "network.connection.summary" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/ConnectionSummary" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "proxy.flow.aggregate" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/ProxyFlowAggregate" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "proxy.runtime.sample" } }, "required": ["type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/ProxyRuntimeSample" } } }
+        }
+      ]
+    },
+    "Heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "configurationVersion", "policyVersion", "uptimeSeconds"],
+      "properties": {
+        "status": { "enum": ["healthy", "degraded", "unhealthy"] },
+        "configurationVersion": { "type": "integer", "minimum": 0 },
+        "policyVersion": { "type": "integer", "minimum": 0 },
+        "uptimeSeconds": { "type": "integer", "minimum": 0 },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    },
+    "RadiusAccounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statusType", "accountingSessionId", "nasId", "sessionTimeSeconds"],
+      "properties": {
+        "statusType": { "enum": ["start", "interim-update", "stop", "accounting-on", "accounting-off"] },
+        "accountingSessionId": { "$ref": "#/$defs/Identifier" },
+        "sessionId": { "$ref": "#/$defs/Identifier" },
+        "nasId": { "$ref": "#/$defs/Identifier" },
+        "nasPortId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "$ref": "#/$defs/Identifier" },
+        "deviceId": { "$ref": "#/$defs/Identifier" },
+        "sessionTimeSeconds": { "type": "integer", "minimum": 0 },
+        "inputOctets": { "type": "integer", "minimum": 0 },
+        "outputOctets": { "type": "integer", "minimum": 0 },
+        "inputPackets": { "type": "integer", "minimum": 0 },
+        "outputPackets": { "type": "integer", "minimum": 0 },
+        "terminationCause": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "FlowAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "windowStartedAt",
+        "windowEndedAt",
+        "sessionId",
+        "resourceId",
+        "direction",
+        "protocol",
+        "bytes",
+        "packets",
+        "connections",
+        "deniedConnections"
+      ],
+      "properties": {
+        "windowStartedAt": { "type": "string", "format": "date-time" },
+        "windowEndedAt": { "type": "string", "format": "date-time" },
+        "sessionId": { "$ref": "#/$defs/Identifier" },
+        "resourceId": { "$ref": "#/$defs/Identifier" },
+        "direction": { "enum": ["ingress", "egress"] },
+        "protocol": { "enum": ["tcp", "udp", "icmp", "other"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "packets": { "type": "integer", "minimum": 0 },
+        "connections": { "type": "integer", "minimum": 0 },
+        "deniedConnections": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ConnectionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "resourceId", "protocol", "destinationPort", "state", "reasonCode"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/Identifier" },
+        "resourceId": { "$ref": "#/$defs/Identifier" },
+        "protocol": { "enum": ["tcp", "udp", "icmp", "other"] },
+        "destinationPort": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "state": { "enum": ["opened", "closed", "denied"] },
+        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "ProxyFlowAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "windowStartedAt",
+        "windowEndedAt",
+        "engine",
+        "profileId",
+        "profileRevision",
+        "mode",
+        "selectedProxy",
+        "uploadBytes",
+        "downloadBytes",
+        "activeConnections"
+      ],
+      "properties": {
+        "windowStartedAt": { "type": "string", "format": "date-time" },
+        "windowEndedAt": { "type": "string", "format": "date-time" },
+        "engine": { "const": "mihomo" },
+        "profileId": { "$ref": "#/$defs/Identifier" },
+        "profileRevision": { "type": "integer", "minimum": 1 },
+        "mode": { "enum": ["managed_follow", "app_subscription"] },
+        "selectedProxy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uploadBytes": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "downloadBytes": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+        "activeConnections": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      }
+    },
+    "ProxyRuntimeSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "uptimeSeconds", "uploadTotal", "downloadTotal"],
+      "dependentRequired": { "processEpoch": ["sampleSequence"], "sampleSequence": ["processEpoch"] },
+      "properties": {
+        "engine": { "enum": ["mihomo", "sing-box", "v2ray", "external"] },
+        "processEpoch": {"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "sampleSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "uptimeSeconds": { "type": "integer", "minimum": 0 },
+        "uploadTotal": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "downloadTotal": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "activeConnections": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      }
+    }
+  }
+}

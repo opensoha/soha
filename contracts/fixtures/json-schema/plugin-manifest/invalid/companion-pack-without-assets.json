@@ -1,0 +1,17 @@
+{
+  "id": "opensoha.empty-companion",
+  "name": "Empty Companion",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "companion-pack",
+  "companionPack": {
+    "renderer": "svg",
+    "entryAsset": "model.svg",
+    "license": {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0",
+      "redistributionAllowed": true,
+      "commercialUseAllowed": true
+    }
+  }
+}

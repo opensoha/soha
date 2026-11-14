@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "id": "settings",
+      "path": "/settings",
+      "labelZh": "设置中心",
+      "labelEn": "Settings",
+      "iconKey": "setting",
+      "section": "",
+      "sortOrder": 10,
+      "enabled": true,
+      "children": [
+        {
+          "id": "settings-overview",
+          "parentId": "settings",
+          "path": "/settings/overview",
+          "labelZh": "设置总览",
+          "labelEn": "Settings Overview",
+          "iconKey": "dashboard",
+          "section": "",
+          "sortOrder": 10,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+name: skills-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate skill layout
+        run: |
+          test -f README.md
+          test -f agent-profiles/README.md
+          test -f mcp-presets/README.md
+          skill_count="$(find skills -name SKILL.md -type f | wc -l)"
+          test "$skill_count" -gt 0
+          find skills -name SKILL.md -type f -print0 | xargs -0 -I{} test -s "{}"
+      - name: Validate schemas, assets, and package dry-run
+        run: python3 tools/validate_assets.py --package-dry-run --report-output dist/skills-validation-report.json
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-validation-report
+          path: dist/skills-validation-report.json
+          if-no-files-found: error

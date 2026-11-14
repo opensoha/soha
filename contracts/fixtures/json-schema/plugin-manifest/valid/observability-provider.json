@@ -1,0 +1,29 @@
+{
+  "id": "opensoha.tempo",
+  "name": "Tempo Observability Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "observability-provider",
+  "runtime": {
+    "mode": "external-http",
+    "endpoint": "https://tempo-provider.example.com",
+    "actionPath": "/v1/actions/{action}"
+  },
+  "extensionPoints": {
+    "observability": {
+      "providers": [
+        {
+          "providerKey": "tempo",
+          "displayName": "Grafana Tempo",
+          "protocolVersion": "v1",
+          "signals": ["traces"],
+          "capabilities": ["traces.query"],
+          "configSchemaRef": "schemas/tempo-data-source.json",
+          "actionRefs": {
+            "traces.query": "traces-query"
+          }
+        }
+      ]
+    }
+  }
+}

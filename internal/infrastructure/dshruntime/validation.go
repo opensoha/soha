@@ -387,22 +387,27 @@ func requiredResponse(m map[string]any, out any) bool {
 		}
 		return true
 	case *runtimeAssetList:
-		items, ok := m["items"].([]any)
-		if !ok || !allowed(m, "items") {
-			return false
-		}
-		for _, value := range items {
-			asset, ok := value.(map[string]any)
-			if !ok || !required(asset, "kind id version") || !allowed(asset, "kind id version transport executionPosition") {
-				return false
-			}
-		}
-		return true
+		return requiredRuntimeAssets(m)
 	case *runtimeMCPProbe:
 		return required(m, "status capabilities") && allowed(m, "status capabilities")
 	}
 	return false
 }
+
+func requiredRuntimeAssets(m map[string]any) bool {
+	items, ok := m["items"].([]any)
+	if !ok || !allowed(m, "items") {
+		return false
+	}
+	for _, value := range items {
+		asset, ok := value.(map[string]any)
+		if !ok || !required(asset, "kind id version") || !allowed(asset, "kind id version transport executionPosition") {
+			return false
+		}
+	}
+	return true
+}
+
 func validResponseFields(v any) bool {
 	switch x := v.(type) {
 	case map[string]any:

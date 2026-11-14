@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "opensoha.dev/personal-environment-export/v1",
+  "leaseId": "lease-fixture",
+  "runId": "run-fixture",
+  "ownerId": "owner-fixture",
+  "scopeHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "sizeBytes": 10240,
+  "sha256": "invalid",
+  "observedAt": "2026-10-08T00:00:00Z"
+}

@@ -1,0 +1,15 @@
+{
+  "question": "你好",
+  "history": [
+    {
+      "role": "user",
+      "content": "我正在整理发布说明"
+    },
+    {
+      "role": "assistant",
+      "content": "请提供要点。"
+    }
+  ],
+  "historyTruncated": false,
+  "locale": "zh-CN"
+}

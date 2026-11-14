@@ -1,0 +1,363 @@
+name: cli-release
+
+on:
+  push:
+    tags:
+      - "cli/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Dispatch with --ref this tag; existing immutable cli/v<version> tag (also used for recovery)"
+        required: true
+      sha:
+        description: "Exact 40-character main commit of that tag"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cli-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_SHA: ${{ inputs.sha || github.sha }}
+  GOWORK: ${{ github.workspace }}/go.work
+  GOFLAGS: -mod=readonly
+  RELEASE_CLI_ENABLED: ${{ vars.RELEASE_CLI_ENABLED }}
+  GOTOOLCHAIN: local
+
+jobs:
+  verify:
+    name: Verify release identity and declared public SDK
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      date: ${{ steps.identity.outputs.date }}
+      epoch: ${{ steps.identity.outputs.epoch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate exact component tag and source identity
+        id: identity
+        run: |
+          set -euo pipefail
+          python3 scripts/release-control.py identity --component cli --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --github-output
+          source_epoch="$(git show -s --format=%ct "$RELEASE_SHA")"
+          source_date="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$RELEASE_SHA")"
+          printf 'epoch=%s\ndate=%s\n' "$source_epoch" "$source_date" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+            cli/go.sum
+            agent/go.sum
+      - name: Verify same-Root source layout
+        run: python3 scripts/source-workspace.py check-go
+      - name: Verify declared released SDK without workspace replacement
+        env:
+          REQUESTED_CONTRACTS_REF: v0.2.0
+        run: python3 agent/deploy/resolve_contracts.py --mode declared --consumer cli
+      - name: Qualify cli against the public declared SDK
+        working-directory: cli
+        env:
+          GOWORK: 'off'
+        run: go test ./...
+      - name: Verify candidate package and download examples
+        run: |
+          test "$(node -p "require('./cli/npm/cli/package.json').version")" = "${RELEASE_TAG#cli/v}"
+          grep -F "cmd/soha@v${RELEASE_TAG#cli/v}" cli/README.md
+          grep -F "soha_${RELEASE_TAG#cli/v}_linux_amd64.tar.gz" cli/README.md
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Build archive
+        working-directory: cli
+        env:
+          GOWORK: 'off'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          BUILD_DATE: ${{ needs.verify.outputs.date }}
+          SOURCE_EPOCH: ${{ needs.verify.outputs.epoch }}
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#cli/v}"
+          NAME="soha_${VERSION}_${GOOS}_${GOARCH}"
+          EXT=""
+          if [[ "${GOOS}" == "windows" ]]; then
+            EXT=".exe"
+          fi
+          mkdir -p out dist
+          go build -trimpath -ldflags "-s -w -X github.com/opensoha/soha/cli/internal/sohacli.version=${VERSION} -X github.com/opensoha/soha/cli/internal/sohacli.commit=${RELEASE_SHA} -X github.com/opensoha/soha/cli/internal/sohacli.date=${BUILD_DATE}" -o "out/soha${EXT}" ./cmd/soha
+          cp "out/soha${EXT}" "dist/${NAME}${EXT}"
+          if [[ "${GOOS}" == "windows" ]]; then
+            python3 scripts/package-native-release.py "out/soha${EXT}" "dist/${NAME}.zip" "$SOURCE_EPOCH"
+          else
+            python3 scripts/package-native-release.py out/soha "dist/${NAME}.tar.gz" "$SOURCE_EPOCH"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: cli/dist/*
+
+  checksums:
+    name: Checksums
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - release-smoke
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find dist -type f -name "soha_*" -exec cp {} release/ \;
+          (cd release && sha256sum * > checksums.txt)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums
+          path: release/checksums.txt
+
+  release-smoke:
+    name: Release binary smoke
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-linux-amd64
+          path: smoke
+      - name: Package official skills
+        run: |
+          set -euo pipefail
+          skills_version="$(jq -r '.skillsVersion' skills/catalog/compatibility-matrix.json)"
+          package_dir="${RUNNER_TEMP}/soha-skills-release"
+          python3 skills/tools/validate_assets.py \
+            --release-version "${skills_version}" \
+            --package-output-dir "${package_dir}" \
+            --report-output "${package_dir}/soha-skills-${skills_version}.validation-report.json"
+          echo "SOHA_SKILLS_ARTIFACT=${package_dir}/soha-skills-${skills_version}.tar.gz" >> "${GITHUB_ENV}"
+      - name: Smoke test Linux release archive
+        run: |
+          set -euo pipefail
+          archive="$(find smoke -type f -name 'soha_*_linux_amd64.tar.gz' -print -quit)"
+          ./cli/scripts/release-smoke.sh "${archive}"
+
+  github-release:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: checksums
+    environment: release-cli
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download release archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: downloaded
+      - name: Download checksums
+        uses: actions/download-artifact@v7
+        with:
+          name: checksums
+          path: downloaded/checksums
+      - name: Verify protected release authority before external writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component cli --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Publish release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find downloaded -type f \( -name "soha_*" -o -name "checksums.txt" \) -exec cp {} release/ \;
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find release -type f -print0 | sort -z)
+          if [[ "${#files[@]}" -ne 13 ]]; then
+            printf 'expected 13 release assets, found %s\n' "${#files[@]}" >&2
+            printf '%s\n' "${files[@]}" >&2
+            exit 1
+          fi
+
+          python3 scripts/publish-release-assets.py --component cli --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory release
+
+          expected_assets="${RUNNER_TEMP}/expected-release-assets.txt"
+          actual_assets="${RUNNER_TEMP}/actual-release-assets.txt"
+          printf '%s\n' "${files[@]##*/}" | sort > "${expected_assets}"
+          timeout 30s gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | sort > "${actual_assets}"
+          diff -u "${expected_assets}" "${actual_assets}"
+
+  npm-publish:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    name: npm package
+    runs-on: ubuntu-latest
+    needs: [github-release, public-download]
+    environment: release-cli
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.4'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Use pinned trusted-publishing npm CLI
+        run: npm install --global npm@12.2.2
+      - name: Test and pack launcher
+        run: |
+          test "$(node -p "require('./cli/npm/cli/package.json').version")" = "${RELEASE_TAG#cli/v}"
+          npm test --workspace @opensoha/cli
+          mkdir -p "$RUNNER_TEMP/cli-package"
+          npm pack --workspace @opensoha/cli --pack-destination "$RUNNER_TEMP/cli-package" --json > "$RUNNER_TEMP/cli-package/pack.json"
+          node cli/scripts/verify-public-npm-release.mjs identity "$RUNNER_TEMP/cli-package/pack.json" "$RUNNER_TEMP/cli-package" > "$RUNNER_TEMP/cli-package/candidate.json"
+      - name: Verify protected release authority before external writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component cli --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Publish the exact packed CLI or verify the existing candidate
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#cli/v}"
+          package_file="$(jq -er '.file' "$RUNNER_TEMP/cli-package/candidate.json")"
+          if npm view "@opensoha/cli@${version}" version --json --registry=https://registry.npmjs.org > "$RUNNER_TEMP/cli-package/registry.json"; then
+            jq -e --arg version "$version" '. == $version' "$RUNNER_TEMP/cli-package/registry.json"
+          else
+            jq -e '.error.code == "E404"' "$RUNNER_TEMP/cli-package/registry.json"
+            npm publish "$package_file" --access public --provenance --registry=https://registry.npmjs.org
+          fi
+          node cli/scripts/verify-public-npm-release.mjs verify "$RUNNER_TEMP/cli-package/pack.json" "$RUNNER_TEMP/cli-package" > "$RUNNER_TEMP/cli-package/verified.json"
+      - name: Run clean-cache launcher after package and signed provenance verification
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#cli/v}"
+          npm_config_cache="$RUNNER_TEMP/cli-npx-cache" SOHA_NPX_CACHE="$RUNNER_TEMP/cli-binary-cache" npx -y "@opensoha/cli@${version}" version --json > "$RUNNER_TEMP/cli-version.json"
+          jq -e --arg version "$version" --arg commit "$RELEASE_SHA" '.version == $version and .commit == $commit' "$RUNNER_TEMP/cli-version.json"
+
+  image:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: [verify, checksums]
+    environment: release-cli
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Verify protected release authority before external writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component cli --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --images-unused
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve binary version
+        id: version
+        run: echo "value=${RELEASE_TAG#cli/v}" >> "${GITHUB_OUTPUT}"
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cli/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/opensoha/soha-cli:v${{ needs.verify.outputs.version }}
+            ghcr.io/opensoha/soha-cli:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+
+  public-download:
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify anonymous release downloads and SHA-256
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#cli/v}"
+          tag="${RELEASE_TAG//\//%2F}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          mkdir public-download
+          cd public-download
+          curl --fail --location --proto '=https' --proto-redir '=https' "$url/checksums.txt" -o checksums.txt
+          curl --fail --location --proto '=https' --proto-redir '=https' "$url/soha_${version}_linux_amd64" -o "soha_${version}_linux_amd64"
+          sha256sum --check --ignore-missing checksums.txt
+          chmod +x "soha_${version}_linux_amd64"
+          ./soha_"${version}"_linux_amd64 version --json > version.json
+          jq -e --arg version "$version" --arg commit "$RELEASE_SHA" '.version == $version and .commit == $commit' version.json

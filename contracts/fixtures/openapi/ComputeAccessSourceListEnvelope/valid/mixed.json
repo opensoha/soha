@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "agent-1",
+      "sourceType": "agent_host",
+      "resource": {
+        "domain": "agent",
+        "kind": "agent_host",
+        "id": "agent-1",
+        "displayName": "edge-agent-1",
+        "scope": "default/default"
+      },
+      "status": "healthy",
+      "availableActions": ["inspect"],
+      "lastObservedAt": "2026-07-14T02:00:00Z"
+    }
+  ],
+  "nextCursor": "cursor-2"
+}

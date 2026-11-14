@@ -99,6 +99,58 @@ func TestLoadNetworkRuntimeConfigRequiresMutualTLS(t *testing.T) {
 	}
 }
 
+func TestLoadNetworkRuntimeTLSFromEnvironment(t *testing.T) {
+	for _, kind := range []string{"network_control", "ingest"} {
+		for _, content := range []string{"{}\n", kind + ":\n  tls:\n    cert_file: /old/cert\n    key_file: /old/key\n    client_ca_file: /old/ca\n"} {
+			t.Run(kind+"/"+strings.SplitN(content, "\n", 2)[0], func(t *testing.T) {
+				t.Setenv("SOHA_CONFIG_FILE", writeRuntimeConfig(t, content))
+				prefix := "SOHA_" + strings.ToUpper(kind) + "_TLS_"
+				t.Setenv(prefix+"CERT_FILE", "/run/runtime/tls.crt")
+				t.Setenv(prefix+"KEY_FILE", "/run/runtime/tls.key")
+				t.Setenv(prefix+"CLIENT_CA_FILE", "/run/runtime/ca.crt")
+				var actual MutualTLSConfig
+				if kind == "network_control" {
+					cfg, err := LoadNetworkControlConfig()
+					if err != nil {
+						t.Fatal(err)
+					}
+					actual = cfg.TLS
+				} else {
+					cfg, err := LoadIngestConfig()
+					if err != nil {
+						t.Fatal(err)
+					}
+					actual = cfg.TLS
+				}
+				if actual != (MutualTLSConfig{CertFile: "/run/runtime/tls.crt", KeyFile: "/run/runtime/tls.key", ClientCAFile: "/run/runtime/ca.crt"}) {
+					t.Fatalf("TLS environment not applied: %+v", actual)
+				}
+			})
+		}
+	}
+}
+
+func TestLoadNetworkRuntimeTLSRejectsMissingEnvironmentField(t *testing.T) {
+	for _, kind := range []string{"network_control", "ingest"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Setenv("SOHA_CONFIG_FILE", writeRuntimeConfig(t, "{}\n"))
+			prefix := "SOHA_" + strings.ToUpper(kind) + "_TLS_"
+			t.Setenv(prefix+"CERT_FILE", "/run/runtime/tls.crt")
+			t.Setenv(prefix+"KEY_FILE", "/run/runtime/tls.key")
+			t.Setenv(prefix+"CLIENT_CA_FILE", "")
+			var err error
+			if kind == "network_control" {
+				_, err = LoadNetworkControlConfig()
+			} else {
+				_, err = LoadIngestConfig()
+			}
+			if err == nil || !strings.Contains(err.Error(), kind+".tls.client_ca_file is required") {
+				t.Fatalf("missing client CA error = %v", err)
+			}
+		})
+	}
+}
+
 func writeRuntimeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")

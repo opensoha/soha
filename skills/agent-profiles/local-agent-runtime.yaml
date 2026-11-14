@@ -1,0 +1,66 @@
+schemaVersion: opensoha.dev/agent-profile/v1
+id: local-agent-runtime
+name: Local Agent Runtime
+version: 0.1.0
+description: Local self-hosted profile for Agent Runtime and read-only Kubernetes diagnosis.
+mode: platform_resource_diagnosis
+providerKind: soha-agent-runtime
+skillRefs:
+  - k8s-sre
+  - agent-runtime
+  - observability
+  - cloud-local-presets
+mcpPresetRefs:
+  - local-runtime-diagnosis
+capabilityRefs:
+  - agent_runtime_handoff
+  - platform_observability
+  - local_preset_selection
+platformCapabilityRefs:
+  - cluster.inventory
+  - workload.read
+  - configuration.inventory
+  - network.inventory
+  - storage.inventory
+  - pod.logs
+  - metrics
+requiredScopes:
+  - cluster
+  - namespace
+enabledToolRefs:
+  - delivery.applications.list
+  - delivery.execution_tasks.list
+  - delivery.execution_logs.list
+  - diagnosis.release_failure.analyze
+  - k8s.namespaces.list
+  - k8s.workloads.overview
+  - k8s.configmaps.list
+  - k8s.secrets.metadata
+  - k8s.helm.releases.list
+  - k8s.pods.list
+  - k8s.pods.logs
+  - k8s.pods.describe
+  - k8s.deployments.list
+  - k8s.deployments.rollout_status
+  - k8s.deployments.events
+  - k8s.services.list
+  - k8s.services.backends
+  - k8s.routes.context
+  - k8s.storage.context
+  - k8s.nodes.detail
+  - k8s.events.list
+disabledToolRefs:
+  - k8s.exec
+  - k8s.apply
+  - k8s.delete
+  - delivery.actions.trigger
+budgets:
+  defaultTimeRangeMinutes: 120
+  timeoutSeconds: 180
+  maxLogLines: 800
+guardrails:
+  - read_mostly
+  - no_direct_cluster_access
+  - no_secret_output
+  - preserve_runtime_evidence
+  - local_scope_only

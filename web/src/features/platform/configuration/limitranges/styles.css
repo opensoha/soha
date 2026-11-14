@@ -1,0 +1,56 @@
+.soha-limitrange-detail {
+  min-width: 0;
+}
+.soha-limitrange-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-limitrange-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-limitrange-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-limitrange-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-limitrange-card-title .ant-btn,
+.soha-limitrange-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-limitrange-namespace-trigger,
+.soha-limitrange-detail .soha-limitrange-namespace {
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: top;
+}
+.soha-limitrange-namespace-trigger {
+  display: inline-flex;
+  border-radius: var(--soha-radius-control);
+}
+.soha-limitrange-namespace-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-limitrange-namespace > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-limitrange-types {
+  display: grid;
+  gap: 6px;
+}
+.soha-limitrange-types .ant-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-limitrange-number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

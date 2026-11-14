@@ -1,0 +1,72 @@
+.soha-step-form__steps {
+  max-width: 520px;
+  margin: 0 auto 28px;
+}
+
+.soha-step-form__content {
+  width: 100%;
+  max-width: var(--soha-step-form-content-max-width, 640px);
+  margin: 0 auto;
+}
+
+.soha-step-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-width: var(--soha-step-form-content-max-width, 640px);
+  margin-right: auto;
+  margin-left: auto;
+  margin-top: 24px;
+}
+
+.soha-step-form-modal__body :is(.soha-step-form__content, .soha-step-form__actions) {
+  max-width: none;
+}
+
+.soha-step-form-modal__body .soha-step-form__actions {
+  margin-top: 16px;
+}
+
+.soha-step-form-modal__body .soha-step-form__steps {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin-bottom: 16px;
+  padding-top: 4px;
+  padding-bottom: 16px;
+  background: var(--soha-bg-surface);
+}
+
+@media (max-width: 640px) {
+  .soha-step-form-modal__body .soha-step-form__steps {
+    position: static;
+  }
+
+  .soha-step-form__steps {
+    margin-bottom: 20px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .soha-step-form__steps.ant-steps-horizontal .ant-steps-item {
+    min-width: 34px;
+  }
+
+  .soha-step-form__steps.ant-steps-horizontal
+    .ant-steps-item:not(.ant-steps-item-active)
+    .ant-steps-item-section {
+    display: none;
+  }
+
+  .soha-step-form__steps.ant-steps-horizontal .ant-steps-item-active {
+    min-width: 112px;
+  }
+
+  .soha-step-form__steps.ant-steps-horizontal .ant-steps-item-title {
+    white-space: nowrap;
+  }
+}

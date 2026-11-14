@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestTopologyNamedRootRequiresCapabilityAndResponseProof(t *testing.T) {

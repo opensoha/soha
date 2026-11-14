@@ -1,0 +1,130 @@
+name: skills-release
+
+on:
+  push:
+    tags:
+      - "skills/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Dispatch with --ref this immutable skills/v<version> tag (also used for recovery)"
+        required: true
+      sha:
+        description: "Exact 40-character main commit of that tag"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_SHA: ${{ inputs.sha || github.sha }}
+  RELEASE_SKILLS_ENABLED: ${{ vars.RELEASE_SKILLS_ENABLED }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Validate exact component tag and source identity
+        id: identity
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+          python3 scripts/release-control.py identity --component skills --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --github-output
+          printf 'SOURCE_DATE_EPOCH=%s\n' "$(git show -s --format=%ct "$RELEASE_SHA")" >> "$GITHUB_ENV"
+      - name: Validate schemas and package assets
+        working-directory: skills
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 tools/validate_assets.py --release-version "$VERSION" --package-output-dir dist/release --report-output "dist/release/soha-skills-${VERSION}.validation-report.json"
+      - name: Verify packaged release assets
+        working-directory: skills
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: python3 tools/validate_assets.py --release-version "$VERSION" --verify-package "dist/release/soha-skills-${VERSION}.tar.gz"
+      - name: Upload validation report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: skills-validation-report-${{ steps.identity.outputs.version }}
+          path: skills/dist/release/soha-skills-${{ steps.identity.outputs.version }}.validation-report.json
+          if-no-files-found: error
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: skills-release-assets
+          path: |
+            skills/dist/release/soha-skills-${{ steps.identity.outputs.version }}.tar.gz
+            skills/dist/release/soha-skills-${{ steps.identity.outputs.version }}.tar.gz.sha256
+            skills/dist/release/soha-skills-${{ steps.identity.outputs.version }}.manifest.json
+            skills/dist/release/soha-skills-${{ steps.identity.outputs.version }}.validation-report.json
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release-skills
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: skills-release-assets
+          path: skills/dist/release
+      - name: Verify staged release assets
+        working-directory: skills
+        run: |
+          set -euo pipefail
+          test "$(find dist/release -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 4
+          python3 tools/validate_assets.py --release-version "$VERSION" --verify-package "dist/release/soha-skills-${VERSION}.tar.gz"
+      - name: Verify protected release authority before attestation
+        run: python3 scripts/release-control.py verify --component skills --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            skills/dist/release/soha-skills-${{ env.VERSION }}.tar.gz
+            skills/dist/release/soha-skills-${{ env.VERSION }}.tar.gz.sha256
+            skills/dist/release/soha-skills-${{ env.VERSION }}.manifest.json
+            skills/dist/release/soha-skills-${{ env.VERSION }}.validation-report.json
+      - name: Verify protected release authority before GitHub writes
+        run: python3 scripts/release-control.py verify --component skills --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Publish immutable release assets
+        run: python3 scripts/publish-release-assets.py --component skills --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory skills/dist/release --title "Soha Skills ${VERSION}"
+      - name: Download published release assets and verify
+        working-directory: skills
+        run: |
+          set -euo pipefail
+          mkdir downloaded-release
+          gh release download "$RELEASE_TAG" --pattern "soha-skills-${VERSION}*" --dir downloaded-release
+          python3 tools/validate_assets.py --release-version "$VERSION" --verify-package "downloaded-release/soha-skills-${VERSION}.tar.gz"

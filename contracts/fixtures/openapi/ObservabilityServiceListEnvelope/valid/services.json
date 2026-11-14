@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "checkout-api",
+      "name": "checkout-api",
+      "environment": "production",
+      "namespace": "payments",
+      "clusterIds": ["cluster-1"],
+      "status": "degraded",
+      "requestRate": 125.5,
+      "errorRate": 0.023,
+      "latencyP95Ms": 412,
+      "lastSeenAt": "2026-08-13T01:00:00Z",
+      "instances": [
+        {
+          "id": "checkout-api-7b8f",
+          "name": "checkout-api-7b8f",
+          "status": "healthy",
+          "lastSeenAt": "2026-08-13T01:00:00Z"
+        }
+      ],
+      "endpoints": [
+        {
+          "id": "POST /checkout",
+          "name": "/checkout",
+          "method": "POST",
+          "status": "degraded",
+          "requestRate": 125.5,
+          "errorRate": 0.023,
+          "latencyP95Ms": 412
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "state": "success",
+    "observedAt": "2026-08-13T01:00:00Z"
+  }
+}

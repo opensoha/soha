@@ -1,0 +1,8 @@
+{
+  "vaultKv2": {
+    "mount": "team/kv",
+    "path": "demo/app",
+    "key": "token",
+    "version": 8
+  }
+}

@@ -1,0 +1,48 @@
+name: quality-ai-manual
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  midscene:
+    if: github.ref == 'refs/heads/main' && vars.SOHA_APPROVED_AI_SHA != ''
+    environment: quality-ai
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: soha-web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: soha-web
+          ref: ${{ vars.SOHA_APPROVED_AI_SHA }}
+          persist-credentials: false
+      - name: Verify approved test code SHA before installation
+        env:
+          SOHA_APPROVED_AI_SHA: ${{ vars.SOHA_APPROVED_AI_SHA }}
+          SOHA_AI_CONTRACTS_SHA: ${{ vars.SOHA_AI_CONTRACTS_SHA }}
+        run: node scripts/check-quality-workflows.mjs --dispatch
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: opensoha/soha-contracts
+          path: soha-contracts
+          ref: ${{ vars.SOHA_AI_CONTRACTS_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run typecheck:e2e && npm run build && npx playwright install --with-deps chromium
+      - name: Explicitly approved synthetic scenarios only
+        env:
+          SOHA_AI_ENABLED: '1'
+          SOHA_AI_APPROVAL_ID: ${{ vars.SOHA_AI_APPROVAL_ID }}
+          SOHA_AI_ALLOWED_HOST: ${{ vars.SOHA_AI_ALLOWED_HOST }}
+          SOHA_AI_MAX_CALLS: '12'
+          MIDSCENE_MODEL_BASE_URL: ${{ vars.MIDSCENE_MODEL_BASE_URL }}
+          MIDSCENE_MODEL_NAME: ${{ vars.MIDSCENE_MODEL_NAME }}
+          MIDSCENE_MODEL_FAMILY: ${{ vars.MIDSCENE_MODEL_FAMILY }}
+          MIDSCENE_MODEL_API_KEY: ${{ secrets.MIDSCENE_MODEL_API_KEY }}
+        run: npm run test:e2e:ai
+      # Raw screenshots/reports stay private; no automatic PR comments or artifact uploads.

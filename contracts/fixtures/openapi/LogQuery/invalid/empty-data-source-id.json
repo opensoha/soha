@@ -1,0 +1,7 @@
+{
+  "sourceMode": "durable",
+  "dataSourceId": "",
+  "selector": {
+    "namespace": "payments"
+  }
+}

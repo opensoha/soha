@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-provisioning.schema.json",
+  "title": "Fixed Personal Guest Provisioning",
+  "description": "Core-derived, encrypted durable task content delivered only to the fixed QGA installer on the frozen owned VM. The private key remains in that VM at /home/soha/.soha-personal-guest/bootstrap.key. No arbitrary command or path is accepted. Artifact download requires the current dedicated mTLS identity, returns an octet stream with no-store, and is pinned to the Core configured SHA256. Certificate/private key and one-time challenge material must not enter task responses, audits or logs. The guest unit runs as soha UID1000, with frozen cgroup and network limits. A separate root oneshot only reconciles a completed protected data receipt using GET /bindings/{id}/data-lease and can never format. The data lease requires a current registered identity, current owner/access/VM mutation permissions, initialized data and no competing reservation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan",
+    "endpoint",
+    "enrollmentId",
+    "challenge",
+    "certificatePEM",
+    "clientCAPEM",
+    "artifactSHA256",
+    "cpuQuotaMilli",
+    "memoryBytes",
+    "pidsLimit",
+    "network"
+  ],
+  "properties": {
+    "plan": {
+      "$ref": "personal-guest-data-plan.schema.json"
+    },
+    "endpoint": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 512
+    },
+    "enrollmentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "challenge": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "certificatePEM": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "clientCAPEM": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "artifactSHA256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "cpuQuotaMilli": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8000
+    },
+    "memoryBytes": {
+      "type": "integer",
+      "minimum": 33554432,
+      "maximum": 17179869184
+    },
+    "pidsLimit": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 256
+    },
+    "network": {
+      "const": false
+    }
+  }
+}

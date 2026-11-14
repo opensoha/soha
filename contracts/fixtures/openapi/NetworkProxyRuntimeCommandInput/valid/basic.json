@@ -1,0 +1,7 @@
+{
+  "requestId": "r1",
+  "processEpoch": "e1",
+  "kind": "groups",
+  "issuedAt": "2026-11-08T11:00:00Z",
+  "expiresAt": "2026-11-08T11:00:30Z"
+}

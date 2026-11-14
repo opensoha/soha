@@ -1,0 +1,9 @@
+{
+  "data": [{
+    "id": "message:side-reply:0",
+    "sessionId": "side-chat",
+    "messageId": "side-reply",
+    "createdAt": "2026-10-06T08:00:00Z",
+    "artifact": { "kind": "report", "runId": "report-1", "summary": "Saved report" }
+  }]
+}

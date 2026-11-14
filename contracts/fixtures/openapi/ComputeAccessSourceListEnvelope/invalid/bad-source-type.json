@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "source-1",
+      "sourceType": "provider",
+      "resource": {
+        "domain": "agent",
+        "kind": "agent_host",
+        "id": "agent-1",
+        "displayName": "edge-agent-1"
+      },
+      "status": "healthy"
+    }
+  ]
+}

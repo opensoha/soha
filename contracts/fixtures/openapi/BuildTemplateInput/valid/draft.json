@@ -1,0 +1,11 @@
+{
+  "key": "node-web",
+  "name": "Node web",
+  "enabled": true,
+  "buildCommands": [
+    "npm ci",
+    "npm run build"
+  ],
+  "expectedRevision": 2,
+  "publish": false
+}

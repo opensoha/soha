@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-mihomo-app-0001",
+  "messageType": "configuration.desired",
+  "producerId": "network-control",
+  "runtimeId": "endpoint-bob",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z",
+  "payload": {
+    "configurationVersion": 3,
+    "policyVersion": 7,
+    "validUntil": "2026-09-03T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": [],
+    "networkLeases": [],
+    "resourceLeases": [],
+    "mihomo": {
+      "mode": "app_subscription",
+      "profileId": "profile-personal",
+      "profileRevision": 1,
+      "mixedPort": 7890,
+      "controllerPort": 9090,
+      "dnsMode": "fake_ip",
+      "fakeIpRange": "198.18.0.0/15",
+      "selectorGroup": "SOHA",
+      "bypassCidrs": [],
+      "bypassHosts": ["network-control.example.com"],
+      "failClosed": false
+    }
+  }
+}

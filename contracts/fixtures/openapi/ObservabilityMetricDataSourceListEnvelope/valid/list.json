@@ -1,0 +1,8 @@
+{
+  "items": [
+    {
+      "id": "prometheus-main",
+      "name": "Production Prometheus"
+    }
+  ]
+}

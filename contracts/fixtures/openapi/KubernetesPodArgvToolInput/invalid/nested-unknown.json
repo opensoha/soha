@@ -1,0 +1,18 @@
+{
+  "clusterId": "cluster-a",
+  "namespace": "team-a",
+  "podName": "app",
+  "idempotencyKey": "reviewed-original-1",
+  "execution": {
+    "expectedUid": "reviewed-pod-uid",
+    "container": "main",
+    "argv": [
+      "printf",
+      "literal; $(value)"
+    ],
+    "stdinBase64": "aGVsbG8K",
+    "timeoutSeconds": 10,
+    "maxOutputBytes": 65536,
+    "force": true
+  }
+}

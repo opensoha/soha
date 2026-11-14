@@ -1,0 +1,13 @@
+{
+  "runtimeId": "gateway-site-a",
+  "siteId": "site-shanghai",
+  "name": "Shanghai Gateway",
+  "administrativeStatus": "active",
+  "publicEndpointHost": "vpn.example.com",
+  "publicEndpointPort": 51820,
+  "overlayCidr": "0.0.0.0/0",
+  "routingMode": "routed",
+  "mtu": 1380,
+  "persistentKeepaliveSeconds": 25,
+  "dnsServers": []
+}

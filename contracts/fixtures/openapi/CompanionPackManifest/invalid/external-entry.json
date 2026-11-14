@@ -1,0 +1,11 @@
+{
+  "renderer": "live2d-cubism",
+  "entryAsset": "https://cdn.example.com/model.json",
+  "assets": [],
+  "license": {
+    "name": "Unknown",
+    "url": "https://example.com/license",
+    "redistributionAllowed": true,
+    "commercialUseAllowed": false
+  }
+}

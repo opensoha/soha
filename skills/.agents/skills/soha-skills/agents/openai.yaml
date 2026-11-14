@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Skills Catalog"
+  short_description: "Official skills, presets, profiles, and release checks"
+  default_prompt: "Use $soha-skills to change and validate an official Soha runtime asset."

@@ -1,0 +1,1645 @@
+{
+  "$comment": "Generated from openapi/soha-api.yaml. Do not edit.",
+  "$defs": {
+    "BuildRepositoryRefInput": {
+      "additionalProperties": false,
+      "properties": {
+        "refName": {
+          "type": "string"
+        },
+        "refType": {
+          "enum": [
+            "branch",
+            "tag",
+            "commit"
+          ],
+          "type": "string"
+        },
+        "repositoryId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "refType",
+        "refName"
+      ],
+      "type": "object"
+    },
+    "DeliveryBatchTemplateDefinition": {
+      "additionalProperties": false,
+      "description": "Versioned batch stage recipe. The server compiles these stages for each target and applies ordering and dependency policy.",
+      "properties": {
+        "executionMode": {
+          "enum": [
+            "service_serial",
+            "build_all_then_deploy"
+          ],
+          "type": "string"
+        },
+        "maxConcurrency": {
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "delivery_batch"
+          ],
+          "type": "string"
+        },
+        "schemaVersion": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        },
+        "stages": {
+          "description": "Exactly build, plan, deploy, health in that order. Stages irrelevant to the target action are omitted; approval remains part of the final plan.",
+          "items": {
+            "enum": [
+              "build",
+              "plan",
+              "deploy",
+              "health"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "stopOnFailure": {
+          "type": "boolean",
+          "x-go-pointer": true
+        }
+      },
+      "required": [
+        "mode",
+        "schemaVersion",
+        "stages",
+        "executionMode",
+        "stopOnFailure",
+        "maxConcurrency"
+      ],
+      "type": "object"
+    },
+    "DeliveryBuildTemplateDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "delivery.soha.io/v1alpha1",
+          "type": "string"
+        },
+        "kind": {
+          "const": "BuildTemplate",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/DeliveryDocumentMetadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/DeliveryBuildTemplateSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "DeliveryBuildTemplateSpec": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "dockerfileTemplate": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dockerfileTemplate"
+              ]
+            },
+            {
+              "required": [
+                "buildCommands"
+              ]
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "buildCommands": {
+          "items": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "builderKind": {
+          "default": "custom",
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "defaultVariables": {
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "dockerfileTemplate": {
+          "maxLength": 1048576,
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "migrationPolicy": {
+          "$ref": "#/$defs/TemplateMigrationPolicy"
+        },
+        "variableSchema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DeliveryBuildVariableSchema"
+          },
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "DeliveryBuildVariableSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "enum": {
+          "items": {
+            "oneOf": [
+              {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "label": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "maxLength": {
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "minLength": {
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "boolean",
+            "integer",
+            "number"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "DeliveryDeploymentTemplateDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "delivery.soha.io/v1alpha1",
+          "type": "string"
+        },
+        "kind": {
+          "const": "DeploymentTemplate",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/DeliveryDocumentMetadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/DeliveryDeploymentTemplateSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "DeliveryDeploymentTemplateSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "additionalProperties": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "type": "object"
+        },
+        "defaults": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "environmentOverrides": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "health": {
+          "$ref": "#/$defs/DeploymentTemplateHealth"
+        },
+        "migrationPolicy": {
+          "$ref": "#/$defs/TemplateMigrationPolicy"
+        },
+        "parameterSchema": {
+          "$ref": "#/$defs/TemplateParameterSchema"
+        },
+        "source": {
+          "$ref": "#/$defs/DeploymentTemplateSource"
+        }
+      },
+      "required": [
+        "source",
+        "parameterSchema",
+        "defaults",
+        "health"
+      ],
+      "type": "object"
+    },
+    "DeliveryDocument": {
+      "description": "One UTF-8 YAML 1.2 JSON-subset or JSON document. Duplicate keys, aliases, tags, non-string keys, non-finite numbers, unsafe integers, unknown fields and versions are rejected. Maximum 1 MiB per file and nesting depth 64. No import operation executes document contents.",
+      "discriminator": {
+        "mapping": {
+          "BuildTemplate": "#/$defs/DeliveryBuildTemplateDocument",
+          "DeploymentTemplate": "#/$defs/DeliveryDeploymentTemplateDocument",
+          "Workflow": "#/$defs/DeliveryWorkflowDocument",
+          "WorkflowTemplate": "#/$defs/DeliveryWorkflowTemplateDocument"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DeliveryBuildTemplateDocument"
+        },
+        {
+          "$ref": "#/$defs/DeliveryDeploymentTemplateDocument"
+        },
+        {
+          "$ref": "#/$defs/DeliveryWorkflowTemplateDocument"
+        },
+        {
+          "$ref": "#/$defs/DeliveryWorkflowDocument"
+        }
+      ],
+      "title": "Soha Delivery Document"
+    },
+    "DeliveryDocumentDAG": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "stages"
+                ]
+              },
+              {
+                "required": [
+                  "steps"
+                ]
+              },
+              {
+                "required": [
+                  "onFailure"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "nodes"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "nodes"
+                ]
+              },
+              {
+                "required": [
+                  "edges"
+                ]
+              },
+              {
+                "required": [
+                  "steps"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "stages"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "nodes"
+                ]
+              },
+              {
+                "required": [
+                  "edges"
+                ]
+              },
+              {
+                "required": [
+                  "stages"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "steps"
+          ]
+        }
+      ],
+      "properties": {
+        "edges": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "condition": {
+                "enum": [
+                  "success",
+                  "failure",
+                  "always"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "source": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "target": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "target"
+            ],
+            "type": "object"
+          },
+          "maxItems": 1024,
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "release_dag",
+            "delivery_dag"
+          ],
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/DeliveryDocumentStep"
+              },
+              {
+                "required": [
+                  "id"
+                ]
+              }
+            ]
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "onFailure": {
+          "items": {
+            "$ref": "#/$defs/DeliveryDocumentStep"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "schemaVersion": {
+          "enum": [
+            1,
+            2
+          ],
+          "type": "integer"
+        },
+        "stages": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/$defs/DeliveryDocumentStep"
+                },
+                "maxItems": 256,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "steps"
+            ],
+            "type": "object"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/DeliveryDocumentStep"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DeliveryDocumentMetadata": {
+      "additionalProperties": false,
+      "description": "Template name is its stable key. For Workflow, name is only a file identifier; its display name is spec.definition.name. IDs, publication state, credentials and source claims cannot be set here.",
+      "properties": {
+        "description": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "displayName": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeliveryDocumentStep": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactKinds": {
+          "items": {
+            "enum": [
+              "image",
+              "test_report",
+              "scan_report",
+              "sbom",
+              "screenshot",
+              "video",
+              "junit",
+              "log"
+            ],
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "artifactOutputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "image",
+                  "test_report",
+                  "scan_report",
+                  "sbom",
+                  "screenshot",
+                  "video",
+                  "junit",
+                  "log"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 512,
+                "type": "string"
+              },
+              "ref": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "capabilityRef": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/$defs/TemplateParameterValues",
+          "description": "Existing executor-specific inert configuration. Keys remain owned and validated by the selected executor; importing never evaluates them."
+        },
+        "continueOnFailure": {
+          "type": "boolean"
+        },
+        "environmentSelector": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "executorKind": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "failurePolicy": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "fanOut": {
+          "additionalProperties": false,
+          "properties": {
+            "batchSize": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failurePolicy": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "strategy": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "fanOutBatchSize": {
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fanOutFailurePolicy": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "fanOutStrategy": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "inputMapping": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "inputs": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "observability": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "outputs": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "position": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "providerRef": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "runCondition": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "serviceSelector": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "stage": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "targetId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "targetKind": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "targetSelector": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "timeoutSeconds": {
+          "maximum": 86400,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "enum": [
+            "manual_approval",
+            "deploy_update_image",
+            "wait_rollout",
+            "check_http",
+            "check_k8s_event",
+            "smoke_test",
+            "notify",
+            "rollback_to_previous",
+            "restart_workload",
+            "scale_workload",
+            "delete_pod",
+            "evict_pod",
+            "http_callback",
+            "create_silence",
+            "build",
+            "release",
+            "verify",
+            "check"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "DeliveryTargetInput": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "build_deploy",
+                        "deploy",
+                        "config_update"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "applicationEnvironmentId"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "serviceId": {
+                "minLength": 1,
+                "type": "string"
+              }
+            }
+          },
+          "if": {
+            "required": [
+              "templateCandidateId"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "helmRevision"
+                  ]
+                },
+                {
+                  "required": [
+                    "buildArgs"
+                  ]
+                },
+                {
+                  "required": [
+                    "repositoryRefs"
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "action": {
+                "const": "config_update"
+              },
+              "releaseBundleId": {
+                "maxLength": 0,
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "deploy"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "releaseBundleId"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "build_deploy",
+            "build",
+            "deploy",
+            "config_update"
+          ],
+          "type": "string"
+        },
+        "applicationEnvironmentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "applicationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "buildArgs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "dependsOn": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "group": {
+          "default": 0,
+          "maximum": 199,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "helmRevision": {
+          "description": "Existing owned Helm revision to restore through a new config_update batch.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+          "type": "string"
+        },
+        "releaseBundleId": {
+          "type": "string"
+        },
+        "releaseTargetId": {
+          "type": "string"
+        },
+        "repositoryRefs": {
+          "items": {
+            "$ref": "#/$defs/BuildRepositoryRefInput"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "serviceId": {
+          "type": "string"
+        },
+        "templateCandidateId": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "serviceId",
+        "action"
+      ],
+      "type": "object"
+    },
+    "DeliveryWorkflowDefinition": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "workflowTemplateId": [
+          "workflowTemplateVersion"
+        ],
+        "workflowTemplateVersion": [
+          "workflowTemplateId"
+        ]
+      },
+      "properties": {
+        "maxConcurrency": {
+          "default": 4,
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "default": "service_serial",
+          "enum": [
+            "service_serial",
+            "build_all_then_deploy"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        "stopOnFailure": {
+          "default": true,
+          "type": "boolean",
+          "x-go-pointer": true
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/DeliveryTargetInput"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        },
+        "workflowTemplateId": {
+          "type": "string"
+        },
+        "workflowTemplateVersion": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "targets"
+      ],
+      "type": "object"
+    },
+    "DeliveryWorkflowDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "delivery.soha.io/v1alpha1",
+          "type": "string"
+        },
+        "kind": {
+          "const": "Workflow",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "description": "File identifier only. The workflow display name is spec.definition.name.",
+          "properties": {
+            "name": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "spec": {
+          "$ref": "#/$defs/DeliveryWorkflowDocumentSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "DeliveryWorkflowDocumentSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": {
+          "$ref": "#/$defs/DeliveryWorkflowDefinition"
+        }
+      },
+      "required": [
+        "definition"
+      ],
+      "type": "object"
+    },
+    "DeliveryWorkflowTemplateDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "const": "delivery.soha.io/v1alpha1",
+          "type": "string"
+        },
+        "kind": {
+          "const": "WorkflowTemplate",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/DeliveryDocumentMetadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/DeliveryWorkflowTemplateSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "DeliveryWorkflowTemplateSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "default": "release",
+          "maxLength": 128,
+          "minLength": 1,
+          "not": {
+            "pattern": "^application:"
+          },
+          "type": "string"
+        },
+        "definition": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DeliveryBatchTemplateDefinition"
+            },
+            {
+              "$ref": "#/$defs/DeliveryDocumentDAG"
+            }
+          ]
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "migrationPolicy": {
+          "$ref": "#/$defs/TemplateMigrationPolicy"
+        }
+      },
+      "required": [
+        "definition"
+      ],
+      "type": "object"
+    },
+    "DeploymentTemplateGitSource": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^([a-fA-F0-9]{40}|[a-fA-F0-9]{64})$",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "repositoryId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "commit",
+        "path"
+      ],
+      "type": "object"
+    },
+    "DeploymentTemplateHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "workload_ready",
+            "job_complete",
+            "configuration_only"
+          ],
+          "type": "string",
+          "x-enum-varnames": [
+            "DeploymentTemplateHealthWorkloadReady",
+            "DeploymentTemplateHealthJobComplete",
+            "DeploymentTemplateHealthConfigurationOnly"
+          ]
+        },
+        "timeoutSeconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "timeoutSeconds"
+      ],
+      "type": "object"
+    },
+    "DeploymentTemplateHelmSource": {
+      "additionalProperties": false,
+      "properties": {
+        "chart": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "connectionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "repositoryUrl": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secretRefs": {
+          "$ref": "#/$defs/SecretReferenceMap",
+          "description": "Application-authorized CHART_USERNAME, CHART_PASSWORD and optional CHART_CA_CERT references. Credentials are resolved only for the selected source."
+        },
+        "values": {
+          "$ref": "#/$defs/TemplateParameterValues"
+        },
+        "version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryUrl",
+        "chart",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "DeploymentTemplateSource": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "helm"
+                ]
+              },
+              {
+                "required": [
+                  "kustomize"
+                ]
+              },
+              {
+                "required": [
+                  "git"
+                ]
+              }
+            ]
+          },
+          "properties": {
+            "renderer": {
+              "const": "raw_yaml"
+            }
+          },
+          "required": [
+            "files"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "helm"
+            ]
+          },
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "git"
+                ]
+              },
+              "required": [
+                "files"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "files"
+                ]
+              },
+              "required": [
+                "git"
+              ]
+            }
+          ],
+          "properties": {
+            "renderer": {
+              "const": "kustomize"
+            }
+          },
+          "required": [
+            "kustomize"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "files"
+                ]
+              },
+              {
+                "required": [
+                  "kustomize"
+                ]
+              },
+              {
+                "required": [
+                  "git"
+                ]
+              }
+            ]
+          },
+          "properties": {
+            "renderer": {
+              "const": "helm"
+            }
+          },
+          "required": [
+            "helm"
+          ]
+        }
+      ],
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ManifestFile"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "git": {
+          "$ref": "#/$defs/DeploymentTemplateGitSource"
+        },
+        "helm": {
+          "$ref": "#/$defs/DeploymentTemplateHelmSource"
+        },
+        "kustomize": {
+          "$ref": "#/$defs/ManifestKustomizeOptions"
+        },
+        "renderer": {
+          "enum": [
+            "raw_yaml",
+            "kustomize",
+            "helm"
+          ],
+          "type": "string",
+          "x-enum-varnames": [
+            "DeploymentTemplateRendererRawYAML",
+            "DeploymentTemplateRendererKustomize",
+            "DeploymentTemplateRendererHelm"
+          ]
+        }
+      },
+      "required": [
+        "renderer"
+      ],
+      "type": "object"
+    },
+    "ManifestFile": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 524288,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "ManifestKustomizeImage": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "name": {
+          "description": "Image name matched by the native Kustomize images transformer.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "newName": {
+          "description": "Optional replacement image repository, without a tag or digest.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "ManifestKustomizeOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "entryPath": {
+          "description": "Directory containing a standard Kustomization file, relative to the package root. Defaults to the package root; the root retains shared bases and generator files.",
+          "maxLength": 1024,
+          "pattern": "^(\\.|\\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*(/\\.?[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)?$",
+          "type": "string"
+        },
+        "images": {
+          "items": {
+            "$ref": "#/$defs/ManifestKustomizeImage"
+          },
+          "maxItems": 50,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SecretReferenceMap": {
+      "additionalProperties": {
+        "pattern": "^soha://secrets/[A-Za-z0-9._-]+(?:/versions/[1-9][0-9]*)?$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "pattern": "^[A-Z_][A-Z0-9_]*$"
+      },
+      "type": "object"
+    },
+    "TemplateMigrationPolicy": {
+      "additionalProperties": false,
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "sequential": {
+                "const": true
+              }
+            },
+            "required": [
+              "sequential"
+            ]
+          },
+          {
+            "properties": {
+              "irreversible": {
+                "const": true
+              }
+            },
+            "required": [
+              "irreversible"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "guide": {
+          "description": "Human migration/recovery instructions. Never executed as a script.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "irreversible": {
+          "description": "Forward changes require approval; ordinary rollback across this boundary is forbidden.",
+          "type": "boolean"
+        },
+        "sequential": {
+          "description": "Must cross this boundary as adjacent published versions; approval cannot waive it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sequential",
+        "irreversible"
+      ],
+      "then": {
+        "properties": {
+          "guide": {
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "required": [
+          "guide"
+        ]
+      },
+      "type": "object"
+    },
+    "TemplateParameterSchema": {
+      "additionalProperties": false,
+      "description": "Restricted JSON Schema. Objects reject undeclared keys unless mapValues specifies their schema. secret_reference accepts only a namespaced Secret name/key reference, never a plaintext credential. External references and executable expressions are unsupported.",
+      "properties": {
+        "description": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "enum": {
+          "items": {
+            "oneOf": [
+              {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "items": {
+          "$ref": "#/$defs/TemplateParameterSchema"
+        },
+        "mapValues": {
+          "$ref": "#/$defs/TemplateParameterSchema"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "maxItems": {
+          "maximum": 256,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxLength": {
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "minItems": {
+          "maximum": 256,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minLength": {
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "properties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/TemplateParameterSchema"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "required": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "type": {
+          "$ref": "#/$defs/TemplateParameterType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "TemplateParameterType": {
+      "enum": [
+        "string",
+        "boolean",
+        "number",
+        "integer",
+        "object",
+        "array",
+        "secret_reference"
+      ],
+      "type": "string",
+      "x-enum-varnames": [
+        "TemplateParameterString",
+        "TemplateParameterBoolean",
+        "TemplateParameterNumber",
+        "TemplateParameterInteger",
+        "TemplateParameterObject",
+        "TemplateParameterArray",
+        "TemplateParameterSecretReference"
+      ]
+    },
+    "TemplateParameterValue": {
+      "description": "JSON parameter value. The template schema further constrains each value; depth is limited to 12 and combined inputs to 64 KiB at runtime.",
+      "oneOf": [
+        {
+          "maxLength": 16384,
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/TemplateParameterValue"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/TemplateParameterValue"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        }
+      ]
+    },
+    "TemplateParameterValues": {
+      "additionalProperties": {
+        "$ref": "#/$defs/TemplateParameterValue"
+      },
+      "maxProperties": 64,
+      "type": "object"
+    }
+  },
+  "$id": "https://contracts.opensoha.dev/delivery/document.schema.json",
+  "$ref": "#/$defs/DeliveryDocument",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Soha Delivery Document"
+}

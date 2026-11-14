@@ -1,0 +1,61 @@
+schemaVersion: opensoha.dev/agent-profile/v1
+id: cloud-governance-admin
+name: Cloud Governance Admin
+version: 0.1.0
+description: Cloud-compatible governance profile for onboarding, incident handoff, plugin administration, and approved delivery actions.
+mode: delivery_failure
+providerKind: soha-cloud-compatible
+skillRefs:
+  - onboarding
+  - incident-handoff
+  - plugin-administration
+  - security-change
+  - cloud-local-presets
+mcpPresetRefs:
+  - cloud-governance
+capabilityRefs:
+  - cloud_governance_operations
+  - plugin_administration
+  - incident_handoff
+platformCapabilityRefs:
+  - cluster.inventory
+  - workload.read
+  - network.inventory
+  - delivery.actions
+  - metrics
+requiredScopes:
+  - application
+  - environment
+  - cluster
+  - namespace
+enabledToolRefs:
+  - delivery.applications.list
+  - delivery.applications.detail
+  - delivery.application_environments.list
+  - delivery.application_services.list
+  - delivery.build_sources.list
+  - delivery.release_targets.list
+  - delivery.workflow_templates.list
+  - delivery.execution_tasks.list
+  - delivery.execution_logs.list
+  - delivery.release_context.diff
+  - delivery.rollback.context
+  - delivery.actions.trigger
+  - diagnosis.release_failure.analyze
+  - k8s.pods.list
+  - k8s.services.list
+  - k8s.events.list
+disabledToolRefs:
+  - k8s.exec
+  - k8s.apply
+  - k8s.delete
+budgets:
+  defaultTimeRangeMinutes: 240
+  timeoutSeconds: 240
+  maxLogLines: 1000
+guardrails:
+  - approval_required_for_execute
+  - no_direct_cluster_access
+  - no_secret_output
+  - preserve_audit_context
+  - verify_plugin_source_checksum

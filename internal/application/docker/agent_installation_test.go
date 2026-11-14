@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -148,6 +148,9 @@ func downloadHostAgentInstaller(t *testing.T, service *Service, ticket string) [
 
 func assertHostAgentInstaller(t *testing.T, script []byte, legacyToken string) {
 	t.Helper()
+	if !strings.Contains(string(script), "https://github.com/opensoha/soha/releases/download/agent%2F${agent_version}/${archive}") || !strings.Contains(string(script), "agent_version=v0.2.0\n") {
+		t.Fatal("installer must bind the published Root Agent tag without changing archive names")
+	}
 	if strings.Contains(string(script), legacyToken) || !strings.Contains(string(script), "systemctl enable --now soha-agent") {
 		t.Fatalf("rendered installer leaked the legacy token or missed service start")
 	}

@@ -1,0 +1,6 @@
+{
+  "operationId": "op-delivery-123",
+  "operationKind": "delivery",
+  "state": "heartbeat",
+  "occurredAt": "2026-06-12T00:00:00.000Z"
+}

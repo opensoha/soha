@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-provider-definition/v1","id":"hermes","kind":"hermes","providerVersion":"1.2.0","adapterProtocol":"opensoha.agent-provider.cli/v1","runtime":{"kind":"cli","command":"hermes","args":["chat","-Q"]},"capabilities":["root_cause"],"secretRefs":["secret:agent/hermes-token"]}

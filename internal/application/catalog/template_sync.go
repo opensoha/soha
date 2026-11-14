@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

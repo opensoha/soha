@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appdlp "github.com/opensoha/soha/internal/application/contentdlp"
 	domaindlp "github.com/opensoha/soha/internal/domain/contentdlp"

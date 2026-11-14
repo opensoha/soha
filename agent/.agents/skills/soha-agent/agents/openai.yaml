@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Agent"
+  short_description: "Agent APIs, runtimes, runners, and security"
+  default_prompt: "Use $soha-agent to implement or review a Soha agent runtime change."

@@ -1,0 +1,454 @@
+.soha-vm-workspace {
+  min-width: 0;
+  gap: 16px;
+}
+.soha-vm-workspace h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace h2 {
+  margin: 0;
+  font-size: var(--soha-font-size-section);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.soha-vm-workspace .soha-vm-identity-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.soha-vm-workspace .soha-vrt-vm-detail-identity {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 320px;
+  gap: 0;
+  padding: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.soha-vm-workspace .soha-vm-identity-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+}
+.soha-vm-workspace .soha-vm-object-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  font-size: 22px;
+  color: var(--soha-primary);
+  background: color-mix(in srgb, var(--soha-primary) 8%, var(--soha-bg-surface));
+  border-radius: var(--soha-radius-panel);
+}
+.soha-vm-workspace .soha-vm-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.soha-vm-workspace .soha-vm-title-line > .soha-status-tag {
+  align-self: center;
+}
+.soha-vm-workspace .soha-vm-identity-body {
+  padding: 20px;
+}
+.soha-vm-workspace .soha-vrt-vm-detail-title {
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vrt-vm-detail-actions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.soha-vm-workspace .soha-vm-record-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 14px 0 16px;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-vm-workspace .soha-vm-connection {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-record-bar b {
+  color: var(--soha-text-primary);
+  font-weight: 500;
+  margin-left: 6px;
+}
+.soha-vm-workspace .soha-vm-specs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(160px, 1.5fr);
+  gap: 16px;
+  padding-top: 14px;
+  margin: 0;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-vm-workspace .soha-vm-specs dt,
+.soha-vm-workspace .soha-vm-eyebrow {
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-vm-workspace .soha-vm-specs dd {
+  margin: 5px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-specs small {
+  font-size: 13px;
+  color: var(--soha-text-secondary);
+  font-weight: 400;
+}
+.soha-vm-workspace dd.soha-vm-address {
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: 8px;
+}
+.soha-vm-workspace .soha-vm-entry-grid,
+.soha-vm-workspace .soha-vm-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-vm-workspace .soha-vm-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  min-width: 0;
+}
+.soha-vm-workspace .soha-vm-entry > span:first-child {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  font-size: 20px;
+  color: var(--soha-primary);
+  background: color-mix(in srgb, var(--soha-primary) 6%, var(--soha-bg-surface));
+  border-radius: var(--soha-radius-control);
+}
+.soha-vm-workspace .soha-vm-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-vm-workspace .soha-vm-facts {
+  min-width: 0;
+  padding: 20px;
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+.soha-vm-workspace .soha-vm-facts h2 {
+  margin-bottom: 16px;
+}
+.soha-vm-workspace .soha-vm-initialization {
+  grid-column: 1 / -1;
+}
+.soha-vm-workspace .soha-vm-fact-label {
+  color: var(--soha-text-secondary);
+}
+.soha-vm-workspace .soha-vm-fact-value {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-evidence-log {
+  max-height: 520px;
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+  color: var(--soha-text-primary);
+  background: var(--soha-bg-surface-muted);
+  border-radius: var(--soha-radius-control);
+  font-size: var(--soha-font-size-supporting);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-access {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-vm-workspace .soha-vm-access-description {
+  margin: 0 0 20px;
+  color: var(--soha-text-secondary);
+}
+.soha-vm-workspace .soha-vm-entry > div {
+  flex: 1;
+  min-width: 0;
+}
+.soha-vm-workspace .soha-vm-entry p {
+  margin: 4px 0 0;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-operation {
+  --vm-task-color: var(--soha-text-secondary);
+  padding: 20px;
+  border-radius: var(--soha-radius-panel);
+  border: 1px solid color-mix(in srgb, var(--vm-task-color) 25%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--vm-task-color) 4%, var(--soha-bg-surface));
+}
+.soha-vm-workspace .soha-vm-operation.is-queued,
+.soha-vm-workspace .soha-vm-operation.is-active {
+  --vm-task-color: var(--soha-primary);
+}
+.soha-vm-workspace .soha-vm-operation.is-success {
+  --vm-task-color: var(--soha-success);
+}
+.soha-vm-workspace .soha-vm-operation.is-error {
+  --vm-task-color: var(--soha-danger);
+}
+.soha-vm-workspace .soha-vm-operation.is-uncertain,
+.soha-vm-workspace .soha-vm-operation.is-unknown {
+  --vm-task-color: var(--soha-warning);
+}
+.soha-vm-workspace .soha-vm-operation-heading,
+.soha-vm-workspace .soha-vm-operation-main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.soha-vm-workspace .soha-vm-operation-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.soha-vm-workspace .soha-vm-operation-main h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-operation-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  border-radius: var(--soha-radius-control);
+  background: color-mix(in srgb, var(--vm-task-color) 10%, var(--soha-bg-surface));
+  color: var(--vm-task-color);
+  font-size: 20px;
+}
+.soha-vm-workspace .soha-vm-operation-evidence {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-task-stages {
+  display: flex;
+  list-style: none;
+  margin: 20px 0 14px;
+  padding: 0;
+  gap: 20px;
+}
+.soha-vm-workspace .soha-vm-task-stages li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  color: var(--soha-text-tertiary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-vm-workspace .soha-vm-task-stages li > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  height: 24px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 50%;
+}
+.soha-vm-workspace .soha-vm-task-stages .is-done,
+.soha-vm-workspace .soha-vm-task-stages .is-current {
+  color: var(--vm-task-color);
+}
+.soha-vm-workspace .soha-vm-task-stages .is-error {
+  color: var(--soha-danger);
+}
+.soha-vm-workspace .soha-vm-task-stages .is-current > span {
+  background: var(--vm-task-color);
+  color: var(--soha-text-inverse);
+  border-color: var(--vm-task-color);
+}
+.soha-vm-workspace .soha-vm-operation-message {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-record-note,
+.soha-vm-workspace .soha-vm-metrics-source {
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+  margin: 8px 0 16px;
+  overflow-wrap: anywhere;
+}
+.soha-vm-workspace .soha-vm-live-dot {
+  flex: 0 0 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--soha-primary);
+}
+.soha-vm-workspace .soha-vm-task-log {
+  padding: 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-vm-workspace .soha-vm-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.soha-vm-workspace .soha-vm-metric-label > span:first-child {
+  height: 8px;
+  width: 8px;
+  border-radius: 50%;
+}
+.soha-vm-workspace .soha-vm-metric-label h2 {
+  flex: 1;
+}
+.soha-vm-workspace .soha-vm-metric-value {
+  margin: 18px 0 6px;
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-vm-workspace .soha-vm-metric-chart {
+  height: 180px;
+  margin-top: 16px;
+}
+.soha-vm-workspace .soha-vm-metric-grid {
+  margin-top: 16px;
+}
+.soha-vm-workspace .soha-vm-metrics-header {
+  padding-block: 8px;
+}
+.soha-vm-workspace .soha-vm-metrics-body {
+  padding: 16px 0 0;
+}
+.soha-vm-workspace .soha-vm-metric {
+  border-color: var(--soha-border-color);
+}
+.soha-vm-workspace .soha-vm-metric-body {
+  padding: 20px;
+}
+.soha-vm-workspace .soha-vm-metric-label {
+  gap: 10px;
+}
+.soha-vm-workspace .soha-vm-metrics-source {
+  margin-top: 0;
+}
+.soha-vm-workspace .soha-vm-console-header {
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-block: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .soha-vm-workspace .soha-vm-identity,
+  .soha-vm-workspace .soha-vm-operation,
+  .soha-vm-workspace .soha-vm-overview,
+  .soha-vm-workspace .soha-vm-scene-panel,
+  .soha-vm-workspace .soha-vm-metrics-panel {
+    animation: soha-vm-reveal var(--soha-motion-duration-mid) var(--soha-motion-ease);
+  }
+  .soha-vm-workspace .soha-vm-entry {
+    transition:
+      background-color var(--soha-motion-duration-fast) var(--soha-motion-ease),
+      border-color var(--soha-motion-duration-fast) var(--soha-motion-ease);
+  }
+  .soha-vm-workspace .soha-vm-entry:focus-within {
+    border-color: var(--soha-primary);
+    background: color-mix(in srgb, var(--soha-primary) 3%, var(--soha-bg-surface));
+  }
+  .soha-vm-workspace .soha-vm-operation {
+    transition:
+      background-color var(--soha-motion-duration-mid) var(--soha-motion-ease),
+      border-color var(--soha-motion-duration-fast) var(--soha-motion-ease);
+  }
+  .soha-vm-workspace .soha-vm-live-dot {
+    animation: soha-vm-live var(--soha-motion-activity) var(--soha-motion-ease) infinite;
+  }
+}
+.soha-vm-workspace[data-motion-paused='true'] .soha-vm-live-dot {
+  animation-play-state: paused;
+}
+@keyframes soha-vm-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes soha-vm-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (max-width: 1000px) {
+  .soha-vm-workspace .soha-vm-entry-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .soha-vm-workspace .soha-vm-specs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .soha-vm-workspace .soha-vm-metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-vm-workspace .soha-vm-facts-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-vm-workspace .soha-vm-task-stages {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .soha-vm-workspace .soha-vm-entry {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .soha-vm-workspace .soha-vm-identity-body,
+  .soha-vm-workspace .soha-vm-operation {
+    padding: 16px;
+  }
+  .soha-vm-workspace .soha-vm-record-bar {
+    gap: 8px 12px;
+  }
+}

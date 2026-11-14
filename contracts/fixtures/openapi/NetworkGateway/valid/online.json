@@ -1,0 +1,23 @@
+{
+  "id": "gateway-01",
+  "runtimeId": "gateway-site-a",
+  "siteId": "site-shanghai",
+  "name": "Shanghai Gateway",
+  "administrativeStatus": "active",
+  "status": "online",
+  "publicEndpointHost": "vpn.example.com",
+  "publicEndpointPort": 51820,
+  "overlayCidr": "100.96.10.0/24",
+  "routingMode": "routed",
+  "advertisedCidrs": ["10.20.0.0/16"],
+  "mtu": 1380,
+  "persistentKeepaliveSeconds": 25,
+  "dnsServers": ["10.20.0.53"],
+  "wireguardPublicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "version": "0.1.0",
+  "policyVersion": 7,
+  "capabilities": ["wireguard", "access_proxy"],
+  "lastHeartbeatAt": "2026-09-02T08:00:00Z",
+  "createdAt": "2026-09-01T08:00:00Z",
+  "updatedAt": "2026-09-02T08:00:00Z"
+}

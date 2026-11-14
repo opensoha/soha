@@ -1,0 +1,8 @@
+{
+  "deviceId": "device-shanghai-001",
+  "siteId": "site-shanghai",
+  "networkSpaceId": "space-corp",
+  "mode": "external_direct_ztna",
+  "resourceIds": ["resource-payroll"],
+  "ttlSeconds": 300
+}

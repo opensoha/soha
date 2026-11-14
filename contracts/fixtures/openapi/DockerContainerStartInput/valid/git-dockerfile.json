@@ -1,0 +1,22 @@
+{
+  "hostId": "host-1",
+  "name": "preview-api",
+  "image": "preview-api:git-main",
+  "sourceKind": "git_dockerfile",
+  "gitBuild": {
+    "repositoryUrl": "https://github.com/opensoha/example.git",
+    "ref": "main",
+    "dockerfilePath": "deploy/Dockerfile",
+    "contextDir": ".",
+    "pull": true,
+    "noCache": false
+  },
+  "ports": [
+    {
+      "name": "http",
+      "hostPort": 18080,
+      "containerPort": 8080,
+      "protocol": "tcp"
+    }
+  ]
+}

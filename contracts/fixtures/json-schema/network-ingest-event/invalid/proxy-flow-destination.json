@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "batch-endpoint-proxy-invalid",
+  "producerId": "endpoint-0001",
+  "producerKind": "endpoint",
+  "sentAt": "2026-09-02T08:01:00Z",
+  "events": [
+    {
+      "id": "event-proxy-flow-invalid",
+      "type": "proxy.flow.aggregate",
+      "sequence": 103,
+      "occurredAt": "2026-09-02T08:01:00Z",
+      "payload": {
+        "windowStartedAt": "2026-09-02T08:00:00Z",
+        "windowEndedAt": "2026-09-02T08:01:00Z",
+		"engine": "mihomo",
+        "profileId": "mihomo-default",
+        "profileRevision": 3,
+        "mode": "app_subscription",
+        "selectedProxy": "edge-a",
+        "uploadBytes": 1024,
+        "downloadBytes": 4096,
+        "activeConnections": 2,
+        "destinationHost": "private.example.test"
+      }
+    }
+  ]
+}

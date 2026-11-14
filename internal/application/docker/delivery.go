@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"

@@ -1,0 +1,6 @@
+{
+  "action": "coa",
+  "targetAccessProfile": "restricted",
+  "reasonCode": "device_posture_changed",
+  "planHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

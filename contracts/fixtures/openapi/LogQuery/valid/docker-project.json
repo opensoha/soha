@@ -1,0 +1,12 @@
+{
+  "sourceMode": "runtime",
+  "selector": {
+    "dockerService": "api"
+  },
+  "tail": 200,
+  "limit": 2000,
+  "direction": "forward",
+  "runtimeOptions": {
+    "sinceSeconds": 900
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "private",
+  "connectionMode": "agent",
+  "prometheusTransport": "agent",
+  "agentCustomResourceRules": []
+}

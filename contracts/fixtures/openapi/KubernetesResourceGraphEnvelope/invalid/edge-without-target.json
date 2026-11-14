@@ -1,0 +1,16 @@
+{
+  "data": {
+    "clusterId": "cluster-a",
+    "generatedAt": "2026-08-23T08:00:00Z",
+    "nodes": [],
+    "edges": [
+      {
+        "id": "broken",
+        "sourceId": "a",
+        "relation": "owns"
+      }
+    ],
+    "evidence": [],
+    "warnings": []
+  }
+}

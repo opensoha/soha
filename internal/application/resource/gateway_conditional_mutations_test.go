@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"

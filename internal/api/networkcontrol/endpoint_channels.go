@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	ec "github.com/opensoha/soha-contracts/endpointcontrol"
+	ec "github.com/opensoha/soha/contracts/endpointcontrol"
 	response "github.com/opensoha/soha/internal/api/response"
 	"github.com/opensoha/soha/internal/networkidentity"
 )

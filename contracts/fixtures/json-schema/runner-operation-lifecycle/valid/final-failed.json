@@ -1,0 +1,27 @@
+{
+  "operationId": "op-docker-456",
+  "operationKind": "docker",
+  "runnerId": "runner-docker-1",
+  "state": "failed",
+  "sequence": 9,
+  "occurredAt": "2026-06-12T00:03:00.000Z",
+  "finalState": {
+    "status": "failed",
+    "reason": "provider_error",
+    "message": "Docker operation failed.",
+    "completedAt": "2026-06-12T00:03:00.000Z"
+  },
+  "callback": {
+    "callbackId": "callback-456",
+    "accepted": true,
+    "late": false,
+    "dedupeKey": "op-docker-456:9"
+  },
+  "evidence": [
+    {
+      "kind": "log",
+      "message": "Container exited with code 1.",
+      "redacted": true
+    }
+  ]
+}

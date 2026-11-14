@@ -1,0 +1,14 @@
+{
+  "apiGroup": "example.io",
+  "resources": [
+    "widgets"
+  ],
+  "verbs": [
+    "get",
+    "list",
+    "update"
+  ],
+  "namespaces": [
+    "apps"
+  ]
+}

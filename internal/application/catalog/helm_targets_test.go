@@ -3,7 +3,7 @@ package catalog
 import (
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 )
 

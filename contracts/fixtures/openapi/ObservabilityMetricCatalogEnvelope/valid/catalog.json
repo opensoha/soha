@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "key": "http.server.request.duration",
+      "label": "HTTP server request duration",
+      "description": "Server request duration from OpenTelemetry HTTP semantic conventions.",
+      "unit": "s",
+      "semanticConvention": "http.server.request.duration",
+      "signal": "metrics",
+      "available": true
+    }
+  ]
+}

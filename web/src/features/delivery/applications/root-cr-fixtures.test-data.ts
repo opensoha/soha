@@ -1,0 +1,72 @@
+import type { ApplicationEnvironment, ApplicationRuntimeWorkload } from '../types'
+export const rootWorkload: ApplicationRuntimeWorkload = {
+  applicationEnvironmentId: 'env',
+  targetId: 'target',
+  serviceId: 'service',
+  clusterId: 'cluster',
+  namespace: 'team',
+  workloadKind: 'CustomResource',
+  workloadName: 'db',
+  sourceStatus: 'linked',
+  healthStatus: 'unknown',
+  desiredReplicas: 0,
+  readyReplicas: 0,
+  updatedReplicas: 0,
+  availableReplicas: 0,
+  source: {
+    resource: {
+      clusterId: 'cluster',
+      namespace: 'team',
+      scopeMode: 'namespace',
+      apiVersion: 'unknown.example/v1',
+      kind: 'Database',
+      name: 'db',
+      uid: 'uid-1',
+    },
+    specDigest: 'digest',
+    observedAt: 'now',
+    crdName: 'databases.unknown.example',
+  },
+}
+export const rootEnvironment: ApplicationEnvironment = {
+  id: 'env',
+  applicationId: 'app',
+  environmentId: 'global-test',
+  environmentKey: 'test',
+  createdAt: '2026-10-22T00:00:00Z',
+  updatedAt: '2026-10-22T01:00:00Z',
+  releasePolicy: { requiresApproval: true },
+  targets: [
+    {
+      id: 'target',
+      applicationEnvironmentId: 'env',
+      targetKind: 'kubernetes_workload',
+      executorKind: 'observe_only',
+      clusterId: 'cluster',
+      namespace: 'team',
+      workloadKind: 'CustomResource',
+      workloadName: 'db',
+      enabled: true,
+      metadata: {
+        importSource: 'kubernetes',
+        ownershipMode: 'observe_only',
+        resourceSource: JSON.stringify(rootWorkload.source),
+        resourceRelations: { version: 1, rootUid: 'uid-1' },
+      },
+    },
+  ],
+}
+export const rootYAML = JSON.stringify({
+  apiVersion: 'unknown.example/v1',
+  kind: 'Database',
+  metadata: {
+    name: 'db',
+    namespace: 'team',
+    uid: 'uid-1',
+    generation: 2,
+    resourceVersion: '12',
+    finalizers: ['operator/hold'],
+  },
+  spec: { size: 1, password: 'synthetic-secret' },
+  status: { ready: true },
+})

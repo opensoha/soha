@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	domain "github.com/opensoha/soha/internal/domain/docker"

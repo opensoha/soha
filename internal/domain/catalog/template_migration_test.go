@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"strings"
 	"testing"
 )

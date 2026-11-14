@@ -1,0 +1,5 @@
+{
+  "deviceCode": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "codeVerifier": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "unexpectedSecret": "must-be-rejected"
+}

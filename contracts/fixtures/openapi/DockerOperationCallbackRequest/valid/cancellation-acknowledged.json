@@ -1,0 +1,13 @@
+{
+  "operationId": "op-1",
+  "workerId": "worker-1",
+  "status": "canceled",
+  "payload": {
+    "containerId": "container-1"
+  },
+  "logs": [
+    "pulled image",
+    "started container"
+  ],
+  "cancellationAcknowledged": true
+}

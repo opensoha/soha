@@ -1,0 +1,27 @@
+{
+  "id": "opensoha.vsphere",
+  "name": "vSphere Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "resource-extension",
+  "runtime": {
+    "mode": "external-http",
+    "healthPath": "/healthz",
+    "actionPath": "/actions/{action}"
+  },
+  "extensionPoints": {
+    "compute": {
+      "virtualizationProviders": [
+        {
+          "providerKey": "vsphere",
+          "displayName": "VMware vSphere",
+          "activationLevel": "read",
+          "resourceKinds": ["connection", "cluster", "vm"],
+          "capabilities": ["connection.validate", "inventory.discover"],
+          "configSchemaRef": "schemas/vsphere-connection.json",
+          "actionRefs": {}
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "serviceVersion": 3,
+  "templateId": "http",
+  "templateVersion": 1,
+  "templateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parameters": { "replicas": 0, "enabled": false },
+  "artifactImages": { "main": "registry.example/api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "releaseBundleId": "bundle"
+}

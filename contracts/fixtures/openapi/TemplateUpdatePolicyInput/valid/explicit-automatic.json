@@ -1,0 +1,8 @@
+{
+  "kind": "deployment",
+  "templateId": "web-template",
+  "targetId": "binding-test",
+  "mode": "automatic",
+  "paused": false,
+  "expectedVersion": 0
+}

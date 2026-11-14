@@ -1,0 +1,13 @@
+{
+  "sessionId": "session-1",
+  "runtimeId": "freeradius-hq",
+  "nasId": "nas-hq",
+  "requestedAction": "coa",
+  "effectiveAction": "disconnect",
+  "currentAccessProfile": "full",
+  "targetAccessProfile": "restricted",
+  "reasonCode": "device_posture_changed",
+  "willDisconnect": true,
+  "commandExpiresAt": "2026-09-02T08:05:00Z",
+  "planHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

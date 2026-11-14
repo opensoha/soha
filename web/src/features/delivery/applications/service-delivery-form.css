@@ -1,0 +1,60 @@
+.service-delivery-history {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  gap: 12px;
+}
+
+.service-delivery-history__card {
+  min-width: 0;
+  padding: 12px;
+  background: var(--ant-color-bg-layout);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+}
+
+.service-delivery-history__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.service-delivery-history__heading a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.service-delivery-history__heading a:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.service-delivery-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: var(--ant-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.service-delivery-form .ant-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+.service-delivery-form .ant-form > :not(.ant-form-item) {
+  grid-column: 1 / -1;
+}
+.service-delivery-form .ant-form-item {
+  min-width: 0;
+  margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .service-delivery-form .ant-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

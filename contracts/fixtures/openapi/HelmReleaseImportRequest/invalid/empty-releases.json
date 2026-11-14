@@ -1,0 +1,10 @@
+{
+  "clusterId": "cluster-prod",
+  "namespace": "payments",
+  "applicationKey": "payments",
+  "applicationName": "Payments",
+  "environmentKey": "prod",
+  "environmentName": "Production",
+  "ownershipMode": "managed",
+  "releases": []
+}

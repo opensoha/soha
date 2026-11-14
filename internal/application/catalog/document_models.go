@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"

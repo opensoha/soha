@@ -1,0 +1,17 @@
+{
+  "accessProfile": "full",
+  "deviceStatuses": ["active"],
+  "effect": "allow",
+  "enabled": true,
+  "modes": ["internal_ztna", "external_vpn_ztna"],
+  "name": "Engineering protected access",
+  "postureStatuses": ["compliant"],
+  "priority": 100,
+  "resourceIds": ["resource-git"],
+  "siteIds": ["site-hq"],
+  "subjects": {
+    "tags": ["employee"],
+    "teams": ["team-engineering"],
+    "users": []
+  }
+}

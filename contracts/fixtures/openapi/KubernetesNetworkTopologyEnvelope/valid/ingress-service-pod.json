@@ -1,0 +1,29 @@
+{
+  "data": {
+    "clusterId": "edge-prod",
+    "namespace": "production",
+    "source": "ingress",
+    "generatedAt": "2026-08-10T08:00:00Z",
+    "summary": {
+      "entryCount": 1,
+      "routeCount": 1,
+      "serviceCount": 1,
+      "missingServiceCount": 0,
+      "backendPodCount": 1,
+      "pendingRouteCount": 0
+    },
+    "traces": [
+      {
+        "id": "trace-1",
+        "sourceType": "Ingress",
+        "state": "ready",
+        "entry": { "id": "entry-1", "name": "app.example.com", "kind": "Host", "state": "ready" },
+        "route": { "id": "route-1", "name": "app", "kind": "Ingress", "state": "ready" },
+        "service": { "id": "service-1", "name": "api", "kind": "Service", "state": "ready" },
+        "backendPods": [
+          { "id": "pod-1", "name": "api-7c8d9f", "kind": "Pod", "state": "ready" }
+        ]
+      }
+    ]
+  }
+}

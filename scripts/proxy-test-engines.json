@@ -1,0 +1,56 @@
+{
+  "mihomo": {
+    "version": "1.19.30",
+    "source": "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/v1.19.30",
+    "platforms": {
+      "linux-amd64": {
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-compatible-v1.19.30.gz",
+        "sha256": "db214c7a2517e63c150d123178d16d102e03a241ccdae4e5e07ffbe9cf56c6f9",
+        "member": "",
+        "binary_sha256": "8ad44e28fe72be4640254b96741b677f4074991b99186cc4486a1c28ded02b1a"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-darwin-arm64-v1.19.30.gz",
+        "sha256": "2c7f3a7904fa1cee291e124123e630e7b1ebd13765dd9bf26c0a28432004d9f4",
+        "member": "",
+        "binary_sha256": "e80c6334b4e3aae53dfbc86cddd4434cec1565a61d4483931fac2ae12fec6d30"
+      }
+    }
+  },
+  "sing-box": {
+    "version": "1.14.2",
+    "source": "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v1.14.2",
+    "platforms": {
+      "linux-amd64": {
+        "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-linux-amd64.tar.gz",
+        "sha256": "a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6",
+        "member": "sing-box-1.14.2-linux-amd64/sing-box",
+        "binary_sha256": "fc9c6e6ab345f045b16a0ed10d1ff28d68e8e56e7749fca30738d1406e98d7b8"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-darwin-arm64.tar.gz",
+        "sha256": "925c5382eca8492b0150f868a6db20b18290a38700e621724b3703fd453e032d",
+        "member": "sing-box-1.14.2-darwin-arm64/sing-box",
+        "binary_sha256": "d652879eed7e38b866fa980bc2e119dcdb13968fe5e6583670293a258686d0e7"
+      }
+    }
+  },
+  "v2ray": {
+    "version": "5.53.0",
+    "source": "https://api.github.com/repos/v2fly/v2ray-core/releases/tags/v5.53.0",
+    "platforms": {
+      "linux-amd64": {
+        "url": "https://github.com/v2fly/v2ray-core/releases/download/v5.53.0/v2ray-linux-64.zip",
+        "sha256": "6bbb8aee65a57d0b12599b4b7c842b3ad0daca4436e661d94015c447cb31b4fa",
+        "member": "v2ray",
+        "binary_sha256": "a7bc11ff3ee286bc15d8191440ebb10810ac801ced54bbd4ce79ce4d291f7f25"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/v2fly/v2ray-core/releases/download/v5.53.0/v2ray-macos-arm64-v8a.zip",
+        "sha256": "75d0b4bf571b33aff8fb3eacb4a7ff16061a2d227503d75c5247852ef0958b15",
+        "member": "v2ray",
+        "binary_sha256": "2cbac9546e02d732e657cfa415aad222acd7ced5a55c1f7f04313f46c3f5852a"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "expectedRevision": 0,
+  "draft": {
+    "name": "missing explicit enabled",
+    "kind": "s3",
+    "policy": {
+      "mode": "block",
+      "detectors": [
+        "private_key"
+      ],
+      "rules": []
+    }
+  }
+}

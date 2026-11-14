@@ -496,6 +496,20 @@ func TestNetworkAccessMenuRequiresWorkbenchAndAnyNetworkViewPermission(t *testin
 	}
 }
 
+func TestNASViewPermissionReachesManagedRADIUSOnly(t *testing.T) {
+	permissions := []string{appaccess.PermWorkbenchSecurityView, "network_access.nas_bindings.view"}
+	for _, id := range []string{"network-access", "network-access-settings", "network-access-radius-services"} {
+		if !isVisibleByPermissions(domainmenu.Record{ID: id}, permissions) {
+			t.Fatalf("NAS viewer cannot reach %s", id)
+		}
+	}
+	for _, id := range []string{"network-access-sites", "network-access-enrollments"} {
+		if isVisibleByPermissions(domainmenu.Record{ID: id}, permissions) {
+			t.Fatalf("NAS viewer unexpectedly reaches %s", id)
+		}
+	}
+}
+
 func TestNetworkAccessLeafMenusRequireTheirOwnViewPermission(t *testing.T) {
 	tests := []struct {
 		id         string

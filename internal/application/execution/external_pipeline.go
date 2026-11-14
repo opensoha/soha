@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	"github.com/opensoha/soha/internal/platform/apperrors"

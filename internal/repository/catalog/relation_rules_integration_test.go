@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	catalogservice "github.com/opensoha/soha/internal/application/catalog"
 	da "github.com/opensoha/soha/internal/domain/application"

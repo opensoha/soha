@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-provider-definition/v1","id":"hermes","kind":"hermes","providerVersion":"1.2.0","adapterProtocol":"v1","runtime":{"kind":"cli"},"capabilities":["root_cause"]}

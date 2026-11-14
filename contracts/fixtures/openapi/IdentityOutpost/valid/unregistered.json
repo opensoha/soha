@@ -1,0 +1,12 @@
+{
+  "id": "outpost-new",
+  "name": "Office edge",
+  "mode": "agent",
+  "status": "offline",
+  "configurationVersion": 0,
+  "runtimeStatus": "unavailable",
+  "runtimeReason": "awaiting_registration",
+  "forwardAuthUrl": "https://edge.example.com/api/v1/outpost/forward-auth",
+  "createdAt": "2026-09-13T00:00:00Z",
+  "updatedAt": "2026-09-13T00:00:00Z"
+}

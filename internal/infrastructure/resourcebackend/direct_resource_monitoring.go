@@ -2,8 +2,8 @@ package resourcebackend
 
 import (
 	"context"
-	cr "github.com/opensoha/soha-contracts/resource"
-	runtime "github.com/opensoha/soha-contracts/resource/runtime"
+	cr "github.com/opensoha/soha/contracts/resource"
+	runtime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (d *Direct) ResourceMonitoringInventory(ctx context.Context, clusterID string) (cr.ResourceMonitoringInventory, error) {

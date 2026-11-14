@@ -1,0 +1,5 @@
+{
+  "type": "message.done",
+  "role": "assistant",
+  "content": "Root cause summary"
+}

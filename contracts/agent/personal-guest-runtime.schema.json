@@ -1,0 +1,304 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "binding",
+    "kind",
+    "request",
+    "deadline",
+    "artifactSHA256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-runtime/v1"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "binding": {
+      "$ref": "personal-guest-binding.schema.json"
+    },
+    "kind": {
+      "enum": [
+        "environment",
+        "file_read",
+        "file_write",
+        "docker",
+        "browser"
+      ]
+    },
+    "request": {
+      "$ref": "personal-environment-request.schema.json"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\x00\\r\\n\\\\]+$"
+        },
+        "contentBase64": {
+          "type": "string",
+          "maxLength": 60076
+        },
+        "expectedSHA256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "controlId",
+        "generation",
+        "owner"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "navigate",
+            "snapshot",
+            "click",
+            "type",
+            "pointer",
+            "acquire",
+            "takeover",
+            "return",
+            "release"
+          ]
+        },
+        "controlId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "owner": {
+          "enum": [
+            "agent",
+            "user"
+          ]
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "selector": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 799
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 599
+        }
+      }
+    },
+    "dockerImage": {
+      "type": "string",
+      "pattern": "^docker\\.io/library/debian@sha256:[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "native",
+        "user"
+      ]
+    },
+    "requestHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifactSHA256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "file_read"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "file"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "file_write"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "file"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "browser"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "browser"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "docker"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "dockerImage"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "environment"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "file": false,
+          "browser": false,
+          "dockerImage": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "file_read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "browser": false,
+          "dockerImage": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "file_write"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "browser": false,
+          "dockerImage": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "browser"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "file": false,
+          "dockerImage": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "docker"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "file": false,
+          "browser": false
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "const": "user"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "requestHash"
+        ]
+      }
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-runtime.schema.json",
+  "title": "personal-guest-runtime",
+  "description": "Frozen owner-authorized VM operation. Current mTLS pin, user authorization, resource scope and original reservation must all be valid. SSH launches only a fixed broker; tools installation cannot format, delete or accept model commands. Runtime policy and receipt correlation are additionally validated by the typed protocol."
+}

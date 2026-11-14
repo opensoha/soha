@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-direct-ztna-result-0001",
+  "messageType": "vpn.connect.result",
+  "producerId": "network-control",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "requestId": "direct-ztna-request-0001",
+    "decision": "allow",
+    "reasonCode": "policy_allowed",
+    "sessionId": "session-direct-ztna-0001",
+    "gatewayId": "gateway-site-a",
+    "configurationVersion": 14,
+    "policyVersion": 7,
+    "validUntil": "2026-09-02T08:05:00Z",
+    "networkLeases": [],
+    "resourceLeases": [
+      {
+        "id": "resource-lease-0001",
+        "sessionId": "session-direct-ztna-0001",
+        "subjectId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "resourceIds": ["resource-payroll"],
+        "policyVersion": 7,
+        "issuedAt": "2026-09-02T08:00:00Z",
+        "expiresAt": "2026-09-02T08:05:00Z"
+      }
+    ]
+  }
+}

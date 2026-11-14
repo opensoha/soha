@@ -1,0 +1,12 @@
+{
+  "data": {
+    "allowed": true,
+    "allowedActions": ["create"],
+    "resourceScope": {
+      "clusterIds": ["cluster-a"],
+      "namespaces": ["minio"],
+      "resourceGroups": ["configuration"],
+      "resourceKinds": ["ConfigMap"]
+    }
+  }
+}

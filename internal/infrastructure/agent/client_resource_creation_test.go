@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"sigs.k8s.io/yaml"
 )

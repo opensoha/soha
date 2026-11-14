@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (direct *Direct) CheckPodTerminal(ctx context.Context, clusterID string) error {

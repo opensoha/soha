@@ -46,24 +46,32 @@ type ReadyStore interface {
 }
 
 type Options struct {
-	MaxBodyBytes      int64
-	RequestsPerMinute int
-	ProxyRuntime      ProxyRuntime
-	ProxySchemas      *networkprotocol.Schemas
+	RadiusDeployment     RadiusDeploymentRuntime
+	EAPLifecycle         EAPLifecycleRuntime
+	PasswordRuntime      RadiusPasswordRuntime
+	PasswordAllowedPeers []string
+	MaxBodyBytes         int64
+	RequestsPerMinute    int
+	ProxyRuntime         ProxyRuntime
+	ProxyCommands        ProxyCommandRuntime
+	ProxyPublication     ProxyPublication
+	ProxyDeployment      ProxyDeploymentRuntime
+	ProxySchemas         *networkprotocol.Schemas
 }
 
 type handler struct {
-	service Service
-	ready   ReadyStore
-	options Options
-	limiter *apiMiddleware.BoundedRateLimiter
+	service     Service
+	ready       ReadyStore
+	options     Options
+	limiter     *apiMiddleware.BoundedRateLimiter
+	publication *PublicationHandler
 }
 
 func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine, error) {
 	if service == nil || ready == nil || options.MaxBodyBytes <= 0 || options.RequestsPerMinute <= 0 {
 		return nil, fmt.Errorf("network control router dependencies and limits are required")
 	}
-	if options.ProxyRuntime != nil && options.ProxySchemas == nil {
+	if (options.RadiusDeployment != nil || options.ProxyRuntime != nil || options.ProxyCommands != nil || options.ProxyPublication != nil || options.ProxyDeployment != nil) && options.ProxySchemas == nil {
 		return nil, fmt.Errorf("proxy runtime schema is required")
 	}
 	handler := &handler{service: service, ready: ready, options: options, limiter: apiMiddleware.NewBoundedRateLimiter(10_000)}
@@ -86,10 +94,50 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 		router.GET("/api/network-control/v1/proxy-instances/:runtimeID/close-commands/next", handler.proxyNextClose)
 		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/close-commands/:commandID/result", handler.proxyCloseResult)
 	}
+	if options.ProxyCommands != nil {
+		router.GET("/api/network-control/v1/proxy-instances/:runtimeID/commands/next", handler.proxyNextCommand)
+		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/commands/:commandID/result", handler.proxyCommandResult)
+	}
+	if options.RadiusDeployment != nil {
+		router.GET("/api/network-control/v1/radius-runtimes/:runtimeID/control", handler.radiusControl)
+		router.POST("/api/network-control/v1/radius-runtimes/:runtimeID/control/receipt", handler.radiusACK)
+	}
+	if options.ProxyDeployment != nil {
+		router.GET("/api/network-control/v1/proxy-runtimes/:runtimeID/deployment/control", handler.proxyDeploymentControl)
+		router.POST("/api/network-control/v1/proxy-runtimes/:runtimeID/deployment/control/receipt", handler.proxyDeploymentACK)
+	}
+	if options.ProxyPublication != nil {
+		publication, err := NewPublicationHandler(options.ProxyPublication, options)
+		if err != nil {
+			return nil, err
+		}
+		publication.base = handler
+		handler.publication = publication
+		router.POST("/api/network-control/v1/proxies/:runtimeID/publication/ready", publication.ServerReady)
+		router.POST("/api/network-control/v1/proxies/:runtimeID/ingress/check", publication.IngressCheck)
+		router.GET("/api/network-control/v1/runtimes/:runtimeID/mihomo-profiles/:profileID/projection", publication.Projection)
+		router.GET("/api/network-control/v1/runtimes/:runtimeID/mihomo-profiles/:profileID/direct-projection", publication.DirectProjection)
+	}
 	return router, nil
 }
 
+func (h *handler) dispatchProjectionReceipt(c *gin.Context) bool {
+	if h.publication == nil {
+		return false
+	}
+	parts := strings.Split(strings.Trim(c.Param("action"), "/"), "/")
+	if len(parts) != 4 || parts[0] != "mihomo-profiles" || parts[1] == "" || parts[2] != "projection" || parts[3] != "receipt" {
+		return false
+	}
+	c.Params = append(c.Params, gin.Param{Key: "profileID", Value: parts[1]})
+	h.publication.ProjectionReceipt(c)
+	return true
+}
+
 func (h *handler) action(c *gin.Context) {
+	if h.dispatchProjectionReceipt(c) {
+		return
+	}
 	switch c.Param("action") {
 	case "/channel-controls/receipt":
 		h.channelReport(c)
@@ -115,10 +163,14 @@ func (h *handler) action(c *gin.Context) {
 		h.endpointPresence(c)
 	case "/eap:certificate":
 		h.eapCertificate(c, false)
+	case "/eap:revoke":
+		h.revokeEAPCertificate(c)
 	case "/eap:activate":
 		h.eapCertificate(c, true)
 	case "/nas:accounting":
 		h.nasAccounting(c)
+	case "/radius:verify-password":
+		h.radiusVerifyPassword(c)
 	case "/radius:post-auth":
 		h.radiusPostAuth(c)
 	case "/nas-session-commands/result":

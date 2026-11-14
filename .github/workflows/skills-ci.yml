@@ -1,0 +1,49 @@
+name: skills-ci
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: skills
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Record same-Root source identity
+        run: git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate skill layout
+        run: |
+          test -f README.md
+          test -f agent-profiles/README.md
+          test -f mcp-presets/README.md
+          skill_count="$(find skills -name SKILL.md -type f | wc -l)"
+          test "$skill_count" -gt 0
+          find skills -name SKILL.md -type f -print0 | xargs -0 -I{} test -s "{}"
+      - name: Test strict same-source input and asset validation
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - name: Validate schemas, catalogs, assets, and package dry-run
+        run: python3 tools/validate_assets.py --package-dry-run --report-output dist/skills-validation-report.json
+      - name: Package release assets without publishing
+        run: python3 tools/validate_assets.py --package-output-dir dist --report-output dist/skills-release-validation-report.json
+      - name: Verify packaged release assets against same-Root inputs
+        run: |
+          set -- dist/soha-skills-*.tar.gz
+          test "$#" -eq 1
+          test -f "$1"
+          python3 tools/validate_assets.py --verify-package "$1" --report-output dist/skills-package-verification.json
+      - name: Upload validation reports and package artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: skills-validation-report
+          path: skills/dist/*
+          if-no-files-found: error

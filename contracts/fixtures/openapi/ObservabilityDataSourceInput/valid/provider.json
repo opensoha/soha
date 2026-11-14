@@ -1,0 +1,21 @@
+{
+  "name": "Future Log Store",
+  "backendType": "provider",
+  "providerKey": "futurelog",
+  "enabled": true,
+  "config": {
+    "endpoint": "https://logs.example.com",
+    "configuration": [
+      {
+        "key": "dataset",
+        "value": "production"
+      }
+    ]
+  },
+  "credentials": [
+    {
+      "key": "api_key",
+      "value": "write-only-key"
+    }
+  ]
+}

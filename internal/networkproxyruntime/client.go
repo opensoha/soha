@@ -187,7 +187,7 @@ func (c *Client) post(ctx context.Context, path, kind string, payload any) error
 		return err
 	}
 	if status != http.StatusNoContent {
-		return fmt.Errorf("proxy control returned HTTP %d", status)
+		return controlStatusError(status)
 	}
 	return nil
 }
@@ -267,6 +267,9 @@ func (c *Client) NextClose(ctx context.Context) (*domain.CloseCommand, error) {
 
 func (c *Client) CompleteClose(ctx context.Context, command domain.CloseCommand) error {
 	payload := map[string]any{"commandId": command.ID, "status": command.Status}
+	if command.ProcessEpoch != "" {
+		payload["processEpoch"] = command.ProcessEpoch
+	}
 	if command.ReasonCode != "" {
 		payload["reasonCode"] = command.ReasonCode
 	}

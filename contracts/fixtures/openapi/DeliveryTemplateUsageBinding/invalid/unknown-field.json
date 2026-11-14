@@ -1,0 +1,6 @@
+{
+  "requiresApproval": false,
+  "targetCount": 1,
+  "riskLevel": "low",
+  "callbackToken": "synthetic-forbidden-field"
+}

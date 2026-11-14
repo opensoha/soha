@@ -1,0 +1,33 @@
+{
+  "id": "ds:logs-main",
+  "name": "Production Loki",
+  "backendType": "loki",
+  "enabled": true,
+  "scope": {
+    "clusterIds": ["cluster-a"],
+    "namespaces": ["payments"]
+  },
+  "queryBudget": {
+    "maxEntries": 500,
+    "maxRangeSeconds": 86400,
+    "timeoutSeconds": 10
+  },
+  "redactionPolicy": {
+    "dropAttributeKeys": ["authorization"]
+  },
+  "config": {
+    "endpoint": "https://loki.example.com",
+    "tenantId": "workspace-default",
+    "labelKeys": {
+      "cluster": "cluster",
+      "namespace": "namespace",
+      "workload": "workload",
+      "severity": "level"
+    }
+  },
+  "credentialKeys": ["bearer_token"],
+  "validationStatus": "healthy",
+  "lastValidatedAt": "2026-07-31T12:00:00Z",
+  "createdAt": "2026-07-31T11:00:00Z",
+  "updatedAt": "2026-07-31T12:00:00Z"
+}

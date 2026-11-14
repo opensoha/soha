@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/contracts/endpointcontrol/protocol.schema.json",
+  "title": "Endpoint channel controls",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/EndpointChannelDesired"
+    },
+    {
+      "$ref": "#/$defs/EndpointChannelReport"
+    }
+  ],
+  "$defs": {
+    "EndpointChannelControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usb",
+        "print",
+        "clipboard"
+      ],
+      "properties": {
+        "usb": {
+          "type": "boolean"
+        },
+        "print": {
+          "type": "boolean"
+        },
+        "clipboard": {
+          "type": "boolean"
+        }
+      }
+    },
+    "EndpointChannelReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "scope",
+        "state",
+        "targets",
+        "controlled",
+        "reasonCode"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "usb",
+            "print",
+            "clipboard"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "current_usb_volumes",
+            "local_new_print_jobs",
+            "enrolled_console_win32"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "off",
+            "controlled",
+            "partial",
+            "failed",
+            "unsupported",
+            "conflict",
+            "unconfigured",
+            "not_present"
+          ]
+        },
+        "targets": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "controlled": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      }
+    },
+    "EndpointChannelPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deviceId",
+        "revision",
+        "publishedVersion",
+        "draft",
+        "updatedAt"
+      ],
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "publishedVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "draft": {
+          "$ref": "#/$defs/EndpointChannelControls"
+        },
+        "published": {
+          "$ref": "#/$defs/EndpointChannelControls"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "EndpointChannelDesired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "deviceId",
+        "runtimeId",
+        "credentialId",
+        "policyVersion",
+        "challenge",
+        "controls",
+        "issuedAt",
+        "validUntil",
+        "configured"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "endpoint-controls/v1alpha1"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "challenge": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "controls": {
+          "$ref": "#/$defs/EndpointChannelControls"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "configured": {
+          "type": "boolean",
+          "description": "False means unconfigured; never a release. Release requires a higher explicit published version."
+        }
+      }
+    },
+    "EndpointChannelReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "deviceId",
+        "runtimeId",
+        "credentialId",
+        "policyVersion",
+        "challenge",
+        "observedAt",
+        "channels"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "endpoint-controls/v1alpha1"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "challenge": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/EndpointChannelReceipt"
+          }
+        }
+      }
+    },
+    "EndpointChannelView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "fresh",
+        "runtimeCount",
+        "pendingRuntimeCount"
+      ],
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/EndpointChannelPolicy"
+        },
+        "receipt": {
+          "$ref": "#/$defs/EndpointChannelObservation"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "runtimeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pendingRuntimeCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "EndpointChannelSaveInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedRevision",
+        "draft"
+      ],
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "draft": {
+          "$ref": "#/$defs/EndpointChannelControls"
+        }
+      }
+    },
+    "EndpointChannelPublishInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedRevision"
+      ],
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    },
+    "EndpointChannelPolicyEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EndpointChannelPolicy"
+        }
+      }
+    },
+    "EndpointChannelDesiredEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EndpointChannelDesired"
+        }
+      }
+    },
+    "EndpointChannelViewEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EndpointChannelView"
+        }
+      }
+    },
+    "EndpointChannelObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimeId",
+        "credentialId",
+        "policyVersion",
+        "observedAt",
+        "channels"
+      ],
+      "properties": {
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/EndpointChannelReceipt"
+          }
+        }
+      }
+    }
+  }
+}

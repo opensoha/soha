@@ -1,0 +1,10 @@
+{
+  "spaceId": "space-corp",
+  "name": "Git service",
+  "kind": "cidr",
+  "target": "10.42.8.0/24",
+  "protected": true,
+  "protocol": "tcp",
+  "ports": [70000],
+  "pathMode": "wireguard_ztna"
+}

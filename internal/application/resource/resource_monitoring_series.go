@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 var monitoringUIDPattern = regexp.MustCompile(`[a-fA-F0-9]{8}[-_][a-fA-F0-9]{4}[-_][a-fA-F0-9]{4}[-_][a-fA-F0-9]{4}[-_][a-fA-F0-9]{12}`)

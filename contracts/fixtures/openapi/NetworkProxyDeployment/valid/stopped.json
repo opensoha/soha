@@ -1,0 +1,7 @@
+{
+  "revision": 1,
+  "state": "stopped",
+  "members": [],
+  "desiredReplicas": 0,
+  "observedReplicas": 0
+}

@@ -1,0 +1,24 @@
+@import '../platform-shared.css';
+
+/* Storage-only table presentation. */
+
+.soha-storage-table .ant-table-content table {
+  table-layout: fixed;
+}
+
+.soha-storage-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+.soha-storage-table .ant-table-tbody > tr > td .ant-btn,
+.soha-storage-table .ant-table-tbody > tr > td .ant-typography,
+.soha-storage-table .ant-table-tbody > tr > td .ant-typography-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-storage-detail-stack {
+  display: grid;
+  gap: 12px;
+}

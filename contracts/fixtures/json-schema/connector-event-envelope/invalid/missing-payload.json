@@ -1,0 +1,11 @@
+{
+  "connectorId": "feishu",
+  "events": [
+    {
+      "id": "feishu-msg-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+      "type": "im.message.receive_v1",
+      "source": "feishu",
+      "occurredAt": "2026-06-11T08:30:00Z"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "run-1",
+      "ruleId": "rule-checkout-errors",
+      "status": "completed",
+      "matched": false,
+      "durationMs": 42,
+      "createdAt": "2026-08-31T00:06:00Z",
+      "updatedAt": "2026-08-31T00:06:00Z"
+    }
+  ]
+}

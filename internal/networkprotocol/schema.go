@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	contractsnetwork "github.com/opensoha/soha-contracts/network"
+	contractsnetwork "github.com/opensoha/soha/contracts/network"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -22,6 +22,8 @@ type Schemas struct {
 	ingest           *jsonschema.Schema
 	radiusAccounting *jsonschema.Schema
 	proxyRuntime     *jsonschema.Schema
+	radiusPassword   *jsonschema.Schema
+	radiusRuntime    *jsonschema.Schema
 }
 
 func CompileSchemas() (*Schemas, error) {
@@ -41,7 +43,15 @@ func CompileSchemas() (*Schemas, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile proxy runtime schema: %w", err)
 	}
-	return &Schemas{runtime: runtime, ingest: ingest, radiusAccounting: radiusAccounting, proxyRuntime: proxyRuntime}, nil
+	radiusPassword, err := compileSchema("https://contracts.opensoha.dev/network/radius-password-verifier.schema.json", contractsnetwork.RadiusPasswordVerifierSchema())
+	if err != nil {
+		return nil, fmt.Errorf("compile RADIUS password schema: %w", err)
+	}
+	radiusRuntime, err := compileSchema("https://contracts.opensoha.dev/network/radius-runtime.schema.json", contractsnetwork.RadiusRuntimeSchema())
+	if err != nil {
+		return nil, fmt.Errorf("compile RADIUS member schema: %w", err)
+	}
+	return &Schemas{radiusRuntime: radiusRuntime, radiusPassword: radiusPassword, runtime: runtime, ingest: ingest, radiusAccounting: radiusAccounting, proxyRuntime: proxyRuntime}, nil
 }
 
 func (s *Schemas) ValidateProxyRuntime(raw []byte) error {
@@ -95,3 +105,9 @@ func validateJSON(schema *jsonschema.Schema, raw []byte) error {
 	}
 	return nil
 }
+
+func (s *Schemas) ValidateRadiusPassword(raw []byte) error {
+	return validateJSON(s.radiusPassword, raw)
+}
+
+func (s *Schemas) ValidateRadiusRuntime(raw []byte) error { return validateJSON(s.radiusRuntime, raw) }

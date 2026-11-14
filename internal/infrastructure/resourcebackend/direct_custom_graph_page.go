@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )

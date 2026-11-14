@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "batch-gateway-0001",
+  "producerId": "gateway-site-a",
+  "producerKind": "gateway",
+  "sentAt": "2026-09-02T08:01:00Z",
+  "events": [
+    {
+      "id": "event-heartbeat-0001",
+      "type": "runtime.heartbeat",
+      "sequence": 101,
+      "occurredAt": "2026-09-02T08:00:59Z",
+      "payload": {
+        "status": "healthy",
+        "configurationVersion": 12,
+        "policyVersion": 7,
+        "uptimeSeconds": 3600
+      }
+    },
+    {
+      "id": "event-flow-0001",
+      "type": "network.flow.aggregate",
+      "sequence": 102,
+      "occurredAt": "2026-09-02T08:01:00Z",
+      "payload": {
+        "windowStartedAt": "2026-09-02T08:00:00Z",
+        "windowEndedAt": "2026-09-02T08:01:00Z",
+        "sessionId": "session-0001",
+        "resourceId": "resource-payroll",
+        "direction": "egress",
+        "protocol": "tcp",
+        "bytes": 4096,
+        "packets": 24,
+        "connections": 2,
+        "deniedConnections": 0
+      }
+    },
+    {
+      "id": "event-connection-0001",
+      "type": "network.connection.summary",
+      "sequence": 103,
+      "occurredAt": "2026-09-02T08:01:00Z",
+      "payload": {
+        "sessionId": "session-0001",
+        "resourceId": "resource-payroll",
+        "protocol": "tcp",
+        "destinationPort": 443,
+        "state": "closed",
+        "reasonCode": "client_closed"
+      }
+    }
+  ]
+}

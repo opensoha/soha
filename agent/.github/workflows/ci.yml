@@ -1,0 +1,125 @@
+name: agent-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout agent
+        uses: actions/checkout@v7
+        with:
+          path: soha-agent
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: soha-agent/go.sum
+      - name: Test contracts dependency resolution
+        working-directory: soha-agent
+        run: python3 deploy/test_resolve_contracts.py
+      - name: Resolve pinned contracts version
+        id: contracts
+        working-directory: soha-agent
+        run: python3 deploy/resolve_contracts.py
+      - name: Validate pinned dsh schema
+        env:
+          CONTRACTS_REF: ${{ steps.contracts.outputs.ref }}
+          CONTRACTS_DIR: ${{ steps.contracts.outputs.dir }}
+        run: |
+          if ! test -s "$CONTRACTS_DIR/agent/dsh-runtime.schema.json"; then
+            echo "::error::soha-contracts ${CONTRACTS_REF} is missing agent/dsh-runtime.schema.json"
+            exit 1
+          fi
+      - name: Check Go module state
+        working-directory: soha-agent
+        run: |
+          GOWORK=off go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Verify Go module checksums
+        working-directory: soha-agent
+        run: GOWORK=off go mod verify
+      - name: Test
+        working-directory: soha-agent
+        run: |
+          GOWORK=off go test ./...
+          python3 deploy/hermes-tools/test_plugin.py
+      - name: Race test
+        working-directory: soha-agent
+        run: GOWORK=off go test -race ./...
+      - name: Lint
+        working-directory: soha-agent
+        run: GOWORK=off go vet ./...
+      - name: Govulncheck
+        working-directory: soha-agent
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: soha-agent
+          only-new-issues: true
+          args: --timeout=5m
+      - name: Build
+        working-directory: soha-agent
+        run: GOWORK=off CGO_ENABLED=0 go build -o /tmp/soha-agent ./cmd/agent
+      - uses: azure/setup-kubectl@v5
+        with:
+          version: v1.34.1
+      - name: Validate Outpost Kubernetes artifact
+        working-directory: soha-agent
+        run: kubectl kustomize deploy/kubernetes/outpost | go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -kubernetes-version 1.34.1 -strict -summary -
+      - name: Agent Docker build
+        working-directory: soha-agent
+        run: docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha-agent:test .
+      - name: Hermes runner Docker build
+        working-directory: soha-agent
+        run: docker build -f deploy/Dockerfile.hermes-agent-runner -t ghcr.io/opensoha/soha-hermes-agent:test .
+      - name: Safe Docker volume reader image build
+        working-directory: soha-agent
+        run: docker build --target volume-reader-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-docker-volume-reader:test .
+      - name: Buildpacks runner Docker build
+        working-directory: soha-agent
+        run: docker build --target buildpacks-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:test .
+      - name: Daemonless Buildpacks runner Docker build
+        working-directory: soha-agent
+        run: docker build --target buildpacks-daemonless-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:daemonless-test .
+      - name: dsh runtime Docker build
+        working-directory: soha-agent
+        env:
+          CONTRACTS_DIR: ${{ steps.contracts.outputs.dir }}
+        run: docker build --build-context "contracts=$CONTRACTS_DIR" -f deploy/Dockerfile.dsh-runtime -t ghcr.io/opensoha/soha-dsh:test .
+      - name: Smoke test dsh runtime startup
+        run: |
+          set -euo pipefail
+          token_dir="$(mktemp -d)"
+          container=''
+          cleanup() {
+            rm -f -- "${token_dir}/token"
+            rmdir -- "${token_dir}"
+            if [[ -n "${container}" ]]; then docker rm -f "${container}" >/dev/null; fi
+          }
+          trap cleanup EXIT
+          openssl rand -hex 32 > "${token_dir}/token"
+          chmod 0444 "${token_dir}/token"
+          container="$(docker run -d --network none --read-only \
+            --tmpfs /tmp --tmpfs /var/lib/soha-dsh:uid=1000,gid=1000,mode=0700 \
+            --mount "type=bind,src=${token_dir}/token,dst=/run/dsh-token,readonly" \
+            --env SOHA_DSH_SERVICE_TOKEN_FILE=/run/dsh-token \
+            --env SOHA_DSH_GATEWAY_URL=http://127.0.0.1:1/model/v1 \
+            --env SOHA_DSH_CORE_CALLBACK_URL=http://127.0.0.1:1/tools \
+            --health-interval 2s ghcr.io/opensoha/soha-dsh:test)"
+          for _ in {1..30}; do
+            case "$(docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' "${container}")" in
+              'running healthy') exit 0 ;;
+              'running starting') sleep 2 ;;
+              *) break ;;
+            esac
+          done
+          echo '::error::dsh runtime did not become healthy'
+          docker logs "${container}"
+          exit 1

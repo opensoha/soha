@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type BuildPolicy struct {

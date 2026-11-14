@@ -21,10 +21,10 @@ start_server() {
 source_fingerprint() {
 	[ -f /workspace/soha/go.mod ] || return 1
 	[ -f /workspace/soha/cmd/server/main.go ] || return 1
-	[ -f /workspace/soha-contracts/go.mod ] || return 1
-	[ -f /workspace/soha-contracts/gen/go/sohaapi/client.go ] || return 1
-	[ -f /workspace/soha-contracts/gen/go/sohaapi/types.go ] || return 1
-	find /workspace/soha /workspace/soha-contracts \
+	[ -f /workspace/soha/contracts/go.mod ] || return 1
+	[ -f /workspace/soha/contracts/gen/go/sohaapi/client.go ] || return 1
+	[ -f /workspace/soha/contracts/gen/go/sohaapi/types.go ] || return 1
+	find /workspace/soha \
 		\( -type d \( \
 			-name .git -o \
 			-name node_modules -o \
@@ -51,7 +51,9 @@ source_fingerprint() {
 			-name '*.tmpl' -o \
 			-name '*.html' -o \
 			-name go.mod -o \
-			-name go.sum \
+			-name go.sum -o \
+			-name go.work -o \
+			-name go.work.sum \
 		\) -print0 \) \
 		| sort -z \
 		| xargs -0 cksum \
@@ -66,7 +68,7 @@ until fingerprint="$(source_fingerprint)"; do
 	sleep "$interval"
 done
 
-printf 'go 1.27.3\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.0.0 => ./soha-contracts\n' > /workspace/go.work
+export GOWORK=/workspace/soha/go.work
 mkdir -p /workspace/bin
 
 while :; do

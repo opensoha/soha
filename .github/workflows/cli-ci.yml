@@ -1,0 +1,88 @@
+name: cli-ci
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: ${{ github.workspace }}/go.work
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+            cli/go.sum
+            agent/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Record Root source identity
+        id: source
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
+          sha256sum package-lock.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Check same-source Go module state
+        run: |
+          python3 scripts/source-workspace.py check-go
+          python3 scripts/source-workspace.py tidy
+      - name: Test CLI and runtime source layout contracts
+        run: python3 cli/scripts/test_source_layout.py
+      - name: Verify Go module checksums
+        working-directory: cli
+        run: go mod verify
+      - name: Test
+        working-directory: cli
+        run: go test ./...
+      - name: Race test
+        working-directory: cli
+        run: go test -race ./...
+      - name: Vet
+        working-directory: cli
+        run: go vet ./...
+      - name: Govulncheck
+        working-directory: cli
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: cli
+          args: --timeout=5m
+      - name: Build CLI binary
+        working-directory: cli
+        run: CGO_ENABLED=0 go build -o /tmp/soha ./cmd/soha
+      - name: Install Root npm workspace
+        run: npm ci
+      - name: Verify npm source workspace
+        run: npm run check:workspace
+      - name: Test and pack npm launcher
+        run: |
+          npm test --workspace cli/npm/cli
+          python3 cli/scripts/test_release_recovery.py
+          node --test cli/scripts/verify-public-npm-release.checks.mjs
+          npm pack --dry-run --workspace cli/npm/cli
+          npm pack --workspace cli/npm/cli --pack-destination "$RUNNER_TEMP"
+      - name: Docker build from the complete Root source
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          SOURCE_DATE: ${{ steps.source.outputs.date }}
+        run: docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" -f cli/Dockerfile -t ghcr.io/opensoha/soha-cli:test .

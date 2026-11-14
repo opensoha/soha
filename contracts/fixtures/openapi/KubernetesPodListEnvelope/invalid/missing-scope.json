@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "name": "api-7c8d9f",
+      "phase": "Running",
+      "readyContainers": "2/2",
+      "restarts": 0,
+      "ageSeconds": 3600
+    }
+  ]
+}

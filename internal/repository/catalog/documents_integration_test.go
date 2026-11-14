@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	"github.com/opensoha/soha/internal/platform/apperrors"

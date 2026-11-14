@@ -1,0 +1,12 @@
+{
+  "major": 1,
+  "minor": 0,
+  "requestId": "request-1",
+  "processEpoch": "epoch-1",
+  "method": "apply",
+  "deadline": "2026-11-08T01:00:01Z",
+  "result": {
+    "revision": 1,
+    "readbackHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

@@ -1,0 +1,57 @@
+.soha-vm-resource-list {
+  gap: 16px;
+}
+.soha-vm-list-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  color: var(--soha-text-secondary);
+}
+.soha-vm-list-summary strong {
+  color: var(--soha-text-primary);
+  font-size: var(--soha-font-size-section);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-vm-list-resources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.soha-vm-list-separator {
+  color: var(--soha-text-tertiary);
+}
+.soha-vm-list-resource-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.soha-vm-form-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface-muted);
+  overflow-wrap: anywhere;
+}
+.soha-vm-form-context > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  color: var(--soha-primary);
+  background: var(--soha-bg-surface);
+  border-radius: var(--soha-radius-control);
+  font-size: 18px;
+}
+.soha-vm-form-context p {
+  margin: 4px 0 0;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}

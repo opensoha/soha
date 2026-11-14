@@ -133,6 +133,8 @@ func startSSOTestAgent(t *testing.T, binary, directory, config, agentToken, cont
 		ssoNoError(t, os.WriteFile(filepath.Join(directory, name), []byte(value), 0600))
 	}
 	command := exec.Command(binary) // #nosec G204 G702 -- test runner explicitly supplies a locally built Agent binary.
+	// The Agent's durable floor belongs to this test, never the source checkout.
+	command.Dir = directory
 	logPath := filepath.Join(directory, "agent.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600) // #nosec G304 -- fixed file in t.TempDir owned by this test.
 	ssoNoError(t, err)

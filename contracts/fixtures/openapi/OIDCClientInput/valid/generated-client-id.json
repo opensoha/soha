@@ -1,0 +1,8 @@
+{
+  "clientType": "confidential",
+  "redirectUris": ["https://app.example.com/oauth/callback"],
+  "allowedScopes": ["openid", "profile", "email"],
+  "allowedGrantTypes": ["authorization_code"],
+  "requirePkce": true,
+  "status": "enabled"
+}

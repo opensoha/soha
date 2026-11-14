@@ -1,0 +1,34 @@
+{
+  "data": {
+    "clusterId": "cluster-a",
+    "provider": "kubescape",
+    "status": "available",
+    "generatedAt": "2026-08-23T08:00:00Z",
+    "counts": {
+      "critical": 1,
+      "high": 2,
+      "medium": 3,
+      "low": 4,
+      "unknown": 0
+    },
+    "findings": [
+      {
+        "id": "configuration:C-001:team-a:Deployment:api",
+        "category": "configuration",
+        "severity": "high",
+        "title": "Privileged container",
+        "status": "failed",
+        "controlId": "C-001",
+        "resource": {
+          "clusterId": "cluster-a",
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "api",
+          "namespace": "team-a",
+          "scopeMode": "namespace"
+        }
+      }
+    ],
+    "warnings": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "controlRevision": 2,
+  "ownerEpoch": 1,
+  "instanceId": "pod1",
+  "runtimeId": "runtime1",
+  "processEpoch": "boot1",
+  "credentialId": "credential1",
+  "credentialEpoch": 1,
+  "acceptingRequests": true,
+  "expiresAt": "2026-11-08T12:00:30Z",
+  "activeCountKnown": false,
+  "activeConnections": 3,
+  "observedAt": "2026-11-08T12:00:01Z"
+}

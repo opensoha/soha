@@ -1,0 +1,7 @@
+{
+  "name": "credential-runtime",
+  "guestAccess": {
+    "username": "root",
+    "publicKeyRefs": []
+  }
+}

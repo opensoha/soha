@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <radialGradient id="body" cx=".65" cy=".22" r=".86"><stop stop-color="#fffdf6"/><stop offset="1" stop-color="#e9e5dc"/></radialGradient>
+    <linearGradient id="hey" x1="40" y1="4" x2="71" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#5a9dff"/><stop offset="1" stop-color="#1677ff"/></linearGradient>
+  </defs>
+  <path d="M49 34C46 28 37 17 37 11C37 3 48 1 53 7C57 12 58 25 58 32C58 37 52 39 49 34Z" fill="url(#hey)"/>
+  <path d="M69 32C70 24 73 17 78 16C84 15 89 21 85 26L78 36C74 41 67 38 69 32Z" fill="url(#hey)"/>
+  <path d="M13 91C13 63 35 42 64 42C94 42 116 66 116 92C116 113 95 123 65 123C36 123 13 114 13 91Z" fill="url(#body)" stroke="#e9e5dc"/>
+  <ellipse cx="46" cy="83" rx="6" ry="10" transform="rotate(-9 46 83)" fill="#142849"/>
+  <ellipse cx="82" cy="79" rx="6" ry="10" transform="rotate(-9 82 79)" fill="#142849"/>
+  <ellipse cx="47" cy="79" rx="2" ry="3" fill="white"/>
+  <ellipse cx="83" cy="75" rx="2" ry="3" fill="white"/>
+  <path d="M59 98C61 96 72 94 74 96C75 107 62 112 59 98Z" fill="#ab5753"/>
+  <path d="M63 104C66 102 70 102 72 103C70 109 65 109 63 104Z" fill="#ef8b83"/>
+</svg>

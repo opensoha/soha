@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "providerKey": "docker",
+      "domain": "agent",
+      "displayName": "Docker",
+      "version": "builtin",
+      "source": "builtin",
+      "contractVersion": "0.1.2",
+      "activationLevel": "write",
+      "resourceKinds": ["runtime_host"],
+      "capabilities": [],
+      "runtimeMode": "builtin",
+      "generation": 1,
+      "health": {
+        "domain": "container_runtime",
+        "providerKey": "docker",
+        "status": "healthy",
+        "generation": 1
+      }
+    }
+  ]
+}

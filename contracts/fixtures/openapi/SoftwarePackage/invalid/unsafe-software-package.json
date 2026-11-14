@@ -1,0 +1,15 @@
+{
+  "id": "pkg-01j9z3m4w8n2",
+  "softwareId": "../soha-cli",
+  "name": "Soha CLI",
+  "publisher": "OpenSoha",
+  "version": "0.1.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "fileName": "../soha-cli.pkg",
+  "sizeBytes": 0,
+  "sha256": "invalid",
+  "downloadPath": "https://untrusted.example.com/installer",
+  "createdAt": "2026-08-08T00:00:00Z",
+  "updatedAt": "2026-08-08T00:00:00Z"
+}

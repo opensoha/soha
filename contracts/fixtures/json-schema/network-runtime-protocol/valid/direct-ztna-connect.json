@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-direct-ztna-connect-0001",
+  "messageType": "vpn.connect.request",
+  "producerId": "endpoint-alice",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "requestId": "direct-ztna-request-0001",
+    "siteId": "site-a",
+    "networkSpaceId": "space-site-a",
+    "mode": "external_direct_ztna",
+    "resourceIds": ["resource-payroll"],
+    "accessGrantId": "grant-payroll",
+    "accessGrantToken": "hJ0iZcfcPK5E0lKo9C4NsMdy2r2V1B9DUFKkphz-g8I"
+  }
+}

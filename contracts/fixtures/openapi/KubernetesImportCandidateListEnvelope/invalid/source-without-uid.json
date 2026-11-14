@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "clusterId": "test",
+      "namespace": "middleware",
+      "workloadKind": "StatefulSet",
+      "workloadName": "database",
+      "desiredReplicas": 3,
+      "readyReplicas": 3,
+      "relatedResources": [],
+      "source": {
+        "resource": {
+          "clusterId": "test",
+          "apiVersion": "apps/v1",
+          "kind": "StatefulSet",
+          "namespace": "middleware",
+          "name": "database",
+          "scopeMode": "namespace",
+          "resourceVersion": "42"
+        },
+        "specDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": 3,
+        "observedAt": "2026-10-21T08:00:00Z",
+        "owners": []
+      }
+    }
+  ],
+  "truncated": false
+}

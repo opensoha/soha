@@ -1,0 +1,9 @@
+{
+  "decision": "allow",
+  "path": "wireguard_ztna",
+  "policyVersion": 7,
+  "protected": true,
+  "networkLeaseRequired": true,
+  "resourceLeaseRequired": true,
+  "reasons": ["team_allowed", "device_compliant", "protected_resource"]
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_signature",
+    "message": "SAML response signature validation failed",
+    "assertion": "PHNhbWxwOlJlc3BvbnNlPg=="
+  }
+}

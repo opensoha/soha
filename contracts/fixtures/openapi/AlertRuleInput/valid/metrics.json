@@ -1,0 +1,25 @@
+{
+  "name": "Checkout error rate",
+  "ruleType": "metrics",
+  "datasourceSelector": {
+    "id": "prometheus-main"
+  },
+  "querySpec": {
+    "metricKey": "http.server.errors"
+  },
+  "thresholdSpec": {
+    "operator": "gte",
+    "value": 5
+  },
+  "forSeconds": 120,
+  "groupBy": ["service"],
+  "labels": {
+    "severity": "critical"
+  },
+  "annotations": {
+    "summary": "Checkout error rate is elevated"
+  },
+  "notificationPolicyId": "policy-primary",
+  "healingPolicyIds": ["healing-checkout"],
+  "enabled": true
+}

@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "id": "operation-01",
+      "actorId": "user-01",
+      "actorName": "Platform Operator",
+      "operationType": "platform.port-forward.start",
+      "targetScope": {
+        "module": "platform",
+        "clusterId": "cluster-01",
+        "namespace": "production",
+        "resourceKind": "PortForward",
+        "resourceName": "session-01"
+      },
+      "result": "success",
+      "summary": "started agent port-forward session",
+      "requestPath": "/api/v1/clusters/cluster-01/network/port-forwards",
+      "requestMethod": "POST",
+      "requestId": "request-01",
+      "sourceIp": "192.0.2.10",
+      "metadata": {
+        "connectionMode": "agent",
+        "localPort": 18080,
+        "remotePort": 8080
+      },
+      "createdAt": "2026-08-10T08:00:00Z"
+    }
+  ]
+}

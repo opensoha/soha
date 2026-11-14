@@ -1,0 +1,9 @@
+{
+  "operationId": "op-1",
+  "workerId": "worker-1",
+  "status": "succeeded",
+  "payload": {
+    "containerId": "container-1"
+  },
+  "logs": ["pulled image", "started container"]
+}

@@ -3,7 +3,7 @@ package copilot
 import (
 	"context"
 	"fmt"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	gateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	identity "github.com/opensoha/soha/internal/domain/identity"

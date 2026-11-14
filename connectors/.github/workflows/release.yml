@@ -1,0 +1,46 @@
+name: connectors-release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Derive release version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build, test, and validate connectors
+        run: npm run check
+      - name: Prepare release artifacts
+        run: npm run release:artifacts -- --version "${{ steps.version.outputs.value }}"
+      - name: Verify release artifacts
+        run: npm run release:verify -- "dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.tgz"
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.tgz
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.tgz.sha256
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.release-manifest.json
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.tgz
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.tgz.sha256
+            dist/release/opensoha-connectors-${{ steps.version.outputs.value }}.release-manifest.json

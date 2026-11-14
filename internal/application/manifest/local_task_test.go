@@ -3,7 +3,7 @@ package manifest
 import (
 	"context"
 	"errors"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	"sync"
 	"testing"
 	"time"

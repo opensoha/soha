@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	identity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"

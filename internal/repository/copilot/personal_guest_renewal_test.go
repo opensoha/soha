@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	appaudit "github.com/opensoha/soha/internal/application/audit"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	domain "github.com/opensoha/soha/internal/domain/copilot"

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/auth/permission-catalog.schema.json",
+  "title": "OpenSoha Permission Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "catalogVersion", "contentHash", "permissions"],
+  "properties": {
+    "schemaVersion": { "const": "authorization.opensoha.io/v1" },
+    "catalogVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/permission" }
+    }
+  },
+  "$defs": {
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "domain",
+        "resource",
+        "action",
+        "displayName",
+        "riskLevel",
+        "scopeKinds",
+        "approvalPolicy",
+        "status",
+        "assignable"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$"
+        },
+        "domain": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "resource": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+        "action": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "riskLevel": { "type": "string", "enum": ["read", "mutate", "execute", "high"] },
+        "scopeKinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["tenant", "workspace", "cluster", "namespace", "project", "resource", "owner"]
+          }
+        },
+        "approvalPolicy": { "type": "string", "enum": ["never", "eligible", "required"] },
+        "status": { "type": "string", "enum": ["active", "legacy"] },
+        "assignable": { "type": "boolean" },
+        "legacyAliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "legacyCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" }
+        },
+        "replacedBy": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "key": "conntrack.entries",
+  "label": "Conntrack",
+  "unit": "count",
+  "quality": "not_collected",
+  "series": []
+}

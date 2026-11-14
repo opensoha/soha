@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "path": "wireguard",
+  "policyVersion": 8,
+  "protected": false,
+  "networkProfile": "restricted",
+  "networkLeaseRequired": true,
+  "resourceLeaseRequired": false,
+  "reasons": ["policy_allow:restricted"]
+}

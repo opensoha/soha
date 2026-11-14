@@ -1,0 +1,20 @@
+{
+  "data": {
+    "user": {
+      "userId": "u-1",
+      "userName": "admin",
+      "email": "admin@example.com",
+      "roles": ["platform-admin"],
+      "teams": [],
+      "projects": [],
+      "tags": []
+    },
+    "tokens": {
+      "accessToken": "access-token",
+      "refreshToken": "refresh-token",
+      "tokenType": "Bearer",
+      "expiresIn": 3600,
+      "expiresAt": "2026-06-09T13:00:00Z"
+    }
+  }
+}

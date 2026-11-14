@@ -2,8 +2,8 @@ package resourcebackend
 
 import (
 	"context"
-	resource "github.com/opensoha/soha-contracts/resource"
-	runtime "github.com/opensoha/soha-contracts/resource/runtime"
+	resource "github.com/opensoha/soha/contracts/resource"
+	runtime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (d *Direct) NetworkTopologySnapshot(ctx context.Context, clusterID string, input resource.NetworkTopologySnapshotRequest) (resource.NetworkTopologySnapshot, error) {

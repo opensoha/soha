@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/evaluation-dataset/v1","id":"rag-regression","name":"RAG regression","version":"v1","samples":[{"id":"s1","input":"What failed?","expectedSources":["doc:1"],"forbiddenActions":["delete"]}],"createdAt":"2026-07-14T08:00:00Z"}

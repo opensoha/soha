@@ -9,8 +9,6 @@ base_host="${base_url#*://}"
 base_host="${base_host%%/*}"
 base_host="${base_host%%:*}"
 soha_ref="${SOHA_REF:-main}"
-web_ref="${SOHA_WEB_REF:-main}"
-contracts_ref="${SOHA_CONTRACTS_REF:-main}"
 replicas_annotation="remote-dev.opensoha.io/stable-replicas"
 
 case "$base_host" in
@@ -122,9 +120,7 @@ up() {
 	restore_stable
 	kubectl --context "$context" --namespace "$namespace" apply -k "$script_dir"
 	k set env deployment/soha-dev --containers=source-sync \
-		SOHA_REF="$soha_ref" \
-		SOHA_WEB_REF="$web_ref" \
-		SOHA_CONTRACTS_REF="$contracts_ref" >/dev/null
+		SOHA_REF="$soha_ref" >/dev/null
 	configure_web_host
 	activate
 }

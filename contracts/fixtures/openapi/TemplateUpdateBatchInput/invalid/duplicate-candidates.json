@@ -1,0 +1,11 @@
+{
+  "previewDigest": "sha256:abc",
+  "candidateIds": [
+    "candidate-1",
+    "candidate-1"
+  ],
+  "waveSize": 2,
+  "stopOnFailure": true,
+  "acknowledgeHistoryGaps": false,
+  "idempotencyKey": "manual-1"
+}

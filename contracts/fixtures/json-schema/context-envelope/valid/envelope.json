@@ -1,0 +1,1 @@
+{"version":"v1","id":"context-1","requestId":"request-1","principal":{"userId":"user-1"},"task":{"goal":"diagnose rollout"},"budgets":{"maxInputTokens":16000},"budgetUsage":{"evidenceTokens":0},"policySnapshot":{"id":"knowledge-acl","version":"v1"},"contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","createdAt":"2026-07-14T00:00:00Z"}

@@ -1,0 +1,16 @@
+{
+  "expectedRevision": 0,
+  "draft": {
+    "name": "Approved storage",
+    "kind": "s3",
+    "enabled": true,
+    "storageIntegrationId": "integration",
+    "policy": {
+      "mode": "block",
+      "detectors": [
+        "private_key"
+      ],
+      "rules": []
+    }
+  }
+}

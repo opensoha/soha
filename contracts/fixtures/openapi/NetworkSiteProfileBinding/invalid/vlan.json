@@ -1,0 +1,9 @@
+{
+  "id": "site-a-full",
+  "siteId": "site-a",
+  "accessProfile": "full",
+  "vlanId": 4095,
+  "sessionTimeoutSeconds": 3600,
+  "createdAt": "2026-09-02T08:00:00Z",
+  "updatedAt": "2026-09-02T08:00:00Z"
+}

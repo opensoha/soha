@@ -1,0 +1,67 @@
+@media (max-width: 1200px) {
+  .soha-delivery-workbench-page .soha-delivery-workbench-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-application-runtime-delivery-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-delivery-blueprint-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-build-template-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .soha-delivery-workbench-page .soha-delivery-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-application-card-grid,
+  .soha-application-card-list,
+  .soha-application-lane-grid,
+  .soha-application-runtime-service-summary,
+  .soha-application-runtime-delivery-summary,
+  .soha-application-delivery-actions__grid,
+  .soha-application-runtime-overview-grid,
+  .soha-application-runtime-delivery-grid,
+  .soha-application-runtime-pipeline-grid,
+  .soha-application-runtime-settings-grid,
+  .soha-application-runtime-verification-grid,
+  .soha-application-service-form-grid,
+  .soha-application-service-container-editor__grid,
+  .soha-build-template-form-grid,
+  .soha-delivery-blueprint-form-grid,
+  .soha-workflow-template-settings-form__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-application-delivery-actions__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .soha-delivery-blueprint-repeat-list__toolbar,
+  .soha-delivery-blueprint-repeat-item__head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soha-build-template-variable-list__toolbar,
+  .soha-build-template-variable-item__head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soha-application-card-grid {
+    justify-content: stretch;
+  }
+
+  .soha-delivery-action-grid {
+    grid-template-columns: 1fr;
+  }
+}

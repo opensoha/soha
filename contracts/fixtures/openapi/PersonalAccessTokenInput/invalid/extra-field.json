@@ -1,0 +1,6 @@
+{
+  "name": "CLI token",
+  "scopes": ["ai:read"],
+  "permissionKeys": ["ai.gateway.view"],
+  "plainTextValue": "should-not-be-accepted"
+}

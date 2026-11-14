@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/knowledge-connector-definition/v1","id":"docs-http","kind":"http","version":"v1","configRef":"secret:http-docs","enabled":true}

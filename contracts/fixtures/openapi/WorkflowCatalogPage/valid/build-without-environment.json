@@ -1,0 +1,6 @@
+{
+  "items": [{ "id": "build_source/app-1/build-1", "sourceKind": "build_source", "sourceId": "build-1", "name": "API build", "context": "buildkit", "enabled": true, "scopes": [{ "applicationId": "app-1", "applicationName": "API" }] }],
+  "total": 1,
+  "applications": [{ "value": "app-1", "label": "API" }],
+  "environments": []
+}

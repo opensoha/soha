@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
@@ -781,6 +781,8 @@ func mihomoProfileInput(input sohaapi.NetworkMihomoProfileInput) domainnetworkac
 		}
 	}
 	return domainnetworkaccess.MihomoProfileInput{
+		DeliveryMode: string(input.DeliveryMode), BundleID: input.BundleID,
+		OrgRevision: input.OrgRevision, SourceRevision: input.SourceRevision,
 		DeviceID: input.DeviceID, Name: input.Name, Mode: string(input.Mode), SourceType: string(input.SourceType), Status: string(input.Status),
 		SubscriptionURL: subscriptionURL, ManualNode: manualNode, MixedPort: input.MixedPort, ControllerPort: input.ControllerPort,
 		DNSMode: string(input.DNSMode), FakeIPRange: input.FakeIPRange, SelectorGroup: input.SelectorGroup,

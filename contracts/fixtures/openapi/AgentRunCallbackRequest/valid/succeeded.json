@@ -1,0 +1,10 @@
+{
+  "runId": "run-1",
+  "callbackToken": "agent-run-token",
+  "agentId": "agent-1",
+  "status": "succeeded",
+  "payload": {
+    "summary": "Completed"
+  },
+  "toolExecutions": []
+}

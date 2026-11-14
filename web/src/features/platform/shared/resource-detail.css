@@ -1,0 +1,110 @@
+.soha-k8s-detail-header {
+  min-width: 0;
+  padding: 18px 20px 16px;
+  background: var(--soha-bg-surface);
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-k8s-detail-title-row,
+.soha-k8s-detail-title,
+.soha-k8s-detail-actions,
+.soha-k8s-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.soha-k8s-detail-title-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.soha-k8s-detail-title {
+  flex: 1 1 280px;
+}
+.soha-k8s-detail-title h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.5;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.soha-k8s-detail-title > a {
+  flex: none;
+}
+.soha-k8s-detail-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.soha-k8s-detail-meta {
+  margin-top: 12px;
+  flex-wrap: wrap;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-k8s-detail-meta .ant-tag {
+  margin-inline-end: 0;
+}
+.soha-k8s-detail-page {
+  min-width: 0;
+}
+.soha-k8s-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  padding: 0 20px;
+  background: var(--soha-bg-surface);
+  margin-bottom: 16px;
+}
+.soha-k8s-detail-page > .soha-resource-tabs > .ant-tabs-body-holder {
+  min-width: 0;
+}
+.soha-k8s-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.soha-k8s-detail-toolbar > .ant-input-affix-wrapper {
+  max-width: 320px;
+}
+.soha-k8s-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 20px;
+}
+.soha-k8s-detail-summary dt {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-k8s-detail-summary dd {
+  margin: 6px 0 0;
+  font-size: 26px;
+  line-height: 1.4;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-k8s-detail-metadata .ant-collapse-content-box {
+  overflow-wrap: anywhere;
+}
+.soha-controller-overview .ant-descriptions-item-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-controller-selector .ant-space-item {
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-controller-selector .ant-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .soha-k8s-detail-header {
+    padding: 16px 12px;
+  }
+  .soha-k8s-detail-actions {
+    width: 100%;
+  }
+  .soha-k8s-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+    padding-inline: 12px;
+  }
+}

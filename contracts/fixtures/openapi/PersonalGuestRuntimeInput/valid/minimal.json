@@ -1,0 +1,8 @@
+{
+  "environmentVersion": 5,
+  "idempotencyKey": "runtime-proof-1",
+  "kind": "execute",
+  "argv": [
+    "/usr/bin/id"
+  ]
+}

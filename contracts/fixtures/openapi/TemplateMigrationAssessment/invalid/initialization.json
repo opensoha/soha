@@ -1,0 +1,9 @@
+{
+  "fromVersion": 0,
+  "toVersion": 3,
+  "blocked": false,
+  "requiresApproval": true,
+  "reason": "首次发布须先证明不存在并审批",
+  "steps": [],
+  "initialization": "force"
+}

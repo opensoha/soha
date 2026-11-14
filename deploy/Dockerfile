@@ -1,8 +1,28 @@
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS go-source
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-toolchain
+
+FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS web-build
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off NODE_OPTIONS=--max-old-space-size=4096
+WORKDIR /src
+COPY package.json package-lock.json ./
+COPY contracts/package.json ./contracts/package.json
+COPY web/package.json ./web/package.json
+COPY connectors/package.json ./connectors/package.json
+COPY cli/npm/cli ./cli/npm/cli
+COPY web/scripts/apply-dependency-patches.mjs web/scripts/dependency-patches.json web/scripts/dependency-patches.patch ./web/scripts/
+RUN npm ci
+COPY contracts ./contracts
+COPY web ./web
+RUN npm run check:generated --workspace contracts && \
+    npm run generate --workspace contracts && \
+    npm run build --workspace web && \
+    rm -rf contracts/node_modules
+
+FROM go-toolchain AS go-source
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
-ENV GOPROXY=$GOPROXY GOWORK=off
+ENV GOPROXY=$GOPROXY GOWORK=/src/soha/go.work
 WORKDIR /src
 RUN for attempt in 1 2 3; do \
       timeout 120 apk add --no-cache git ca-certificates && exit 0; \
@@ -10,16 +30,15 @@ RUN for attempt in 1 2 3; do \
       sleep 2; \
     done; \
     exit 1
-COPY go.mod go.sum ./soha/
-RUN for attempt in 1 2 3; do \
-      (cd soha && timeout 180 go mod download) && exit 0; \
-      echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
-      sleep 2; \
-    done; \
-    exit 1
+COPY go.mod go.sum go.work go.work.sum ./soha/
+COPY contracts/go.mod contracts/go.sum ./soha/contracts/
+COPY cli/go.mod cli/go.sum ./soha/cli/
+COPY agent/go.mod agent/go.sum ./soha/agent/
 COPY . ./soha
+COPY --from=web-build /src/contracts ./soha/contracts
 
 FROM go-source AS go-build
+COPY --from=web-build /src/web/dist ./soha/internal/staticassets/web/dist
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
 ARG SOHA_BUILD_VERSION=0.1.0
@@ -32,6 +51,10 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-control ./cmd/network-control && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ingest ./cmd/ingest && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime ./cmd/radius-runtime && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime-executor ./cmd/radius-runtime-executor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/outpost-runtime-executor ./cmd/outpost-runtime-executor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/proxy-runtime-executor ./cmd/proxy-runtime-executor && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade
 
 FROM go-source AS network-gateway-build
@@ -81,11 +104,14 @@ FROM --platform=linux/amd64 freeradius/freeradius-server:3.2.10@sha256:cc7fd136e
 RUN rm -f /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/inner-tunnel /etc/freeradius/mods-enabled/eap
 COPY deploy/freeradius/default /etc/freeradius/sites-enabled/default
 COPY deploy/freeradius/eap /etc/freeradius/mods-enabled/eap
+COPY deploy/freeradius/inner-tunnel /etc/freeradius/sites-enabled/soha-inner-tunnel
 COPY deploy/freeradius/soha /etc/freeradius/mods-enabled/soha
+COPY deploy/freeradius/soha-managed-policy /etc/freeradius/policy.d/soha-managed
 COPY deploy/freeradius/clients.conf /etc/freeradius/clients.conf
 COPY deploy/freeradius/entrypoint.sh /soha-radius-entrypoint.sh
 COPY --from=go-build /out/radius-adapter /usr/local/bin/radius-adapter
-RUN chmod 0755 /soha-radius-entrypoint.sh /usr/local/bin/radius-adapter
+COPY --from=go-build /out/radius-runtime /usr/local/bin/radius-runtime
+RUN chmod 0755 /soha-radius-entrypoint.sh /usr/local/bin/radius-adapter /usr/local/bin/radius-runtime
 EXPOSE 1812/udp 1813/udp
 ENTRYPOINT ["/soha-radius-entrypoint.sh"]
 CMD ["freeradius"]
@@ -133,6 +159,9 @@ WORKDIR /app
 COPY --from=go-build /out/soha /app/soha
 COPY --from=go-build /out/network-control /app/network-control
 COPY --from=go-build /out/ingest /app/ingest
+COPY --from=go-build /out/outpost-runtime-executor /app/outpost-runtime-executor
+COPY --from=go-build /out/proxy-runtime-executor /app/proxy-runtime-executor
+COPY --from=go-build /out/radius-runtime-executor /app/radius-runtime-executor
 COPY --from=go-build /out/runtime-upgrade /app/runtime-upgrade
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations

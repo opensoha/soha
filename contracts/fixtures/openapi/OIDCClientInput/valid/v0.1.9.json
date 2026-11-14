@@ -1,0 +1,7 @@
+{
+  "providerId": "provider-1",
+  "clientId": "grafana",
+  "redirectUris": ["https://grafana.example.com/login/oauth"],
+  "grantTypes": ["authorization_code", "refresh_token"],
+  "status": "active"
+}

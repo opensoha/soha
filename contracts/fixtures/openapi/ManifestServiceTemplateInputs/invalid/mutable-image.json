@@ -1,0 +1,8 @@
+{
+  "serviceVersion": 3,
+  "templateId": "http",
+  "templateVersion": 1,
+  "templateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parameters": {},
+  "artifactImages": { "main": "registry.example/api:latest" }
+}

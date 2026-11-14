@@ -1,0 +1,7 @@
+{
+  "action": "apply",
+  "packageId": "package-1",
+  "generation": 1,
+  "idempotencyKey": "operation-1",
+  "gitOpsDocuments": []
+}

@@ -1,0 +1,9 @@
+{
+  "namespace": "default",
+  "sourceKind": "StatefulSet",
+  "sourceName": "indexer",
+  "targetKind": "WorkloadCronJob",
+  "targetName": "indexer-schedule",
+  "restartPolicy": "OnFailure",
+  "schedule": "*/15 * * * *"
+}

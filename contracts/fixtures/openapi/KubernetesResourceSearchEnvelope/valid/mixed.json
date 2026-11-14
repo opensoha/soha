@@ -1,0 +1,29 @@
+{
+  "data": {
+    "items": [
+      {
+        "resource": {
+          "clusterId": "cluster-a",
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "name": "api-7c8d9f",
+          "namespace": "production",
+          "scopeMode": "namespace",
+          "uid": "pod-uid"
+        },
+        "status": "Running"
+      },
+      {
+        "resource": {
+          "clusterId": "cluster-a",
+          "apiVersion": "v1",
+          "kind": "Node",
+          "name": "worker-1",
+          "scopeMode": "cluster"
+        },
+        "status": "Ready"
+      }
+    ],
+    "truncated": false
+  }
+}

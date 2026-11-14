@@ -1,0 +1,62 @@
+{
+  "data": {
+    "operationId": "resource-create-01",
+    "status": "partial",
+    "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "items": [
+      {
+        "document": {
+          "index": 0,
+          "apiVersion": "v1",
+          "kind": "ConfigMap",
+          "name": "app",
+          "scopeMode": "namespace",
+          "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "status": "succeeded",
+        "resourceRef": {
+          "clusterId": "cluster-a",
+          "apiVersion": "v1",
+          "kind": "ConfigMap",
+          "name": "app",
+          "namespace": "minio",
+          "scopeMode": "namespace",
+          "uid": "2d8494c5-df2a-4d95-aa1b-8e19998cf502"
+        },
+        "warnings": [],
+        "operationId": "resource-create-01-0"
+      },
+      {
+        "document": {
+          "index": 1,
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "api",
+          "namespace": "ops",
+          "scopeMode": "namespace",
+          "contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "status": "failed",
+        "warnings": [],
+        "error": {
+          "code": "resource_dry_run_failed",
+          "message": "The resource changed after preflight."
+        },
+        "operationId": "resource-create-01-1"
+      },
+      {
+        "document": {
+          "index": 2,
+          "apiVersion": "v1",
+          "kind": "Service",
+          "name": "api",
+          "namespace": "ops",
+          "scopeMode": "namespace",
+          "contentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "status": "not_started",
+        "warnings": []
+      }
+    ]
+  }
+}

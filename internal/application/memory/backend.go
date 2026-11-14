@@ -98,15 +98,7 @@ func (s *BackendService) SyncOne(ctx context.Context) (bool, error) {
 }
 func (s *BackendService) syncStep(ctx context.Context, j SyncJob) (string, error) {
 	if j.Revalidate {
-		current, err := s.store.GetRecord(ctx, j.Record.ID)
-		if err != nil || current.Revision != j.Revision || current.Status != "active" {
-			return "done", err
-		}
-		_, err = s.authorizeSync(ctx, current, false)
-		if err != nil {
-			return "retry", err
-		}
-		return "done", nil
+		return s.revalidateSync(ctx, j)
 	}
 	bank := s.bank(j.Record)
 	if err := s.syncStore.EnsureBank(ctx, j.Record, bank); err != nil {
@@ -159,6 +151,18 @@ func (s *BackendService) syncStep(ctx context.Context, j SyncJob) (string, error
 	default:
 		return "retry", fmt.Errorf("invalid memory operation status")
 	}
+}
+
+func (s *BackendService) revalidateSync(ctx context.Context, j SyncJob) (string, error) {
+	current, err := s.store.GetRecord(ctx, j.Record.ID)
+	if err != nil || current.Revision != j.Revision || current.Status != "active" {
+		return "done", err
+	}
+	_, err = s.authorizeSync(ctx, current, false)
+	if err != nil {
+		return "retry", err
+	}
+	return "done", nil
 }
 
 // Recall accepts server-resolved ownership/scope only. No bank or generated fact crosses this boundary.

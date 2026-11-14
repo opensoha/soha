@@ -1,0 +1,21 @@
+{
+  "apiVersion": "opensoha.io/v1alpha1",
+  "kind": "Project",
+  "metadata": { "name": "demo" },
+  "spec": {
+    "steps": [
+      {
+        "id": "create-vm",
+        "tool": "virtualization.vms.create.trigger",
+        "input": { "connectionId": "pve-main", "name": "demo-vm" }
+      },
+      {
+        "id": "deploy-compose",
+        "tool": "docker.projects.deploy.trigger",
+        "input": { "projectId": "demo", "action": "deploy" },
+        "dependsOn": ["create-vm"],
+        "wait": true
+      }
+    ]
+  }
+}

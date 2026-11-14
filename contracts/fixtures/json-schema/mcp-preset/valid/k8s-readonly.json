@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "opensoha.dev/mcp-preset/v1",
+  "id": "k8s-readonly",
+  "name": "Kubernetes Readonly Diagnosis",
+  "version": "0.1.0",
+  "description": "Read-only AI Gateway tools for scoped Kubernetes workload diagnosis.",
+  "riskLevel": "read",
+  "skillRefs": ["k8s-sre"],
+  "platformCapabilityRefs": ["cluster.inventory", "workload.read", "network.inventory", "storage.inventory", "pod.logs", "metrics"],
+  "requiredScopes": ["cluster", "namespace"],
+  "tools": [
+    {
+      "name": "k8s.pods.list",
+      "description": "List pods in a scoped namespace.",
+      "riskLevel": "read",
+      "requiredScopes": ["cluster", "namespace"]
+    },
+    {
+      "name": "k8s.pods.logs",
+      "description": "Read recent pod logs in a scoped namespace.",
+      "riskLevel": "read",
+      "requiredScopes": ["cluster", "namespace"]
+    }
+  ],
+  "resources": [
+    {
+      "name": "soha://k8s/runtime",
+      "description": "Scoped Kubernetes runtime context for the selected cluster and namespace.",
+      "requiredScopes": ["cluster", "namespace"]
+    }
+  ],
+  "prompts": [
+    {
+      "name": "soha.k8s.diagnose_workload",
+      "description": "Workload diagnosis prompt bounded to Gateway evidence.",
+      "requiredScopes": ["cluster", "namespace"]
+    }
+  ],
+  "guardrails": ["read_only", "no_kubeconfig", "no_secret_output", "scoped_cluster_namespace"]
+}

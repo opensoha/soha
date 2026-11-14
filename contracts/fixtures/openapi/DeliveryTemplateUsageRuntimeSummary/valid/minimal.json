@@ -1,0 +1,19 @@
+{
+  "source": "fixture",
+  "items": [
+    {
+      "kind": "execution_task",
+      "id": "task-1",
+      "status": "running"
+    }
+  ],
+  "statusCounts": {
+    "running": 1
+  },
+  "stateCounts": {
+    "running": 1
+  },
+  "kindCounts": {
+    "execution_task": 1
+  }
+}

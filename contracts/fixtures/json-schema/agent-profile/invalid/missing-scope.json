@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "opensoha.dev/agent-profile/v1",
+  "id": "k8s-sre-readonly",
+  "name": "K8s SRE Readonly",
+  "version": "0.1.0",
+  "description": "Agent runtime profile for read-only Kubernetes root-cause diagnosis through Soha Gateway.",
+  "mode": "platform_resource_diagnosis",
+  "providerKind": "soha-agent-runtime",
+  "skillRefs": ["k8s-sre"],
+  "mcpPresetRefs": ["k8s-readonly"],
+  "capabilityRefs": ["platform_resource_diagnosis"],
+  "platformCapabilityRefs": ["cluster.inventory"],
+  "enabledToolRefs": ["k8s.pods.list"],
+  "guardrails": ["read_only"]
+}

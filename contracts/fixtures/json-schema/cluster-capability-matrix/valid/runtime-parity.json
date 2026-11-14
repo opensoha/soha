@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-06-12T02:00:00Z",
+  "capabilitySetVersion": "2026.06",
+  "items": [
+    {
+      "key": "kubernetes.yaml.apply",
+      "label": "Apply Kubernetes YAML",
+      "category": "yaml",
+      "requiredScopes": ["cluster", "namespace"],
+      "riskLevel": "mutate",
+      "requiresApproval": true,
+      "docsUrl": "/operations/kubernetes-yaml",
+      "direct": {
+        "status": "available",
+        "requiredScopes": ["cluster:write", "kubernetes:apply"]
+      },
+      "agent": {
+        "status": "available",
+        "notes": ["Requires the resource mutation allowlist."],
+        "requiredAgentVersion": "0.1.0",
+        "requiredScopes": ["agent:kubernetes:apply"]
+      },
+      "metadata": {
+        "resourceKinds": ["Deployment", "Service", "ConfigMap"]
+      }
+    },
+    {
+      "key": "kubernetes.logs.stream",
+      "label": "Stream Kubernetes Logs",
+      "category": "logs",
+      "riskLevel": "read",
+      "requiresApproval": false,
+      "direct": {
+        "status": "available",
+        "requiredScopes": ["cluster:read", "logs:read"]
+      },
+      "agent": {
+        "status": "partial",
+        "reason": "Agent stream resume is limited to one active container per request.",
+        "diagnostic": "upgrade_agent_for_multi_container_logs",
+        "requiredAgentVersion": "0.1.0",
+        "requiredScopes": ["agent:logs:read"]
+      }
+    },
+    {
+      "key": "docker.runtime.stream",
+      "label": "Docker Runtime Streams",
+      "category": "docker",
+      "riskLevel": "execute",
+      "requiresApproval": true,
+      "direct": {
+        "status": "unsupported",
+        "reason": "Docker runtime streams require an agent runtime."
+      },
+      "agent": {
+        "status": "available",
+        "requiredAgentVersion": "0.1.0",
+        "requiredScopes": ["agent:docker:execute"]
+      }
+    }
+  ]
+}

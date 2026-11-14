@@ -3,7 +3,7 @@ package resource
 import (
 	"context"
 	"encoding/json"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"io"
 	"net"
 

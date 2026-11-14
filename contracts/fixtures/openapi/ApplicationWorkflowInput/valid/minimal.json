@@ -1,0 +1,9 @@
+{
+  "name": "Production release",
+  "definition": {
+    "mode": "release_dag",
+    "nodes": [],
+    "edges": []
+  },
+  "enabled": true
+}

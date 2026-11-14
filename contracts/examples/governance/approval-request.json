@@ -1,0 +1,35 @@
+{
+  "id": "approval-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "status": "approved",
+  "strategy": "role_quorum",
+  "actorType": "user",
+  "actorId": "user-123",
+  "actorName": "Ada",
+  "toolName": "k8s.deployments.restart",
+  "riskLevel": "high",
+  "requiresApproval": true,
+  "approvalTrace": {
+    "approvalMode": "role_quorum",
+    "approvedCount": 1,
+    "requiredApprovals": 1,
+    "satisfiedRequirements": ["role:sre"],
+    "decisions": [
+      {
+        "userId": "user-456",
+        "userName": "Grace",
+        "roles": ["sre"],
+        "result": "approved",
+        "stageIndex": 0,
+        "stageName": "platform-sre",
+        "decidedAt": "2026-06-12T02:35:00Z"
+      }
+    ]
+  },
+  "summary": "Restart checkout-api deployment in payments namespace.",
+  "requestId": "req-approval-123",
+  "decidedBy": "user-456",
+  "decidedByName": "Grace",
+  "decidedAt": "2026-06-12T02:35:00Z",
+  "createdAt": "2026-06-12T02:30:00Z",
+  "updatedAt": "2026-06-12T02:35:00Z"
+}

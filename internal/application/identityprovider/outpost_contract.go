@@ -13,16 +13,33 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-const outpostProtocolVersion = "v1"
+const (
+	outpostProtocolVersion       = "v1"
+	outpostConfigurationLeaseTTL = 10 * time.Minute
+)
 
 type outpostRuntimeVersionRepository interface {
 	ResolveOutpostRuntimeVersion(context.Context, string, string) (int64, error)
+}
+
+// Lease persistence is mandatory: process-local observations cannot establish a grant.
+type outpostRuntimeLeaseRepository interface {
+	RecordOutpostRuntimeLease(context.Context, string, string, string, int64, time.Time, time.Time) error
+	ValidateOutpostRuntimeLease(context.Context, string, string, int64, *time.Time) error
+}
+
+func (s *Service) outpostLeaseRepository() (outpostRuntimeLeaseRepository, error) {
+	repository, ok := s.repo.(outpostRuntimeLeaseRepository)
+	if !ok {
+		return nil, fmt.Errorf("%w: Outpost runtime lease repository is not configured", apperrors.ErrUnsupportedOperation)
+	}
+	return repository, nil
 }
 
 func (s *Service) ClaimIdentityOutpostRuntime(ctx context.Context, token string, request sohaapi.IdentityOutpostClaimRequest) (*sohaapi.IdentityOutpostRuntimeConfig, error) {
@@ -40,6 +57,12 @@ func (s *Service) ClaimIdentityOutpostRuntime(ctx context.Context, token string,
 	if outpost.Mode == domainprovider.OutpostModeEmbedded {
 		return nil, fmt.Errorf("%w: embedded outposts do not claim remote runtime configuration", apperrors.ErrInvalidArgument)
 	}
+	if strings.TrimSpace(request.SupportedProtocolVersion) != outpostProtocolVersion {
+		return nil, fmt.Errorf("%w: unsupported outpost protocol version", apperrors.ErrInvalidArgument)
+	}
+	if err := validateOutpostControlClaim(request); err != nil {
+		return nil, err
+	}
 	firstClaim := outpost.ClaimedAgentID == ""
 	now := time.Now().UTC()
 	outpost.ClaimedAgentID = outpost.ID
@@ -50,15 +73,15 @@ func (s *Service) ClaimIdentityOutpostRuntime(ctx context.Context, token string,
 	if _, err := s.repo.RecordOutpostClaim(ctx, outpost); err != nil {
 		return nil, err
 	}
-	if outpost.ProtocolVersion != outpostProtocolVersion {
-		return nil, fmt.Errorf("%w: unsupported outpost protocol version", apperrors.ErrInvalidArgument)
-	}
 	providers, err := s.outpostProxyProviders(ctx, outpost.ID)
 	if err != nil {
 		return nil, err
 	}
 	config, err := s.outpostRuntimeConfig(ctx, outpost, providers)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.attachOutpostRuntimeControl(ctx, &config, request, outpost.TokenHash); err != nil {
 		return nil, err
 	}
 	if firstClaim {
@@ -81,6 +104,29 @@ func (s *Service) HeartbeatIdentityOutpostRuntime(ctx context.Context, outpostID
 	if request.ConfigurationVersion < 0 || len(request.RuntimeVersion) > 128 || len(request.ErrorCode) > 128 {
 		return sohaapi.IdentityOutpostHeartbeat{}, fmt.Errorf("%w: invalid applied configuration version", apperrors.ErrInvalidArgument)
 	}
+	if err := validateOutpostControlHeartbeat(request); err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
+	providers, err := s.outpostProxyProviders(ctx, outpostID)
+	if err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
+	desired, err := s.resolveOutpostConfigurationVersion(ctx, outpostID, providers)
+	if err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
+	if err := validateOutpostHeartbeatReport(request, desired, time.Now().UTC()); err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
+	leaseRepository, err := s.outpostLeaseRepository()
+	if err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
+	if request.ConfigurationVersion > 0 {
+		if err := leaseRepository.ValidateOutpostRuntimeLease(ctx, outpostID, outpost.TokenHash, request.ConfigurationVersion, request.ConfigurationExpiresAt); err != nil {
+			return sohaapi.IdentityOutpostHeartbeat{}, err
+		}
+	}
 	outpost.Status = domainprovider.OutpostStatusDegraded
 	switch request.Status {
 	case sohaapi.IdentityOutpostHeartbeatRequestStatusHealthy:
@@ -100,15 +146,10 @@ func (s *Service) HeartbeatIdentityOutpostRuntime(ctx context.Context, outpostID
 	outpost.RuntimeVersion = strings.TrimSpace(request.RuntimeVersion)
 	outpost.Version = outpost.RuntimeVersion
 	outpost.Metadata = nil
+	if err := s.recordOutpostControlObservation(ctx, outpost, request); err != nil {
+		return sohaapi.IdentityOutpostHeartbeat{}, err
+	}
 	if _, err := s.repo.RecordOutpostHeartbeat(ctx, outpost); err != nil {
-		return sohaapi.IdentityOutpostHeartbeat{}, err
-	}
-	providers, err := s.outpostProxyProviders(ctx, outpostID)
-	if err != nil {
-		return sohaapi.IdentityOutpostHeartbeat{}, err
-	}
-	desired, err := s.resolveOutpostConfigurationVersion(ctx, outpostID, providers)
-	if err != nil {
 		return sohaapi.IdentityOutpostHeartbeat{}, err
 	}
 	return sohaapi.IdentityOutpostHeartbeat{Accepted: true, DesiredConfigurationVersion: desired}, nil
@@ -118,7 +159,8 @@ func (s *Service) CheckIdentityOutpostAccess(ctx context.Context, outpostID, tok
 	if err := s.requireOutpostRuntimeSigner(); err != nil {
 		return sohaapi.IdentityOutpostAccessCheck{}, err
 	}
-	if _, err := s.authenticateOutpost(ctx, outpostID, token); err != nil {
+	outpost, err := s.authenticateOutpost(ctx, outpostID, token)
+	if err != nil {
 		return sohaapi.IdentityOutpostAccessCheck{}, err
 	}
 	providers, err := s.outpostProxyProviders(ctx, outpostID)
@@ -132,7 +174,14 @@ func (s *Service) CheckIdentityOutpostAccess(ctx context.Context, outpostID, tok
 	if request.ConfigurationVersion != version {
 		return sohaapi.IdentityOutpostAccessCheck{}, fmt.Errorf("%w: stale outpost configuration", apperrors.ErrConflict)
 	}
-	result, err := s.CheckOutpost(ctx, outpostID, domainprovider.OutpostCheckInput{Token: token, SourceIP: request.SourceIP, ProviderID: request.ProviderID, OriginalURL: request.OriginalURL, RequestHost: request.RequestHost, RequestPath: request.RequestPath, Method: request.Method, SessionToken: request.SessionToken})
+	leaseRepository, err := s.outpostLeaseRepository()
+	if err != nil {
+		return sohaapi.IdentityOutpostAccessCheck{}, err
+	}
+	if err := leaseRepository.ValidateOutpostRuntimeLease(ctx, outpostID, outpost.TokenHash, version, nil); err != nil {
+		return sohaapi.IdentityOutpostAccessCheck{}, err
+	}
+	result, err := s.checkOutpost(ctx, outpostID, domainprovider.OutpostCheckInput{SourceIP: request.SourceIP, ProviderID: request.ProviderID, OriginalURL: request.OriginalURL, RequestHost: request.RequestHost, RequestPath: request.RequestPath, Method: request.Method, SessionToken: request.SessionToken})
 	if err != nil {
 		return sohaapi.IdentityOutpostAccessCheck{}, err
 	}
@@ -170,17 +219,28 @@ func (s *Service) outpostRuntimeConfig(ctx context.Context, outpost domainprovid
 	if err := s.requireOutpostRuntimeSigner(); err != nil {
 		return sohaapi.IdentityOutpostRuntimeConfig{}, err
 	}
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	version, err := s.resolveOutpostConfigurationVersion(ctx, outpost.ID, providers)
 	if err != nil {
 		return sohaapi.IdentityOutpostRuntimeConfig{}, err
 	}
-	config := sohaapi.IdentityOutpostRuntimeConfig{OutpostID: outpost.ID, ProtocolVersion: outpostProtocolVersion, ConfigurationVersion: version, IssuedAt: now, ExpiresAt: now.Add(10 * time.Minute), KeyID: s.outpostSigningKeyID, CheckURL: "/identity/outposts/" + outpost.ID + "/check", Routes: outpostRoutes(providers)}
+	config := sohaapi.IdentityOutpostRuntimeConfig{OutpostID: outpost.ID, ProtocolVersion: outpostProtocolVersion, ConfigurationVersion: version, IssuedAt: now, ExpiresAt: now.Add(outpostConfigurationLeaseTTL), KeyID: s.outpostSigningKeyID, CheckURL: "/identity/outposts/" + outpost.ID + "/check", Routes: outpostRoutes(providers)}
 	payload, err := outpostConfigPayload(config)
 	if err != nil {
 		return sohaapi.IdentityOutpostRuntimeConfig{}, err
 	}
 	config.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(s.outpostSigningKey, payload))
+	leaseRepository, err := s.outpostLeaseRepository()
+	if err != nil {
+		return sohaapi.IdentityOutpostRuntimeConfig{}, err
+	}
+	digest, err := outpostConfigurationDigest(providers)
+	if err != nil {
+		return sohaapi.IdentityOutpostRuntimeConfig{}, err
+	}
+	if err := leaseRepository.RecordOutpostRuntimeLease(ctx, outpost.ID, outpost.TokenHash, digest, version, config.IssuedAt, config.ExpiresAt); err != nil {
+		return sohaapi.IdentityOutpostRuntimeConfig{}, err
+	}
 	return config, nil
 }
 
@@ -241,4 +301,20 @@ func outpostConfigPayload(config sohaapi.IdentityOutpostRuntimeConfig) ([]byte, 
 		Routes               []sohaapi.IdentityOutpostRoute `json:"routes"`
 	}{config.OutpostID, config.ProtocolVersion, config.ConfigurationVersion, config.IssuedAt, config.ExpiresAt, config.KeyID, config.CheckURL, config.Routes}
 	return json.Marshal(payload)
+}
+
+func validateOutpostHeartbeatReport(request sohaapi.IdentityOutpostHeartbeatRequest, desired int64, now time.Time) error {
+	if request.ConfigurationVersion > desired {
+		return fmt.Errorf("%w: future outpost configuration", apperrors.ErrConflict)
+	}
+	if request.ConfigurationVersion == 0 {
+		if request.ConfigurationExpiresAt != nil || request.Status == sohaapi.IdentityOutpostHeartbeatRequestStatusHealthy {
+			return fmt.Errorf("%w: outpost configuration is not applied", apperrors.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if request.ConfigurationExpiresAt == nil || !request.ConfigurationExpiresAt.After(now) || request.ConfigurationExpiresAt.After(now.Add(outpostConfigurationLeaseTTL)) {
+		return fmt.Errorf("%w: invalid outpost configuration lease", apperrors.ErrConflict)
+	}
+	return nil
 }

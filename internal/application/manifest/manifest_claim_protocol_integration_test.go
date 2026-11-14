@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	dd "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"

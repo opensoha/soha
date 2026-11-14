@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 func TestRuntimeSnapshotRetainsOnlyConfirmedIDsAndRejectsOtherProjects(t *testing.T) {

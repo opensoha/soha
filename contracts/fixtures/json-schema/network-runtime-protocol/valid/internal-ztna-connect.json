@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-internal-ztna-connect",
+  "messageType": "vpn.connect.request",
+  "producerId": "endpoint-1",
+  "runtimeId": "endpoint-1",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:01:00Z",
+  "payload": {
+    "requestId": "request-internal-ztna",
+    "siteId": "site-hq",
+    "networkSpaceId": "space-corp",
+    "mode": "internal_ztna",
+    "resourceIds": ["resource-payroll"],
+    "accessGrantId": "grant-payroll",
+    "accessGrantToken": "YIaq5kG3s-x3KpzJc7E3u2lDscGxdxyup08ngBRWm2Y"
+  }
+}

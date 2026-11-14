@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	apprelease "github.com/opensoha/soha/internal/application/release"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"

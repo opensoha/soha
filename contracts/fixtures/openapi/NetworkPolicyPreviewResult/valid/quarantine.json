@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "path": "wireguard_ztna",
+  "policyVersion": 8,
+  "protected": true,
+  "networkProfile": "quarantine",
+  "networkLeaseRequired": false,
+  "resourceLeaseRequired": true,
+  "reasons": ["policy_allow:quarantine"]
+}

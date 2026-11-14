@@ -1,0 +1,19 @@
+{
+  "goal": "Inspect the existing operation",
+  "steps": [
+    {
+      "id": "read",
+      "call": {
+        "toolName": "docker.operations.get",
+        "capabilityVersion": "1",
+        "input": {
+          "operationId": "operation-1"
+        }
+      }
+    }
+  ],
+  "verificationSteps": [
+    "read"
+  ],
+  "timeoutSeconds": 300
+}

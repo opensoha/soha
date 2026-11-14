@@ -1,0 +1,10 @@
+.git
+.claude
+.cache
+bin
+dist
+out
+tmp
+*.log
+go.work
+go.work.sum

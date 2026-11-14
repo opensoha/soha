@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "name": "api",
+      "namespace": "apps",
+      "uid": "",
+      "phase": "Running",
+      "readyContainers": "1/1",
+      "restarts": 0,
+      "ageSeconds": 60
+    }
+  ]
+}

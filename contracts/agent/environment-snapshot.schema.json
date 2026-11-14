@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/environment-snapshot.schema.json",
+  "title": "Agent Environment Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "leaseId", "runId", "state", "resourceUsage", "observedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/environment-snapshot/v1" },
+    "leaseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "state": { "enum": ["active", "released", "expired", "quota_exceeded"] },
+    "resourceUsage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["diskBytes", "memoryBytes", "cpuTimeNanos", "processes"],
+      "properties": {
+        "diskBytes": { "type": "integer", "minimum": 0 },
+        "memoryBytes": { "type": "integer", "minimum": 0 },
+        "cpuTimeNanos": { "type": "integer", "minimum": 0 },
+        "processes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "artifactRefs": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "maxLength": 512 } },
+    "observedAt": { "type": "string", "format": "date-time" }
+  }
+}

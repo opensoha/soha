@@ -1,0 +1,717 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/agent/agent-protocol.schema.json",
+  "title": "Soha Agent Protocol",
+  "description": "Runner-facing control-plane contracts shared by Soha core and Soha Agent.",
+  "oneOf": [
+    { "$ref": "#/$defs/ExecutionTaskClaimRequest" },
+    { "$ref": "#/$defs/ExecutionCallbackRequest" },
+    { "$ref": "#/$defs/DockerOperationClaimRequest" },
+    { "$ref": "#/$defs/DockerOperationCallbackRequest" },
+    { "$ref": "#/$defs/AgentRunClaimRequest" },
+    { "$ref": "#/$defs/AgentRunCallbackRequest" },
+    { "$ref": "#/$defs/AgentRunToolCallRequest" }
+  ],
+  "$defs": {
+    "AnyObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "AnyValue": {},
+    "WorkbenchStreamEventBase": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.WorkbenchStreamEventBase. OpenAPI is the source of truth for Workbench stream event shapes.",
+      "type": "object",
+      "required": ["id", "sessionId", "sequence", "createdAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "runId": { "type": "string" },
+        "messageId": { "type": "string" },
+        "sequence": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "WorkbenchToolCall": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.WorkbenchToolCall. OpenAPI is the source of truth for Workbench tool call shape.",
+      "type": "object",
+      "required": ["id", "adapterId", "toolName", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "adapterId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "skillId": { "type": "string" },
+        "skillName": { "type": "string" },
+        "capabilityId": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "success", "error", "skipped"]
+        },
+        "inputPreview": { "$ref": "#/$defs/AnyValue" },
+        "outputPreview": { "$ref": "#/$defs/AnyValue" },
+        "summary": { "type": "string" },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "artifactRefs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "WorkbenchSource": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.WorkbenchSource. OpenAPI is the source of truth for Workbench source shape.",
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["log", "metric", "trace", "event", "audit", "delivery", "document"]
+        },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "summary": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "WorkbenchMessageDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "role", "contentDelta"],
+          "properties": {
+            "type": { "type": "string", "enum": ["message.delta"] },
+            "role": { "type": "string", "enum": ["assistant"] },
+            "contentDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchMessageDoneEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "role", "content"],
+          "properties": {
+            "type": { "type": "string", "enum": ["message.done"] },
+            "role": { "type": "string", "enum": ["assistant"] },
+            "content": { "type": "string" },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchThinkingDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "textDelta"],
+          "properties": {
+            "type": { "type": "string", "enum": ["thinking.delta"] },
+            "textDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchThinkingDoneEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "summary", "collapsed"],
+          "properties": {
+            "type": { "type": "string", "enum": ["thinking.done"] },
+            "summary": { "type": "string" },
+            "collapsed": { "type": "boolean" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchAgentStatusEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "providerId", "providerKind", "status"],
+          "properties": {
+            "type": { "type": "string", "enum": ["agent.status"] },
+            "providerId": { "type": "string" },
+            "providerKind": {
+              "type": "string",
+              "enum": ["internal", "dsh", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["queued", "running", "succeeded", "failed", "cancelled"]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchToolStartedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCall"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.started"] },
+            "toolCall": { "$ref": "#/$defs/WorkbenchToolCall" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchToolDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCallId"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.delta"] },
+            "toolCallId": { "type": "string" },
+            "outputDelta": { "type": "string" },
+            "logDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchToolCompletedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCall"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.completed"] },
+            "toolCall": { "$ref": "#/$defs/WorkbenchToolCall" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchArtifactUpdatedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "artifact"],
+          "properties": {
+            "type": { "type": "string", "enum": ["artifact.updated"] },
+            "artifact": { "$ref": "#/$defs/AnyValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchSourceUpdatedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "source"],
+          "properties": {
+            "type": { "type": "string", "enum": ["source.updated"] },
+            "source": { "$ref": "#/$defs/WorkbenchSource" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchCardCommandEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "surfaceId", "command"],
+          "properties": {
+            "type": { "type": "string", "enum": ["card.command"] },
+            "surfaceId": { "type": "string" },
+            "command": { "$ref": "#/$defs/AnyValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchErrorEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/WorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": { "type": "string", "enum": ["error"] },
+            "message": { "type": "string" },
+            "code": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "WorkbenchStreamEvent": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.WorkbenchStreamEvent. Keep canonical stream/replay events in sync with OpenAPI.",
+      "oneOf": [
+        { "$ref": "#/$defs/WorkbenchMessageDeltaEvent" },
+        { "$ref": "#/$defs/WorkbenchMessageDoneEvent" },
+        { "$ref": "#/$defs/WorkbenchThinkingDeltaEvent" },
+        { "$ref": "#/$defs/WorkbenchThinkingDoneEvent" },
+        { "$ref": "#/$defs/WorkbenchAgentStatusEvent" },
+        { "$ref": "#/$defs/WorkbenchToolStartedEvent" },
+        { "$ref": "#/$defs/WorkbenchToolDeltaEvent" },
+        { "$ref": "#/$defs/WorkbenchToolCompletedEvent" },
+        { "$ref": "#/$defs/WorkbenchArtifactUpdatedEvent" },
+        { "$ref": "#/$defs/WorkbenchSourceUpdatedEvent" },
+        { "$ref": "#/$defs/WorkbenchCardCommandEvent" },
+        { "$ref": "#/$defs/WorkbenchErrorEvent" }
+      ]
+    },
+    "AgentRunCallbackWorkbenchStreamEventBase": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.AgentRunCallbackWorkbenchStreamEventBase. OpenAPI is the source of truth; server-owned fields are optional runner input.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "runId": { "type": "string" },
+        "messageId": { "type": "string" },
+        "sequence": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AgentRunCallbackWorkbenchMessageDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "role", "contentDelta"],
+          "properties": {
+            "type": { "type": "string", "enum": ["message.delta"] },
+            "role": { "type": "string", "enum": ["assistant"] },
+            "contentDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchMessageDoneEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "role", "content"],
+          "properties": {
+            "type": { "type": "string", "enum": ["message.done"] },
+            "role": { "type": "string", "enum": ["assistant"] },
+            "content": { "type": "string" },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchThinkingDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "textDelta"],
+          "properties": {
+            "type": { "type": "string", "enum": ["thinking.delta"] },
+            "textDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchThinkingDoneEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "summary", "collapsed"],
+          "properties": {
+            "type": { "type": "string", "enum": ["thinking.done"] },
+            "summary": { "type": "string" },
+            "collapsed": { "type": "boolean" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchAgentStatusEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "status"],
+          "properties": {
+            "type": { "type": "string", "enum": ["agent.status"] },
+            "providerId": { "type": "string" },
+            "providerKind": {
+              "type": "string",
+              "enum": ["internal", "dsh", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["queued", "running", "succeeded", "failed", "cancelled"]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchToolStartedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCall"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.started"] },
+            "toolCall": { "$ref": "#/$defs/WorkbenchToolCall" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchToolDeltaEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCallId"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.delta"] },
+            "toolCallId": { "type": "string" },
+            "outputDelta": { "type": "string" },
+            "logDelta": { "type": "string" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchToolCompletedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "toolCall"],
+          "properties": {
+            "type": { "type": "string", "enum": ["tool.completed"] },
+            "toolCall": { "$ref": "#/$defs/WorkbenchToolCall" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchArtifactUpdatedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "artifact"],
+          "properties": {
+            "type": { "type": "string", "enum": ["artifact.updated"] },
+            "artifact": { "$ref": "#/$defs/AnyValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchSourceUpdatedEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "source"],
+          "properties": {
+            "type": { "type": "string", "enum": ["source.updated"] },
+            "source": { "$ref": "#/$defs/WorkbenchSource" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchCardCommandEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "surfaceId", "command"],
+          "properties": {
+            "type": { "type": "string", "enum": ["card.command"] },
+            "surfaceId": { "type": "string" },
+            "command": { "$ref": "#/$defs/AnyValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchErrorEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEventBase" },
+        {
+          "type": "object",
+          "required": ["type", "message"],
+          "properties": {
+            "type": { "type": "string", "enum": ["error"] },
+            "message": { "type": "string" },
+            "code": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "AgentRunCallbackWorkbenchStreamEvent": {
+      "$comment": "Copied from openapi/soha-api.yaml components.schemas.AgentRunCallbackWorkbenchStreamEvent. OpenAPI is the source of truth for callback event input.",
+      "oneOf": [
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchMessageDeltaEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchMessageDoneEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchThinkingDeltaEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchThinkingDoneEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchAgentStatusEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchToolStartedEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchToolDeltaEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchToolCompletedEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchArtifactUpdatedEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchSourceUpdatedEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchCardCommandEvent" },
+        { "$ref": "#/$defs/AgentRunCallbackWorkbenchErrorEvent" }
+      ]
+    },
+    "ExecutionTask": {
+      "type": "object",
+      "required": [
+        "id",
+        "applicationId",
+        "applicationEnvironmentId",
+        "taskKind",
+        "providerKind",
+        "status",
+        "callbackToken",
+        "payload"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "applicationId": { "type": "string" },
+        "applicationEnvironmentId": { "type": "string" },
+        "taskKind": { "type": "string" },
+        "providerKind": { "type": "string" },
+        "status": { "type": "string" },
+        "callbackToken": { "type": "string" },
+        "payload": { "$ref": "#/$defs/AnyObject" }
+      },
+      "additionalProperties": true
+    },
+    "ExecutionTaskClaimRequest": {
+      "type": "object",
+      "required": ["agentId"],
+      "properties": {
+        "agentId": { "type": "string", "minLength": 1 },
+        "providerKinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "runtimeEndpoint": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ExecutionCallbackRequest": {
+      "type": "object",
+      "required": ["callbackToken", "status", "payload"],
+      "properties": {
+        "callbackToken": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "payload": { "$ref": "#/$defs/AnyObject" }
+      },
+      "additionalProperties": false
+    },
+    "DockerOperation": {
+      "type": "object",
+      "required": ["id", "operationKind", "status", "payload", "timeoutSeconds"],
+      "properties": {
+        "id": { "type": "string" },
+        "hostId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "operationKind": { "type": "string" },
+        "status": { "type": "string" },
+        "claimedByWorkerId": { "type": "string" },
+        "payload": { "$ref": "#/$defs/AnyObject" },
+        "timeoutSeconds": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "DockerOperationClaimRequest": {
+      "type": "object",
+      "required": ["workerId", "agentId"],
+      "properties": {
+        "workerId": { "type": "string", "minLength": 1 },
+        "agentId": { "type": "string", "minLength": 1 },
+        "hostIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "operationKinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DockerOperationCallbackRequest": {
+      "type": "object",
+      "required": ["operationId", "workerId", "status", "payload", "logs"],
+      "properties": {
+        "operationId": { "type": "string", "minLength": 1 },
+        "workerId": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "payload": { "$ref": "#/$defs/AnyObject" },
+        "logs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AgentRun": {
+      "type": "object",
+      "required": [
+        "id",
+        "providerId",
+        "providerKind",
+        "capabilityId",
+        "status",
+        "callbackToken",
+        "timeoutSeconds"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerKind": { "type": "string" },
+        "capabilityId": { "type": "string" },
+        "skillIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sessionId": { "type": "string" },
+        "status": { "type": "string" },
+        "scope": { "$ref": "#/$defs/AnyObject" },
+        "toolset": { "$ref": "#/$defs/AnyObject" },
+        "toolBindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnyObject" }
+        },
+        "skillBindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnyObject" }
+        },
+        "input": { "$ref": "#/$defs/AnyObject" },
+        "output": { "$ref": "#/$defs/AnyObject" },
+        "callbackToken": { "type": "string" },
+        "timeoutSeconds": { "type": "integer", "minimum": 0 },
+        "analysisArtifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnyObject" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "AgentRunClaimRequest": {
+      "type": "object",
+      "required": ["agentId"],
+      "properties": {
+        "agentId": { "type": "string", "minLength": 1 },
+        "providerIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "kinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AgentRunCallbackRequest": {
+      "type": "object",
+      "required": ["runId", "callbackToken", "agentId", "status", "payload"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "callbackToken": { "type": "string", "minLength": 1 },
+        "agentId": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "payload": { "$ref": "#/$defs/AnyObject" },
+        "toolExecutions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnyObject" }
+        },
+        "analysisArtifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnyObject" }
+        },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentRunCallbackWorkbenchStreamEvent" }
+        },
+        "externalRunId": { "type": "string" },
+        "errorMessage": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AgentRunToolCallRequest": {
+      "type": "object",
+      "required": ["runId", "callbackToken", "agentId"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "callbackToken": { "type": "string", "minLength": 1 },
+        "agentId": { "type": "string", "minLength": 1 },
+        "toolBindingId": { "type": "string" },
+        "adapterId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "input": { "$ref": "#/$defs/AnyObject" }
+      },
+      "additionalProperties": false
+    },
+    "AgentToolCallResult": {
+      "type": "object",
+      "required": ["runId", "toolExecution"],
+      "properties": {
+        "runId": { "type": "string" },
+        "toolExecution": { "$ref": "#/$defs/AnyObject" },
+        "output": { "$ref": "#/$defs/AnyObject" }
+      },
+      "additionalProperties": true
+    },
+    "DataEnvelope": {
+      "type": "object",
+      "required": ["data"],
+      "properties": {
+        "data": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

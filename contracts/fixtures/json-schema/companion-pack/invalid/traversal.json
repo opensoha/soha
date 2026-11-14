@@ -1,0 +1,19 @@
+{
+  "renderer": "live2d-cubism",
+  "entryAsset": "../model/model3.json",
+  "assets": [
+    {
+      "path": "../model/model3.json",
+      "kind": "entry",
+      "contentType": "application/json",
+      "sizeBytes": 1024,
+      "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "license": {
+    "name": "Unknown",
+    "url": "https://example.invalid/license",
+    "redistributionAllowed": true,
+    "commercialUseAllowed": false
+  }
+}

@@ -1,0 +1,93 @@
+name: web-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout web
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: soha-web
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout contracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: opensoha/soha-contracts
+          ref: 7911c05328e704ca8bb490042fa3a25be29f273e
+          path: soha-contracts
+          token: ${{ github.token }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: soha-web/package-lock.json
+      - name: Install
+        working-directory: soha-web
+        run: npm ci
+      - name: Release workflow guard
+        working-directory: soha-web
+        run: npm run check:release-workflow
+      - name: Enhanced workflow trust guard
+        working-directory: soha-web
+        run: npm run check:quality-workflows
+      - name: Install deterministic browser
+        working-directory: soha-web
+        run: npx playwright install --with-deps chromium
+      - name: E2E typecheck
+        working-directory: soha-web
+        run: npm run typecheck:e2e
+      - name: Route architecture guard
+        working-directory: soha-web
+        run: npm run check:routes
+      - name: Frontend boundary guard
+        working-directory: soha-web
+        env:
+          FRONTEND_BOUNDARY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run check:frontend-boundaries
+      - name: Shared table import guard
+        working-directory: soha-web
+        env:
+          TABLE_BOUNDARY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-table-boundaries.mjs
+      - name: Lint
+        working-directory: soha-web
+        run: npm run lint
+      - name: Format check
+        working-directory: soha-web
+        run: npm run format:check
+      - name: Typecheck
+        working-directory: soha-web
+        run: npm run typecheck
+      - name: Test
+        working-directory: soha-web
+        run: npm test
+      - name: Coverage
+        working-directory: soha-web
+        run: npm run test:coverage
+      - name: Build
+        working-directory: soha-web
+        run: npm run build
+      - name: Bundle budget
+        working-directory: soha-web
+        run: npm run check:bundle-budget
+      - name: Browser regression including migrated Kubernetes baseline
+        working-directory: soha-web
+        run: |
+          npm run check:auth-artifacts
+          npm run test:e2e
+      - name: Upload bundle manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: soha-web-vite-manifest
+          path: soha-web/dist/.vite/manifest.json

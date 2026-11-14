@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"

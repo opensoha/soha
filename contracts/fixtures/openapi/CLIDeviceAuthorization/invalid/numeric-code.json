@@ -1,0 +1,9 @@
+{
+  "grantId": "01a16496-e79a-7db0-a610-b0f33412ce3f",
+  "deviceCode": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "userCode": 1234,
+  "verificationUri": "https://example.invalid/soha/auth/device#handle=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expiresIn": 300,
+  "expiresAt": "2026-10-23T09:00:00Z",
+  "interval": 5
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "batch-duplicate-0001",
+  "producerId": "gateway-site-a",
+  "producerKind": "gateway",
+  "sentAt": "2026-09-02T08:01:00Z",
+  "events": [
+    {
+      "id": "event-duplicate-0001",
+      "type": "runtime.heartbeat",
+      "sequence": 101,
+      "occurredAt": "2026-09-02T08:00:59Z",
+      "payload": {
+        "status": "healthy",
+        "configurationVersion": 12,
+        "policyVersion": 7,
+        "uptimeSeconds": 3600
+      }
+    },
+    {
+      "id": "event-duplicate-0001",
+      "type": "runtime.heartbeat",
+      "sequence": 101,
+      "occurredAt": "2026-09-02T08:00:59Z",
+      "payload": {
+        "status": "healthy",
+        "configurationVersion": 12,
+        "policyVersion": 7,
+        "uptimeSeconds": 3600
+      }
+    }
+  ]
+}

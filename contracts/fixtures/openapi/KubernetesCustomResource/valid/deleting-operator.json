@@ -1,0 +1,1 @@
+{"apiVersion":"workloads.soha.io/v1alpha1","kind":"WorkloadCronJob","name":"daily-report","namespace":"demo","ageSeconds":120,"uid":"observed-root-uid","generation":3,"deletingAt":"2026-09-14T00:00:00Z","finalizers":["operator.example/cleanup"]}

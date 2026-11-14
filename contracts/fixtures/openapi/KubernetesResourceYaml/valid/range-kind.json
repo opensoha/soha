@@ -1,0 +1,5 @@
+{
+  "kind": "range",
+  "name": "example",
+  "content": "apiVersion: example.io/v1\nkind: range\nmetadata:\n  name: example\n"
+}

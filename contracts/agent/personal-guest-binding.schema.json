@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-binding.schema.json",
+  "title": "Personal VM Guest Frozen Binding",
+  "description": "Core-owned immutable binding delivered only to the registered guest over authenticated TLS. Version is the identity revision, not the environment operation CAS version. Compute/data refs are opaque resource UUIDs; no PVE credentials, node URL, host paths or provider disk handles. Runtime additionally enforces 0 < expiresAt-issuedAt <= 24 hours. Provider metadata is not proof that that provider supports personal guest execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "assistantId",
+    "ownerId",
+    "provider",
+    "computeRef",
+    "computeGeneration",
+    "providerIdentityHash",
+    "dataRef",
+    "dataDiskSerial",
+    "dataDiskBytes",
+    "policyRevision",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-binding/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "assistantId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "ownerId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "provider": {
+      "enum": [
+        "pve",
+        "kubevirt"
+      ]
+    },
+    "computeRef": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "computeGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "dataRef": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "dataDiskSerial": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,20}$"
+    },
+    "dataDiskBytes": {
+      "type": "integer",
+      "minimum": 16777216,
+      "maximum": 1099511627776
+    },
+    "policyRevision": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "providerIdentityHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "Core-derived SHA-256 of the provider, capacity source, provider VM ID, observed provider incarnation and exact provider data volume. Current provider and disk observation must match; the personal compute generation alone is not a provider incarnation. Provider disk handles are not disclosed."
+    }
+  }
+}

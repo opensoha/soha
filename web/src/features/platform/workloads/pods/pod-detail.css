@@ -1,0 +1,297 @@
+.soha-pod-detail {
+  min-width: 0;
+  height: 100%;
+}
+.soha-pod-detail-squares {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.soha-pod-detail-square,
+.soha-pod-detail-static-square {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  border: 0;
+  border-radius: 1px;
+  padding: 0;
+  background: var(--soha-text-tertiary);
+  flex-shrink: 0;
+}
+.soha-pod-detail-square {
+  cursor: pointer;
+}
+.soha-pod-detail-square.is-success,
+.soha-pod-detail-static-square.is-success {
+  background: var(--soha-success);
+}
+.soha-pod-detail-square.is-warning,
+.soha-pod-detail-static-square.is-warning {
+  background: var(--soha-warning);
+}
+.soha-pod-detail-square.is-danger,
+.soha-pod-detail-static-square.is-danger {
+  background: var(--soha-danger);
+}
+.soha-pod-detail-square:focus-visible,
+.soha-pod-detail-text-link:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 3px;
+}
+.soha-pod-detail-card {
+  border-radius: var(--soha-radius-panel);
+  overflow: hidden;
+}
+.soha-pod-detail .soha-pod-detail-card > .ant-card-head {
+  min-height: 46px;
+  padding-inline: 18px;
+}
+.soha-pod-detail .soha-pod-detail-card > .ant-card-body {
+  padding: 16px 18px;
+}
+.soha-pod-detail-health {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+.soha-pod-detail-health > .anticon {
+  font-size: 19px;
+  color: var(--soha-success);
+}
+.soha-pod-detail-health.is-attention > .anticon {
+  color: var(--soha-warning);
+}
+.soha-pod-detail-health > div {
+  flex: 1;
+  min-width: 0;
+}
+.soha-pod-detail-health strong {
+  font-size: 14px;
+}
+.soha-pod-detail-health p {
+  font-size: 12px;
+  color: var(--soha-text-secondary);
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.soha-pod-detail-text-link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--soha-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.soha-pod-detail-text-link:hover {
+  text-decoration: underline;
+}
+.soha-pod-detail-container-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.soha-pod-detail-container-label > strong {
+  min-width: 120px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-detail-container-label > .ant-typography {
+  font-size: 12px;
+}
+.soha-pod-detail-break {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.soha-pod-detail-condition-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.soha-pod-detail-condition-summary > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.soha-pod-detail-condition-summary .is-success > .anticon {
+  color: var(--soha-success);
+}
+.soha-pod-detail-condition-summary .is-warning > .anticon {
+  color: var(--soha-warning);
+}
+.soha-pod-detail-usage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.soha-pod-detail-usage > div {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.soha-pod-detail-usage .soha-pod-resource-inline {
+  width: 100%;
+  max-width: none;
+}
+.soha-pod-detail-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.soha-pod-detail-selector .ant-select {
+  min-width: 160px;
+  max-width: 240px;
+}
+.soha-pod-detail-relations {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-pod-detail .soha-terminal-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 0;
+}
+@media (max-width: 1399px) {
+  .soha-pod-detail-container-label {
+    gap: 8px;
+  }
+  .soha-pod-detail-container-label > strong {
+    min-width: 100px;
+  }
+}
+@media (max-width: 760px) {
+  .soha-pod-detail-condition-summary {
+    gap: 12px;
+  }
+  .soha-pod-detail-selector {
+    flex-wrap: wrap;
+  }
+  .soha-pod-detail-container-label > strong {
+    min-width: 0;
+  }
+}
+.soha-pod-storage-source,
+.soha-pod-storage-mounts,
+.soha-pod-storage-mounts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-storage-mounts {
+  gap: 12px;
+}
+.soha-pod-storage-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.soha-pod-storage-container strong {
+  font-weight: 500;
+}
+
+.soha-pod-container-card-extra,
+.soha-pod-container-state,
+.soha-pod-container-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.soha-pod-container-section-heading {
+  justify-content: space-between;
+}
+.soha-pod-container-panel {
+  min-width: 0;
+}
+.soha-pod-container-panel h4 {
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+.soha-pod-container-section,
+.soha-pod-container-runtime-grid {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-pod-container-runtime-grid,
+.soha-pod-container-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-pod-container-runtime {
+  min-width: 0;
+}
+.soha-pod-container-runtime p {
+  margin: 8px 0;
+}
+.soha-pod-container-runtime.is-failed {
+  border-inline-start: 3px solid var(--soha-danger);
+  padding-inline-start: 12px;
+}
+.soha-pod-container-quantities {
+  margin: 8px 0 0;
+}
+.soha-pod-container-quantities > div {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.soha-pod-container-quantities dt {
+  color: var(--soha-text-secondary);
+}
+.soha-pod-container-quantities dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.soha-pod-container-env-from {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-ports {
+  margin: 0;
+  padding-inline-start: 18px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-probes {
+  display: grid;
+  gap: 14px;
+}
+.soha-pod-container-probes p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .soha-pod-container-runtime-grid,
+  .soha-pod-container-resource-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

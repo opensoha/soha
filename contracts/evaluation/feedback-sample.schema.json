@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/evaluation/feedback-sample.schema.json",
+  "title": "Curated Evaluation Feedback Sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "traceRef", "scopeHash", "redactedInput", "redactedOutput", "licenseRef", "decision", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/evaluation-feedback-sample/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "traceRef": { "type": "string", "minLength": 1 },
+    "scopeHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "redactedInput": { "type": "string", "maxLength": 32000 },
+    "redactedOutput": { "type": "string", "maxLength": 32000 },
+    "licenseRef": { "type": "string", "minLength": 1 },
+    "decision": { "enum": ["pending", "accepted", "rejected", "deleted"] },
+    "datasetRef": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

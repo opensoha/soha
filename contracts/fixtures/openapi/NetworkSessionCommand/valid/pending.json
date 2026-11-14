@@ -1,0 +1,14 @@
+{
+  "id": "command-1",
+  "sessionId": "session-1",
+  "runtimeId": "freeradius-hq",
+  "nasId": "nas-hq",
+  "action": "coa",
+  "targetAccessProfile": "restricted",
+  "policyVersion": 7,
+  "status": "pending",
+  "reasonCode": "device_posture_changed",
+  "effectiveAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "createdAt": "2026-09-02T08:00:00Z"
+}

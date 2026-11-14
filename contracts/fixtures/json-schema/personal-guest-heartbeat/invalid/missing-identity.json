@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "opensoha.dev/personal-guest-heartbeat/v1",
+  "bindingVersion": 1,
+  "computeGeneration": 1,
+  "sequence": 1,
+  "observedAt": "2026-10-11T10:00:15Z"
+}

@@ -1,0 +1,20 @@
+{
+  "accessProfile": "full",
+  "createdAt": "2026-09-02T05:00:00Z",
+  "deviceStatuses": ["active"],
+  "effect": "allow",
+  "enabled": true,
+  "id": "policy-engineering",
+  "modes": ["internal_ztna"],
+  "name": "Missing version",
+  "postureStatuses": ["compliant"],
+  "priority": 100,
+  "resourceIds": [],
+  "siteIds": [],
+  "subjects": {
+    "tags": [],
+    "teams": [],
+    "users": []
+  },
+  "updatedAt": "2026-09-02T05:20:00Z"
+}

@@ -1,0 +1,291 @@
+@import '../styles/responsive.css';
+
+.soha-delivery-workbench-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.soha-delivery-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.soha-delivery-workbench-ai-card.ant-card {
+  height: 100%;
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  box-shadow: none;
+}
+
+.soha-delivery-workbench-ai-card .ant-card-body {
+  height: 100%;
+}
+
+.soha-delivery-workbench-ai-card__icon {
+  margin-top: 2px;
+  color: var(--soha-primary);
+  font-size: 22px;
+}
+
+.soha-delivery-gateway-readiness {
+  min-width: 0;
+  width: 100%;
+}
+
+.soha-delivery-gateway-readiness .ant-alert {
+  align-items: flex-start;
+}
+
+.soha-delivery-gateway-readiness .ant-alert-action {
+  margin-inline-start: 12px;
+}
+
+.soha-delivery-evidence-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.soha-delivery-evidence-grid {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+
+.soha-delivery-evidence-grid.is-testing {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+.soha-delivery-evidence-grid.is-analysis {
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+}
+
+.soha-delivery-evidence-panel {
+  min-width: 0;
+  color: var(--soha-text-primary);
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-delivery-evidence-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-delivery-evidence-heading > div:first-child {
+  min-width: 0;
+}
+
+.soha-delivery-evidence-heading h2,
+.soha-delivery-evidence-body h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.soha-delivery-evidence-heading h2 + span,
+.soha-delivery-evidence-identity > span,
+.soha-delivery-evidence-queue button > span + span {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-delivery-evidence-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-delivery-evidence-actions .ant-select {
+  min-width: 104px;
+}
+
+.soha-delivery-evidence-panel .soha-delivery-evidence-table {
+  border: 0;
+  box-shadow: none;
+}
+
+.soha-delivery-evidence-panel .soha-delivery-evidence-row-selected {
+  --ant-table-row-hover-bg: var(--soha-primary-light-hover);
+  background: var(--soha-primary-light-default);
+}
+
+.soha-delivery-evidence-identity {
+  display: grid;
+  justify-items: start;
+}
+
+.soha-delivery-evidence-name.ant-btn {
+  height: auto;
+  max-width: 100%;
+  padding-inline: 0;
+  font-weight: 600;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.soha-delivery-evidence-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+
+.soha-delivery-evidence-context,
+.soha-delivery-evidence-subject,
+.soha-delivery-evidence-facts,
+.soha-delivery-evidence-queue,
+.soha-delivery-evidence-timeline {
+  margin: 0;
+  padding: 0;
+}
+
+.soha-delivery-evidence-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.soha-delivery-evidence-context dt,
+.soha-delivery-evidence-subject dt {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-delivery-evidence-context dd,
+.soha-delivery-evidence-subject dd {
+  margin: 3px 0 0;
+}
+
+.soha-delivery-evidence-subject {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--soha-bg-surface-muted);
+  border-radius: var(--soha-radius-control);
+}
+
+.soha-delivery-evidence-facts,
+.soha-delivery-evidence-queue,
+.soha-delivery-evidence-timeline {
+  list-style: none;
+}
+
+.soha-delivery-evidence-facts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding-block: 9px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-delivery-evidence-note {
+  padding: 10px 12px;
+  border-inline-start: 2px solid var(--soha-border-color-strong);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-delivery-evidence-note p,
+.soha-delivery-evidence-timeline p {
+  margin: 4px 0 0;
+  color: var(--soha-text-secondary);
+}
+
+.soha-delivery-evidence-reference {
+  max-width: min(400px, 80vw);
+  overflow-wrap: anywhere;
+}
+
+.soha-delivery-evidence-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-delivery-evidence-queue li + li {
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-delivery-evidence-queue button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.soha-delivery-evidence-queue button[aria-pressed='true'] {
+  border-inline-start-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+}
+
+.soha-delivery-evidence-queue button:hover {
+  background: var(--soha-primary-light-hover);
+}
+
+.soha-delivery-evidence-queue button:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-delivery-evidence-queue button > span:first-child {
+  display: flex;
+  align-items: start;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.soha-delivery-evidence-timeline li {
+  display: grid;
+  grid-template-columns: minmax(105px, auto) minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: start;
+  padding-block: 10px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-delivery-evidence-timeline time {
+  font-variant-numeric: tabular-nums;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 1080px) {
+  .soha-delivery-evidence-grid.is-testing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 850px) {
+  .soha-delivery-evidence-grid.is-analysis,
+  .soha-delivery-evidence-timeline li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

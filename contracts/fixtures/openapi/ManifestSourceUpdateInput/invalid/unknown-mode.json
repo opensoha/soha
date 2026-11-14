@@ -1,0 +1,6 @@
+{
+  "mode": "bidirectional",
+  "syncPolicy": "manual",
+  "autoPublish": false,
+  "expectedGeneration": 1
+}

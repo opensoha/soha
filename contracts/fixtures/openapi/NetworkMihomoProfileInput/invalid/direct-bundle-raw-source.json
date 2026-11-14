@@ -1,0 +1,21 @@
+{
+  "deviceId": "device-alice-laptop",
+  "name": "Corporate egress",
+  "mode": "managed_follow",
+  "status": "active",
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "disabled",
+  "selectorGroup": "SOHA",
+  "bypassCidrs": [
+    "10.20.0.0/16"
+  ],
+  "bypassHosts": [
+    "network-control.example.com"
+  ],
+  "failClosed": true,
+  "deliveryMode": "direct_subscription",
+  "bundleId": "bundle1",
+  "sourceType": "managed_subscription",
+  "subscriptionUrl": "https://example.invalid/original"
+}

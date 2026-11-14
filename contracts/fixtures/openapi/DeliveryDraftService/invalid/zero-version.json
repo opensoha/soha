@@ -1,0 +1,7 @@
+{
+  "expectedVersion": 0,
+  "key": "api",
+  "name": "API",
+  "serviceKind": "kubernetes_workload",
+  "enabled": true
+}

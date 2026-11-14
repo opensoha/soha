@@ -1,0 +1,162 @@
+app:
+  name: soha-agent
+  env: development
+
+http:
+  addr: 127.0.0.1:18080
+  base_path: /api/v1
+  read_timeout: 15s
+  write_timeout: 15s
+  allowed_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+    - http://localhost:8080
+    - http://127.0.0.1:8080
+
+logger:
+  level: info
+  format: json
+
+auth:
+  bearer_token: demo-agent-token
+  bearer_token_file: ""
+
+docker_runtime:
+  # Optional preinstalled scratch reader image ID and stable non-secret UUID.
+  # Empty disables file browsing. Never use a floating tag or auto-pull here.
+  volume_reader_image: ""
+  volume_reader_owner: ""
+  # During upgrades, explicitly retain previous pinned IDs for cleanup only.
+  volume_reader_cleanup_images: []
+
+security:
+  allowed_actions:
+    - platform.nodes.drain
+    - platform.pods.exec
+    - platform.deployments.restart
+    - platform.deployments.scale
+    - platform.deployments.image
+    - platform.deployments.rollback
+    - platform.statefulsets.restart
+    - platform.statefulsets.scale
+    - platform.daemonsets.restart
+    - platform.resources.apply
+    - platform.resources.create
+    - platform.resources.delete
+    # Enable explicitly to delete CRD definitions and all their instances:
+    # - platform.crds.delete
+    - platform.custom_resources.list
+    - platform.custom_resources.create
+    - platform.custom_resources.apply
+    - platform.custom_resources.delete
+    - platform.port_forwards.create
+    - platform.port_forwards.tunnel
+    - platform.port_forwards.delete
+    - runtime.execution_tasks.cancel
+    - docker.runtime.terminal
+    # Explicit opt-in for versioned full-container-ID reads and native terminal.
+    # These do not authorize the separately gated legacy Compose read routes.
+    # - docker.runtime.logs.v1
+    # - docker.runtime.files.v1
+    # - docker.runtime.terminal.v1
+    # Enable after configuring an enrolled control-plane identity and VM SSH access.
+    # - runtime.vm_ssh.connect
+    # - runtime.vm_ssh.execute
+    # Personal environments require separate opt-in and pinned images below:
+    # - runtime.personal_environments.acquire
+    # - runtime.personal_environments.inspect
+    # - runtime.personal_environments.execute
+    # - runtime.personal_environments.release
+    # - runtime.personal_environments.delete_data
+    # - runtime.personal_environments.export_data
+
+# Dedicated Docker node: cgroup v2 and already-enabled, consistent Btrfs quotas.
+# Tasks never receive the Docker socket or helper management capabilities.
+# Enable with http.write_timeout >= 35s and the explicit actions above.
+personal_environment:
+  enabled: false
+  image: ""
+  quota_helper_image: ""
+
+prometheus:
+  base_url: ""
+  bearer_token: ""
+
+audit:
+  file_path: ./.soha/audit/actions.jsonl
+
+control_plane:
+  enabled: true
+  base_url: http://127.0.0.1:8080
+  bearer_token: demo-execution-runner-token
+  bearer_token_file: ""
+  agent_id: local-agent
+  runtime_endpoint: http://127.0.0.1:18080
+  poll_interval: 5s
+  max_concurrency: 1
+  default_timeout: 30m
+  callback_retry:
+    max_attempts: 3
+    backoff: 500ms
+  provider_kinds:
+    - ci_agent_runner
+  workspace_root: .
+  session:
+    enabled: false
+    reconnect_min: 1s
+    reconnect_max: 30s
+    handshake_timeout: 15s
+    max_streams: 64
+  docker:
+    enabled: true
+    worker_id: local-docker-runner
+    host_ids: []
+    operation_kinds:
+      - host_provision
+      - container_start
+      - project_deploy
+      - service_action
+      - port_reserve
+      - host_sync
+    compose_root: ./.soha/docker
+    poll_interval: 5s
+  agent_runtime:
+    enabled: false
+    worker_id: local-hermes-runner
+    provider_ids:
+      - hermes
+    provider_kinds:
+      - hermes
+    hermes_command: hermes
+    providers:
+      hermes:
+        command: hermes
+        args:
+          - chat
+          - -Q
+        prompt_arg: -q
+        skill_arg: ""
+        provider_skill_arg: -s
+    workspace_root: ./.soha/agent-runtime
+    poll_interval: 5s
+    conformance_timeout: 5s
+  outpost:
+    enabled: false
+    agent_id: local-outpost-agent
+    protocol_version: v1
+    trust_key_id: ""
+    trust_public_key: ""
+    poll_interval: 5s
+    heartbeat_interval: 15s
+
+kubernetes:
+  enabled: true
+  id: local-agent
+  name: Local Agent
+  kubeconfig: $HOME/.kube/config
+  context: ""
+  region: local
+  environment: development
+  labels:
+    provider: agent
+    owner: platform

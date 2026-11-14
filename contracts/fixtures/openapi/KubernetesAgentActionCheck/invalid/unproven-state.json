@@ -1,0 +1,6 @@
+{
+  "action": "platform.nodes.drain",
+  "implementation": "supported",
+  "configured": "maybe",
+  "kubernetesRBAC": "allowed"
+}

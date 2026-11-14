@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha CLI"
+  short_description: "CLI commands, MCP/skills, CI, and releases"
+  default_prompt: "Use $soha-cli to implement or review a Soha CLI change and verify its required gates."

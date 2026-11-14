@@ -1,0 +1,10 @@
+{
+  "data": {
+    "podName": "api-7c8d9f",
+    "namespace": "production",
+    "source": "prometheus",
+    "generatedAt": "2026-08-09T14:00:00Z",
+    "rangeMinutes": 60,
+    "stepSeconds": 60
+  }
+}

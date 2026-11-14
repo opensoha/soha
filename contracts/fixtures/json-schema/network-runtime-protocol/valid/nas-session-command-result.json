@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-nas-command-result-0001",
+  "messageType": "nas.session.command.result",
+  "producerId": "freeradius-site-a",
+  "runtimeId": "freeradius-site-a",
+  "runtimeKind": "nas",
+  "occurredAt": "2026-09-02T08:10:02Z",
+  "expiresAt": "2026-09-02T08:10:07Z",
+  "payload": {
+    "commandId": "coa-command-0001",
+    "sessionId": "session-0001",
+    "status": "applied",
+    "reasonCode": "coa_ack",
+    "completedAt": "2026-09-02T08:10:02Z"
+  }
+}

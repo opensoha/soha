@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-0001",
+  "messageType": "configuration.desired",
+  "producerId": "network-control-default",
+  "runtimeId": "gateway-site-a",
+  "runtimeKind": "gateway",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "configurationVersion": 12,
+    "policyVersion": 7,
+    "validUntil": "2026-09-02T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": ["resource-payroll"],
+    "networkLeases": [
+      {
+        "id": "network-lease-0001",
+        "sessionId": "session-0001",
+        "subjectId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "networkSpaceId": "space-site-a",
+        "cidrs": ["10.20.0.0/16"],
+        "policyVersion": 7,
+        "issuedAt": "2026-09-02T08:00:00Z",
+        "expiresAt": "2026-09-02T08:05:00Z"
+      }
+    ],
+    "resourceLeases": [
+      {
+        "id": "resource-lease-0001",
+        "sessionId": "session-0001",
+        "subjectId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "resourceIds": ["resource-payroll"],
+        "policyVersion": 7,
+        "issuedAt": "2026-09-02T08:00:00Z",
+        "expiresAt": "2026-09-02T08:02:00Z"
+      }
+    ],
+    "runtimeIntervals": {
+      "heartbeatIntervalSeconds": 60,
+      "configurationPollIntervalSeconds": 60
+    },
+    "wireguard": {
+      "role": "gateway",
+      "interfaceName": "soha0",
+      "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "addresses": ["100.96.10.1/32"],
+      "listenPort": 51820,
+      "mtu": 1380,
+      "routingMode": "routed",
+      "firewallDefault": "deny",
+      "peers": [
+        {
+          "runtimeId": "endpoint-alice",
+          "deviceId": "device-alice-laptop",
+          "publicKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+          "allowedIPs": ["100.96.10.2/32"],
+          "persistentKeepaliveSeconds": 25
+        }
+      ],
+      "routes": ["10.20.0.0/16"],
+      "dnsServers": ["10.20.0.53"],
+      "firewallRules": [
+        {
+          "id": "deny-payroll",
+          "effect": "deny",
+          "sourceCidr": "100.96.10.2/32",
+          "destinationCidr": "10.20.8.10/32",
+          "protocol": "tcp",
+          "ports": [443]
+        },
+        {
+          "id": "allow-network-lease-0001",
+          "effect": "allow",
+          "leaseId": "network-lease-0001",
+          "sourceCidr": "100.96.10.2/32",
+          "destinationCidr": "10.20.0.0/16",
+          "protocol": "any",
+          "expiresAt": "2026-09-02T08:05:00Z"
+        }
+      ]
+    }
+  }
+}

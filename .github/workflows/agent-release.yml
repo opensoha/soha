@@ -1,0 +1,372 @@
+name: agent-release
+
+on:
+  push:
+    tags:
+      - "agent/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Dispatch with --ref this tag; existing immutable agent/v<version> tag (also used for recovery)"
+        required: true
+      sha:
+        description: "Exact 40-character main commit of that tag"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: agent-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_SHA: ${{ inputs.sha || github.sha }}
+  GOWORK: ${{ github.workspace }}/go.work
+  GOFLAGS: -mod=readonly
+  RELEASE_AGENT_ENABLED: ${{ vars.RELEASE_AGENT_ENABLED }}
+  GOTOOLCHAIN: local
+
+jobs:
+  verify:
+    name: Verify release identity and declared public SDK
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      date: ${{ steps.identity.outputs.date }}
+      epoch: ${{ steps.identity.outputs.epoch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate exact component tag and source identity
+        id: identity
+        run: |
+          set -euo pipefail
+          python3 scripts/release-control.py identity --component agent --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --github-output
+          source_epoch="$(git show -s --format=%ct "$RELEASE_SHA")"
+          source_date="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$RELEASE_SHA")"
+          printf 'epoch=%s\ndate=%s\n' "$source_epoch" "$source_date" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+            cli/go.sum
+            agent/go.sum
+      - name: Verify candidate Agent image versions
+        run: |
+          grep -F "image: ghcr.io/opensoha/soha-agent:v${RELEASE_TAG#agent/v}" agent/deploy/kubernetes/base/soha-agent.yaml
+          grep -F "newTag: v${RELEASE_TAG#agent/v}" agent/deploy/kubernetes/outpost/kustomization.yaml
+      - name: Verify same-Root source layout
+        run: python3 scripts/source-workspace.py check-go
+      - name: Verify declared released SDK without workspace replacement
+        env:
+          REQUESTED_CONTRACTS_REF: v0.2.0
+        run: python3 agent/deploy/resolve_contracts.py --mode declared --consumer agent
+      - name: Qualify agent against the public declared SDK
+        working-directory: agent
+        env:
+          GOWORK: 'off'
+        run: go test ./...
+
+  binaries:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: agent/go.sum
+      - name: Build binary
+        working-directory: agent
+        env:
+          GOWORK: 'off'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: v${{ needs.verify.outputs.version }}
+          COMMIT: ${{ env.RELEASE_SHA }}
+          BUILD_DATE: ${{ needs.verify.outputs.date }}
+          SOURCE_EPOCH: ${{ needs.verify.outputs.epoch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ldflags="-s -w"
+          ldflags="${ldflags} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Version=${VERSION}"
+          ldflags="${ldflags} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Commit=${COMMIT}"
+          ldflags="${ldflags} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Date=${BUILD_DATE}"
+          CGO_ENABLED=0 go build -trimpath -ldflags="${ldflags}" -o "dist/soha-agent${{ matrix.ext }}" ./cmd/agent
+          artifact="soha-agent_${VERSION}_${GOOS}_${GOARCH}.tar.gz"
+          python3 ../cli/scripts/package-native-release.py "dist/soha-agent${{ matrix.ext }}" "$artifact" "$SOURCE_EPOCH"
+          shasum -a 256 "${artifact}" > "${artifact}.sha256"
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: soha-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            agent/soha-agent_*.tar.gz
+            agent/soha-agent_*.tar.gz.sha256
+          if-no-files-found: error
+
+  image:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    needs: [verify, release-smoke]
+    environment: release-agent
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: agent/go.sum
+      - name: Validate same-Root dsh schema
+        run: python3 agent/deploy/resolve_contracts.py --mode source
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Verify protected release authority before external writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component agent --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --images-unused
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build generic agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/opensoha/soha-agent:v${{ needs.verify.outputs.version }}
+            ghcr.io/opensoha/soha-agent:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=v${{ needs.verify.outputs.version }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+      - name: Build safe Docker volume reader image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile
+          target: volume-reader-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-docker-volume-reader:v${{ needs.verify.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=v${{ needs.verify.outputs.version }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+      - name: Build Hermes runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile.hermes-agent-runner
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/opensoha/soha-hermes-agent:v${{ needs.verify.outputs.version }}
+            ghcr.io/opensoha/soha-hermes-agent:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=v${{ needs.verify.outputs.version }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+      - name: Build Buildpacks runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile
+          target: buildpacks-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-buildpacks-agent:v${{ needs.verify.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=v${{ needs.verify.outputs.version }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+      - name: Build daemonless Buildpacks runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile
+          target: buildpacks-daemonless-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v${{ needs.verify.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            VERSION=v${{ needs.verify.outputs.version }}
+            COMMIT=${{ env.RELEASE_SHA }}
+            DATE=${{ needs.verify.outputs.date }}
+      - name: Build dsh runtime image
+        id: dsh-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/deploy/Dockerfile.dsh-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-dsh:v${{ needs.verify.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            COMMIT=${{ env.RELEASE_SHA }}
+      - name: Verify published dsh image digest and platforms
+        env:
+          DSH_IMAGE: ghcr.io/opensoha/soha-dsh:v${{ needs.verify.outputs.version }}
+          DSH_DIGEST: ${{ steps.dsh-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --format '{{json .Manifest}}' "${DSH_IMAGE}" |
+            jq -e --arg digest "${DSH_DIGEST}" '
+              .digest == $digest and
+              ([.manifests[].platform | select(.os == "linux") | .architecture] | unique == ["amd64", "arm64"])
+            '
+  release-smoke:
+    runs-on: ubuntu-latest
+    needs:
+      - verify
+      - binaries
+    env:
+      VERSION: v${{ needs.verify.outputs.version }}
+    steps:
+      - name: Download linux amd64 binary artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: soha-agent-linux-amd64
+          path: smoke
+      - name: Smoke test linux amd64 release archive
+        run: |
+          set -euo pipefail
+          archive="$(find smoke -type f -name 'soha-agent_*_linux_amd64.tar.gz' -print -quit)"
+          if [ -z "${archive}" ]; then
+            echo "linux amd64 release archive not found" >&2
+            exit 1
+          fi
+          checksum="${archive}.sha256"
+          test -s "${checksum}"
+          (cd "$(dirname "${archive}")" && shasum -a 256 -c "$(basename "${checksum}")")
+          tar -xzf "${archive}" -C smoke
+          test -x smoke/soha-agent
+          ./smoke/soha-agent version | tee smoke/version.txt
+          grep -q "soha-agent" smoke/version.txt
+          grep -q "${VERSION}" smoke/version.txt
+
+  release:
+    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    environment: release-agent
+    permissions:
+      contents: write
+      actions: read
+    needs:
+      - binaries
+      - image
+      - release-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: soha-agent-*
+          path: artifacts
+          merge-multiple: true
+      - name: Generate checksum manifest
+        run: |
+          set -euo pipefail
+          cd artifacts
+          shasum -a 256 soha-agent_*.tar.gz > SHA256SUMS
+      - name: Verify protected release authority before external writes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component agent --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish-release-assets.py --component agent --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --directory artifacts
+      - name: Download published release assets and verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded-release
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "soha-agent_*.tar.gz" \
+            --pattern "soha-agent_*.tar.gz.sha256" \
+            --pattern "SHA256SUMS" \
+            --dir downloaded-release \
+            --clobber
+          test -s downloaded-release/SHA256SUMS
+          archive_count="$(find downloaded-release -type f -name 'soha-agent_*.tar.gz' | wc -l | tr -d ' ')"
+          checksum_count="$(find downloaded-release -type f -name 'soha-agent_*.tar.gz.sha256' | wc -l | tr -d ' ')"
+          test "${archive_count}" -eq 5
+          test "${checksum_count}" -eq 5
+          (cd downloaded-release && shasum -a 256 -c SHA256SUMS)
+          for checksum in downloaded-release/soha-agent_*.tar.gz.sha256; do
+            (cd downloaded-release && shasum -a 256 -c "$(basename "${checksum}")")
+          done
+
+      - name: Verify anonymous published archive
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_TAG//\//%2F}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          mkdir anonymous-release
+          cd anonymous-release
+          curl --fail --location --proto '=https' --proto-redir '=https' "$url/SHA256SUMS" -o SHA256SUMS
+          archive="$(find ../downloaded-release -name '*_linux_amd64.tar.gz' -printf '%f\n')"
+          test -n "$archive"
+          curl --fail --location --proto '=https' --proto-redir '=https' "$url/$archive" -o "$archive"
+          sha256sum -c --ignore-missing SHA256SUMS

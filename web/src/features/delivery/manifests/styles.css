@@ -1,0 +1,136 @@
+.soha-manifest-name {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.soha-manifest-name strong,
+.soha-manifest-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-manifest-name strong {
+  color: var(--soha-text-primary);
+}
+.soha-manifest-name span {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-manifest-drawer-footer,
+.soha-manifest-section-head,
+.soha-manifest-file-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-manifest-drawer-footer {
+  justify-content: flex-end;
+}
+
+.soha-manifest-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.soha-manifest-form-wide {
+  grid-column: 1 / -1;
+}
+
+.soha-manifest-files,
+.soha-manifest-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-manifest-file,
+.soha-manifest-binding {
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 16px;
+}
+
+.soha-manifest-file-head {
+  margin-bottom: 8px;
+}
+
+.soha-manifest-editor textarea,
+textarea.soha-manifest-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.soha-manifest-binding {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(130px, 1fr)) 36px;
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-manifest-revision {
+  margin-bottom: 16px;
+}
+
+.soha-manifest-operation-bar {
+  margin-bottom: 16px;
+}
+
+.soha-manifest-runtime-summary {
+  margin-top: 20px;
+}
+
+.soha-manifest-render-output {
+  max-height: 58vh;
+  margin-top: 16px;
+  overflow: auto;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-manifest-render-output pre {
+  margin: 0;
+  padding: 16px 0;
+  overflow: auto;
+  border-bottom: 1px solid var(--soha-border-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .soha-manifest-library .soha-admin-table-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .soha-manifest-library .soha-admin-table-header-main {
+    flex: 0 0 100%;
+    white-space: nowrap;
+  }
+
+  .soha-manifest-library .soha-admin-table-header-extra {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .soha-manifest-form-grid,
+  .soha-manifest-binding {
+    grid-template-columns: 1fr;
+  }
+  .soha-manifest-form-wide {
+    grid-column: auto;
+  }
+}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

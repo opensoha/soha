@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "v1",
+  "providerKey": "community-logs",
+  "sourceId": "source-1",
+  "config": { "endpoint": "https://logs.example" },
+  "credentials": { "api_token": "secret" },
+  "query": {
+    "scope": { "clusterId": "cluster-a", "namespace": "apps", "containers": ["api", "sidecar"] },
+    "timeFrom": "2026-08-02T10:00:00Z",
+    "timeTo": "2026-08-02T10:15:00Z",
+    "query": "trace-123",
+    "limit": 200,
+    "direction": "backward"
+  }
+}

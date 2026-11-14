@@ -1,0 +1,11 @@
+{
+  "connectionId": "task51-pve",
+  "name": "Debian13 genericcloud",
+  "sourceKind": "cloud_image",
+  "sourceRef": "task51-cloud:import/b2aca2bee42c7082fd6aba4a5bb1a89612087a405e99896920f3346f7b23b9d1.qcow2",
+  "architecture": "amd64",
+  "config": {
+    "cloudInitSupported": true,
+    "node": "popicorns-4"
+  }
+}

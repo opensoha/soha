@@ -69,16 +69,17 @@ type UserRepository interface {
 }
 
 type Service struct {
-	repo                domainprovider.Repository
-	users               UserRepository
-	permissions         *appaccess.PermissionResolver
-	audit               AuditRecorder
-	encryptionKey       string
-	encryptionKeys      keyring.Ring
-	saml                SAMLIdentityProviderRuntime
-	outpostSigningKeyID string
-	outpostSigningKey   ed25519.PrivateKey
-	publicAccessURL     func() string
+	repo                  domainprovider.Repository
+	users                 UserRepository
+	permissions           *appaccess.PermissionResolver
+	audit                 AuditRecorder
+	encryptionKey         string
+	encryptionKeys        keyring.Ring
+	saml                  SAMLIdentityProviderRuntime
+	outpostSigningKeyID   string
+	outpostSigningKey     ed25519.PrivateKey
+	publicAccessURL       func() string
+	outpostRuntimeControl OutpostRuntimeControl
 }
 
 func (s *Service) SetPublicAccessURL(accessURL func() string) { s.publicAccessURL = accessURL }
@@ -222,12 +223,8 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		err := fmt.Errorf("%w: reauthentication required", apperrors.ErrUnauthorized)
 		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "login_required", err)
 	}
-	if err := s.validateAuthenticationAge(ctx, principal, input.PlatformSessionID, input.MaxAge); err != nil {
-		code := "invalid_request"
-		if errors.Is(err, apperrors.ErrUnauthorized) {
-			code = "login_required"
-		}
-		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, code, err)
+	if err := s.validateAuthorizeAuthenticationAge(ctx, principal, input, redirectURI, state); err != nil {
+		return domainprovider.AuthorizeResult{}, err
 	}
 	if strings.TrimSpace(input.ResponseType) != "code" {
 		err := fmt.Errorf("%w: response_type must be code", apperrors.ErrInvalidArgument)
@@ -250,6 +247,7 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		return domainprovider.AuthorizeResult{}, err
 	}
 	now := time.Now().UTC()
+	authorizationSourceIP := canonicalAuthorizationSource(requestctx.FromContext(ctx).SourceIP)
 	if err := s.repo.CreateAuthorizationCode(ctx, domainprovider.AuthorizationCode{
 		ID:                  uuid.NewString(),
 		ProviderID:          provider.ID,
@@ -264,12 +262,16 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		ExpiresAt:           now.Add(authorizationCodeTTL),
 		CreatedAt:           now,
 		Metadata: map[string]any{
-			"issuer":            normalizeIssuer(issuer),
-			"state":             state,
-			"platformSessionId": strings.TrimSpace(input.PlatformSessionID),
+			"issuer":                   normalizeIssuer(issuer),
+			"state":                    state,
+			"platformSessionId":        strings.TrimSpace(input.PlatformSessionID),
+			oidcAuthorizationSourceKey: authorizationSourceIP,
 		},
 	}); err != nil {
 		return domainprovider.AuthorizeResult{}, fmt.Errorf("create authorization code: %w", err)
+	}
+	if _, err := s.currentOIDCAccess(ctx, client.ClientID, provider.ID, principal.UserID, input.PlatformSessionID, authorizationSourceIP); err != nil {
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, authorizeRedirectErrorCode(err), err)
 	}
 	s.recordAudit(ctx, principal, "oidc.authorize", "success", provider, client, map[string]any{
 		"redirectUri":       redirectURI,
@@ -293,6 +295,17 @@ func validateAuthorizePKCE(client domainprovider.OIDCClient, codeChallenge, code
 	}
 	if codeChallengeMethod != "S256" {
 		return fmt.Errorf("%w: only S256 PKCE is supported", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func (s *Service) validateAuthorizeAuthenticationAge(ctx context.Context, principal domainidentity.Principal, input domainprovider.AuthorizeInput, redirectURI, state string) error {
+	if err := s.validateAuthenticationAge(ctx, principal, input.PlatformSessionID, input.MaxAge); err != nil {
+		code := "invalid_request"
+		if errors.Is(err, apperrors.ErrUnauthorized) {
+			code = "login_required"
+		}
+		return authorizeRedirectError(redirectURI, state, code, err)
 	}
 	return nil
 }
@@ -356,9 +369,11 @@ func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, inp
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	principal, err := s.loadPrincipal(ctx, code.UserID)
+	platformSessionID := metadataStringFromMap(code.Metadata, "platformSessionId")
+	authorizationSourceIP := canonicalAuthorizationSource(metadataStringFromMap(code.Metadata, oidcAuthorizationSourceKey))
+	principal, err := s.currentOIDCAccess(ctx, client.ClientID, provider.ID, code.UserID, platformSessionID, authorizationSourceIP)
 	if err != nil {
-		return domainprovider.TokenResponse{}, err
+		return domainprovider.TokenResponse{}, nonInteractiveAuthorizationError(err)
 	}
 	issuer = normalizeIssuer(issuer)
 	accessTTL := ttlSeconds(client.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds)
@@ -380,7 +395,7 @@ func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, inp
 	}
 	if err := s.repo.CreateOIDCSession(ctx, domainprovider.OIDCSession{
 		ID: sessionID, ProviderID: provider.ID, ClientID: client.ClientID, UserID: principal.UserID,
-		PlatformSessionID: metadataStringFromMap(code.Metadata, "platformSessionId"), Scopes: code.Scopes,
+		PlatformSessionID: platformSessionID, AuthorizationSourceIP: authorizationSourceIP, Scopes: code.Scopes,
 		AuthTime: now, ExpiresAt: sessionExpiry, LastSeenAt: now, CreatedAt: now,
 	}, refreshToken); err != nil {
 		return domainprovider.TokenResponse{}, fmt.Errorf("create oidc session: %w", err)
@@ -455,13 +470,14 @@ func (s *Service) tokenRefresh(ctx context.Context, issuer string, input domainp
 		_ = s.repo.RevokeOIDCSession(ctx, session.ID, session.ClientID, now)
 		return domainprovider.TokenResponse{}, fmt.Errorf("%w: refresh token client mismatch", apperrors.ErrUnauthorized)
 	}
-	principal, err := s.loadPrincipal(ctx, session.UserID)
+	principal, err := s.currentOIDCAccess(ctx, client.ClientID, provider.ID, session.UserID, session.PlatformSessionID, session.AuthorizationSourceIP)
 	if err != nil {
 		_ = s.repo.RevokeOIDCSession(ctx, session.ID, session.ClientID, now)
-		return domainprovider.TokenResponse{}, err
+		return domainprovider.TokenResponse{}, nonInteractiveAuthorizationError(err)
 	}
 	response, err := s.issueOIDCTokenResponse(ctx, normalizeIssuer(issuer), provider, client, principal, session.ID, session.Scopes, "", session.AuthTime, now)
 	if err != nil {
+		_ = s.repo.RevokeOIDCSession(ctx, session.ID, session.ClientID, now)
 		return domainprovider.TokenResponse{}, err
 	}
 	response.RefreshToken = nextValue
@@ -488,6 +504,11 @@ func (s *Service) issueOIDCTokenResponse(ctx context.Context, issuer string, pro
 	idToken, err := signOIDCToken(privateKey, signingKey.KeyID, idClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
+	}
+	// Recheck after signing: revocation observed at this delivery boundary
+	// withholds the response. Already-in-flight reads are not an atomic snapshot.
+	if err := s.validateCurrentOIDCSession(ctx, sessionID, client.ClientID, principal.UserID); err != nil {
+		return domainprovider.TokenResponse{}, nonInteractiveAuthorizationError(err)
 	}
 	return domainprovider.TokenResponse{AccessToken: accessToken, IDToken: idToken, TokenType: "Bearer", ExpiresIn: int64(accessTTL), Scope: strings.Join(scopes, " ")}, nil
 }
@@ -577,7 +598,7 @@ func (s *Service) Revoke(ctx context.Context, issuer, token string, auth domainp
 	if token == "" {
 		return nil
 	}
-	claims, err := s.parseOIDCAccessToken(ctx, issuer, token)
+	claims, err := s.parseOIDCToken(ctx, issuer, token, domainprovider.TokenTypeAccess, false)
 	if err == nil && claims.ClientID == client.ClientID {
 		return s.repo.RevokeOIDCSession(ctx, claims.SessionID, client.ClientID, time.Now().UTC())
 	}
@@ -1162,12 +1183,22 @@ func (s *Service) CheckOutpost(ctx context.Context, outpostID string, input doma
 	if err != nil {
 		return domainprovider.ProxyAuthResult{}, err
 	}
+	if err := s.repo.AuthorizeLegacyOutpostAccess(ctx, outpost.ID, outpost.TokenHash); err != nil {
+		return domainprovider.ProxyAuthResult{}, err
+	}
+	return s.checkOutpost(ctx, outpost.ID, input)
+}
+
+func (s *Service) checkOutpost(ctx context.Context, outpostID string, input domainprovider.OutpostCheckInput) (domainprovider.ProxyAuthResult, error) {
+	if err := s.authorizeOutpostRuntimeAccess(ctx, outpostID); err != nil {
+		return domainprovider.ProxyAuthResult{}, err
+	}
 	proxyInput := proxyAuthInputFromOutpostCheck(input)
 	provider, _, err := s.resolveProxyProvider(ctx, proxyInput)
 	if err != nil {
 		return domainprovider.ProxyAuthResult{}, err
 	}
-	if !providerAssignedToOutpost(provider, outpost.ID) {
+	if !providerAssignedToOutpost(provider, outpostID) {
 		return domainprovider.ProxyAuthResult{}, fmt.Errorf("%w: proxy provider is not assigned to outpost", apperrors.ErrAccessDenied)
 	}
 	proxyInput.ProviderID = provider.ID
@@ -1440,16 +1471,8 @@ func (s *Service) validateProviderAccess(ctx context.Context, principal domainid
 	if !providerEnabled(provider) || provider.Type != domainprovider.ProviderTypeOIDC {
 		return fmt.Errorf("%w: oidc provider is disabled", apperrors.ErrUnauthorized)
 	}
-	if application.Status != domainportal.ApplicationStatusEnabled {
-		return fmt.Errorf("%w: application is disabled", apperrors.ErrAccessDenied)
-	}
-	access := domainportal.AccessPolicyContext{SourceIP: requestctx.FromContext(ctx).SourceIP, Now: time.Now().UTC()}
-	if strings.TrimSpace(sessionID) != "" && s.users != nil {
-		if session, err := s.users.GetAuthSessionByID(ctx, sessionID); err == nil {
-			access.MFAAuthenticated = metadataMFA(session.Metadata)
-		}
-	}
-	return applicationPolicyAccessError(principal, application, access)
+	_, err := s.currentApplicationAccess(ctx, principal.UserID, application, sessionID)
+	return err
 }
 
 func authorizeRedirectError(redirectURI, state, code string, err error) error {
@@ -1598,6 +1621,9 @@ func verifyPKCE(code domainprovider.AuthorizationCode, verifier string) error {
 }
 
 func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
+	if s.users == nil {
+		return domainidentity.Principal{}, fmt.Errorf("%w: user repository unavailable", apperrors.ErrUnauthorized)
+	}
 	user, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
@@ -1862,6 +1888,11 @@ func (s *Service) parseOIDCToken(ctx context.Context, issuer, tokenString, token
 		session, err := s.repo.GetOIDCSession(ctx, claims.SessionID, time.Now().UTC())
 		if err != nil || session.ClientID != claims.ClientID || session.UserID != claims.Subject {
 			return nil, fmt.Errorf("%w: oidc session is invalid", apperrors.ErrUnauthorized)
+		}
+	}
+	if requireActiveSession && tokenType == domainprovider.TokenTypeAccess {
+		if err := s.validateCurrentOIDCSession(ctx, claims.SessionID, claims.ClientID, claims.Subject); err != nil {
+			return nil, err
 		}
 	}
 	return claims, nil

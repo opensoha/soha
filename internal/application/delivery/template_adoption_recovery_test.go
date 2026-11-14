@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	dd "github.com/opensoha/soha/internal/domain/delivery"
 	di "github.com/opensoha/soha/internal/domain/identity"
 	du "github.com/opensoha/soha/internal/domain/templateupdate"

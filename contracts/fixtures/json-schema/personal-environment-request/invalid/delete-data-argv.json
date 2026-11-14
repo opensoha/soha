@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "opensoha.dev/personal-environment-request/v1",
+  "action": "delete_data",
+  "lease": {
+    "schemaVersion": "opensoha.dev/environment-lease/v1",
+    "id": "lease-personal-1",
+    "runId": "run-personal-1",
+    "ownerId": "owner-fixture",
+    "scopeHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "mode": "observe-only",
+    "quota": {
+      "diskBytes": 33554432,
+      "memoryBytes": 67108864,
+      "cpuUnits": 250,
+      "maxProcesses": 16,
+      "networkEgress": false
+    },
+    "issuedAt": "2026-10-08T01:00:00Z",
+    "expiresAt": "2026-10-08T01:05:00Z"
+  },
+  "argv": [
+    "/bin/true"
+  ]
+}

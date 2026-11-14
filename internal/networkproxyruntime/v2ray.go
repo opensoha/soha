@@ -14,12 +14,12 @@ type v2rayStat struct {
 	Value int64  `json:"value,string"`
 }
 
-func (e *engine) v2rayHealth(ctx context.Context) error {
-	_, _, _, err := e.v2rayStats(ctx)
+func (e *v2rayEngineAdapter) health(ctx context.Context) error {
+	_, _, _, err := e.stats(ctx)
 	return err
 }
 
-func (e *engine) v2rayStats(ctx context.Context) (string, int64, int64, error) {
+func (e *v2rayEngineAdapter) stats(ctx context.Context) (string, int64, int64, error) {
 	versionCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	versionOutput, err := exec.CommandContext(versionCtx, e.config.EngineBinary, "version").Output() // #nosec G204 -- binary is selected by the local operator, not control-plane input.

@@ -1,0 +1,6 @@
+{
+  "providerId": "corp-oidc",
+  "redirectUri": "http://127.0.0.1:49152/callback/T4I0wIrt0Pp4qABC",
+  "codeChallenge": "short",
+  "codeChallengeMethod": "plain"
+}

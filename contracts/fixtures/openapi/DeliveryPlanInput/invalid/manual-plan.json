@@ -1,0 +1,7 @@
+{
+  "applicationId": "app",
+  "applicationEnvironmentId": "test",
+  "action": "rollback",
+  "source": "manual",
+  "templateCandidateId": "worker-only"
+}

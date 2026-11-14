@@ -79,3 +79,24 @@ func TestProxyRuntimeSamplesValidateIdentityAndOrder(t *testing.T) {
 		t.Fatalf("unexpected detail field error = %v", err)
 	}
 }
+
+func TestProxySampleEpochIsPairedAndBounded(t *testing.T) {
+	now := time.Now()
+	valid := domainnetworkingest.ProxyRuntimeSample{ObservedAt: now, ProcessEpoch: "epoch-1", SampleSequence: 1}
+	for _, tt := range []struct {
+		name     string
+		epoch    string
+		sequence int64
+		want     bool
+	}{{"legacy", "", 0, true}, {"epoch", "epoch-1", 1, true}, {"missing epoch", "", 1, false}, {"missing sequence", "epoch-1", 0, false}, {"invalid epoch", "../bad", 1, false}, {"unsafe integer", "epoch-1", 9007199254740992, false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			sample := valid
+			sample.ProcessEpoch = tt.epoch
+			sample.SampleSequence = tt.sequence
+			err := validateProxySamples(domainnetworkingest.ProxyRuntimeSeries{InstanceID: "p1", Samples: []domainnetworkingest.ProxyRuntimeSample{sample}}, "p1", now.Add(-time.Second), now.Add(time.Second))
+			if (err == nil) != tt.want {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}

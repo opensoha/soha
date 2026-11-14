@@ -1,0 +1,7 @@
+{
+  "templateId": "http",
+  "version": 1,
+  "parameters": {
+    "port": 80
+  }
+}

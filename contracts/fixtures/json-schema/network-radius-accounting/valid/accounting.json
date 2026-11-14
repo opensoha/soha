@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "network-radius-accounting/v1alpha1",
+  "eventTimestamp": 1788336000,
+  "statusType": "interim-update",
+  "accountingSessionId": "session-1",
+  "sessionId": "soha-session-1",
+  "nasId": "nas-hq",
+  "nasPortId": "wlan-1",
+  "userId": "user-1",
+  "deviceId": "device-1",
+  "sessionTimeSeconds": 300,
+  "inputOctets": 1024,
+  "outputOctets": 2048,
+  "inputPackets": 10,
+  "outputPackets": 20
+}

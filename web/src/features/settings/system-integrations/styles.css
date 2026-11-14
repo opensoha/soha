@@ -1,0 +1,45 @@
+.soha-system-integration-category__icon {
+  align-items: center;
+  color: var(--ant-color-primary);
+  display: inline-flex;
+  font-size: 18px;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.soha-system-integration-category__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.soha-system-integration-form-grid {
+  display: grid;
+  gap: 0 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.soha-system-integration-provider-step {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.soha-system-integration-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 24px;
+}
+
+.soha-system-integration-oauth-alert {
+  margin-bottom: 24px;
+}
+
+.soha-system-integration-form-grid > .soha-system-integration-oauth-alert {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 767px) {
+  .soha-system-integration-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

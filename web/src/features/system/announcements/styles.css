@@ -1,0 +1,131 @@
+.soha-system-announcement-main {
+  flex: 0 1 260px;
+  min-width: 180px;
+}
+
+.soha-system-announcement-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  text-align: right;
+}
+
+.soha-system-announcement-content {
+  flex: 1 1 240px;
+  min-width: 160px;
+  margin: 0 !important;
+  color: var(--soha-text-secondary);
+  text-align: center;
+}
+
+.soha-system-announcement-preview-content.ant-card {
+  width: 100%;
+  background: var(--soha-bg-surface-muted);
+  box-shadow: none;
+}
+
+.soha-system-announcement-preview-content.ant-card .ant-card-body {
+  min-height: 144px;
+}
+
+.soha-system-announcement-preview-content .ant-typography {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.soha-system-announcement-range-popup .ant-picker-footer {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.soha-system-announcement-range-popup .ant-picker-footer-extra {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.soha-system-announcement-range-popup .ant-picker-ranges {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0 0 0 8px;
+}
+
+.soha-system-announcement-range .ant-picker-input > input {
+  text-align: center;
+}
+
+.soha-system-announcement-receipt-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.soha-system-announcement-receipt-list {
+  gap: 8px;
+  max-height: min(56vh, 560px);
+  padding-right: 2px;
+  overflow-y: auto;
+}
+
+.soha-system-announcement-receipt-row {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.8fr) minmax(160px, 1.25fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.soha-system-announcement-receipt-identity,
+.soha-system-announcement-receipt-details {
+  min-width: 0;
+}
+
+.soha-system-announcement-receipt-identity .ant-typography,
+.soha-system-announcement-receipt-details .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-system-announcement-receipt-status {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .soha-system-announcement-main,
+  .soha-system-announcement-content {
+    width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .soha-system-announcement-content {
+    text-align: left;
+  }
+
+  .soha-system-announcement-extra {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .soha-system-announcement-receipt-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .soha-system-announcement-receipt-details {
+    grid-column: 1;
+  }
+
+  .soha-system-announcement-receipt-status {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    width: auto;
+  }
+}

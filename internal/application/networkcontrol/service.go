@@ -19,6 +19,7 @@ import (
 	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
+	publication "github.com/opensoha/soha/internal/domain/proxypublication"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
@@ -66,6 +67,10 @@ type Store interface {
 }
 
 type Options struct {
+	ManagedNAS               ManagedNASManager
+	EAPRevocations           EAPRevocationStore
+	PasswordVerifier         NetworkPasswordVerifier
+	PasswordStore            PasswordStore
 	EndpointChannels         EndpointChannels
 	EAPIssuer                EAPCertificateIssuer
 	VPNProbes                VPNProbeReader
@@ -77,11 +82,12 @@ type Options struct {
 }
 
 type Service struct {
-	store    Store
-	schemas  *networkprotocol.Schemas
-	options  Options
-	now      func() time.Time
-	snapshot struct {
+	passwordWorkers chan struct{}
+	store           Store
+	schemas         *networkprotocol.Schemas
+	options         Options
+	now             func() time.Time
+	snapshot        struct {
 		sync.RWMutex
 		value domainnetworkruntime.PolicySnapshot
 		ready bool
@@ -95,7 +101,7 @@ func New(store Store, schemas *networkprotocol.Schemas, options Options) (*Servi
 	if options.MaxClockSkew <= 0 || options.ConfigurationTTL <= 0 || options.ConfigurationTTL > 5*time.Minute || options.LeaseTTL <= 0 || options.LeaseTTL > 5*time.Minute {
 		return nil, fmt.Errorf("network control options are invalid")
 	}
-	return &Service{store: store, schemas: schemas, options: options, now: time.Now}, nil
+	return &Service{passwordWorkers: make(chan struct{}, 4), store: store, schemas: schemas, options: options, now: time.Now}, nil
 }
 
 func (s *Service) RefreshSnapshot(ctx context.Context) error {
@@ -147,6 +153,15 @@ func (s *Service) Enroll(ctx context.Context, identity networkidentity.Identity,
 	if identity.Kind == "proxy" && (payload.DeviceID != identity.ID || !validProxyEnrollmentCapabilities(payload.Capabilities)) {
 		return networkprotocol.RuntimeMessage{}, invalidRuntimeMessage()
 	}
+	var managedNAS *domainnetworkruntime.ManagedNASMemberScope
+	if s.options.ManagedNAS != nil {
+		managedNAS, err = s.options.ManagedNAS.ManagedEnrollment(ctx, identity, payload)
+		if err != nil {
+			return networkprotocol.RuntimeMessage{}, err
+		}
+	} else if reservedNAS(identity.ID) {
+		return networkprotocol.RuntimeMessage{}, unauthorizedRuntime()
+	}
 	var snapshot domainnetworkruntime.PolicySnapshot
 	if identity.Kind != "proxy" {
 		snapshot, err = s.CurrentSnapshot()
@@ -156,7 +171,7 @@ func (s *Service) Enroll(ctx context.Context, identity networkidentity.Identity,
 	}
 	now := s.now().UTC()
 	tokenDigest := sha256.Sum256([]byte(strings.TrimSpace(token)))
-	consumption := domainnetworkruntime.EnrollmentConsumption{
+	consumption := domainnetworkruntime.EnrollmentConsumption{ManagedNAS: managedNAS,
 		EnrollmentID: payload.EnrollmentID, ChallengeID: payload.ChallengeID,
 		TokenHash: fmt.Sprintf("sha256:%x", tokenDigest), RuntimeID: identity.ID, RuntimeKind: identity.Kind,
 		DeviceID: payload.DeviceID, CertificateFingerprint: identity.CertificateFingerprint,
@@ -195,6 +210,13 @@ func (s *Service) Configuration(ctx context.Context, identity networkidentity.Id
 	credential, err := s.authenticate(ctx, identity)
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err
+	}
+	if s.options.ManagedNAS != nil {
+		if err := s.options.ManagedNAS.ManagedConfiguration(ctx, identity); err != nil {
+			return networkprotocol.RuntimeMessage{}, err
+		}
+	} else if reservedNAS(identity.ID) {
+		return networkprotocol.RuntimeMessage{}, unauthorizedRuntime()
 	}
 	snapshot, err := s.CurrentSnapshot()
 	if err != nil {
@@ -699,11 +721,7 @@ func (s *Service) CompleteNASSessionCommand(ctx context.Context, identity networ
 }
 
 func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Identity, request networkprotocol.NASAuthorizationRequest) (networkprotocol.NASAuthorizationResult, error) {
-	binding, err := s.authenticateNAS(ctx, identity, request.NASID)
-	if err != nil {
-		return networkprotocol.NASAuthorizationResult{}, err
-	}
-	request, endpointCredential, err := s.resolveNASDevice(ctx, request)
+	binding, managedPin, err := s.authenticateNASWithProof(ctx, identity, request.NASID, request.RuntimeProof, true)
 	if err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
@@ -711,10 +729,11 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 	if err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
-	principal, err := s.loadPolicyPrincipal(ctx, request.SubjectID, request.DeviceID, snapshot)
+	authentication, err := s.prepareNASAuthentication(ctx, identity, binding, request, snapshot)
 	if err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
+	request, endpointCredential, principal, passwordProof := authentication.request, authentication.credential, authentication.principal, authentication.proof
 	site, err := s.store.NetworkSite(ctx, binding.SiteID)
 	if err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
@@ -730,11 +749,16 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 		PolicyVersion: snapshot.PolicyVersion, ReasonCode: firstReason(preview.Reasons, "authorization_denied"),
 		ValidUntil: now.Add(s.options.MaxClockSkew), CreatedAt: now,
 	}
+	attachManagedNAS(&authorization, request.RuntimeProof, managedPin, binding.ID, identity.CertificateFingerprint)
 	if preview.Decision == domainnetworkaccess.DecisionAllow {
 		authorization.AccessProfile, authorization.ReasonCode = preview.NetworkProfile, "policy_allowed"
-		if request.AuthenticationMethod == networkprotocol.NASAuthenticationPasswordCompatible && authorization.AccessProfile == domainnetworkaccess.ProfileFull {
+		if (request.AuthenticationMethod == networkprotocol.NASAuthenticationPasswordCompatible || passwordProof != nil) && authorization.AccessProfile == domainnetworkaccess.ProfileFull {
 			authorization.AccessProfile, authorization.ReasonCode = domainnetworkaccess.ProfileRestricted, "password_compatible_profile_capped"
 		}
+	}
+	authorization.PasswordProof = passwordProof
+	if passwordProof != nil && authorization.Decision != domainnetworkaccess.DecisionAllow {
+		return nasAuthorizationResult(authorization), nil
 	}
 	if err := s.applyEndpointAdmission(ctx, &authorization, principal.subject, principal.device, binding); err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
@@ -754,6 +778,9 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 			authorization.ValidUntil = now.Add(time.Duration(profile.SessionTimeoutSeconds) * time.Second)
 		}
 	}
+	if passwordProof != nil && authorization.Decision != domainnetworkaccess.DecisionAllow {
+		return nasAuthorizationResult(authorization), nil
+	}
 	capNASManagementDeadline(&authorization, principal.device, site, now)
 	authorization.InputsHash = domainnetworkaccess.AdmissionAttributesHash(principal.subject, principal.device, site, binding, admissionProfile)
 	authorization.AttributeVersion = domainnetworkaccess.AdmissionDecisionVersion(authorization.InputsHash, authorization.PolicyVersion, authorization.ResponsePolicyHash, authorization.PresenceHash, authorization.RestrictionEpoch)
@@ -765,20 +792,8 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 }
 
 func (s *Service) authenticateNAS(ctx context.Context, identity networkidentity.Identity, nasID string) (domainnetworkaccess.NASBinding, error) {
-	if identity.Kind != "nas" {
-		return domainnetworkaccess.NASBinding{}, unauthorizedRuntime()
-	}
-	if _, err := s.authenticate(ctx, identity); err != nil {
-		return domainnetworkaccess.NASBinding{}, err
-	}
-	binding, err := s.store.NASBinding(ctx, identity.ID, nasID)
-	if err != nil {
-		return domainnetworkaccess.NASBinding{}, err
-	}
-	if binding.Status != domainnetworkaccess.StatusActive || binding.RuntimeID != identity.ID || binding.NASID != nasID {
-		return domainnetworkaccess.NASBinding{}, unauthorizedRuntime()
-	}
-	return binding, nil
+	binding, _, err := s.authenticateNASWithProof(ctx, identity, nasID, nil, false)
+	return binding, err
 }
 
 func (s *Service) resolveNASDevice(ctx context.Context, request networkprotocol.NASAuthorizationRequest) (networkprotocol.NASAuthorizationRequest, domainnetworkruntime.Credential, error) {
@@ -957,4 +972,41 @@ func capNASManagementDeadline(a *domainnetworkruntime.NASAuthorization, device d
 	if until.Before(a.ValidUntil) {
 		a.ValidUntil = until
 	}
+}
+
+// ProjectionStore never reads or decrypts legacy source material.
+type ProjectionStore interface {
+	ProjectionContext(context.Context, string, string, time.Time) (publication.EndpointContext, error)
+}
+type ProjectionAuthorizer struct {
+	service *Service
+	store   ProjectionStore
+}
+
+func NewProjectionAuthorizer(service *Service, store ProjectionStore) (*ProjectionAuthorizer, error) {
+	if service == nil || store == nil {
+		return nil, apperrors.ErrServiceUnavailable
+	}
+	return &ProjectionAuthorizer{service: service, store: store}, nil
+}
+func (a *ProjectionAuthorizer) AuthorizeProjection(ctx context.Context, identity networkidentity.Identity, profileID string) (publication.EndpointContext, error) {
+	if identity.Kind != "endpoint" || !networkIdentifierPattern.MatchString(profileID) {
+		return publication.EndpointContext{}, mihomoSubscriptionDenied()
+	}
+	credential, err := a.service.authenticate(ctx, identity)
+	if err != nil {
+		return publication.EndpointContext{}, err
+	}
+	if !slices.Contains(credential.Capabilities, "mihomo") || !slices.Contains(credential.Capabilities, "mihomo-policy-v1") || !slices.Contains(credential.Capabilities, "mihomo-dns-pin-v1") {
+		return publication.EndpointContext{}, mihomoSubscriptionDenied()
+	}
+	return a.store.ProjectionContext(ctx, credential.ID, profileID, a.service.now().UTC())
+}
+
+func (s *Service) AuthorizeProxyRuntime(ctx context.Context, id networkidentity.Identity) error {
+	if id.Kind != "proxy" {
+		return unauthorizedRuntime()
+	}
+	_, err := s.authenticate(ctx, id)
+	return err
 }

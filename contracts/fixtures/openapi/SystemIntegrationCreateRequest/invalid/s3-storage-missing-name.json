@@ -1,0 +1,5 @@
+{
+  "category": "storage",
+  "providerType": "s3",
+  "enabled": true
+}

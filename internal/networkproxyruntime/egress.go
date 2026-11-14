@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"encoding/json"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"golang.org/x/net/proxy"
 	"sigs.k8s.io/yaml"
@@ -24,18 +25,33 @@ import (
 // bridge. Resolve/authorize/pin happens before the engine sees the destination.
 // No plaintext inspection or process-wide interception is implied.
 type egressBackend struct {
+	udp                   bool
+	udpProbes             atomic.Int64
+	group                 bool
 	name, user, secret    string
 	port, probePort       int
 	reserve, probeReserve net.Listener
 	probes                atomic.Int64
 }
 type egressGuard struct {
-	handler   *proxytransport.Handler
-	server    *http.Server
-	listener  net.Listener
-	port      int
-	probeHost string
-	backends  map[string]*egressBackend
+	upstreamBridges []*socksUpstreamBridge
+	udpServing      atomic.Bool
+	udpEnabled      bool
+	udpVerified     atomic.Bool
+	udpPolicy       atomic.Pointer[udpPolicySnapshot]
+	udpMu           sync.Mutex
+	udpUntil        time.Time
+	tcpRefreshUntil time.Time
+	socks           *proxytransport.SOCKS5Gate
+	udpOwned        *ownedPackets
+	closeErr        error
+	accepting       atomic.Bool
+	handler         *proxytransport.Handler
+	server          *http.Server
+	listener        net.Listener
+	port            int
+	probeHost       string
+	backends        map[string]*egressBackend
 }
 
 func newEgressGuard(protection *domain.Protection, until time.Time) (*egressGuard, error) {
@@ -46,6 +62,7 @@ func newEgressGuard(protection *domain.Protection, until time.Time) (*egressGuar
 	gate := &egressGuard{listener: listener, probeHost: "soha-probe-" + strings.ToLower(rand.Text()) + ".invalid", port: port, backends: map[string]*egressBackend{}}
 	// Credentials are populated before serving. Start only after compiling every
 	// backend; the public engine has not been launched at this point.
+	gate.accepting.Store(true)
 	gate.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	gate.server.RegisterOnShutdown(func() {
 		if gate.handler != nil {
@@ -98,6 +115,9 @@ func (g *egressGuard) start(p *domain.Protection, until time.Time) error {
 		credentials[b.user] = b.secret
 		byUser[b.user] = b
 	}
+	if g.udpEnabled {
+		return g.startSOCKS(credentials, byUser, scope, until)
+	}
 	dial := func(ctx context.Context, user, target string) (net.Conn, error) {
 		b := byUser[user]
 		if b == nil {
@@ -129,7 +149,13 @@ func (g *egressGuard) start(p *domain.Protection, until time.Time) error {
 	if err != nil {
 		return err
 	}
-	g.server.Handler = g.handler
+	g.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !g.accepting.Load() && r.Host != net.JoinHostPort(g.probeHost, "80") {
+			http.Error(w, "proxy draining", http.StatusServiceUnavailable)
+			return
+		}
+		g.handler.ServeHTTP(w, r)
+	})
 	listener := g.listener
 	go func() { _ = g.server.Serve(listener); _ = g.handler.Close() }()
 	return nil
@@ -150,6 +176,19 @@ func (g *egressGuard) close() {
 	if g == nil {
 		return
 	}
+	g.accepting.Store(false)
+	g.udpServing.Store(false)
+	g.udpVerified.Store(false)
+	if g.socks != nil {
+		g.socks.NoNew()
+	}
+	if g.udpOwned != nil {
+		g.closeErr = errors.Join(g.closeErr, g.udpOwned.close())
+	}
+	if g.socks != nil {
+		g.closeErr = errors.Join(g.closeErr, g.socks.Close())
+	}
+	g.closeUpstreams()
 	g.release()
 	if g.listener != nil {
 		_ = g.listener.Close()
@@ -160,30 +199,33 @@ func (g *egressGuard) close() {
 	_ = g.server.Close()
 }
 func (g *egressGuard) front(b *egressBackend) map[string]any {
-	return map[string]any{"type": "http", "name": b.name, "server": "127.0.0.1", "port": g.port, "username": b.user, "password": b.secret, "udp": false}
+	kind := "http"
+	if g.udpEnabled {
+		kind = "socks5"
+	}
+	return map[string]any{"type": kind, "name": b.name, "server": "127.0.0.1", "port": g.port, "username": b.user, "password": b.secret, "udp": b.udp}
 }
 
-func (e *engine) guardConfiguration(ctx context.Context, raw []byte, desired domain.Configuration) ([]byte, error) {
-	doc, err := decodeEngineDocument(e.config.Engine, raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := bootstrapConfiguration(ctx, e.config.Engine, doc, desired.Protection); err != nil {
-		return nil, err
-	}
+func (e *engine) guardPreparedConfiguration(ctx context.Context, doc map[string]any, explicitUDP map[string]bool, desired domain.Configuration) ([]byte, error) {
 	gate, err := newEgressGuard(desired.Protection, desired.ValidUntil)
 	if err != nil {
 		return nil, err
 	}
+	gate.udpEnabled = e.dialect() == domain.EngineMihomo
+	gate.udpPolicy.Store(copyUDPPolicy(desired))
 	success := false
 	defer func() {
 		if !success {
 			gate.close()
 		}
 	}()
-	switch e.config.Engine {
+	switch e.dialect() {
 	case domain.EngineMihomo:
-		err = gate.mihomo(doc)
+		gate.udpUntil = desired.ValidUntil
+		err = gate.bridgeMihomoSOCKS(doc, desired, explicitUDP)
+		if err == nil {
+			err = gate.mihomo(doc)
+		}
 	case domain.EngineSingBox:
 		err = gate.singBox(doc)
 	case domain.EngineV2Ray:
@@ -194,12 +236,18 @@ func (e *engine) guardConfiguration(ctx context.Context, raw []byte, desired dom
 	if err != nil {
 		return nil, err
 	}
-	raw, err = encodeEngineDocument(e.config.Engine, doc)
+	if err := gate.compilePublication(doc, desired, e.dialect()); err != nil {
+		return nil, err
+	}
+	raw, err := encodeEngineDocument(e.dialect(), doc)
 	if err != nil {
 		return nil, err
 	}
 	if err = gate.start(desired.Protection, desired.ValidUntil); err != nil {
 		return nil, err
+	}
+	if e.config.ManagedDeployment {
+		gate.accepting.Store(false)
 	}
 	e.egress = gate
 	success = true
@@ -255,6 +303,8 @@ func (g *egressGuard) mihomo(doc map[string]any) error {
 			return err
 		}
 		allowed[name] = true
+		b.udp = g.udpEnabled && mihomoNodeUDP(node)
+		node["udp"] = b.udp
 		node["name"] = b.realName()
 		fronts = append(fronts, g.front(b), node)
 		listeners = append(listeners, mihomoBackend(b, b.realName()), mihomoProbe(b))
@@ -263,6 +313,7 @@ func (g *egressGuard) mihomo(doc map[string]any) error {
 	if err != nil {
 		return err
 	}
+	direct.udp = g.udpEnabled
 	allowed[direct.name] = true
 	fronts = append(fronts, g.front(direct))
 	listeners = append(listeners, mihomoBackend(direct, "DIRECT"), mihomoProbe(direct))
@@ -304,7 +355,7 @@ func (g *egressGuard) mihomo(doc map[string]any) error {
 	return nil
 }
 func mihomoBackend(b *egressBackend, policy string) map[string]any {
-	return map[string]any{"name": b.realName(), "type": "socks", "listen": "127.0.0.1", "port": b.port, "udp": false, "proxy": policy, "users": []any{map[string]any{"username": b.user, "password": b.secret}}}
+	return map[string]any{"name": b.realName(), "type": "socks", "listen": "127.0.0.1", "port": b.port, "udp": b.udp, "proxy": policy, "users": []any{map[string]any{"username": b.user, "password": b.secret}}}
 }
 func mihomoProbe(b *egressBackend) map[string]any {
 	node := mihomoBackend(b, b.name)
@@ -472,17 +523,20 @@ func (g *egressGuard) v2ray(doc map[string]any) error {
 }
 
 func (e *engine) refreshEgress(until time.Time) error {
-	if e.egress == nil || e.egress.handler == nil {
+	if e.egress == nil || !e.egress.ready() {
 		return fmt.Errorf("proxy egress guard missing")
 	}
-	return e.egress.handler.Refresh(until)
+	return e.egress.refresh(until)
 }
 
 func (g *egressGuard) verify(ctx context.Context) error {
-	if g == nil || g.handler == nil || !g.handler.Ready() {
+	if !g.ready() {
 		return errors.New("proxy egress guard inactive")
 	}
 	for _, b := range g.backends {
+		if b.group {
+			continue
+		}
 		before := b.probes.Load()
 		dialer, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(b.probePort)), &proxy.Auth{User: b.user, Password: b.secret}, &net.Dialer{Timeout: time.Second})
 		if err != nil {
@@ -508,6 +562,14 @@ func (g *egressGuard) verify(ctx context.Context) error {
 		if err != nil || !strings.HasPrefix(string(raw), "HTTP/1.1 204") || b.probes.Load() <= before {
 			return errors.New("proxy guard adapter was bypassed")
 		}
+		if g.udpEnabled {
+			if err := g.verifyUDP(ctx, b); err != nil {
+				return err
+			}
+		}
+	}
+	if g.udpEnabled {
+		g.udpVerified.Store(true)
 	}
 	return nil
 }

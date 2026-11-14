@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "opensoha.dev/personal-guest-runtime-result/v1",
+  "operationId": "11111111-1111-4111-8111-111111111111",
+  "bindingId": "00000000-0000-4000-8000-000000000001",
+  "environment": {
+    "schemaVersion": "opensoha.dev/personal-environment-result/v1",
+    "leaseId": "lease-personal-1",
+    "runId": "run-personal-1",
+    "state": "active",
+    "observedAt": "2026-10-08T01:01:00Z",
+    "snapshot": {
+      "schemaVersion": "opensoha.dev/environment-snapshot/v1",
+      "leaseId": "lease-personal-1",
+      "runId": "run-personal-1",
+      "state": "active",
+      "resourceUsage": {
+        "diskBytes": 4096,
+        "memoryBytes": 1048576,
+        "cpuTimeNanos": 1000,
+        "processes": 2
+      },
+      "observedAt": "2026-10-08T01:01:00Z"
+    },
+    "output": "fixture task output",
+    "taskId": "00000000-0000-4000-8000-000000000048"
+  },
+  "hostPath": "/etc/shadow"
+}

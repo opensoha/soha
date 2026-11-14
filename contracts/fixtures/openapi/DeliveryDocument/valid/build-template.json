@@ -1,0 +1,26 @@
+{
+  "apiVersion": "delivery.soha.io/v1alpha1",
+  "kind": "BuildTemplate",
+  "metadata": {
+    "name": "node-image"
+  },
+  "spec": {
+    "buildCommands": [
+      "npm ci",
+      "npm run build"
+    ],
+    "variableSchema": {
+      "MODE": {
+        "type": "string",
+        "required": true,
+        "enum": [
+          "production",
+          "development"
+        ]
+      }
+    },
+    "defaultVariables": {
+      "MODE": "production"
+    }
+  }
+}

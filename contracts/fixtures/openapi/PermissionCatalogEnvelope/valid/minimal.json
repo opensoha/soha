@@ -1,0 +1,22 @@
+{
+  "data": {
+    "schemaVersion": "authorization.opensoha.io/v1",
+    "catalogVersion": "1.0.0",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "permissions": [
+      {
+        "key": "virtualization.vms.resize",
+        "domain": "virtualization",
+        "resource": "vms",
+        "action": "resize",
+        "displayName": "Resize virtual machines",
+        "riskLevel": "mutate",
+        "scopeKinds": ["workspace", "resource"],
+        "approvalPolicy": "never",
+        "status": "active",
+        "assignable": true,
+        "legacyAliases": ["virtualization.vms.manage"]
+      }
+    ]
+  }
+}

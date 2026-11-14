@@ -1,0 +1,86 @@
+.soha-httproute-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-httproute-rule-picker {
+  width: 240px;
+  max-width: 100%;
+}
+.soha-httproute-parent-list,
+.soha-httproute-filters {
+  display: grid;
+  gap: 16px;
+}
+.soha-httproute-parent {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.soha-httproute-parent-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+  line-height: var(--soha-line-height);
+}
+/* Inline identity metadata follows its text row rather than standalone tag alignment. */
+.soha-httproute-parent-identity > .soha-metadata-tag.soha-httproute-parent-section {
+  align-self: center;
+  box-sizing: border-box;
+  min-height: var(--soha-line-height);
+  line-height: calc(var(--soha-line-height) - 2px);
+  font-size: inherit;
+}
+.soha-httproute-rule-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.soha-httproute-rule-grid > section {
+  min-width: 0;
+}
+.soha-httproute-rule-grid h3 {
+  margin: 0 0 12px;
+  font-size: var(--soha-font-size);
+}
+.soha-httproute-matches {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.soha-httproute-match {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+}
+.soha-httproute-match > div {
+  display: flex;
+  gap: 8px;
+}
+.soha-httproute-and {
+  flex: none;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-httproute-match code,
+.soha-httproute-filters code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.soha-httproute-filters > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+@media (max-width: 1000px) {
+  .soha-httproute-rule-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

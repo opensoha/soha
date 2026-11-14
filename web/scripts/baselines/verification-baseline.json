@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "capturedAt": "2026-07-10",
+  "branch": "codex/soha-web-frontend-architecture-optimization",
+  "baseCommit": "4e41ade",
+  "commands": {
+    "formatCheck": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "tests": {
+      "status": "passed",
+      "files": 40,
+      "tests": 318,
+      "durationSeconds": 61.63
+    },
+    "build": {
+      "status": "passed",
+      "manifest": "dist/.vite/manifest.json",
+      "circularChunkWarnings": ["flow -> react-vendor -> flow"]
+    },
+    "routeBaseline": "passed",
+    "frontendBoundaries": {
+      "status": "passed",
+      "existingViolations": 774,
+      "newViolations": 0
+    },
+    "bundleBaseline": {
+      "status": "passed",
+      "initialRawKiB": 1863.8,
+      "initialGzipKiB": 573.04,
+      "initialHeavyRuntimes": ["flow"],
+      "baselineGzipDeltaKiB": 0
+    }
+  },
+  "phase1": {
+    "formatCheck": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "antdLint": "passed",
+    "tests": {
+      "status": "passed",
+      "files": 40,
+      "tests": 318,
+      "durationSeconds": 54.35
+    },
+    "coverage": {
+      "status": "passed",
+      "statements": 52.53,
+      "branches": 65.7,
+      "functions": 47.57,
+      "lines": 52.53
+    },
+    "build": {
+      "status": "passed",
+      "circularChunkWarnings": []
+    },
+    "bundle": {
+      "status": "passed",
+      "initialRawKiB": 1327.22,
+      "initialGzipKiB": 395.2,
+      "baselineGzipDeltaKiB": -177.84,
+      "initialHeavyRuntimes": [],
+      "platformOverviewIncrementalGzipKiB": 15.72
+    },
+    "browser": {
+      "status": "passed",
+      "directRoutes": ["/identity/overview", "/"],
+      "globalAssistantLazyPanel": "passed",
+      "consoleErrors": 0
+    }
+  }
+}

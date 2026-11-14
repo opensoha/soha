@@ -1,0 +1,9 @@
+{
+  "serverNames": [
+    "radius.lab.example"
+  ],
+  "caCertificates": [
+    "-----BEGIN CERTIFICATE-----\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END CERTIFICATE-----"
+  ],
+  "wifiSecurity": "wpa2-enterprise"
+}

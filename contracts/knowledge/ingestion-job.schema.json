@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/ingestion-job.schema.json",
+  "title": "Knowledge Ingestion Job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "sourceId", "targetRevision", "stage", "status", "attempt", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-ingestion-job/v1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sourceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "targetRevision": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "stage": { "enum": ["discovering", "fetching", "scanning", "parsing", "chunking", "embedding", "indexing", "verifying", "publishing"] },
+    "status": { "enum": ["queued", "running", "retry_wait", "cancelling", "cancelled", "failed", "succeeded"] },
+    "attempt": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "leaseOwner": { "type": "string", "maxLength": 160 },
+    "leaseExpiresAt": { "type": "string", "format": "date-time" },
+    "errorCode": { "type": "string", "maxLength": 128 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-conformance-run/v1","id":"conformance-1","providerRef":"codex:v1","environmentRef":"container:v1","suiteVersion":"v1","status":"passed","results":[{"name":"cancel","passed":true}],"startedAt":"2026-07-15T00:00:00Z"}

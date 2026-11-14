@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "opensoha.dev/dsh-runtime/v1",
+  "runId": "run-123",
+  "attempt": 1,
+  "fence": 0,
+  "kind": "start",
+  "ownerKey": "opaque-owner-123",
+  "sessionId": "session-123",
+  "requestId": "request-123",
+  "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contextRevision": "context-1",
+  "profile": "chat",
+  "model": "soha-chat",
+  "prompt": "Summarize this incident.",
+  "toolCatalogRevision": "catalog-1",
+  "deadline": "2026-11-09T10:00:00Z",
+  "maxOutputTokens": 1024
+}

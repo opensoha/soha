@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/application/sourceanalysis"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	"github.com/opensoha/soha/internal/platform/apperrors"

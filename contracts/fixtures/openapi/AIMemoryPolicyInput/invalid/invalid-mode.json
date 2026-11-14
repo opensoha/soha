@@ -1,0 +1,9 @@
+{
+  "id": "user-memory",
+  "name": "My memory",
+  "consentMode": "explicit",
+  "ttlDays": 30,
+  "mode": "other",
+  "readEnabled": true,
+  "writeEnabled": false
+}

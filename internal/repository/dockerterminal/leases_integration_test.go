@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	docker "github.com/opensoha/soha/internal/domain/docker"
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"

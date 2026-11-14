@@ -1,0 +1,102 @@
+@import '../styles/base.css';
+
+.soha-cluster-name-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.soha-cluster-name-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-cluster-check-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-block: 16px;
+}
+.soha-cluster-monitoring-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.soha-cluster-detail-page .soha-workload-overview-config dd {
+  overflow-wrap: anywhere;
+}
+.soha-log-collection-actions {
+  margin-top: 16px;
+}
+
+.soha-cluster-editor__body {
+  padding-inline-end: 4px;
+}
+.soha-cluster-editor__footer {
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--soha-border-color);
+}
+.soha-cluster-editor__feedback {
+  display: grid;
+  gap: 8px;
+  margin-block-end: 12px;
+}
+.soha-cluster-editor__feedback:empty {
+  display: none;
+}
+.soha-cluster-editor__section {
+  padding-block: 16px;
+}
+.soha-cluster-editor__section + .soha-cluster-editor__section {
+  border-block-start: 1px solid var(--soha-border-color);
+}
+.soha-cluster-editor__section h3 {
+  margin: 0 0 12px;
+  font-size: var(--soha-font-size);
+  font-weight: 600;
+}
+.soha-cluster-editor__section-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-block-end: 8px;
+}
+.soha-cluster-editor__section-heading h3 {
+  margin: 0;
+}
+.soha-cluster-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+}
+.soha-cluster-editor__transport {
+  display: flex;
+  gap: 16px;
+  margin-block-end: 16px;
+}
+.soha-cluster-editor__hint {
+  margin-block: -12px 16px;
+}
+@media (max-width: 640px) {
+  .soha-cluster-editor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.soha-cluster-detail-page.soha-workload-detail-page {
+  gap: 0;
+  min-width: 0;
+}
+.soha-cluster-detail-page .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-cluster-detail-page .soha-workload-overview-config dt,
+.soha-cluster-detail-page .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-cluster-node-search {
+  margin-block: 0 16px;
+}

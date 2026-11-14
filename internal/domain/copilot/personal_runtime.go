@@ -1,7 +1,7 @@
 package copilot
 
 import (
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	"time"
 )
 

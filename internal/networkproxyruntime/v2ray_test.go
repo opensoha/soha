@@ -8,7 +8,7 @@ import (
 )
 
 func TestV2RayCommandDeclaresJSONForExtensionlessFiles(t *testing.T) {
-	engine := &engine{config: Config{Engine: domain.EngineV2Ray, EngineBinary: "v2ray"}}
+	engine := newEngine(Config{Engine: domain.EngineV2Ray, EngineBinary: "v2ray"}, "")
 	for _, test := range []struct {
 		check bool
 		want  []string

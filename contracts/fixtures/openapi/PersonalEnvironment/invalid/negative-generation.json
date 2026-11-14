@@ -1,0 +1,7 @@
+{
+  "assistantId": "assistant-a",
+  "state": "unprovisioned",
+  "version": 1,
+  "dataInitialized": false,
+  "computeGeneration": -1
+}

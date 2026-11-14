@@ -1,0 +1,226 @@
+name: contracts-ci
+
+on:
+  workflow_call:
+    inputs:
+      contracts_sha:
+        description: Exact full Contracts candidate commit SHA
+        type: string
+        required: false
+  workflow_dispatch:
+    inputs:
+      consumer_mode:
+        description: 'Reviewed external compatibility baseline'
+        type: choice
+        options: [pinned]
+        default: pinned
+        required: true
+      contracts_sha:
+        description: 'Optional full Contracts candidate commit SHA (defaults to the event SHA; never a branch)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source/contracts
+    steps:
+      - name: Validate Contracts candidate SHA
+        working-directory: .
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.contracts_sha || github.sha }}
+          persist-credentials: false
+          path: source
+      - name: Verify checked out Contracts SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "$CONTRACTS_SHA"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: source/contracts/go.sum
+      - name: Consumer dependency mode tests
+        run: node --test scripts/check-consumer-dependency-mode.checks.mjs
+      - name: Consumer revision selector tests
+        run: node --test scripts/select-consumer-revision.checks.mjs
+      - run: npm ci
+        working-directory: source
+      - name: Root workspace SDK version identity tests
+        run: node --test scripts/check-version-sync.checks.mjs scripts/prepare-release-artifacts.checks.mjs
+      - name: Verify staged release workflow
+        run: node --test scripts/release-workflow.checks.mjs scripts/release-helpers.checks.mjs
+      - name: Verify consumer CI independence and candidate selection
+        run: node --test scripts/ci-consumer-workflow.checks.mjs
+      - run: npm test
+        env:
+          GOWORK: "off"
+      - name: Go vet
+        run: GOWORK=off go vet ./...
+      - name: Govulncheck
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: source/contracts
+          only-new-issues: true
+          args: --timeout=5m
+
+  consumers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer:
+          - soha
+          - soha-web
+          - soha-app
+          - soha-cli
+          - soha-agent
+          - soha-skills
+    steps:
+      - name: Validate Contracts candidate SHA
+        working-directory: .
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v7
+        with:
+          path: source
+          ref: ${{ inputs.contracts_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Select consumer revision without implicit fallback
+        id: consumer-ref
+        working-directory: source/contracts
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          CONSUMER_REVISION_MODE: ${{ inputs.consumer_mode || 'pinned' }}
+        run: node scripts/select-consumer-revision.mjs
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ (matrix.consumer == 'soha' || matrix.consumer == 'soha-web') && github.repository || format('opensoha/{0}', matrix.consumer) }}
+          path: consumers/${{ matrix.consumer }}
+          ref: ${{ steps.consumer-ref.outputs.ref }}
+          persist-credentials: false
+      - name: Record actual revision combination
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          MODE: ${{ inputs.consumer_mode || 'pinned' }}
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: |
+          test "$(git -C source rev-parse HEAD)" = "$CONTRACTS_SHA"
+          printf '### Consumer validation (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Contracts: `%s`\n' "$(git -C source rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s: `%s`\n' "$CONSUMER" "$(git -C "consumers/$CONSUMER" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: source/contracts/go.sum
+      - run: npm ci
+        id: consumer-setup
+        working-directory: source
+      - name: Verify declared consumer dependency without source substitution
+        id: declared
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          SOHA_CONSUMER_ROOT: ${{ github.workspace }}/consumers
+          OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
+        run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --declared --out ../../consumer-reports/declared.json
+        working-directory: source/contracts
+      - name: Verify candidate independently (Go uses Root; declared retains pinned external revisions)
+        id: candidate
+        if: ${{ !cancelled() && steps.consumer-setup.outcome == 'success' }}
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+          SOHA_CONSUMER_ROOT: ${{ github.workspace }}/consumers
+          OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
+        run: |
+          case "$CONSUMER" in
+            soha|soha-cli|soha-agent)
+              SOHA_CONSUMER_ROOT="$GITHUB_WORKSPACE/source" npm run check:consumers -- --internal-source --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --out ../../consumer-reports/candidate.json
+              ;;
+            *)
+              npm run check:consumers -- --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --contracts-skill-schema "$GITHUB_WORKSPACE/source/contracts/skills/skill-manifest.schema.json" --contracts-mcp-preset-schema "$GITHUB_WORKSPACE/source/contracts/presets/mcp-preset.schema.json" --contracts-agent-profile-schema "$GITHUB_WORKSPACE/source/contracts/profiles/agent-profile.schema.json" --contracts-permission-catalog "$GITHUB_WORKSPACE/source/contracts/auth/permission-catalog.json" --out ../../consumer-reports/candidate.json
+              ;;
+          esac
+        working-directory: source/contracts
+      - name: Report both dependency modes
+        if: always()
+        env:
+          DECLARED_RESULT: ${{ steps.declared.outcome }}
+          CANDIDATE_RESULT: ${{ steps.candidate.outcome }}
+        run: |
+          printf 'Declared dependency: `%s`\nCandidate source: `%s`\n' "$DECLARED_RESULT" "$CANDIDATE_RESULT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save dependency mode reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: consumer-${{ matrix.consumer }}-reports
+          path: |
+            consumer-reports/*.json
+            ${{ runner.temp }}/opensoha-consumer-native-*/**
+          if-no-files-found: warn
+
+  internal-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Contracts candidate SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.contracts_sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+            cli/go.sum
+            agent/go.sum
+      - name: Verify checked out Contracts SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$CONTRACTS_SHA"
+      - run: npm ci
+      - run: npm run generate --workspace @opensoha/contracts
+      - name: Verify five same-source consumers separately from external compatibility
+        env:
+          OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
+        run: node contracts/scripts/check-consumers.mjs --internal-source --require-all --out internal-source-report.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: internal-source-report
+          path: |
+            internal-source-report.json
+            ${{ runner.temp }}/opensoha-consumer-native-*/**
+          if-no-files-found: warn

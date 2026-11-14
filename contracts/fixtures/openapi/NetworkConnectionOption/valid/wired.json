@@ -1,0 +1,8 @@
+{
+  "siteId": "site-a",
+  "siteName": "上海总部",
+  "accessMedium": "wired",
+  "authentication": "radius_802_1x",
+  "accessProfile": "restricted",
+  "policyVersion": 7
+}

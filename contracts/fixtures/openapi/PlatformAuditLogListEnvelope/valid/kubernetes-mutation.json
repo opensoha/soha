@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "id": "audit-01",
+      "actorId": "user-01",
+      "actorName": "Platform Operator",
+      "roles": ["platform-operator"],
+      "teams": ["sre"],
+      "clusterId": "cluster-01",
+      "namespace": "production",
+      "resourceKind": "Pod",
+      "resourceName": "api-0",
+      "action": "delete",
+      "result": "success",
+      "summary": "deleted pod for rebuild",
+      "requestPath": "/api/v1/clusters/cluster-01/workloads/pods/api-0",
+      "requestMethod": "DELETE",
+      "requestId": "request-01",
+      "sourceIp": "192.0.2.10",
+      "metadata": { "source": "web" },
+      "createdAt": "2026-08-10T08:00:00Z"
+    }
+  ]
+}

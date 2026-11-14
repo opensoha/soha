@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/ingestion-stage.schema.json",
+  "title": "Knowledge Ingestion Stage Completion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "jobId", "stage", "attempt", "status", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-ingestion-stage/v1" },
+    "jobId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "stage": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "status": { "enum": ["succeeded", "retryable", "failed", "cancelled"] },
+    "artifactRefs": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+    "checkpointRef": { "type": "string", "maxLength": 512 },
+    "errorCode": { "type": "string", "maxLength": 128 },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

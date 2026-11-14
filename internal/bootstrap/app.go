@@ -69,6 +69,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
+	startPrivateExecutionMonitors(infra.lifecycleCtx, cfg.Runtime, core.executionService)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
 	startCLIAuthCleanup(infra.lifecycleCtx, core.identityService, infra.logger)
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podExecutionRepository, infra.logger, "platform.pod.execution.cleanup.failed")

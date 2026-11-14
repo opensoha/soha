@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -25,7 +25,7 @@ import (
 const (
 	hostAgentInstallTicketTTL = 15 * time.Minute
 	hostAgentEnrollmentTTL    = 15 * time.Minute
-	hostAgentReleaseVersion   = "v0.1.5"
+	hostAgentReleaseVersion   = "v0.2.0"
 	hostRuntimeIPPlaceholder  = "__SOHA_HOST_IP__"
 	hostAgentAuthPath         = "/etc/soha-agent/agent.token"
 	hostRuntimeAuthPath       = "/etc/soha-agent/runtime.token"
@@ -267,7 +267,7 @@ esac
 
 agent_version=%s
 archive="soha-agent_${agent_version}_linux_${agent_arch}.tar.gz"
-download="https://github.com/opensoha/soha-agent/releases/download/${agent_version}/${archive}"
+download="https://github.com/opensoha/soha/releases/download/agent%%2F${agent_version}/${archive}"
 work_dir="$(mktemp -d)"
 agent_token_tmp=""
 runtime_token_tmp=""

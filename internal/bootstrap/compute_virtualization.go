@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"context"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

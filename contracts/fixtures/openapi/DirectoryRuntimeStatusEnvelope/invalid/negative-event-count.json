@@ -1,0 +1,11 @@
+{
+  "data": {
+    "connectionId": "directory-feishu-primary",
+    "callbackUrl": "/api/v1/integrations/directory/directory-feishu-primary/events",
+    "callbackConfigured": true,
+    "callbackStatus": "verified",
+    "queuedEvents": -1,
+    "failedEvents": 0,
+    "needsFullReconcile": false
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-environment-export.schema.json",
+  "title": "Personal environment export receipt",
+  "description": "Final receipt after all length-prefixed TAR chunks, producer completion and owned helper cleanup. The receiver must check size, SHA-256, exact original lease/owner/scope and fresh observedAt before exposing any file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "leaseId",
+    "runId",
+    "ownerId",
+    "scopeHash",
+    "sizeBytes",
+    "sha256",
+    "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-environment-export/v1"
+    },
+    "leaseId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ownerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "scopeHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "sizeBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 268435456
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

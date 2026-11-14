@@ -1,0 +1,13 @@
+{
+  "data": {
+    "skillsRegistry": [
+      {
+        "id": "observability-summary",
+        "name": "Observability Summary",
+        "category": "observability",
+        "enabled": true,
+        "scopes": ["cluster"]
+      }
+    ]
+  }
+}

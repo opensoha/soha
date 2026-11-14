@@ -1,0 +1,7 @@
+{
+  "expectedRevision": 0,
+  "name": "Explicit direct source",
+  "format": "raw_configuration",
+  "deliveryMode": "direct_subscription",
+  "content": "proxies:\n  - name: node1\n    type: socks5\n    server: upstream.example.invalid\n    port: 1080\n"
+}

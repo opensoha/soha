@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -26,6 +26,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	providerrepo "github.com/opensoha/soha/internal/repository/identityprovider"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -149,7 +150,7 @@ func ssoTestDatabase(t *testing.T) *gorm.DB {
 	}
 	port, err := strconv.Atoi(portText)
 	ssoNoError(t, err)
-	store, err := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute}, zap.NewNop())
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute}), zap.NewNop())
 	ssoNoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

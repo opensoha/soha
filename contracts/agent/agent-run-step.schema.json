@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent-run-step.schema.json",
+  "title": "Agent Run Step",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "runId", "sequence", "attempt", "state", "contextRef", "startedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-run-step/v1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "state": { "enum": ["queued", "preparing", "running", "waiting_approval", "waiting_environment", "paused", "rejected", "completed", "failed", "cancelled", "budget_exceeded", "timed_out"] },
+    "contextRef": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "modelCallRef": { "type": "string", "maxLength": 512 },
+    "toolCallRefs": { "type": "array", "maxItems": 128, "items": { "type": "string", "maxLength": 512 } },
+    "observationRefs": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+    "checkpointRef": { "type": "string", "maxLength": 512 },
+    "stopReason": { "enum": ["answer_accepted", "max_steps", "max_tokens", "max_tool_calls", "max_cost", "deadline", "no_progress", "user_cancelled", "policy_denied", "provider_stop", "environment_failure"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

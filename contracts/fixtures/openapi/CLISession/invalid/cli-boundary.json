@@ -1,0 +1,12 @@
+{
+  "id": "01a16496-e79a-7db0-a610-b0f33412ce3f",
+  "deviceName": "isolated test terminal",
+  "clientVersion": "test",
+  "createdAt": "2026-10-23T09:00:00Z",
+  "lastSeenAt": "2026-10-23T09:00:00Z",
+  "expiresAt": "2026-10-23T09:00:00Z",
+  "absoluteExpiresAt": "2026-10-23T09:00:00Z",
+  "status": "active",
+  "current": false,
+  "unexpectedSecret": "must-be-rejected"
+}

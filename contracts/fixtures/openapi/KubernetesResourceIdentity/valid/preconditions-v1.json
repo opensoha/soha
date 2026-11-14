@@ -1,0 +1,8 @@
+{
+  "apiVersion": "v1",
+  "kind": "ConfigMap",
+  "name": "example",
+  "namespace": "test",
+  "uid": "reviewed-resource-uid",
+  "resourceVersion": "opaque/version+1"
+}

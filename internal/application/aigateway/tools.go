@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	"github.com/opensoha/soha/internal/application/sourceanalysis"

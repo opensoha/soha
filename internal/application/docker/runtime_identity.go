@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 	domain "github.com/opensoha/soha/internal/domain/docker"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

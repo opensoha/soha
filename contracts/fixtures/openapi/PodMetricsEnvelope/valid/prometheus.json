@@ -1,0 +1,25 @@
+{
+  "data": {
+    "podName": "api-7c8d9f",
+    "namespace": "production",
+    "configured": true,
+    "source": "prometheus",
+    "generatedAt": "2026-08-09T14:00:00Z",
+    "rangeMinutes": 60,
+    "stepSeconds": 60,
+    "series": [
+      {
+        "key": "cpu",
+        "label": "CPU Usage",
+        "unit": "cores",
+        "latest": 0.25,
+        "points": [
+          {
+            "timestamp": "2026-08-09T14:00:00Z",
+            "value": 0.25
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,142 @@
+name: agent-ci
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: ${{ github.workspace }}/go.work
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+            cli/go.sum
+            agent/go.sum
+      - name: Record Root source identity
+        id: source
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
+      - name: Test contracts dependency resolution
+        run: python3 agent/deploy/test_resolve_contracts.py
+      - name: Resolve same-Root contracts source
+        id: contracts
+        run: python3 agent/deploy/resolve_contracts.py --mode source
+      - name: Validate same-Root dsh schema
+        env:
+          CONTRACTS_DIR: ${{ steps.contracts.outputs.dir }}
+        run: |
+          test "$CONTRACTS_DIR" = "$GITHUB_WORKSPACE/contracts"
+          test -s "$CONTRACTS_DIR/agent/dsh-runtime.schema.json"
+      - name: Check same-source Go module state
+        run: |
+          python3 scripts/source-workspace.py check-go
+          python3 scripts/source-workspace.py tidy
+      - name: Verify Go module checksums
+        working-directory: agent
+        run: go mod verify
+      - name: Test Go and Hermes tools
+        working-directory: agent
+        run: |
+          go test ./...
+          python3 deploy/hermes-tools/test_plugin.py
+      - name: Race test
+        working-directory: agent
+        run: go test -race ./...
+      - name: Vet
+        working-directory: agent
+        run: go vet ./...
+      - name: Govulncheck
+        working-directory: agent
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: agent
+          only-new-issues: true
+          args: --timeout=5m
+      - name: Build Agent binary
+        working-directory: agent
+        run: CGO_ENABLED=0 go build -o /tmp/soha-agent ./cmd/agent
+      - uses: azure/setup-kubectl@v5
+        with:
+          version: v1.34.1
+      - name: Validate Outpost Kubernetes artifact
+        working-directory: agent
+        run: kubectl kustomize deploy/kubernetes/outpost | go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -kubernetes-version 1.34.1 -strict -summary -
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: agent/runtimes/dsh/package-lock.json
+      - name: Install and test isolated Node24 dsh runtime
+        env:
+          SOHA_DSH_SCHEMA_PATH: ${{ github.workspace }}/contracts/agent/dsh-runtime.schema.json
+        run: |
+          npm --prefix agent/runtimes/dsh --workspaces=false ci --ignore-scripts
+          npm --prefix agent/runtimes/dsh --workspaces=false test
+          git diff --exit-code -- agent/runtimes/dsh/package-lock.json
+      - name: Build all six Agent runtime images from complete Root source
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          SOURCE_DATE: ${{ steps.source.outputs.date }}
+        run: |
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" -f agent/deploy/Dockerfile -t ghcr.io/opensoha/soha-agent:test .
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" -f agent/deploy/Dockerfile.hermes-agent-runner -t ghcr.io/opensoha/soha-hermes-agent:test .
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" --target volume-reader-runtime -f agent/deploy/Dockerfile -t ghcr.io/opensoha/soha-docker-volume-reader:test .
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" --target buildpacks-runtime -f agent/deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:test .
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" --target buildpacks-daemonless-runtime -f agent/deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:daemonless-test .
+          docker build --build-arg COMMIT="$SOURCE_COMMIT" --build-arg DATE="$SOURCE_DATE" -f agent/deploy/Dockerfile.dsh-runtime -t ghcr.io/opensoha/soha-dsh:test .
+      - name: Smoke test dsh runtime startup
+        run: |
+          set -euo pipefail
+          token_dir="$(mktemp -d)"
+          container=''
+          cleanup() {
+            status=$?
+            trap - EXIT INT TERM
+            if [[ -n "$container" ]]; then docker rm -f "$container" >/dev/null || status=1; fi
+            rm -f -- "$token_dir/token"
+            rmdir -- "$token_dir" || status=1
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          openssl rand -hex 32 > "$token_dir/token"
+          chmod 0444 "$token_dir/token"
+          container="$(docker run -d --network none --read-only \
+            --tmpfs /tmp --tmpfs /var/lib/soha-dsh:uid=1000,gid=1000,mode=0700 \
+            --mount "type=bind,src=$token_dir/token,dst=/run/dsh-token,readonly" \
+            --env SOHA_DSH_SERVICE_TOKEN_FILE=/run/dsh-token \
+            --env SOHA_DSH_GATEWAY_URL=http://127.0.0.1:1/model/v1 \
+            --env SOHA_DSH_CORE_CALLBACK_URL=http://127.0.0.1:1/tools \
+            --health-interval 2s ghcr.io/opensoha/soha-dsh:test)"
+          for _ in {1..30}; do
+            case "$(docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' "$container")" in
+              'running healthy') exit 0 ;;
+              'running starting') sleep 2 ;;
+              *) break ;;
+            esac
+          done
+          echo '::error::dsh runtime did not become healthy'
+          docker logs "$container"
+          exit 1

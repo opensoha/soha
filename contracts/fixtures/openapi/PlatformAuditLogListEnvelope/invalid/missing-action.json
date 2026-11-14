@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "audit-01",
+      "actorId": "user-01",
+      "actorName": "Platform Operator",
+      "roles": [],
+      "teams": [],
+      "result": "success",
+      "summary": "deleted pod for rebuild",
+      "createdAt": "2026-08-10T08:00:00Z"
+    }
+  ]
+}

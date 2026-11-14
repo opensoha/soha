@@ -35,6 +35,8 @@ type eapCredentialRow struct {
 	CreatedAt                 time.Time
 	ActivatedAt               *time.Time
 	RevokedAt                 *time.Time
+	ActivationProfileID       string
+	ActivationProfileRevision string
 }
 
 func (eapCredentialRow) TableName() string { return "network_eap_credentials" }
@@ -131,6 +133,17 @@ func (r *Repository) ActivateEAPCertificate(ctx context.Context, parent domain.C
 		if err != nil {
 			return err
 		}
+		if request.RequestID != "" && row.RequestID != request.RequestID {
+			return staleEAPCertificate()
+		}
+		if request.ProfileID != "" {
+			if err := validateEAPActivationProfile(tx, parent, request); err != nil {
+				return err
+			}
+			if row.Status == "active" && row.ActivationProfileID != "" && (row.ActivationProfileID != request.ProfileID || row.ActivationProfileRevision != request.ProfileRevision) {
+				return staleEAPCertificate()
+			}
+		}
 		if row.Status == "pending" && !row.CreatedAt.Add(domain.EAPCertificatePendingTTL).After(now) {
 			return staleEAPCertificate()
 		}
@@ -145,7 +158,7 @@ func (r *Repository) ActivateEAPCertificate(ctx context.Context, parent domain.C
 			if err := tx.Model(&eapCredentialRow{}).Where("tenant_id='default' AND workspace_id='default' AND runtime_id=? AND status='active'", parent.RuntimeID).Updates(map[string]any{"status": "revoked", "revoked_at": now}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&eapCredentialRow{}).Where("id=?", row.ID).Updates(map[string]any{"status": "active", "activated_at": now}).Error; err != nil {
+			if err := tx.Model(&eapCredentialRow{}).Where("id=?", row.ID).Updates(map[string]any{"status": "active", "activated_at": now, "activation_profile_id": request.ProfileID, "activation_profile_revision": request.ProfileRevision}).Error; err != nil {
 				return err
 			}
 		}

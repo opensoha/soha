@@ -1,0 +1,418 @@
+/* Shared visual contract for Platform tables, resource detail shells, and metadata surfaces. */
+
+/* K8s list chrome owns the requested 48px rows / 32px controls. This scoped
+   exception also normalizes legacy size="small" controls; row actions, modal
+   forms and multiline inputs retain their own sizes. Rows may wrap on mobile. */
+[data-workbench='platform'] .soha-management-query-field .ant-form-item-label {
+  flex: 0 0 auto;
+  padding-inline-end: 8px;
+  text-align: left;
+  height: 32px;
+  line-height: 32px;
+}
+
+[data-workbench='platform'] .soha-management-query-card.ant-card {
+  border-width: 0;
+}
+
+[data-workbench='platform'] .soha-management-query-card .ant-card-body {
+  padding: 8px 17px;
+}
+
+[data-workbench='platform']
+  .soha-admin-table-shell.is-panel
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar) {
+  min-height: 48px;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+[data-workbench='platform'] .soha-admin-table-header-main:empty {
+  display: none;
+}
+
+[data-workbench='platform'] .soha-admin-table-header-extra {
+  margin-inline-start: auto;
+}
+
+[data-workbench='platform']
+  :is(.soha-management-query-card, .soha-admin-table-header, .soha-admin-table-toolbar)
+  :is(.ant-btn, .ant-input-affix-wrapper, .ant-select) {
+  height: 32px;
+  min-height: 32px;
+}
+
+[data-workbench='platform']
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar)
+  .ant-btn-icon-only {
+  width: 32px;
+  min-width: 32px;
+}
+
+.soha-platform-table .ant-table-thead > tr > th,
+.soha-platform-table .ant-table-tbody > tr > td {
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.soha-platform-table .ant-table-thead > tr > th:first-child,
+.soha-platform-table .ant-table-tbody > tr > td:first-child {
+  padding-left: 10px;
+}
+
+.soha-platform-table .ant-table-thead > tr > th:last-child,
+.soha-platform-table .ant-table-tbody > tr > td:last-child {
+  padding-right: 10px;
+}
+
+.soha-platform-table .ant-table-thead > tr > th:first-child .ant-table-column-title,
+.soha-platform-table .ant-table-tbody > tr > td:first-child .ant-typography {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.soha-platform-table .ant-typography-link,
+.soha-platform-table a.ant-typography-link,
+.soha-platform-table .ant-btn-link:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous),
+.soha-platform-table .ant-btn-text:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous) {
+  color: var(--soha-table-link-color);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.soha-platform-table
+  .ant-btn-link:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(.ant-btn-color-dangerous),
+.soha-platform-table
+  .ant-btn-text:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(.ant-btn-color-dangerous) {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.soha-platform-table .ant-typography-link:hover,
+.soha-platform-table a.ant-typography-link:hover,
+.soha-platform-table
+  .ant-btn-link:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):hover,
+.soha-platform-table
+  .ant-btn-text:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(
+    .ant-btn-color-dangerous
+  ):hover {
+  color: var(--soha-table-link-hover-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.soha-platform-table .ant-table-cell-fix-start,
+.soha-platform-table .ant-table-cell-fix-left,
+.soha-platform-table .ant-table-cell-fix-left-first,
+.soha-platform-table .ant-table-cell-fix-left-last,
+.soha-platform-table .ant-table-cell-fix-end,
+.soha-platform-table .ant-table-cell-fix-right,
+.soha-platform-table .ant-table-cell-fix-right-first,
+.soha-platform-table .ant-table-cell-fix-right-last,
+.soha-platform-table th.ant-table-cell-fix-start,
+.soha-platform-table th.ant-table-cell-fix-left,
+.soha-platform-table th.ant-table-cell-fix-left-first,
+.soha-platform-table th.ant-table-cell-fix-left-last,
+.soha-platform-table th.ant-table-cell-fix-end,
+.soha-platform-table th.ant-table-cell-fix-right,
+.soha-platform-table th.ant-table-cell-fix-right-first,
+.soha-platform-table th.ant-table-cell-fix-right-last {
+  border-left: 1px solid var(--soha-border-color) !important;
+  box-shadow: none !important;
+  background: var(--soha-bg-surface) !important;
+  background-clip: padding-box;
+}
+
+.soha-platform-table .ant-table-cell-fix-start,
+.soha-platform-table .ant-table-cell-fix-left,
+.soha-platform-table .ant-table-cell-fix-left-first,
+.soha-platform-table .ant-table-cell-fix-left-last,
+.soha-platform-table th.ant-table-cell-fix-start,
+.soha-platform-table th.ant-table-cell-fix-left,
+.soha-platform-table th.ant-table-cell-fix-left-first,
+.soha-platform-table th.ant-table-cell-fix-left-last {
+  border-left: none !important;
+  border-right: 1px solid var(--soha-border-color) !important;
+}
+
+.soha-platform-table .ant-table-cell-fix-end-shadow::before,
+.soha-platform-table .ant-table-cell-fix-end-shadow-show::before,
+.soha-platform-table .ant-table-cell-fix-start-shadow::before,
+.soha-platform-table .ant-table-cell-fix-start-shadow-show::before {
+  box-shadow: none !important;
+}
+
+.soha-platform-table .ant-table-cell-fix-end-shadow::after,
+.soha-platform-table .ant-table-cell-fix-end-shadow-show::after,
+.soha-platform-table .ant-table-cell-fix-start-shadow::after,
+.soha-platform-table .ant-table-cell-fix-start-shadow-show::after {
+  box-shadow: none !important;
+}
+
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-start,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected
+  > td.ant-table-cell-fix-left-first,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left-last,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected
+  > td.ant-table-cell-fix-right-first,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected
+  > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-bg) !important;
+}
+
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-start,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-first,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-last,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-first,
+.soha-platform-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-hover-bg) !important;
+}
+
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-start,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface-muted) !important;
+}
+
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-first,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-last,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface) !important;
+}
+
+.soha-platform-table .ant-table-cell-fix-start::after,
+.soha-platform-table .ant-table-cell-fix-left::after,
+.soha-platform-table .ant-table-cell-fix-left-first::after,
+.soha-platform-table .ant-table-cell-fix-left-last::after,
+.soha-platform-table .ant-table-cell-fix-end::after,
+.soha-platform-table .ant-table-cell-fix-right::after,
+.soha-platform-table .ant-table-cell-fix-right-first::after,
+.soha-platform-table .ant-table-cell-fix-right-last::after {
+  box-shadow: none !important;
+}
+
+.soha-platform-table .ant-table-content table {
+  table-layout: auto;
+}
+
+.soha-platform-table .ant-table-tbody > tr > td .ant-btn,
+.soha-platform-table .ant-table-tbody > tr > td .ant-typography,
+.soha-platform-table .ant-table-tbody > tr > td .soha-resource-cell-copy,
+.soha-platform-table .ant-table-tbody > tr > td .soha-resource-cell-copy .ant-typography {
+  white-space: nowrap;
+}
+
+.soha-platform-table .ant-table-cell.soha-table-cell-wrap,
+.soha-platform-table .ant-table-cell.soha-table-cell-wrap .ant-typography {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.soha-platform-table .ant-table-cell.soha-table-cell-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-workload-detail-page {
+  gap: 12px;
+}
+
+.soha-workload-metadata-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.soha-workload-metadata-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+}
+
+.soha-workload-metadata-title {
+  color: var(--soha-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.soha-workload-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  column-gap: 24px;
+  row-gap: 2px;
+  min-width: 0;
+}
+
+.soha-workload-kv-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--soha-border-color);
+  background: transparent;
+  cursor: default;
+}
+
+.soha-workload-kv-key,
+.soha-workload-kv-value {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.soha-workload-kv-key {
+  flex: 0 1 auto;
+  max-width: 50%;
+  overflow: hidden;
+  color: var(--soha-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  text-overflow: ellipsis;
+}
+
+.soha-workload-kv-value {
+  flex: 1 1 0;
+  overflow: hidden;
+  color: var(--soha-text-primary);
+  text-overflow: ellipsis;
+}
+
+.soha-workload-kv-tooltip {
+  max-width: min(640px, 78vw);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (max-width: 768px) {
+  .soha-workload-kv-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.soha-rbac-subject-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 420px;
+}
+
+.soha-kubernetes-resource-list {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Antd virtual rows stretch block cells to the tallest control. Center their
+   contents without changing the block layout used for text ellipsis. */
+.soha-kubernetes-resource-table .ant-table-tbody-virtual .ant-table-cell {
+  align-content: center;
+}
+
+/* K8s resource counts share the approved Pods supporting-text hierarchy. */
+.soha-kubernetes-resource-count {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-kubernetes-action-menu-label {
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.soha-kubernetes-action-menu-reason {
+  overflow-wrap: anywhere;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  white-space: normal;
+}
+
+.soha-deployment-selection {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .soha-kubernetes-actions-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.soha-kubernetes-resource-list .soha-admin-table-header-main {
+  flex-wrap: wrap;
+}
+
+.soha-kubernetes-action-menu {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.soha-kubernetes-actions-column {
+  --soha-table-actions-column-width: 64px;
+}

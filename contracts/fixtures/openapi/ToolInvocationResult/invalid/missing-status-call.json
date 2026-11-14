@@ -1,0 +1,13 @@
+{
+  "toolName": "docker.projects.deploy.trigger",
+  "capabilityVersion": "1",
+  "riskLevel": "execute",
+  "requiresApproval": false,
+  "result": "success",
+  "task": {
+    "kind": "docker.operation",
+    "id": "operation-1",
+    "status": "queued",
+    "terminal": false
+  }
+}

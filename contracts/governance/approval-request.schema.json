@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/governance/approval-request.schema.json",
+  "title": "OpenSoha Approval Request",
+  "description": "Public approval request, trace, decision, stage, and timeline event contract for high-risk Gateway and platform operations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "status",
+    "strategy",
+    "actorType",
+    "actorId",
+    "toolName",
+    "riskLevel",
+    "requiresApproval",
+    "summary",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "strategy": { "type": "string", "minLength": 1 },
+    "policyId": { "type": "string" },
+    "approvalPolicyRef": { "type": "string" },
+    "actorType": { "type": "string", "minLength": 1 },
+    "actorId": { "type": "string", "minLength": 1 },
+    "actorName": { "type": "string" },
+    "actorRoles": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "actorTeams": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "aiClientId": { "type": "string" },
+    "aiClientName": { "type": "string" },
+    "skillId": { "type": "string" },
+    "toolName": { "type": "string", "minLength": 1 },
+    "riskLevel": { "$ref": "#/$defs/RiskLevel" },
+    "requiresApproval": { "type": "boolean" },
+    "resourceScope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "toolInput": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "relatedIds": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "approvalTrace": { "$ref": "#/$defs/ApprovalTrace" },
+    "timelineEvents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ApprovalTimelineEvent" }
+    },
+    "output": {},
+    "summary": { "type": "string", "minLength": 1 },
+    "requestId": { "type": "string" },
+    "sourceIp": { "type": "string" },
+    "decidedBy": { "type": "string" },
+    "decidedByName": { "type": "string" },
+    "decidedAt": { "type": "string", "format": "date-time" },
+    "decisionComment": { "type": "string" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "RiskLevel": {
+      "type": "string",
+      "enum": ["read", "analyze", "mutate", "execute", "high"]
+    },
+    "ApprovalTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvalMode": { "type": "string" },
+        "currentStageIndex": { "type": "integer" },
+        "currentStageName": { "type": "string" },
+        "stageCount": { "type": "integer" },
+        "approvedCount": { "type": "integer" },
+        "requiredApprovals": { "type": "integer" },
+        "pendingRequirements": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "satisfiedRequirements": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "roleApprovedCounts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "teamApprovedCounts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "candidateUserIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "candidateRoles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "candidateTeams": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "onCallCandidateUserIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "workflowRunId": { "type": "string" },
+        "executionTaskId": { "type": "string" },
+        "releaseBundleId": { "type": "string" },
+        "decisions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApprovalDecisionTrace" }
+        },
+        "stageHistory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApprovalStageTrace" }
+        }
+      }
+    },
+    "ApprovalDecisionTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "roles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "teams": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "result": { "type": "string" },
+        "comment": { "type": "string" },
+        "stageIndex": { "type": "integer" },
+        "stageName": { "type": "string" },
+        "decidedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ApprovalStageTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stageIndex": { "type": "integer" },
+        "stageName": { "type": "string" },
+        "result": { "type": "string" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ApprovalTimelineEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "action", "result", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "result": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "actorType": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "stageIndex": { "type": "integer" },
+        "stageName": { "type": "string" },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

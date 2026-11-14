@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "id": "cloud.managed-connector",
+      "name": "Managed Connector",
+      "kind": "managed-connector",
+      "boundary": "event-sink",
+      "contractRefs": ["connectors/connector-event-envelope.schema.json"]
+    }
+  ]
+}

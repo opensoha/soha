@@ -1,0 +1,20 @@
+.DS_Store
+
+# Build outputs
+/soha
+/bin/
+/dist/
+/graphify-out/
+*.test
+*.out
+
+# Local configuration
+.env
+.env.*
+go.work
+go.work.sum
+
+# Editor files
+.idea/
+.vscode/
+*.swp

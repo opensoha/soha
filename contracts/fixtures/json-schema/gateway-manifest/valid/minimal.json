@@ -1,0 +1,48 @@
+{
+  "name": "soha-ai-gateway",
+  "version": "0.1.0",
+  "generatedAt": "2026-06-09T12:00:00Z",
+  "principal": {
+    "userId": "u-1",
+    "userName": "admin",
+    "email": "admin@example.com",
+    "roles": ["platform-admin"],
+    "teams": [],
+    "projects": [],
+    "tags": [],
+    "permissionKeys": ["ai.gateway.view"]
+  },
+  "caller": {
+    "identityMode": "user",
+    "source": "cli"
+  },
+  "permissionKeys": ["ai.gateway.view"],
+  "tools": [
+    {
+      "name": "k8s.pods.list",
+      "title": "List pods",
+      "description": "List Kubernetes pods in a namespace.",
+      "domain": "kubernetes",
+      "action": "read",
+      "riskLevel": "read",
+      "permissionKeys": ["platform.pods.view"],
+      "requiresApproval": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "namespace": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "resources": [],
+  "prompts": [],
+  "skills": [],
+  "summary": {
+    "toolCount": 1,
+    "resourceCount": 0,
+    "promptCount": 0,
+    "skillCount": 0,
+    "deniedCount": 0
+  }
+}

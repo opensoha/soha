@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "rootUid": "root",
+  "sources": [
+    {
+      "apiVersion": "widgets.test/v1",
+      "resource": "widgets",
+      "kind": "Widget",
+      "namespace": "team"
+    }
+  ],
+  "rules": []
+}

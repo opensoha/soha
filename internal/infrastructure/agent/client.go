@@ -18,8 +18,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"

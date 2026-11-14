@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent/fleet-target.schema.json",
+  "title": "Agent Fleet Target",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-fleet-target/v1" },
+    "environments": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "maxLength": 64 } },
+    "platforms": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 32 } },
+    "architectures": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 32 } },
+    "labels": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": "string", "maxLength": 128 } }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "softwareId": "soha-desktop",
+  "name": "Soha Desktop",
+  "publisher": "OpenSoha",
+  "version": "0.2.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "url": "http://127.0.0.1/private.dmg"
+}

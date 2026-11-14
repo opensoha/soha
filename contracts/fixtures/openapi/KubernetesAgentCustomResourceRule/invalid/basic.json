@@ -1,0 +1,9 @@
+{
+  "apiGroup": "*",
+  "resources": [
+    "*"
+  ],
+  "verbs": [
+    "*"
+  ]
+}

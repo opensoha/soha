@@ -1,0 +1,182 @@
+{
+  "id": "feishu",
+  "name": "Feishu Connector",
+  "version": "0.1.0",
+  "status": "experimental",
+  "description": "Webhook-driven Feishu connector skeleton for OpenSoha events and bot actions.",
+  "runtime": {
+    "language": "typescript",
+    "node": ">=20.11",
+    "entrypoint": "src/connectors/feishu/server.ts"
+  },
+  "lifecycle": ["created", "configured", "started", "stopped"],
+  "config": [
+    {
+      "name": "appId",
+      "type": "string",
+      "required": true,
+      "env": "SOHA_FEISHU_APP_ID",
+      "description": "Feishu custom app ID."
+    },
+    {
+      "name": "appSecret",
+      "type": "secret",
+      "required": true,
+      "env": "SOHA_FEISHU_APP_SECRET",
+      "description": "Feishu custom app secret used to fetch tenant_access_token."
+    },
+    {
+      "name": "verificationToken",
+      "type": "secret",
+      "required": true,
+      "env": "SOHA_FEISHU_VERIFICATION_TOKEN",
+      "description": "Verification token configured in Feishu event subscriptions."
+    },
+    {
+      "name": "encryptKey",
+      "type": "secret",
+      "required": false,
+      "env": "SOHA_FEISHU_ENCRYPT_KEY",
+      "description": "Encrypt Key used for X-Lark-Signature verification and encrypted event payloads."
+    },
+    {
+      "name": "baseUrl",
+      "type": "string",
+      "required": false,
+      "env": "SOHA_FEISHU_BASE_URL",
+      "default": "https://open.feishu.cn/open-apis",
+      "description": "Feishu Open Platform API base URL."
+    },
+    {
+      "name": "autoReplyEnabled",
+      "type": "boolean",
+      "required": false,
+      "env": "SOHA_FEISHU_AUTO_REPLY_ENABLED",
+      "default": false,
+      "description": "Enable local auto-reply for message event smoke tests."
+    },
+    {
+      "name": "retryMax",
+      "type": "number",
+      "required": false,
+      "env": "SOHA_FEISHU_RETRY_MAX",
+      "default": 2,
+      "description": "Maximum outbound action retries for retryable Feishu API failures."
+    },
+    {
+      "name": "actionRateLimitPerMinute",
+      "type": "number",
+      "required": false,
+      "env": "SOHA_FEISHU_ACTION_RATE_LIMIT_PER_MINUTE",
+      "default": 120,
+      "description": "Fixed-window outbound action limit per connector process."
+    },
+    {
+      "name": "reliabilityDir",
+      "type": "string",
+      "required": false,
+      "env": "SOHA_FEISHU_RELIABILITY_DIR",
+      "description": "Optional writable directory for file-backed idempotency and dead-letter persistence."
+    },
+    {
+      "name": "retryQueueMax",
+      "type": "number",
+      "required": false,
+      "env": "SOHA_FEISHU_RETRY_QUEUE_MAX",
+      "default": 1000,
+      "description": "Maximum file-backed retry queue entries retained when reliabilityDir is enabled."
+    }
+  ],
+  "secrets": [
+    {
+      "env": "SOHA_FEISHU_APP_SECRET",
+      "required": true,
+      "purpose": "Tenant access token exchange."
+    },
+    {
+      "env": "SOHA_FEISHU_VERIFICATION_TOKEN",
+      "required": true,
+      "purpose": "Webhook source verification."
+    },
+    {
+      "env": "SOHA_FEISHU_ENCRYPT_KEY",
+      "required": false,
+      "purpose": "Webhook signature verification and event decryption."
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "webhook.verify",
+      "direction": "inbound",
+      "description": "Verifies URL challenge, Verification Token, and X-Lark-Signature."
+    },
+    {
+      "name": "event.im.message.receive_v1",
+      "direction": "inbound",
+      "description": "Normalizes Feishu message events into OpenSoha connector events."
+    },
+    {
+      "name": "action.message.send_text",
+      "direction": "outbound",
+      "description": "Sends a text message through the Feishu bot identity."
+    },
+    {
+      "name": "runtime.http",
+      "direction": "bidirectional",
+      "description": "Exposes health, manifest, webhook, action, and dead-letter HTTP endpoints."
+    },
+    {
+      "name": "runtime.reliability.memory",
+      "direction": "bidirectional",
+      "description": "Provides in-memory webhook idempotency, action rate limiting, retry, and dead-letter state."
+    },
+    {
+      "name": "runtime.reliability.file",
+      "direction": "bidirectional",
+      "description": "Provides optional file-backed retry queue, idempotency, and dead-letter persistence when SOHA_FEISHU_RELIABILITY_DIR is set."
+    },
+    {
+      "name": "runtime.metrics",
+      "direction": "bidirectional",
+      "description": "Exposes webhook, duplicate, action, retry, and dead-letter counters through the HTTP runtime."
+    }
+  ],
+  "permissions": [
+    {
+      "key": "im:message",
+      "required": false,
+      "description": "Read and send IM messages when the app needs full message access."
+    },
+    {
+      "key": "im:message:send_as_bot",
+      "required": true,
+      "description": "Send messages as the Feishu bot for connector actions."
+    }
+  ],
+  "events": ["im.message.receive_v1"],
+  "actions": [
+    {
+      "name": "feishu.message.send_text",
+      "description": "Send a text message to a chat, user, union, email, or open ID recipient.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["receiveIdType", "receiveId", "text"],
+        "properties": {
+          "receiveIdType": {
+            "type": "string",
+            "enum": ["chat_id", "open_id", "user_id", "union_id", "email"]
+          },
+          "receiveId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

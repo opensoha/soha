@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"strconv"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

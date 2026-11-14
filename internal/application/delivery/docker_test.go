@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"

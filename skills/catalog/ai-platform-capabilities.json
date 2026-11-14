@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/ai-platform-capability-catalog.schema.json",
+  "schemaVersion": "opensoha.dev/ai-platform-capability-catalog/v1",
+  "version": "0.1.0",
+  "source": {
+    "repository": "github.com/opensoha/soha",
+    "path": "docs/tasks/24-ai-production-rag-evaluation-memory-evolution/plan.md#7-api-草案",
+    "syncStrategy": "Promote baseline entries to stable-runtime only after the protected route, permission check, public contract, and integration test are released."
+  },
+  "capabilities": [
+    { "key": "knowledge.connectors.list", "title": "List Knowledge Connectors", "method": "GET", "path": "/api/v1/ai/knowledge/connectors", "riskLevel": "read", "permissionKeys": ["ai.knowledge.connectors.view"], "requiredScopes": [], "requiresApproval": false, "status": "baseline-approved" },
+    { "key": "knowledge.connectors.create", "title": "Create Knowledge Connector", "method": "POST", "path": "/api/v1/ai/knowledge/connectors", "riskLevel": "mutate", "permissionKeys": ["ai.knowledge.connectors.create"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "knowledge.connectors.validate", "title": "Validate Knowledge Connector", "method": "POST", "path": "/api/v1/ai/knowledge/connectors/{id}/validate", "riskLevel": "execute", "permissionKeys": ["ai.knowledge.connectors.validate"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "knowledge.sync.start", "title": "Start Knowledge Sync", "method": "POST", "path": "/api/v1/ai/knowledge-bases/{id}/sync-jobs", "riskLevel": "execute", "permissionKeys": ["ai.knowledge.ingestion.operate"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "knowledge.sync.status", "title": "Inspect Knowledge Sync", "method": "GET", "path": "/api/v1/ai/knowledge/sync-jobs/{id}", "riskLevel": "read", "permissionKeys": ["ai.knowledge.connectors.view"], "requiredScopes": [], "requiresApproval": false, "status": "baseline-approved" },
+    { "key": "knowledge.sync.cancel", "title": "Cancel Knowledge Sync", "method": "POST", "path": "/api/v1/ai/knowledge/sync-jobs/{id}/cancel", "riskLevel": "execute", "permissionKeys": ["ai.knowledge.ingestion.operate"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "knowledge.sync.retry", "title": "Retry Knowledge Sync", "method": "POST", "path": "/api/v1/ai/knowledge/sync-jobs/{id}/retry", "riskLevel": "execute", "permissionKeys": ["ai.knowledge.ingestion.operate"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "knowledge.rebuild", "title": "Rebuild Knowledge Index", "method": "POST", "path": "/api/v1/ai/knowledge-bases/{id}/rebuild", "riskLevel": "execute", "permissionKeys": ["ai.knowledge.rebuild"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "evaluation.run.execute", "title": "Execute Evaluation Run", "method": "POST", "path": "/api/v1/ai/evaluations/runs/{id}/execute", "riskLevel": "execute", "permissionKeys": ["ai.evaluations.execute"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "evaluation.replay.create", "title": "Create Evaluation Replay", "method": "POST", "path": "/api/v1/ai/evaluations/replays", "riskLevel": "execute", "permissionKeys": ["ai.evaluations.execute"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "evaluation.gate.evaluate", "title": "Evaluate Release Gate", "method": "POST", "path": "/api/v1/ai/evaluations/gates/evaluate", "riskLevel": "high", "permissionKeys": ["ai.evaluations.gates.evaluate"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "memory.inspect", "title": "Inspect Memory Records", "method": "GET", "path": "/api/v1/ai/memory", "riskLevel": "read", "permissionKeys": ["ai.memory.view"], "requiredScopes": [], "requiresApproval": false, "status": "baseline-approved" },
+    { "key": "memory.delete", "title": "Delete Memory Record", "method": "DELETE", "path": "/api/v1/ai/memory/{id}", "riskLevel": "high", "permissionKeys": ["ai.memory.update"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" },
+    { "key": "agent.providers.rollout", "title": "Operate Agent Provider Rollout", "method": "POST", "path": "/api/v1/ai/agent-providers/rollouts/{id}/rollback", "riskLevel": "high", "permissionKeys": ["ai.agent-fleet.update"], "requiredScopes": [], "requiresApproval": true, "status": "baseline-approved" }
+  ]
+}

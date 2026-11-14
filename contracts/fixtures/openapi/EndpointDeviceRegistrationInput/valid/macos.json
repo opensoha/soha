@@ -1,0 +1,28 @@
+{
+  "name": "Shanchui's Mac",
+  "hostname": "shanchui-mac.local",
+  "platform": "darwin",
+  "deviceType": "laptop",
+  "reportedFacts": {
+    "osName": "macOS",
+    "osVersion": "15.6.1",
+    "osBuild": "24G90",
+    "architecture": "arm64",
+    "manufacturer": "Apple",
+    "model": "MacBookAir15,2",
+    "serialNumber": "C02TEST00001",
+    "agentVersion": "0.2.0",
+    "collectedAt": "2026-09-03T09:00:00Z",
+    "networkInterfaces": [
+      {
+        "name": "en0",
+        "displayName": "Wi-Fi",
+        "kind": "physical",
+        "status": "up",
+        "macAddress": "00:11:22:33:44:55",
+        "ipv4Addresses": ["192.168.1.10"],
+        "ipv6Addresses": ["fe80::1"]
+      }
+    ]
+  }
+}

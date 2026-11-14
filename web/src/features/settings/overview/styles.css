@@ -1,0 +1,130 @@
+.soha-settings-overview-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.soha-settings-overview-panels .ant-card-extra a,
+.soha-settings-activity-row > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.soha-settings-account-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-settings-account-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--soha-border-color);
+  border-inline-start: 3px solid var(--soha-success);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-settings-account-stat.is-warning {
+  border-inline-start-color: var(--soha-warning);
+}
+
+.soha-settings-account-stat strong {
+  font-size: 28px;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-settings-overview-panels small {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.soha-settings-account-membership {
+  margin-top: 8px;
+}
+
+.soha-settings-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.soha-settings-account-row + .soha-settings-account-row {
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-settings-account-row > div,
+.soha-settings-activity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.soha-settings-account-row > strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-settings-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 0;
+}
+
+.soha-settings-activity-row + .soha-settings-activity-row {
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-settings-activity-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: var(--soha-radius-control);
+  color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+  font-size: 18px;
+}
+
+.soha-settings-activity-copy {
+  flex: 1;
+}
+
+.soha-settings-activity-copy strong {
+  margin-inline-start: 12px;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-settings-activity-row.is-warning .soha-settings-activity-copy small {
+  color: var(--soha-warning);
+}
+
+@media (max-width: 1000px) {
+  .soha-settings-overview-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .soha-settings-activity-row {
+    flex-wrap: wrap;
+  }
+
+  .soha-settings-activity-row > a {
+    margin-inline-start: 54px;
+  }
+}

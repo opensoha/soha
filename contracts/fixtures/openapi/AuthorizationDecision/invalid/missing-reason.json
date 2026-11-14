@@ -1,0 +1,7 @@
+{
+  "status": "deny",
+  "permissionKey": "virtualization.vms.delete",
+  "action": "delete",
+  "resource": { "type": "virtualization.vm", "id": "vm-01" },
+  "policyVersion": "authorization.opensoha.io/v1"
+}

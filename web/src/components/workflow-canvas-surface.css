@@ -1,0 +1,14 @@
+.soha-workflow-canvas-surface {
+  position: relative;
+  height: var(--soha-workflow-canvas-height, 420px);
+  overflow: hidden;
+  border: 1px solid var(--soha-data-panel-border);
+  border-radius: var(--soha-radius-lg);
+  background:
+    var(--soha-workflow-canvas-glow),
+    var(--soha-workflow-canvas-bg);
+}
+
+.soha-workflow-canvas-surface .react-flow__background {
+  color: var(--soha-workflow-canvas-grid);
+}

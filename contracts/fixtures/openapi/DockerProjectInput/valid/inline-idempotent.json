@@ -1,0 +1,7 @@
+{
+  "hostId": "host",
+  "name": "api",
+  "sourceKind": "compose",
+  "idempotencyKey": "project-create-key",
+  "composeContent": "services:\n  api:\n    image: nginx:stable\n"
+}

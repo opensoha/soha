@@ -1,0 +1,95 @@
+name: web-ci
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout same-source workspace
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install source workspace
+        run: npm ci
+      - name: Audit source workspace dependencies
+        run: npm run check:dependencies
+      - name: Generate same-source SDK and verify npm link
+        run: |
+          npm run generate --workspace @opensoha/contracts
+          python3 scripts/source-workspace.py check-npm
+      - name: Release workflow guard
+        working-directory: web
+        run: npm run check:release-workflow
+      - name: Enhanced workflow trust guard
+        working-directory: web
+        run: npm run check:quality-workflows
+      - name: Install deterministic browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Verify dependency security and browser compatibility
+        run: node --test web/scripts/check-dependency-compat.mjs
+      - name: Verify selector parser and bounded cache compatibility
+        run: node --test web/scripts/check-selector-compat.mjs
+      - name: E2E typecheck
+        working-directory: web
+        run: npm run typecheck:e2e
+      - name: Route architecture guard
+        working-directory: web
+        run: npm run check:routes
+      - name: Resolve actual or reviewed migration Web baseline
+        id: web-base
+        env:
+          SOURCE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/ci-impact.py web-base
+      - name: Frontend boundary guard
+        working-directory: web
+        env:
+          FRONTEND_BOUNDARY_BASE_REF: ${{ steps.web-base.outputs.sha }}
+        run: npm run check:frontend-boundaries
+      - name: Shared table import guard
+        working-directory: web
+        env:
+          TABLE_BOUNDARY_BASE_REF: ${{ steps.web-base.outputs.sha }}
+        run: node scripts/check-table-boundaries.mjs
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+      - name: Format check
+        working-directory: web
+        run: npm run format:check
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+      - name: Test
+        working-directory: web
+        run: npm test
+      - name: Coverage
+        working-directory: web
+        run: npm run test:coverage
+      - name: Build
+        working-directory: web
+        run: npm run build
+      - name: Bundle budget
+        working-directory: web
+        run: npm run check:bundle-budget
+      - name: Browser regression including migrated Kubernetes baseline
+        working-directory: web
+        run: |
+          npm run check:auth-artifacts
+          npm run test:e2e
+      - name: Upload bundle manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: soha-web-vite-manifest
+          path: web/dist/.vite/manifest.json

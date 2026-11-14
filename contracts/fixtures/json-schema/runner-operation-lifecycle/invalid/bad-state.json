@@ -1,0 +1,7 @@
+{
+  "operationId": "op-delivery-123",
+  "operationKind": "delivery",
+  "runnerId": "runner-us-west-1",
+  "state": "done",
+  "occurredAt": "2026-06-12T00:00:00.000Z"
+}

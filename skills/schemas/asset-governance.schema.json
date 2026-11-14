@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/asset-governance.schema.json",
+  "title": "OpenSoha Skills Asset Governance",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "version",
+    "releaseSigning",
+    "permissionReview",
+    "installAudit"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": "opensoha.dev/skills-asset-governance/v1"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+    },
+    "releaseSigning": {
+      "type": "object",
+      "required": [
+        "provenanceRequired",
+        "attestationProvider",
+        "signedArtifacts",
+        "verification"
+      ],
+      "properties": {
+        "provenanceRequired": {
+          "type": "boolean"
+        },
+        "attestationProvider": {
+          "type": "string",
+          "enum": [
+            "github-actions-attest-build-provenance"
+          ]
+        },
+        "signedArtifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "releaseTarball",
+              "checksum",
+              "manifest",
+              "validationReport",
+              "githubBuildProvenance"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "verification": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissionReview": {
+      "type": "object",
+      "required": [
+        "reviewedAt",
+        "reviewer",
+        "assets"
+      ],
+      "properties": {
+        "reviewedAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "id",
+              "version",
+              "riskLevel",
+              "approvalRequired",
+              "gatewayCapabilityRefs",
+              "platformCapabilityRefs",
+              "requiredScopes",
+              "guardrails",
+              "reviewStatus"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "skill",
+                  "mcpPreset",
+                  "agentProfile"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+              },
+              "riskLevel": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "analyze",
+                  "mutate",
+                  "execute",
+                  "high"
+                ]
+              },
+              "approvalRequired": {
+                "type": "boolean"
+              },
+              "gatewayCapabilityRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "httpCapabilityRefs": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "platformCapabilityRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "requiredScopes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "guardrails": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "reviewStatus": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "blocked"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "installAudit": {
+      "type": "object",
+      "required": [
+        "eventSchema",
+        "requiredEvents",
+        "retentionDays",
+        "fields"
+      ],
+      "properties": {
+        "eventSchema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredEvents": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "verify",
+              "install",
+              "upgrade",
+              "rollback",
+              "activate"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

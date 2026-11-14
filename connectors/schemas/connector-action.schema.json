@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/connectors/connector-action.schema.json",
+  "title": "OpenSoha credential-bearing connector action v1",
+  "description": "Only over authenticated HTTPS or loopback transport, after an action explicitly declares credentialProtocol and aliases. Core pins and authorizes references. Credentials are invocation-local; never persist them in logs, queues, events or results. Actions without credentials keep the unversioned envelope. Runtime additionally rejects a canonical UTF-8 JSON envelope exceeding 1 MiB before dispatch. Cancellation signals and response rejection are cooperative, not proof that an external side effect stopped; action implementations must honor the signal and reconcile effects. All string material including structured keys is confidential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "action",
+    "input",
+    "credentials"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/connector-action/v1"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "input": {
+      "type": "object"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expiresAt",
+        "entries"
+      ],
+      "properties": {
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Reject expired or more than two minutes in the future; signal cancellation and reject late responses when reached or caller disconnects. The connector must cooperate; this does not prove external effects stopped."
+        },
+        "entries": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Credential"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "value"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^soha://secrets/[A-Za-z0-9._-]+/versions/[1-9][0-9]*$"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "description": "Runtime additionally enforces a 64 KiB UTF-8 byte limit; structured material is bounded to depth 16 and 64 distinct nonempty strings including keys and the opaque value for redaction."
+        }
+      }
+    },
+    "ActionDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "inputSchema"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "credentialProtocol": {
+          "const": "opensoha.dev/connector-action/v1",
+          "description": "Opt-in support for per-call delivery, not a requirement for every action call. Without credentials the existing envelope remains valid; actions requiring authentication must reject missing credentials themselves."
+        },
+        "credentialAliases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          }
+        }
+      },
+      "dependentRequired": {
+        "credentialProtocol": [
+          "credentialAliases"
+        ],
+        "credentialAliases": [
+          "credentialProtocol"
+        ]
+      },
+      "if": {
+        "required": [
+          "credentialProtocol"
+        ]
+      },
+      "then": {
+        "properties": {
+          "name": {
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  }
+}

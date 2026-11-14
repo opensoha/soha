@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/connector-checkpoint.schema.json",
+  "title": "Knowledge Connector Checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceId", "connectorVersion", "cursor", "configHash", "committedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-connector-checkpoint/v1" },
+    "sourceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "connectorVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "cursor": { "type": "object", "maxProperties": 32, "additionalProperties": true },
+    "configHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "committedAt": { "type": "string", "format": "date-time" }
+  }
+}

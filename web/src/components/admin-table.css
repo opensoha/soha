@@ -1,0 +1,574 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-admin-table-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-admin-table-host {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-admin-table-outside-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.soha-admin-table-shell.is-panel {
+  gap: 0;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.soha-admin-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-admin-table-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--soha-text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.soha-admin-table-header-extra {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table-toolbar {
+  padding: 8px 16px;
+}
+
+/* Only list chrome is normalized: row actions and dialog forms keep their sizes. */
+:is(
+    [data-workbench='settings'],
+    [data-workbench='compute'],
+    [data-workbench='monitoring'],
+    [data-workbench='delivery']
+  )
+  .soha-admin-table-shell.is-panel
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar) {
+  min-height: 48px;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+:is(
+    [data-workbench='settings'],
+    [data-workbench='compute'],
+    [data-workbench='monitoring'],
+    [data-workbench='delivery']
+  )
+  .soha-admin-table-header-main:empty {
+  display: none;
+}
+
+:is(
+    [data-workbench='settings'],
+    [data-workbench='compute'],
+    [data-workbench='monitoring'],
+    [data-workbench='delivery']
+  )
+  .soha-admin-table-header-extra {
+  margin-inline-start: auto;
+}
+
+:is(
+    [data-workbench='settings'],
+    [data-workbench='compute'],
+    [data-workbench='monitoring'],
+    [data-workbench='delivery']
+  )
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar)
+  :is(.ant-btn, .ant-input-affix-wrapper, .ant-select, .ant-picker, .ant-segmented) {
+  height: 32px;
+  min-height: 32px;
+}
+
+:is(
+    [data-workbench='settings'],
+    [data-workbench='compute'],
+    [data-workbench='monitoring'],
+    [data-workbench='delivery']
+  )
+  :is(.soha-admin-table-header, .soha-admin-table-toolbar)
+  .ant-btn-icon-only {
+  width: 32px;
+  min-width: 32px;
+}
+
+.soha-admin-table-toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 360px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-toolbar-extra {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.soha-admin-table-column-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 168px;
+  max-width: 168px;
+}
+
+.soha-admin-table-column-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.soha-admin-table-column-options.ant-checkbox-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.soha-admin-table-column-options .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+}
+
+.soha-admin-table-column-setting-button.is-icon-only.ant-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding-inline: 0;
+}
+
+.soha-admin-table-selection-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.soha-admin-table-selection-label {
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.soha-admin-table,
+.soha-admin-table .ant-table-wrapper,
+.soha-admin-table .ant-table-container,
+.soha-admin-table .ant-table-body {
+  width: 100%;
+}
+
+.soha-admin-table .ant-table-wrapper,
+.soha-admin-table .ant-table,
+.soha-admin-table .ant-table-container,
+.soha-admin-table .ant-table-content,
+.soha-admin-table .ant-table-body {
+  background: transparent;
+}
+
+.soha-admin-table .ant-table {
+  min-width: 100%;
+}
+
+.soha-admin-table .ant-table-content {
+  overflow-x: auto;
+}
+
+.soha-admin-table .ant-table-thead > tr > th {
+  font-weight: 600;
+}
+
+.soha-admin-table .ant-table-tbody-virtual-holder:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-admin-table .ant-table-tbody-virtual .ant-table-row-expand-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.soha-admin-table
+  .ant-table-tbody-virtual
+  .ant-table-row-expand-icon-cell
+  .ant-table-row-expand-icon {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* AdminTable owns sorter spacing; Antd has no semantic title/icon layout hook. */
+.soha-admin-table .ant-table-column-sorters {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.soha-admin-table .ant-table-column-title {
+  flex: initial;
+}
+
+.soha-admin-table .ant-table-column-sort .ant-table-column-title {
+  color: var(--soha-primary);
+}
+
+.soha-table-sort-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--soha-primary);
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-container,
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-content,
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-body {
+  border-radius: inherit;
+}
+
+.soha-admin-table-shell.is-panel
+  .soha-admin-table
+  .ant-table-thead
+  > tr:first-child
+  > th:first-child {
+  border-start-start-radius: var(--soha-radius-panel, 8px) !important;
+}
+
+.soha-admin-table-shell.is-panel
+  .soha-admin-table
+  .ant-table-thead
+  > tr:first-child
+  > th:last-child {
+  border-start-end-radius: var(--soha-radius-panel, 8px) !important;
+}
+
+.soha-admin-table-shell.is-panel
+  .soha-admin-table
+  .ant-table-thead
+  > tr:first-child
+  > th:first-child
+  .ant-table-filter-column,
+.soha-admin-table-shell.is-panel
+  .soha-admin-table
+  .ant-table-thead
+  > tr:first-child
+  > th:last-child
+  .ant-table-filter-column {
+  border-radius: inherit;
+}
+
+.soha-admin-table .ant-table-thead > tr > th,
+.soha-admin-table .ant-table-tbody > tr > td,
+.soha-admin-table .ant-table-tbody-virtual .ant-table-cell {
+  padding-left: 12px;
+  padding-right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.soha-admin-table .ant-table-tbody > tr > td,
+.soha-admin-table .ant-table-placeholder .ant-table-cell {
+  color: var(--soha-text-primary);
+  background: transparent;
+  border-bottom-color: var(--soha-border-color) !important;
+}
+
+.soha-admin-table .ant-empty-description {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-admin-table .ant-table-tbody a:not(.ant-btn),
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link,
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-link:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous),
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-text:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous) {
+  color: var(--soha-table-link-color) !important;
+  font-weight: 600;
+}
+
+.soha-admin-table .ant-table-tbody a:not(.ant-btn) .ant-typography {
+  color: inherit;
+}
+
+.soha-admin-table .ant-table-tbody a:not(.ant-btn):hover,
+.soha-admin-table .ant-table-tbody a:not(.ant-btn):focus-visible,
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link:hover,
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link:focus-visible,
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-link:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):hover,
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-link:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(
+    .ant-btn-color-dangerous
+  ):focus-visible,
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-text:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):hover,
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-text:not(.ant-btn-icon-only):not(.ant-btn-dangerous):not(
+    .ant-btn-color-dangerous
+  ):focus-visible {
+  color: var(--soha-table-link-hover-color) !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Row icon actions keep button feedback instead of the text-link treatment above. */
+.soha-admin-table
+  .ant-table-tbody
+  .ant-btn-icon-only:is(.ant-btn-text, .ant-btn-link):not(.ant-btn-dangerous):not(
+    .ant-btn-color-dangerous
+  ):not(:disabled):not(.ant-btn-loading):is(:hover, :focus-visible) {
+  background: var(--soha-primary-light-default);
+  color: var(--soha-table-link-hover-color);
+  border-radius: var(--soha-radius-control);
+  text-decoration: none;
+}
+
+.soha-admin-table .ant-table-cell-fix-end,
+.soha-admin-table .ant-table-cell-fix-start,
+.soha-admin-table .ant-table-cell-fix-left,
+.soha-admin-table .ant-table-cell-fix-left-first,
+.soha-admin-table .ant-table-cell-fix-left-last,
+.soha-admin-table .ant-table-cell-fix-right,
+.soha-admin-table .ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-cell-fix-right-last,
+.soha-admin-table th.ant-table-cell-fix-end,
+.soha-admin-table th.ant-table-cell-fix-start,
+.soha-admin-table th.ant-table-cell-fix-left,
+.soha-admin-table th.ant-table-cell-fix-left-first,
+.soha-admin-table th.ant-table-cell-fix-left-last,
+.soha-admin-table th.ant-table-cell-fix-right,
+.soha-admin-table th.ant-table-cell-fix-right-first,
+.soha-admin-table th.ant-table-cell-fix-right-last {
+  box-shadow: none !important;
+  background: var(--soha-bg-surface) !important;
+  background-clip: padding-box;
+}
+
+.soha-admin-table .ant-table-cell-fix-end,
+.soha-admin-table .ant-table-cell-fix-right,
+.soha-admin-table .ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-cell-fix-right-last,
+.soha-admin-table th.ant-table-cell-fix-end,
+.soha-admin-table th.ant-table-cell-fix-right,
+.soha-admin-table th.ant-table-cell-fix-right-first,
+.soha-admin-table th.ant-table-cell-fix-right-last {
+  border-left: 1px solid var(--soha-border-color) !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-start,
+.soha-admin-table .ant-table-cell-fix-left,
+.soha-admin-table .ant-table-cell-fix-left-first,
+.soha-admin-table .ant-table-cell-fix-left-last,
+.soha-admin-table th.ant-table-cell-fix-start,
+.soha-admin-table th.ant-table-cell-fix-left,
+.soha-admin-table th.ant-table-cell-fix-left-first,
+.soha-admin-table th.ant-table-cell-fix-left-last {
+  border-right: 1px solid var(--soha-border-color) !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end-shadow::before,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::before {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end-shadow::after,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::after {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-start,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left-last,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-bg) !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-start,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
+.soha-admin-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-first,
+.soha-admin-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-last,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-admin-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-first,
+.soha-admin-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-hover-bg) !important;
+}
+
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-start,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface-muted) !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-first,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-last,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface) !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end::after,
+.soha-admin-table .ant-table-cell-fix-start::after,
+.soha-admin-table .ant-table-cell-fix-left::after,
+.soha-admin-table .ant-table-cell-fix-left-first::after,
+.soha-admin-table .ant-table-cell-fix-left-last::after,
+.soha-admin-table .ant-table-cell-fix-right::after,
+.soha-admin-table .ant-table-cell-fix-right-first::after,
+.soha-admin-table .ant-table-cell-fix-right-last::after {
+  box-shadow: none !important;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-wrapper {
+  border: none;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-container {
+  border: none;
+  border-radius: var(--soha-radius-panel, 8px);
+  overflow: hidden;
+}
+
+.soha-admin-table .ant-table-cell-fix-right-first .ant-space {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Intrinsic icon width is used by AdminTable even with fixed table layout. */
+.soha-admin-table
+  .soha-table-actions-column
+  :is(.soha-row-action-icons.ant-space, .ant-space:has(.ant-btn-icon-only)) {
+  width: max-content;
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 768px) {
+  .soha-admin-table-header,
+  .soha-admin-table-shell.is-panel .soha-admin-table-toolbar {
+    padding: 8px 12px;
+  }
+
+  .soha-admin-table-toolbar-main,
+  .soha-admin-table-toolbar-extra {
+    width: 100%;
+  }
+
+  .soha-admin-table-toolbar-extra {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+.soha-table-resizable-header:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
+  position: relative;
+}
+
+.soha-table-column-resizer {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.soha-table-column-resizer::after {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-end: 3px;
+  width: 2px;
+  content: '';
+  background: transparent;
+}
+
+.soha-table-column-resizer:hover::after,
+.soha-table-column-resizer:focus-visible::after {
+  background: var(--soha-primary);
+}
+
+.soha-table-column-resizer:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-table-resizable-title {
+  padding-inline-end: 8px;
+}
+
+.soha-table-column-layout-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.soha-table-column-layout-width {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+}

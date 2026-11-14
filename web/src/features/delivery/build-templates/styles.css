@@ -1,0 +1,143 @@
+@import '../styles/shared.css';
+
+.soha-template-editor-card {
+  margin-top: 16px;
+}
+
+.soha-build-template-list__item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soha-build-template-list__item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soha-build-template-list__item-main strong,
+.soha-build-template-list__item-main .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-build-template-list__item-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.soha-build-template-list__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-build-template-list__item-meta .ant-tag {
+  margin-inline-end: 0;
+}
+
+.soha-build-template-form,
+.soha-build-template-tabs {
+  height: 100%;
+  min-height: 0;
+}
+
+.soha-build-template-tabs > .ant-tabs-content-holder {
+  min-height: 0;
+  overflow: auto;
+}
+
+.soha-build-template-form .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.soha-build-template-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-build-template-form-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.soha-build-template-switch-field .ant-form-item-control-input-content {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.soha-build-template-editor-pane,
+.soha-build-template-variable-list,
+.soha-build-template-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-build-template-code-area textarea,
+.soha-build-template-code-area.ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+.soha-build-template-variable-list__toolbar,
+.soha-build-template-variable-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-build-template-variable-list__toolbar .ant-typography {
+  min-width: 0;
+}
+
+.soha-build-template-variable-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-build-template-variable-item__head strong {
+  color: var(--soha-text-primary);
+}
+
+.soha-build-template-json-preview {
+  min-height: 240px;
+  max-height: calc(100vh - 460px);
+  margin: 0;
+  overflow: auto;
+}
+
+.soha-template-usage-impact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-template-usage-impact__line {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.soha-template-usage-impact__runtime {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.soha-template-usage-impact__inline-action {
+  padding-inline: 4px;
+}

@@ -1,0 +1,124 @@
+/* This editor owns the StepForm layout; shared StepForm defaults remain unchanged. */
+.soha-application-service-editor.soha-application-service-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  gap: 0;
+  overflow: hidden;
+}
+
+.soha-application-service-editor .soha-application-service-editor__form,
+.soha-application-service-editor .soha-step-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.soha-application-service-editor .soha-application-service-editor__form[hidden] {
+  display: none;
+}
+
+.soha-application-service-editor .soha-step-form__steps {
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px;
+  background: var(--soha-bg-surface);
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-application-service-editor .soha-step-form__content {
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  max-width: 880px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.soha-application-service-editor .soha-step-form__actions {
+  box-sizing: border-box;
+  flex: none;
+  min-height: 56px;
+  max-width: none;
+  margin: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface);
+}
+
+.soha-application-service-editor .soha-step-form__actions > :first-child {
+  margin-inline-end: auto;
+}
+
+.soha-application-service-editor .soha-application-service-editor__receipt {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.soha-application-service-editor .soha-application-service-editor-section {
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+
+.soha-application-service-editor .soha-application-service-form-grid,
+.soha-application-service-editor .soha-application-service-container-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.soha-application-service-editor .soha-service-repository-draft__body {
+  padding-bottom: 12px;
+}
+.soha-application-service-editor
+  .soha-service-repository-draft__body
+  > .soha-application-service-form-grid
+  > .ant-form-item:nth-last-child(-n + 2) {
+  margin-bottom: 8px;
+}
+
+.soha-application-service-editor .soha-application-service-editor__advanced {
+  background: var(--soha-fill-weak);
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-application-service-editor .soha-application-service-editor-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .soha-application-service-editor .soha-application-service-form-grid,
+  .soha-application-service-editor .soha-application-service-container-editor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-application-service-editor .soha-application-service-editor-section__head,
+  .soha-application-service-editor .soha-application-service-containers-editor__head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .soha-application-service-editor .soha-step-form__actions {
+    flex-wrap: wrap;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+}

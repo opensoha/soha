@@ -1,0 +1,8 @@
+{
+  "url": "https://api.example.com/",
+  "serviceId": "service-1",
+  "probeLocation": "developer_network",
+  "reachability": "satisfied",
+  "authentication": "unknown",
+  "networkRequirement": "unknown"
+}

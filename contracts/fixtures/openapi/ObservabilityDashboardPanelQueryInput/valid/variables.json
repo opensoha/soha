@@ -1,0 +1,8 @@
+{
+  "timeFrom": "2026-08-08T07:00:00Z",
+  "timeTo": "2026-08-08T08:00:00Z",
+  "stepSeconds": 60,
+  "variables": {
+    "namespace": "production"
+  }
+}

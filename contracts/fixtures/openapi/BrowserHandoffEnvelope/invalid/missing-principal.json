@@ -1,0 +1,12 @@
+{
+  "data": {
+    "application": {
+      "id": "app-1",
+      "name": "Soha Console"
+    },
+    "accountName": "OpenSoha",
+    "email": "must-not-be-exposed@example.com",
+    "status": "pending",
+    "expiresAt": "2026-08-31T00:01:00Z"
+  }
+}

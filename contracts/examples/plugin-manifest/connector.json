@@ -1,0 +1,76 @@
+{
+  "id": "opensoha.feishu",
+  "name": "Feishu Connector",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "connector",
+  "description": "Feishu connector capability bundle.",
+  "homepage": "https://opensoha.dev/connectors/feishu",
+  "compatibility": {
+    "soha": ">=0.1.0",
+    "contracts": ">=0.1.0 <1.0.0"
+  },
+  "assets": {
+    "connectors": ["connectors/feishu/connector.manifest.json"]
+  },
+  "capabilities": {
+    "tools": ["feishu.message.send_text"]
+  },
+  "permissions": {
+    "required": ["ai.gateway.view", "ai.gateway.invoke"],
+    "domain": ["connector"]
+  },
+  "secrets": {
+    "required": [
+      {
+        "name": "FEISHU_APP_SECRET",
+        "description": "Feishu app secret used by the connector runtime.",
+        "required": true,
+        "secretRef": "connectors/feishu/app-secret"
+      }
+    ]
+  },
+  "runtime": {
+    "mode": "external-http",
+    "healthPath": "/healthz",
+    "manifestPath": "/manifest",
+    "actionPath": "/actions/{action}"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "title": "Runtime endpoint",
+        "x-control": "endpoint"
+      },
+      "secretRef": {
+        "type": "string",
+        "title": "Feishu app secret",
+        "x-control": "secret-ref"
+      }
+    },
+    "required": ["endpoint", "secretRef"]
+  },
+  "extensionPoints": {
+    "ai": {
+      "toolProviders": [
+        {
+          "id": "feishu-message-tools",
+          "label": "Feishu Message Tools",
+          "actionRef": "feishu.message.send_text",
+          "permissionKeys": ["ai.gateway.invoke"]
+        }
+      ]
+    },
+    "alerts": {
+      "notificationChannels": [
+        {
+          "id": "feishu-webhook",
+          "label": "Feishu Webhook",
+          "actionRef": "feishu.message.send_text"
+        }
+      ]
+    }
+  }
+}

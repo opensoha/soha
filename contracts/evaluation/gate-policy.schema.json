@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/evaluation/gate-policy.schema.json",
+  "title": "Evaluation Gate Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "version", "minimumScores", "enabled"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/evaluation-gate-policy/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "minimumScores": { "type": "object", "minProperties": 1, "maxProperties": 128, "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+    "maximumRegression": { "type": "object", "maxProperties": 128, "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+    "maximumCost": { "type": "number", "minimum": 0 },
+    "maximumLatencyMs": { "type": "integer", "minimum": 0 },
+    "enabled": { "type": "boolean" }
+  }
+}

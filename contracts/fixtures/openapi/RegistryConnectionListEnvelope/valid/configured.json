@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "registry-harbor-production",
+      "name": "Harbor Production",
+      "registryType": "harbor",
+      "endpoint": "https://harbor.example.com",
+      "namespace": "delivery",
+      "username": "robot$delivery",
+      "insecure": false,
+      "metadata": {
+        "secretConfigured": true,
+        "secretStorage": "encrypted"
+      },
+      "createdAt": "2026-08-08T08:00:00Z",
+      "updatedAt": "2026-08-08T08:00:00Z"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 

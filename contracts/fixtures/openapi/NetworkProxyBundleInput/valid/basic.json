@@ -1,0 +1,24 @@
+{
+  "requestId": "r1",
+  "expectedRevision": 0,
+  "sourceId": "s1",
+  "sourceRevision": 1,
+  "orgRevision": 1,
+  "deliveryMode": "mapped_nodes",
+  "scope": {
+    "userIds": [
+      "u1"
+    ],
+    "deviceIds": [
+      "d1"
+    ],
+    "nodeIds": [
+      "n1"
+    ]
+  },
+  "endpoints": [
+    {
+      "endpointId": "internal1"
+    }
+  ]
+}
