@@ -35,7 +35,8 @@ var (
 	semverPattern          = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$`)
 	sha256Pattern          = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	checksumPattern        = regexp.MustCompile(`^([a-f0-9]{64})\s+\*?([^\r\n]+)$`)
-	githubSkillSourceRegex = regexp.MustCompile(`^github:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)@v?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)$`)
+	githubSkillSourceRegex = regexp.MustCompile(`^github:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)@(skills/)?v?([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)$`)
+	rootSkillsTagRE        = regexp.MustCompile(`^skills/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	githubLatestSourceRE   = regexp.MustCompile(`^github:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:@latest)?$`)
 	compatibilityRangeRE   = regexp.MustCompile(`^>=([0-9]+\.[0-9]+\.[0-9]+)\s+<([0-9]+\.[0-9]+\.[0-9]+)$`)
 )
@@ -210,16 +211,23 @@ func resolveSkillSource(ctx context.Context, source string, rt Runtime) (string,
 
 func parseSkillReleaseSource(source string) (skillReleaseSpec, error) {
 	if match := githubSkillSourceRegex.FindStringSubmatch(source); match != nil {
-		owner, repository, releaseVersion := match[1], match[2], match[3]
+		owner, repository, releaseVersion := match[1], match[2], match[4]
+		if match[3] != "" && (owner != "opensoha" || repository != "soha") {
+			return skillReleaseSpec{}, fmt.Errorf("skills/v tags belong to github:opensoha/soha")
+		}
 		if owner == "." || owner == ".." || repository == "." || repository == ".." {
 			return skillReleaseSpec{}, fmt.Errorf("invalid GitHub skills source %q", source)
 		}
+		tag := "v" + releaseVersion
+		if owner == "opensoha" && repository == "soha" {
+			tag = "skills/" + tag
+		}
 		artifactName := fmt.Sprintf("soha-skills-%s.tar.gz", releaseVersion)
 		artifactURL := fmt.Sprintf(
-			"https://github.com/%s/%s/releases/download/v%s/%s",
+			"https://github.com/%s/%s/releases/download/%s/%s",
 			owner,
 			repository,
-			releaseVersion,
+			url.PathEscape(tag),
 			artifactName,
 		)
 		spec, err := releaseSpecForArtifact(artifactURL, true)
@@ -262,48 +270,27 @@ func parseSkillReleaseSource(source string) (skillReleaseSpec, error) {
 }
 
 func resolveLatestGitHubSkillRelease(ctx context.Context, rt Runtime, owner, repository string) (skillReleaseSpec, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repository)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return skillReleaseSpec{}, fmt.Errorf("create latest GitHub skills release request: %w", err)
-	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", userAgent)
-	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	response, err := (APIClient{Client: rt.HTTPClient, Timeout: rt.HTTPTimeout}).httpClient().Do(request)
-	if err != nil {
-		return skillReleaseSpec{}, fmt.Errorf("resolve latest GitHub skills release for %s/%s: %w", owner, repository, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.Request != nil && response.Request.URL.Scheme == "http" && !isLoopbackHost(response.Request.URL.Hostname()) {
-		return skillReleaseSpec{}, fmt.Errorf("resolve latest GitHub skills release for %s/%s: redirected to insecure HTTP", owner, repository)
-	}
-	if response.StatusCode == http.StatusNotFound {
-		return skillReleaseSpec{}, fmt.Errorf("no published skills release found for github:%s/%s", owner, repository)
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return skillReleaseSpec{}, fmt.Errorf("resolve latest GitHub skills release for %s/%s: unexpected HTTP status %s", owner, repository, response.Status)
-	}
-	if response.ContentLength > maxSkillsMetadataBytes {
-		return skillReleaseSpec{}, fmt.Errorf("latest GitHub skills release metadata exceeds the %d-byte limit", maxSkillsMetadataBytes)
-	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, maxSkillsMetadataBytes+1))
-	if err != nil {
-		return skillReleaseSpec{}, fmt.Errorf("read latest GitHub skills release metadata: %w", err)
-	}
-	if int64(len(raw)) > maxSkillsMetadataBytes {
-		return skillReleaseSpec{}, fmt.Errorf("latest GitHub skills release metadata exceeds the %d-byte limit", maxSkillsMetadataBytes)
-	}
-
 	var release githubRelease
-	if err := json.Unmarshal(raw, &release); err != nil {
-		return skillReleaseSpec{}, fmt.Errorf("decode latest GitHub skills release metadata: %w", err)
+	if owner == "opensoha" && repository == "soha" {
+		var err error
+		release, err = latestRootSkillsRelease(ctx, rt)
+		if err != nil {
+			return skillReleaseSpec{}, err
+		}
+	} else {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repository)
+		raw, err := readGitHubSkillsMetadata(ctx, rt, apiURL, owner, repository)
+		if err != nil {
+			return skillReleaseSpec{}, err
+		}
+		if err := json.Unmarshal(raw, &release); err != nil {
+			return skillReleaseSpec{}, fmt.Errorf("decode latest GitHub skills release metadata: %w", err)
+		}
 	}
 	if release.Draft || release.Prerelease {
 		return skillReleaseSpec{}, fmt.Errorf("latest GitHub skills release for %s/%s is not a stable published release", owner, repository)
 	}
-	releaseVersion := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
+	releaseVersion := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(release.TagName), "skills/"), "v")
 	if !semverPattern.MatchString(releaseVersion) {
 		return skillReleaseSpec{}, fmt.Errorf("latest GitHub skills release tag %q is not a supported semantic version", release.TagName)
 	}
@@ -342,6 +329,76 @@ func resolveLatestGitHubSkillRelease(ctx context.Context, rt Runtime, owner, rep
 		ExpectedVersion: releaseVersion,
 		Remote:          true,
 	}, nil
+}
+
+// Root latest can refer to Core; select the highest stable skills version across pages.
+func latestRootSkillsRelease(ctx context.Context, rt Runtime) (githubRelease, error) {
+	var selected githubRelease
+	var selectedVersion [3]int
+	for page := 1; page <= 100; page++ {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/opensoha/soha/releases?per_page=100&page=%d", page)
+		raw, err := readGitHubSkillsMetadata(ctx, rt, apiURL, "opensoha", "soha")
+		if err != nil {
+			return githubRelease{}, err
+		}
+		var releases []githubRelease
+		if err := json.Unmarshal(raw, &releases); err != nil {
+			return githubRelease{}, fmt.Errorf("decode GitHub skills release page: %w", err)
+		}
+		for _, release := range releases {
+			if release.Draft || release.Prerelease || !rootSkillsTagRE.MatchString(release.TagName) {
+				continue
+			}
+			version, ok := parseSemverTriple(strings.TrimPrefix(release.TagName, "skills/"))
+			if ok && (selected.TagName == "" || compareSemverTriple(version, selectedVersion) > 0) {
+				selected, selectedVersion = release, version
+			}
+		}
+		if len(releases) < 100 {
+			if selected.TagName == "" {
+				return githubRelease{}, fmt.Errorf("no published stable skills/v release found for github:opensoha/soha")
+			}
+			return selected, nil
+		}
+	}
+	return githubRelease{}, fmt.Errorf("GitHub skills release listing exceeds the 100-page limit")
+}
+
+func readGitHubSkillsMetadata(ctx context.Context, rt Runtime, apiURL, owner, repository string) ([]byte, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create latest GitHub skills release request: %w", err)
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	response, err := (APIClient{Client: rt.HTTPClient, Timeout: rt.HTTPTimeout}).httpClient().Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("resolve latest GitHub skills release for %s/%s: %w", owner, repository, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.Request != nil && response.Request.URL.Scheme == "http" && !isLoopbackHost(response.Request.URL.Hostname()) {
+		return nil, fmt.Errorf("resolve latest GitHub skills release for %s/%s: redirected to insecure HTTP", owner, repository)
+	}
+	if response.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("no published skills release found for github:%s/%s", owner, repository)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("resolve latest GitHub skills release for %s/%s: unexpected HTTP status %s", owner, repository, response.Status)
+	}
+	if response.ContentLength > maxSkillsMetadataBytes {
+		return nil, fmt.Errorf("latest GitHub skills release metadata exceeds the %d-byte limit", maxSkillsMetadataBytes)
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maxSkillsMetadataBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read latest GitHub skills release metadata: %w", err)
+	}
+	if int64(len(raw)) > maxSkillsMetadataBytes {
+		return nil, fmt.Errorf("latest GitHub skills release metadata exceeds the %d-byte limit", maxSkillsMetadataBytes)
+	}
+
+	return raw, nil
 }
 
 func releaseSpecForArtifact(artifact string, remote bool) (skillReleaseSpec, error) {

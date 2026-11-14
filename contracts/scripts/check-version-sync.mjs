@@ -19,7 +19,7 @@ const goClient = await readFile(goClientPath, "utf8");
 const version = packageJson.version;
 const errors = [];
 
-expect(/^0\.1\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version), `${packagePath} version must stay on the 0.1.x stream: ${version}`);
+expect(/^0\.2\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version), `${packagePath} version must stay on the 0.2.x stream: ${version}`);
 expect(openapi?.info?.version === version, `${openapiPath} info.version (${openapi?.info?.version}) must match ${packagePath} version (${version})`);
 expect(openapiJson?.info?.version === version, `${openapiJsonPath} info.version (${openapiJson?.info?.version}) must match ${packagePath} version (${version})`);
 expect(packageJson.name === "@opensoha/contracts", `${packagePath} must name @opensoha/contracts`);

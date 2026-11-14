@@ -2,6 +2,11 @@ name: contracts-ci
 
 on:
   workflow_call:
+    inputs:
+      contracts_sha:
+        description: Exact full Contracts candidate commit SHA
+        type: string
+        required: false
   workflow_dispatch:
     inputs:
       consumer_mode:
@@ -59,7 +64,7 @@ jobs:
       - name: Root workspace SDK version identity tests
         run: node --test scripts/check-version-sync.checks.mjs scripts/prepare-release-artifacts.checks.mjs
       - name: Verify staged release workflow
-        run: node --test scripts/release-workflow.checks.mjs
+        run: node --test scripts/release-workflow.checks.mjs scripts/release-helpers.checks.mjs
       - name: Verify consumer CI independence and candidate selection
         run: node --test scripts/ci-consumer-workflow.checks.mjs
       - run: npm test

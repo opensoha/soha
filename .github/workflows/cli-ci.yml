@@ -77,6 +77,8 @@ jobs:
       - name: Test and pack npm launcher
         run: |
           npm test --workspace cli/npm/cli
+          python3 cli/scripts/test_release_recovery.py
+          node --test cli/scripts/verify-public-npm-release.checks.mjs
           npm pack --dry-run --workspace cli/npm/cli
           npm pack --workspace cli/npm/cli --pack-destination "$RUNNER_TEMP"
       - name: Docker build from the complete Root source

@@ -7,11 +7,12 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import YAML from "yaml";
+import { validateStageRun } from "./verify-stage-run.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const workflow = YAML.parse(readFileSync(join(root, ".github/workflows/release.yml"), "utf8"));
+const workflow = YAML.parse(readFileSync(join(root, "../.github/workflows/contracts-release.yml"), "utf8"));
 const steps = workflow.jobs.release.steps;
-const publish = steps.find((step) => step.id === "publish");
+const publish = { ...steps.find((step) => step.id === "publish"), run: readFileSync(join(root, "scripts/stage-release.sh"), "utf8") };
 const stageId = "12345678-1234-4321-8321-123456789abc";
 const secret = "SYNTHETIC_PUBLISH_TOKEN_NEVER_LOG";
 
@@ -21,12 +22,12 @@ const { createHash } = require('node:crypto');
 const args = process.argv.slice(2);
 appendFileSync(process.env.NPM_CALLS, JSON.stringify(args) + '\\n');
 if (args[0] === 'view') {
-  if (!process.env.MOCK_PUBLIC_INTEGRITY) process.exit(1);
+  if (!process.env.MOCK_PUBLIC_INTEGRITY) { console.error('npm error code ' + (process.env.MOCK_VIEW_ERROR || 'E404')); process.exit(1); }
   console.log(process.env.MOCK_PUBLIC_INTEGRITY);
 } else if (args[0] === 'stage' && args[1] === 'publish') {
   if (process.env.MOCK_STAGE_EXIT) process.exit(Number(process.env.MOCK_STAGE_EXIT));
   const integrity = 'sha512-' + createHash('sha512').update(readFileSync(process.env.CONTRACTS_NPM_TARBALL)).digest('base64');
-  const receipt = { name: '@opensoha/contracts', version: process.env.MOCK_STAGE_VERSION || process.env.CONTRACTS_NPM_VERSION, integrity: process.env.MOCK_STAGE_INTEGRITY || integrity, stageId: process.env.MOCK_STAGE_ID || '${stageId}' };
+  const receipt = { id: '@opensoha/contracts@' + process.env.CONTRACTS_NPM_VERSION, name: '@opensoha/contracts', version: process.env.MOCK_STAGE_VERSION || process.env.CONTRACTS_NPM_VERSION, integrity: process.env.MOCK_STAGE_INTEGRITY || integrity, stageId: process.env.MOCK_STAGE_ID || '${stageId}' };
   const result = process.env.MOCK_STAGE_FORMAT === 'array' ? [receipt] : process.env.MOCK_STAGE_FORMAT === 'map' ? { '@opensoha/contracts': receipt } : receipt;
   console.log(JSON.stringify(result));
 } else {
@@ -107,7 +108,8 @@ test("recovery refuses an unpublished version", () => {
   assert.deepEqual(result.calls.map((call) => call[0]), ["view"]);
 });
 
-for (const format of ["object", "array", "map"]) {
+// npm 12.2.2 publish.js adds stageId; tar.js emits the package-name-keyed map.
+for (const format of ["map", "object", "array"]) {
   test(`stage mode records a verified pending receipt (${format})`, () => {
     const result = runPublish({ mock: { MOCK_STAGE_FORMAT: format } });
     assert.equal(result.status, 0, result.stderr);
@@ -150,47 +152,84 @@ test("unknown modes fail before contacting npm", () => {
   assert.equal(result.calls.length, 0);
 });
 
-test("workflow gates all public-release steps on actual publication", () => {
+test("Root publisher preserves CI, protected OIDC stage and exact source handoff gates", () => {
+  assert.deepEqual(workflow.on.push.tags, ["contracts/v*"]);
   assert.equal(workflow.on.workflow_dispatch.inputs.publish_mode.default, "stage");
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.publish_mode.options, ["stage", "recover"]);
-  assert.equal(workflow.jobs.release.env.NPM_PUBLISH_MODE, "${{ inputs.publish_mode || 'stage' }}");
-  assert.ok(steps.some((step) => step.run === "npm install --global npm@11.21.1"));
-  for (const name of ["Verify published npm package and Go module tag", "GitHub release", "Download published release assets and verify"]) {
+  assert.deepEqual(workflow.permissions, { contents: "read" });
+  assert.equal(workflow.jobs.verify.uses, "./.github/workflows/contracts-ci.yml");
+  assert.equal(workflow.jobs.verify.with.contracts_sha, "${{ needs.identity.outputs.sha }}");
+  assert.deepEqual(workflow.jobs.release.needs, ["identity", "verify", "artifacts"]);
+  assert.equal(workflow.jobs.release.environment, "release-contracts");
+  assert.deepEqual(workflow.jobs.release.permissions, { actions: "read", contents: "write", "id-token": "write" });
+  assert.ok(steps.some((step) => step.run === "npm install --global npm@12.2.2"));
+  assert.equal(steps.find((step) => step.uses === "actions/setup-node@v6").with["node-version"], "22.23.4");
+  assert.equal(JSON.stringify(workflow).includes("NPM_TOKEN"), false);
+  assert.equal(JSON.stringify(workflow.jobs.artifacts).includes("npm@12"), false);
+  assert.ok(workflow.jobs.artifacts.steps.some((step) => step.run?.includes("release:artifacts")));
+  assert.equal(steps.some((step) => step.run?.includes("release:artifacts")), false);
+  const prepare = workflow.jobs.artifacts.steps.find((step) => step.run?.includes("release:artifacts"));
+  assert.equal(prepare.if, "inputs.publish_mode != 'recover'");
+  const restore = workflow.jobs.artifacts.steps.findIndex((step) => step.with?.["run-id"]);
+  assert(restore > workflow.jobs.artifacts.steps.findIndex((step) => step.run === "node scripts/verify-stage-run.mjs"));
+  assert.equal(workflow.jobs.artifacts.steps[restore].with.name, "contracts-staged-${{ needs.identity.outputs.sha }}");
+  const upload = steps.find((step) => step.name === "GitHub release").run;
+  assert(upload.includes('python3 scripts/publish-release-assets.py --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files'));
+  assert.equal(/--directory|--latest|--clobber|npm-stage|npm-view|\*/.test(upload), false);
+  assert.equal(JSON.stringify(workflow).includes("softprops/action-gh-release"), false);
+  const guard = steps.findIndex((step) => step.run?.includes("release-control.py verify"));
+  assert(guard >= 0 && guard < steps.findIndex((step) => step.id === "publish"));
+  assert.equal(steps[guard].if, undefined, "recover must never skip the external preflight");
+  for (const name of ["Verify published npm bytes and official Go proxy with sumDB", "GitHub release", "Download published release assets and verify"]) {
     assert.equal(steps.find((step) => step.name === name).if, "steps.publish.outputs.published == 'true'");
   }
   assert.equal(steps.find((step) => step.name === "Save pending stage receipt and release candidate").if, "steps.publish.outputs.published == 'false'");
-  assert.equal(publish.env.NODE_AUTH_TOKEN, "${{ secrets.NPM_TOKEN }}");
+  for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
+    if (step.run) assert.equal(step.run.includes("${{"), false, "shell inputs must flow through env");
+  }
+  const publicCheck = steps.find((step) => step.name === "Verify published npm bytes and official Go proxy with sumDB");
+  assert.deepEqual(publicCheck.env, { GOWORK: "off", GOPROXY: "https://proxy.golang.org", GOSUMDB: "sum.golang.org", GOPRIVATE: "", GONOPROXY: "", GONOSUMDB: "" });
 });
 
-
-test("release tag is validated as data before publication", () => {
+test("Root release input validation rejects unknown modes and injected/mismatched tags", () => {
   const directory = mkdtempSync(join(tmpdir(), "contracts-tag-test-"));
   try {
-    writeFileSync(join(directory, "package.json"), JSON.stringify({ version: "0.1.27" }));
-    const validation = steps.find((step) => step.name === "Validate release tag").run;
-    assert.equal(validation.includes("${{"), false);
-    const run = (tag) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", validation], {
-      cwd: directory,
-      encoding: "utf8",
-      env: { ...process.env, CONTRACTS_RELEASE_TAG: tag },
+    const validation = workflow.jobs.identity.steps.find((step) => step.name === "Validate release inputs as data").run;
+    const run = (tag, mode = "stage", runId = "") => spawnSync("bash", ["-e", "-o", "pipefail", "-c", validation], {
+      cwd: directory, encoding: "utf8", env: { ...process.env, RELEASE_TAG: tag, NPM_PUBLISH_MODE: mode, STAGE_RUN_ID: runId },
     });
-    assert.equal(run("v0.1.27").status, 0);
-    assert.notEqual(run("v0.1.26").status, 0);
+    assert.equal(run("contracts/v0.2.0").status, 0);
+    assert.equal(run("contracts/v0.2.0", "recover", "123").status, 0);
+    assert.notEqual(run("contracts/v0.2.0", "recover").status, 0);
+    assert.notEqual(run("contracts/v0.2.0", "recover", "123; false").status, 0);
+    assert.notEqual(run("contracts/v0.2.0", "stage", "123").status, 0);
+    assert.notEqual(run("contracts/v0.2.0", "direct").status, 0);
     const marker = join(directory, "must-not-exist");
-    for (const tag of [
-      `v0.1.27"; touch "${marker}"; #`,
-      `v0.1.27$(touch "${marker}")`,
-      "v0.1.27\ninvalid",
-      "v0.1.27 ",
-    ]) {
+    for (const tag of ["v0.2.0", "cli/v0.2.0", "contracts/v0.1.29", "contracts/v0.2.0\ninvalid", "contracts/v0.2.0 ", `contracts/v0.2.0$(touch "${marker}")`]) {
       assert.notEqual(run(tag).status, 0);
       assert.equal(existsSync(marker), false);
     }
-    for (const step of steps) {
-      if (step.run) assert.equal(step.run.includes("inputs.tag"), false);
-    }
-    assert.ok(steps.find((step) => step.name === "Download published release assets and verify").run.includes('gh release download "${CONTRACTS_RELEASE_TAG}"'));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
+    const identity = workflow.jobs.identity.steps.find((step) => step.id === "identity").run;
+    assert(identity.includes('test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"'));
+    assert(identity.includes('test "$GITHUB_SHA" = "$RELEASE_SHA"'));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("registry errors fail closed instead of creating another stage", () => {
+  const result = runPublish({ mock: { MOCK_VIEW_ERROR: "E401" } });
+  assert.notEqual(result.status, 0);
+  assert.equal(result.output, "");
+  assert.deepEqual(result.calls.map((call) => call[0]), ["view"]);
+});
+
+test("recovery accepts only a successful original Root publisher run for the same tag and SHA", () => {
+  const sha = "a".repeat(40);
+  const identity = { repository: "opensoha/soha", tag: "contracts/v0.2.0", sha, runId: "123" };
+  const workflow = { id: 456, path: ".github/workflows/contracts-release.yml" };
+  const run = { id: 123, repository: { full_name: identity.repository }, head_repository: { full_name: identity.repository }, workflow_id: workflow.id, path: workflow.path, head_sha: sha, head_branch: identity.tag, event: "push", status: "completed", conclusion: "success" };
+  validateStageRun(run, workflow, identity);
+  validateStageRun({ ...run, event: "workflow_dispatch" }, workflow, identity);
+  for (const change of [{ id: 124 }, { workflow_id: 457 }, { path: ".github/workflows/release.yml" }, { head_sha: "b".repeat(40) }, { head_branch: "main" }, { event: "pull_request" }, { status: "in_progress" }, { conclusion: "failure" }, { repository: { full_name: "opensoha/soha-contracts" } }, { head_repository: { full_name: "someone/soha" } }]) {
+    assert.throws(() => validateStageRun({ ...run, ...change }, workflow, identity));
   }
 });

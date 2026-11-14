@@ -72,6 +72,8 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_source_workspace.py'
           python3 -m unittest discover -s scripts -p 'test_remote_source.py'
           python3 -m unittest discover -s scripts -p 'test_release_dependency.py'
+          python3 -m unittest discover -s scripts -p 'test_release_control.py'
+          python3 -m unittest discover -s scripts -p 'test_publish_release_assets.py'
           python3 -m unittest discover -s scripts -p 'test_proxy_test_engines.py'
           python3 -m unittest discover -s scripts -p 'test_proxy_native_tests.py'
           python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'

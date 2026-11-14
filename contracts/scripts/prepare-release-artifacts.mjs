@@ -21,6 +21,7 @@ const openapiArtifacts = await Promise.all(
 const outDir = resolve(root, valueArg("--out-dir") ?? "dist/release");
 const consumerMatrixPath = optionalPathArg("--consumer-matrix");
 const npmCache = process.env.SOHA_NPM_CACHE ?? join(root, "dist/npm-cache");
+const releaseSource = process.env.RELEASE_SHA ? checkedReleaseSource() : undefined;
 const verifyTarballArg = valueArg("--verify");
 
 if (process.argv.includes("--verify") && !verifyTarballArg) {
@@ -75,6 +76,7 @@ await writeFile(
       tag: releaseTag,
       goModule: modulePath,
       source,
+      releaseSource,
       npmPackage: packageJson.name,
       openapi: {
         version: packageJson.version,
@@ -223,13 +225,17 @@ async function verifyReleaseArtifacts(tarballPath) {
   if (manifest.packageName !== packageJson.name || manifest.npmPackage !== packageJson.name) {
     throw new Error(`${relative(root, manifestPath)} package name does not match package.json`);
   }
+  if (releaseSource && (manifest.releaseSource?.revision !== releaseSource.revision || manifest.releaseSource?.tree !== releaseSource.tree)) {
+    throw new Error("release source revision/tree does not match the checked out candidate");
+  }
   if (manifest.version !== packageJson.version || manifest.tag !== releaseTag) {
     throw new Error(`${relative(root, manifestPath)} version/tag does not match package.json`);
   }
   if (manifest.goModule !== modulePath || manifest.source?.repository !== source.repository || manifest.source?.directory !== source.directory) {
     throw new Error(`${relative(root, manifestPath)} SDK source identity does not match the contracts workspace`);
   }
-  if (!artifact || artifact.sha256 !== actualSha256 || basename(artifact.name) !== basename(tarballPath)) {
+  if (!artifact || artifact.sha256 !== actualSha256 || basename(artifact.name) !== basename(tarballPath)
+    || artifact.npmIntegrity !== `sha512-${createHash("sha512").update(tarball).digest("base64")}`) {
     throw new Error(`${relative(root, manifestPath)} artifact metadata does not match tarball`);
   }
 
@@ -364,6 +370,9 @@ async function verifyProvenancePolicy(manifest, manifestPath, tarballPath) {
   if (policy.githubActions?.permissions?.["id-token"] !== "write") {
     throw new Error(`${relative(root, policyPath)} must require GitHub Actions id-token: write`);
   }
+  if (policy.npm?.authentication !== "GitHub Actions OIDC trusted publishing" || policy.npm?.environment !== "release-contracts" || policy.npm?.requiresTokenSecret) {
+    throw new Error("Root SDK publisher must use protected OIDC trusted publishing without a token fallback");
+  }
   if (policy.npm?.publishCommand !== `npm stage publish "${basename(tarballPath)}" --provenance --access public`) {
     throw new Error(`${relative(root, policyPath)} npm publish command does not match the tarball`);
   }
@@ -455,11 +464,12 @@ function buildProvenancePolicy(tarballName) {
     workflow: {
       path: releaseWorkflow,
       trigger: "push tags matching contracts/v*",
-      requiredJobs: ["verify", "consumers", "release"],
+      requiredJobs: ["identity", "verify", "artifacts", "release"],
     },
     githubActions: {
       runner: "ubuntu-latest",
       permissions: {
+        actions: "read",
         contents: "write",
         "id-token": "write",
       },
@@ -468,7 +478,8 @@ function buildProvenancePolicy(tarballName) {
       package: packageJson.name,
       registry: "https://registry.npmjs.org",
       publishCommand: `npm stage publish "${tarballName}" --provenance --access public`,
-      requiresTokenSecret: "NPM_TOKEN",
+      authentication: "GitHub Actions OIDC trusted publishing",
+      environment: "release-contracts",
       requiresProvenance: true,
     },
     attestation: {
@@ -525,4 +536,12 @@ function verifyPackageSource(metadata, label) {
   if (metadata.repository?.type !== "git" || metadata.repository?.url !== `https://github.com/${source.repository}` || metadata.repository?.directory !== source.directory) {
     throw new Error(`${label} repository must identify ${source.repository} ${source.directory}/`);
   }
+}
+
+function checkedReleaseSource() {
+  const revision = process.env.RELEASE_SHA;
+  if (!/^[0-9a-f]{40}$/.test(revision) || run("git", ["rev-parse", "HEAD"]).stdout.trim() !== revision) {
+    throw new Error("RELEASE_SHA must match the exact checked out source revision");
+  }
+  return { revision, tree: run("git", ["rev-parse", `${revision}:contracts`]).stdout.trim() };
 }

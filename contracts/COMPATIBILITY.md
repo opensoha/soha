@@ -6,20 +6,22 @@ API, schema, and SDK behavior changes are proposed.
 
 ## Version Streams
 
-Current source metadata stream: `0.1.x` (`0.1.29` candidate).
+Current source metadata stream: `0.2.x` (`0.2.0` namespace-migration candidate).
 
 The Go source identity is now `github.com/opensoha/soha/contracts` in the
 `opensoha/soha` Root repository, directory `contracts`. This namespace move
 changes Go imports and is an intentional `0.x` minor migration for B5, not an
-optional `0.1.x` patch addition. The retained source version does not establish
+optional `0.1.x` patch addition. The candidate source version does not establish
 a public release under the new module path. Public HTTP/schema/DTO semantics
 and the existing schema compatibility baseline are unchanged by this move.
+The `0.2.x` stream retains the additive patch rules and schema guards documented
+below for `0.1.x`; only the Go source namespace changes in `0.2.0`.
 
 - `0.x` releases may still evolve quickly, but compatibility gates must run for
   every change.
-- `0.1.x` patch releases may add optional fields, optional query parameters,
+- `0.1.x` and `0.2.x` patch releases may add optional fields, optional query parameters,
   new enum values, new response status codes, new operations, and new schemas.
-- `0.1.x` patch releases must not remove existing operations, rename
+- `0.1.x` and `0.2.x` patch releases must not remove existing operations, rename
   `operationId` values, remove response status codes, remove schema properties,
   add required request properties, remove enum values, or narrow existing
   schema types.
@@ -74,10 +76,17 @@ Release order (after the B5 namespace/version decision):
 5. B5 must first enable Root `.github/workflows/contracts-release.yml` for
    `contracts/v*`. Local artifact policy metadata only describes that expected
    publisher; it is not a signed attestation or registry availability proof.
-   Let that publisher stage the npm package with `NPM_TOKEN`. After a
-   maintainer approves the stage with 2FA, dispatch recovery for the same tag.
+   Let that protected publisher stage the npm package with GitHub Actions OIDC
+   trusted publishing (no token fallback). Its release-control gate requires the
+   legacy publishers disabled and drained before any external write. After a
+   maintainer approves the stage with 2FA, dispatch recovery for the same tag
+   with `stage_run_id` set to the original successful stage workflow run. Recovery
+   verifies its Root workflow/tag/SHA and reuses that run's original staged
+   artifacts; missing or expired artifacts block recovery, never trigger repacking.
    The workflow verifies the public npm package and Go tag before attaching
    the tarball, checksums, and release manifest to the GitHub release.
+   GitHub assets are immutable: the shared publisher compares existing bytes and
+   uploads only missing files, without changing Core's latest release.
 
 ## Compatibility Baseline
 

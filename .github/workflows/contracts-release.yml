@@ -1,0 +1,227 @@
+name: contracts-release
+
+on:
+  push:
+    tags: ["contracts/v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable SDK tag
+        required: true
+        type: string
+      publish_mode:
+        description: Stage for human 2FA approval, or recover the approved version
+        required: true
+        default: stage
+        type: choice
+        options: [stage, recover]
+      stage_run_id:
+        description: Successful original stage workflow run ID (required for recovery)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      NPM_PUBLISH_MODE: ${{ inputs.publish_mode || 'stage' }}
+      STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
+      sha: ${{ steps.identity.outputs.sha }}
+    steps:
+      - name: Validate release inputs as data
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^contracts/v0\.2\.[0-9]+$ ]] || exit 1
+          case "$NPM_PUBLISH_MODE" in
+            stage) test -z "$STAGE_RUN_ID" ;;
+            recover) [[ "$STAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1 ;;
+            *) exit 1 ;;
+          esac
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve exact SDK identity
+        id: identity
+        run: |
+          set -euo pipefail
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          if [ "$NPM_PUBLISH_MODE" = stage ]; then
+            test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+            test "$GITHUB_SHA" = "$RELEASE_SHA"
+          fi
+          python3 scripts/release-control.py identity --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --github-output
+
+  verify:
+    needs: identity
+    uses: ./.github/workflows/contracts-ci.yml
+    with:
+      contracts_sha: ${{ needs.identity.outputs.sha }}
+
+  artifacts:
+    runs-on: ubuntu-latest
+    needs: [identity, verify]
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RELEASE_SHA: ${{ needs.identity.outputs.sha }}
+      RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+      STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.identity.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.4"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+        if: inputs.publish_mode != 'recover'
+        working-directory: .
+      - uses: actions/download-artifact@v7
+        if: inputs.publish_mode != 'recover'
+        with:
+          pattern: consumer-*-reports
+          path: contracts/dist/consumer-reports
+      - uses: actions/download-artifact@v7
+        if: inputs.publish_mode != 'recover'
+        with:
+          name: internal-source-report
+          path: contracts/dist/consumer-reports/internal-source-report
+      - name: Bind complete consumer reports to this source
+        if: inputs.publish_mode != 'recover'
+        run: |
+          mkdir -p dist/release
+          node scripts/merge-release-reports.mjs dist/consumer-reports dist/release/consumer-matrix.json
+      - name: Prepare release artifacts with the Node 22 bundled npm
+        if: inputs.publish_mode != 'recover'
+        run: npm run release:artifacts -- --consumer-matrix dist/release/consumer-matrix.json
+      - name: Verify original stage run identity before recovery
+        if: inputs.publish_mode == 'recover'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-stage-run.mjs
+      - uses: actions/download-artifact@v7
+        if: inputs.publish_mode == 'recover'
+        with:
+          name: contracts-staged-${{ needs.identity.outputs.sha }}
+          path: contracts/dist/release
+          run-id: ${{ inputs.stage_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify the original immutable release candidate
+        run: node scripts/prepare-release-artifacts.mjs --verify "dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: contracts-candidate-${{ needs.identity.outputs.sha }}
+          path: contracts/dist/release/
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [identity, verify, artifacts]
+    environment: release-contracts
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+      RELEASE_SHA: ${{ needs.identity.outputs.sha }}
+      RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+      NPM_PUBLISH_MODE: ${{ inputs.publish_mode || 'stage' }}
+      RELEASE_CONTRACTS_ENABLED: ${{ vars.RELEASE_CONTRACTS_ENABLED }}
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.identity.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.4"
+          registry-url: https://registry.npmjs.org
+      - name: Install staged-publishing CLI
+        run: npm install --global npm@12.2.2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache-dependency-path: contracts/go.sum
+      - uses: actions/download-artifact@v7
+        with:
+          name: contracts-candidate-${{ needs.identity.outputs.sha }}
+          path: contracts/dist/release
+      - name: Verify candidate source and downloaded artifacts without repacking
+        run: node scripts/prepare-release-artifacts.mjs --verify "dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz"
+      - name: Enforce handoff and exact-revision release controls
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-control.py verify --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+      - name: Verify public package or stage for human approval
+        id: publish
+        env:
+          CONTRACTS_NPM_VERSION: ${{ needs.identity.outputs.version }}
+          CONTRACTS_NPM_TARBALL: dist/release/opensoha-contracts-${{ needs.identity.outputs.version }}.tgz
+        run: bash scripts/stage-release.sh
+      - name: Save pending stage receipt and release candidate
+        if: steps.publish.outputs.published == 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: contracts-staged-${{ needs.identity.outputs.sha }}
+          path: contracts/dist/release/
+          if-no-files-found: error
+      - name: Verify published npm bytes and official Go proxy with sumDB
+        if: steps.publish.outputs.published == 'true'
+        env:
+          GOWORK: "off"
+          GOPROXY: https://proxy.golang.org
+          GOSUMDB: sum.golang.org
+          GOPRIVATE: ""
+          GONOPROXY: ""
+          GONOSUMDB: ""
+        run: node scripts/verify-public-release.mjs
+      - name: GitHub release
+        if: steps.publish.outputs.published == 'true'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/publish-release-assets.py --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz" \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz.sha256" \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.cyclonedx.json" \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.cyclonedx.json.sha256" \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.provenance-policy.json" \
+            "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.provenance-policy.json.sha256" \
+            contracts/dist/release/release-manifest.json \
+            contracts/dist/release/consumer-matrix.json \
+            contracts/dist/release/public-verification.json
+      - name: Download published release assets and verify
+        if: steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release
+          node scripts/prepare-release-artifacts.mjs --verify "downloaded-release/opensoha-contracts-${RELEASE_VERSION}.tgz"

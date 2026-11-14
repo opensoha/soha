@@ -16,7 +16,10 @@ npx -y @opensoha/cli@latest mcp
 npx -y @opensoha/cli@latest setup --client codex --mode both
 ```
 
-The npm launcher is published by the tagged release workflow.
+The local candidate is `0.2.0`; it is not published yet. Root
+`cli/v0.2.0` releases will publish the matching npm launcher after protected
+release checks and public SDK qualification succeed. Existing `@latest`
+installations continue to resolve the published legacy `0.1.8` line.
 
 The npm package does not implement MCP in JavaScript. It downloads the native
 binary from the matching GitHub release, verifies `checksums.txt`, caches it by
@@ -29,13 +32,23 @@ go install github.com/opensoha/soha-cli/cmd/soha@v0.1.8
 soha version
 ```
 
-For release binaries, download the archive for your platform from the GitHub
-release, then verify it against `checksums.txt` before placing `soha` on your
+After publication, install the new Go submodule with:
+
+```sh
+go install github.com/opensoha/soha/cli/cmd/soha@v0.2.0
+```
+
+This command requires the real `cli/v0.2.0` tag and publicly available declared
+SDK; the source candidate alone does not make it installable. Legacy
+`opensoha/soha-cli` tags and release assets remain available at their old URLs.
+
+For new release binaries, download the platform archive from
+[Root CLI releases](https://github.com/opensoha/soha/releases/tag/cli%2Fv0.2.0), then verify it against `checksums.txt` before placing `soha` on your
 `PATH`:
 
 ```sh
 sha256sum -c checksums.txt --ignore-missing
-tar -xzf soha_0.1.8_linux_amd64.tar.gz
+tar -xzf soha_0.2.0_linux_amd64.tar.gz
 install -m 0755 soha /usr/local/bin/soha
 ```
 
@@ -59,15 +72,18 @@ make -C cli verify-image
 
 The image uses the complete Root context and the same `contracts/` source.
 `make build` injects the real Root commit and UTC build date into the existing
-ldflags symbols. Set `VERSION=0.1.8` when intentionally producing that CLI version;
+ldflags symbols. Set `VERSION=0.2.0` when intentionally producing that CLI version;
 without it the native development version remains unchanged. Root and CLI do not
 share a product version.
 
 The module/import/ldflags identity is `github.com/opensoha/soha/cli`.
-The launcher package, checksum verification and existing release download URLs
-remain unchanged. Root Node22 installs its dependency-free workspace; it adds no install hook. Nested `.github/workflows` preserve the old
-release contract, while Root workflows own active source gates. Publisher, tag
-and public download changes remain separate B5 work.
+The `0.2.0` launcher downloads Root `cli/v<version>` assets with the tag slash
+URL-encoded, while published older launchers retain their original download
+source. Root Node22 installs the dependency-free workspace without install hooks.
+Nested `.github/workflows` preserve historical definitions; the active Root
+`cli-release.yml` uses `release-cli` protection and OIDC trusted npm publishing.
+GitHub Release, npm and GHCR writes require the release-control guard, including
+recovery; images retain `ghcr.io/opensoha/soha-cli:v0.2.0` independently of the Git tag.
 
 For external declared-dependency qualification, run `make -C cli test-declared`
 or explicitly use `GOWORK=off` from `cli/`. That result and internal source
@@ -274,7 +290,9 @@ The selection accepts numbers, names, or `all`. Supported targets are `codex`,
 flow.
 
 By default, skills come from the latest stable GitHub Release in
-`opensoha/soha-skills`. The CLI resolves that release to its concrete semantic
+`opensoha/soha`, filtered to published stable `skills/v*` tags across release
+pages (independent of Core latest). Explicit legacy `github:opensoha/soha-skills@v...`
+pins remain compatible. The CLI resolves the selected release to its concrete semantic
 version before downloading release assets; it never installs directly from a branch.
 Use `--source github:opensoha/soha-skills@v0.1.0` only to pin a rollback or
 reproducible install. Local checkouts, local release tarballs, and HTTPS release

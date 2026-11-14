@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/compatibility-matrix.schema.json",
   "schemaVersion": "opensoha.dev/skills-compatibility-matrix/v1",
-  "skillsVersion": "0.1.3",
+  "skillsVersion": "0.1.4",
   "gatewayCapabilityCatalogVersion": "0.1.1",
   "platformCapabilityCatalogVersion": "0.1.0",
   "requiredScopes": [
@@ -56,8 +56,8 @@
   ],
   "supportedVersions": {
     "soha-core": ">=0.1.0 <0.2.0",
-    "soha-cli": ">=0.1.0 <0.2.0",
-    "soha-agent": ">=0.1.0 <0.2.0"
+    "soha-cli": ">=0.1.0 <0.3.0",
+    "soha-agent": ">=0.1.0 <0.3.0"
   },
   "contractSchemas": {
     "preferred": "../contracts",

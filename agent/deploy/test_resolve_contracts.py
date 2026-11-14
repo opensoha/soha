@@ -15,7 +15,7 @@ class ResolveContractsTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = self.temporary.name
-        self.module = {"Path": resolver.MODULE, "Version": "v0.1.30-0.20261110173546-4aef3ea31f6a", "Sum": "h1:fixture", "Dir": self.directory}
+        self.module = {"Path": resolver.MODULE, "Version": "v0.1.30-0.20261110173546-4aef3ea31f6a", "Sum": "h1:fixture", "GoModSum": "h1:go-mod-fixture", "Dir": self.directory}
 
     def call(self, declared=None, downloaded=None, resolved=None, requested="", verify_error=None):
         values = [self.module if declared is None else declared, self.module if downloaded is None else downloaded, self.module if resolved is None else resolved]
@@ -28,6 +28,15 @@ class ResolveContractsTest(unittest.TestCase):
             self.assertEqual(call.kwargs["env"]["GOFLAGS"], "-mod=readonly")
         self.assertEqual(verify.call_args.args[0], ["go", "mod", "verify"])
         return result
+
+    def test_cli_and_agent_declared_modes_resolve_the_explicit_consumer(self):
+        for consumer in ("cli", "agent"):
+            with self.subTest(consumer=consumer), patch.dict(os.environ, {"REQUESTED_CONTRACTS_REF": "v0.2.0"}):
+                with patch.object(resolver, "resolve_contracts", return_value={"ref": "v0.2.0", "dir": self.directory, "sum": "h1:fixture"}) as resolve:
+                    resolver.main(["--mode", "declared", "--consumer", consumer])
+                resolve.assert_called_once_with("v0.2.0", Path(resolver.__file__).resolve().parents[2] / consumer)
+        with self.assertRaises(SystemExit):
+            resolver.main(["--mode", "source", "--consumer", "cli"])
 
     def test_pseudo_version_needs_no_origin_and_preserves_manifests(self):
         files = [Path(self.directory) / name for name in ["go.mod", "go.sum"]]
@@ -43,14 +52,14 @@ class ResolveContractsTest(unittest.TestCase):
         self.assertEqual(self.call()["ref"], "v0.1.29")
 
     def test_rejects_replacement_empty_version_and_requested_mismatch(self):
-        for declared in [{**self.module, "Replace": {"Dir": self.directory}}, {**self.module, "Version": ""}]:
+        for declared in [{**self.module, "Replace": {"Dir": self.directory}}, {**self.module, "Version": ""}, {**self.module, "Sum": ""}]:
             with self.subTest(declared=declared), self.assertRaises(ValueError):
                 self.call(declared=declared)
         with self.assertRaises(ValueError):
             self.call(requested="v0.1.27")
 
     def test_rejects_download_version_and_checksum_mismatch(self):
-        for change in [{"Version": "v0.1.27"}, {"Sum": ""}, {"Sum": "h1:wrong"}, {"Error": "download failed"}]:
+        for change in [{"Version": "v0.1.27"}, {"Sum": ""}, {"GoModSum": ""}, {"Sum": "h1:wrong"}, {"Error": "download failed"}]:
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.call(downloaded={**self.module, **change})
 

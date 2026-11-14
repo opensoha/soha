@@ -20,11 +20,13 @@ function run(args, extraEnv = {}) {
 test("local SDK pack binds Root namespace/source/tag and refuses artifact identity drift", async (t) => {
   const out = mkdtempSync(join(tmpdir(), "contracts-artifact-check-"));
   t.after(() => rmSync(out, { recursive: true, force: true }));
-  const prepared = run(["--out-dir", out]);
+  const releaseSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  const prepared = run(["--out-dir", out], { RELEASE_SHA: releaseSha });
   assert.equal(prepared.status, 0, prepared.stdout + prepared.stderr);
   const manifestPath = join(out, "release-manifest.json");
   const manifestBody = readFileSync(manifestPath, "utf8");
   const manifest = JSON.parse(manifestBody);
+  assert.equal(manifest.releaseSource.revision, releaseSha);
   assert.equal(manifest.tag, `contracts/v${metadata.version}`);
   assert.equal(manifest.goModule, "github.com/opensoha/soha/contracts");
   assert.deepEqual(manifest.source, { repository: "opensoha/soha", directory: "contracts" });
@@ -46,7 +48,25 @@ test("local SDK pack binds Root namespace/source/tag and refuses artifact identi
     for (const ref of item.dependsOn ?? []) assert.equal(refs.has(ref), true, ref);
   }
   const tarball = join(out, manifest.artifacts.find((item) => item.kind === "npm-tarball").name);
-  assert.equal(run(["--verify", tarball]).status, 0);
+  assert.equal(run(["--verify", tarball], { RELEASE_SHA: releaseSha }).status, 0);
+
+  for (const change of [{ releaseSource: undefined }, { releaseSource: { revision: releaseSha, tree: "b".repeat(40) } }]) {
+    await t.test("rejects missing or mismatched candidate source tree", () => {
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, ...change }));
+      const result = run(["--verify", tarball], { RELEASE_SHA: releaseSha });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /release source revision\/tree/);
+      writeFileSync(manifestPath, manifestBody);
+    });
+  }
+
+  await t.test("rejects changed SRI metadata despite unchanged sha256", () => {
+    const changed = structuredClone(manifest);
+    changed.artifacts.find((item) => item.kind === "npm-tarball").npmIntegrity = "sha512-different";
+    writeFileSync(manifestPath, JSON.stringify(changed));
+    assert.notEqual(run(["--verify", tarball]).status, 0);
+    writeFileSync(manifestPath, manifestBody);
+  });
 
   for (const [field, value] of [["tag", `v${metadata.version}`], ["goModule", "github.com/opensoha/soha-contracts"], ["source", { repository: "opensoha/soha-contracts", directory: "" }]]) {
     await t.test(`rejects manifest ${field} drift`, () => {

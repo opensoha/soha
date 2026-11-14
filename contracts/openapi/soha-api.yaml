@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Soha API
-  version: 0.1.29
+  version: 0.2.0
   description: >
     Public OpenSoha core API contract. This first contract focuses on stable cross-repository boundaries: auth, health, runner-facing control-plane callbacks, AI Gateway, and MCP capability discovery. Pod session WebSocket targets and their UID-aware ticket requirements are described separately in x-soha-websocket-paths to preserve HTTP client generation.
 servers:

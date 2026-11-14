@@ -103,22 +103,22 @@ def resolve_source_contracts(root=None):
             "sourceSHA256": hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
 
 
-def resolve_contracts(requested=""):
+def resolve_contracts(requested="", module_directory=None):
     env = {**os.environ, "GOWORK": "off", "GOFLAGS": "-mod=readonly"}
-    module_directory = Path(__file__).resolve().parents[1]
+    module_directory = Path(module_directory or Path(__file__).resolve().parents[1])
 
     def query(*args):
         return json.loads(subprocess.check_output(["go", *args], cwd=module_directory, env=env, text=True))
 
     declared = query("list", "-m", "-json", MODULE)
     version = declared.get("Version")
-    if declared.get("Path") != MODULE or declared.get("Replace") or not version:
-        raise ValueError("contracts must have a declared version without replacement")
+    if declared.get("Path") != MODULE or declared.get("Replace") or not version or not declared.get("Sum"):
+        raise ValueError("contracts must have a declared checksummed version without replacement")
     if requested and requested != version:
         raise ValueError("contracts input differs from the reviewed go.mod dependency")
     downloaded = query("mod", "download", "-json", MODULE)
     checksum = downloaded.get("Sum")
-    if downloaded.get("Error") or downloaded.get("Version") != version or not checksum or (declared.get("Sum") and declared["Sum"] != checksum):
+    if downloaded.get("Error") or downloaded.get("Version") != version or not checksum or not downloaded.get("GoModSum") or declared["Sum"] != checksum:
         raise ValueError("contracts download version/checksum mismatch")
     subprocess.run(["go", "mod", "verify"], cwd=module_directory, env=env, check=True, stdout=sys.stderr)
     resolved = query("list", "-m", "-json", MODULE)
@@ -134,12 +134,15 @@ def resolve_contracts(requested=""):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("source", "declared"), default="source")
+    parser.add_argument("--consumer", choices=("cli", "agent"), default="agent")
     args = parser.parse_args(argv)
+    if args.mode == "source" and args.consumer != "agent":
+        parser.error("--consumer is only supported for declared SDK verification")
     requested = os.environ.get("REQUESTED_CONTRACTS_REF", "")
     if args.mode == "source" and requested:
         raise ValueError("a requested external SDK ref requires --mode declared")
     result = (resolve_source_contracts() if args.mode == "source" else
-              {"mode": "declared", **resolve_contracts(requested)})
+              {"mode": "declared", **resolve_contracts(requested, Path(__file__).resolve().parents[2] / args.consumer)})
     if any("\n" in value or "\r" in value for value in result.values()):
         raise ValueError("contracts identity cannot contain newlines")
     if os.environ.get("GITHUB_OUTPUT"):

@@ -148,20 +148,35 @@ All component Dockerfiles use the complete Root context, Root `contracts/`, and
 all four Go module manifests. From Root, the generic image can be built with:
 
 ```sh
-make -C agent deploy-agent-image IMAGE_TAG=v0.1.11 VERSION=v0.1.11
+make -C agent deploy-agent-image IMAGE_TAG=v0.2.0 VERSION=v0.2.0
 ```
 
 The Hermes runner image can be built separately with:
 
 ```sh
-make -C agent deploy-hermes-image IMAGE_TAG=v0.1.11 VERSION=v0.1.11
+make -C agent deploy-hermes-image IMAGE_TAG=v0.2.0 VERSION=v0.2.0
 ```
 
 Root active CI retains all six independent image gates (default, Hermes, volume
 reader, Buildpacks, daemonless and DSH); `make -C agent verify-images` exercises
 them without publishing. Nested workflows are historical release definitions,
-not a second active publisher. B4 changes module/import/ldflags identities; tag/download
-routes stay unchanged and source validation does not claim external release qualification. The preserved release contract publishes multi-arch Linux images (`linux/amd64`, `linux/arm64`) to GHCR as `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent`, plus binary archives for Linux, macOS, and Windows. It also publishes the dedicated Buildpacks targets as `ghcr.io/opensoha/soha-buildpacks-agent:v0.1.11` and `ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v0.1.11`. Each archive has a `.sha256` sidecar plus a release-level `SHA256SUMS` manifest.
+not a second active publisher. The Root `agent-release.yml` candidate uses
+`agent/v0.2.0` Git tags and the protected `release-agent` environment. All six
+image repositories remain unchanged; image tags use `v0.2.0` (daemonless uses
+`daemonless-v0.2.0`) and never contain the Git tag slash. Five native targets
+remain Linux/macOS amd64 and arm64, plus Windows amd64; each archive has a
+`.sha256` sidecar and release-level `SHA256SUMS`.
+
+This is source release preparation, not a published version. Before any GitHub
+Release or GHCR write, the shared release-control guard must confirm the exact
+main SHA, its complete Agent CI result (including DSH authentication/health and
+all runtime images), legacy publisher retirement and environment authorization.
+The declared public SDK must pass checksum/no-replacement qualification with
+`GOWORK=off`; the current C1 source pin is not public release qualification.
+After actual publication, Go installation uses
+`go install github.com/opensoha/soha/agent/cmd/agent@v0.2.0` and binary assets use
+[Root agent/v0.2.0](https://github.com/opensoha/soha/releases/tag/agent%2Fv0.2.0).
+Published legacy `opensoha/soha-agent` tags and assets retain their old URLs.
 
 The packaged Outpost uses the same generic `soha-agent` image. Its protocol-matched Kubernetes install path and NGINX/Traefik ForwardAuth examples are documented in [`deploy/kubernetes/outpost`](./deploy/kubernetes/outpost/README.md). Helm packaging remains in `opensoha/soha-helm`; use the `soha-agent` chart with `mode=outpost`.
 

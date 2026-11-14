@@ -1354,7 +1354,7 @@ def release_manifest(version: str) -> dict[str, Any]:
         "version": version,
         "format": "tar.gz",
         "artifact": f"soha-skills-{version}.tar.gz",
-        "manifestUrl": f"https://github.com/opensoha/soha-skills/releases/download/v{version}/soha-skills-{version}.manifest.json",
+        "manifestUrl": f"https://github.com/opensoha/soha/releases/download/skills%2Fv{version}/soha-skills-{version}.manifest.json",
         "files": files,
     }
     validate_schema(manifest, load_schema("skills-release-manifest.schema.json"), "generated release manifest")
@@ -1530,12 +1530,24 @@ def check(name: str, status: str = "passed", **details: Any) -> dict[str, Any]:
 
 
 def utc_now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch is None:
+        value = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    else:
+        if not re.fullmatch(r"[0-9]+", epoch):
+            raise ValidationError("SOURCE_DATE_EPOCH must be a non-negative integer")
+        try:
+            value = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc)
+        except (ValueError, OverflowError, OSError) as exc:
+            raise ValidationError("SOURCE_DATE_EPOCH is outside the supported timestamp range") from exc
+    return value.isoformat().replace("+00:00", "Z")
 
 
 def report_path(path: Path | None) -> str:
     if path is None:
         return ""
+    if "SOURCE_DATE_EPOCH" in os.environ and path.is_absolute():
+        return Path(os.path.relpath(path, ROOT)).as_posix()
     return rel(path)
 
 
@@ -1568,6 +1580,7 @@ def write_validation_report(path: Path | None, report: dict[str, Any]) -> None:
 
 
 def run_validation(args: argparse.Namespace) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    utc_now()  # Reject malformed reproducible-build input before writing packages or indexes.
     checks: list[dict[str, Any]] = []
     contract_schema_paths = {
         "skill": args.contracts_skill_schema,
@@ -1836,7 +1849,7 @@ def main() -> int:
     parser.add_argument("--package-dry-run", action="store_true", help="assemble the release tarball in a temporary directory and print its checksum")
     parser.add_argument("--package-output-dir", type=Path, help="write release tarball, manifest, and checksum files to this directory")
     parser.add_argument("--verify-package", type=Path, help="verify an existing release tarball, sibling manifest, and sibling checksum")
-    parser.add_argument("--release-version", default="0.1.3", help="release version used for package dry-run metadata")
+    parser.add_argument("--release-version", default="0.1.4", help="release version used for package dry-run metadata")
     parser.add_argument("--report-output", type=Path, help="write a machine-readable validation report JSON artifact")
     parser.add_argument(
         "--contracts-skill-schema",

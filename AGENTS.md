@@ -18,6 +18,7 @@
 
 - Go 变更先验证受影响包；源码主入口为 `python3 scripts/source-workspace.py check-go` 后使用根 `go.work` 运行 `go test ./...`，SDK、CLI、Agent modules 分别验证，根 `go test ./...` 不覆盖嵌套模块。整洁性使用 `python3 scripts/source-workspace.py tidy`，不把未发布 SDK 当作内部开发的前置。对外声明依赖/发布验证仍使用 `GOWORK=off` 且禁止本地替换。架构、契约、依赖、安全、并发、部署或发布变更执行 [CI](.github/workflows/ci.yml) 适用完整门禁，保留 race、vet、复杂度、漏洞与镜像检查。
 - npm 安装只从根 `npm ci` 开始；四个 workspace 为 `contracts`、`web`、`connectors`、`cli/npm/cli`，组件从根使用 `npm run <script> --workspace <组件>`。Agent DSH 独立 Node 24 runtime 保留自己的锁文件；不加入根 npm workspace。`npm run build:web` 生成并校验 SDK、构建 Web、核对字节后嵌入；不得新增子目录锁文件或用工作区链接冒充 registry 分发。
+- 发布所有者与标签入口以 [.github/release-components.json](.github/release-components.json) 为准；组件工作流只使用本仓精确 tag/SHA，公开依赖验证与同源码验证分开。写入前必须核实对应旧发布者已停用且无在途、该 SHA 的 main CI 成功及受限 environment/owner 开关；缺少真实回执不能视为已经交接。只有 Core 管理 GitHub latest。已发布版本、附件和镜像版本标签不得覆盖，SDK staged 恢复复用原产物，不能重新打包替换。
 - 跨仓构建记录实际 Core、Web、Contracts 提交或产物摘要；固定组合验证和最新分支集成检查分别报告。写入版本号不等于组合已经通过验收。
 - 应用/集群删除使用[独立 PostgreSQL 集成检查](.github/workflows/deletion-integration.yml)，要求目标测试实际运行、通过且无跳过子测试；本地仅连接可丢弃的隔离测试库，不使用开发或生产业务数据库。
 - 数据库、任务或外部运行时集成测试被跳过时明确报告。普通 `go test` 成功不证明条件性测试已经执行；要求验证该链路时必须准备隔离环境并确认目标测试实际运行，不使用生产数据库。

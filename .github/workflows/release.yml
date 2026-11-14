@@ -16,14 +16,24 @@ on:
         default: ""
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release-core-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release-core
+    permissions:
+      actions: read
+      contents: write
+      packages: write
     env:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+      RELEASE_CORE_ENABLED: ${{ vars.RELEASE_CORE_ENABLED }}
+      GH_TOKEN: ${{ github.token }}
       CONTRACTS_REF: ${{ inputs.contracts_ref }}
       GOWORK: ${{ github.workspace }}/soha/go.work
     steps:
@@ -33,6 +43,15 @@ jobs:
           path: soha
           fetch-depth: 0
           persist-credentials: false
+      - name: Bind immutable Core tag and source
+        working-directory: soha
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/tags/$RELEASE_VERSION" ]]
+          export RELEASE_SHA="$(git rev-parse HEAD)"
+          python3 scripts/release-control.py identity --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA"
+          echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -72,7 +91,7 @@ jobs:
           python3 scripts/source-workspace.py check-go
           npm run build:web
           test -f internal/staticassets/web/dist/index.html
-          tar -czf ../soha-web-dist.tar.gz -C web/dist .
+          tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -cf - -C web/dist . | gzip -n > ../soha-web-dist.tar.gz
           sha256sum ../soha-web-dist.tar.gz | cut -d ' ' -f1 > ../soha-web-dist.sha256
           cp .tmp/embedded-web.json ../soha-web-source-manifest.json
       - name: Verify pinned contracts module
@@ -172,6 +191,9 @@ jobs:
       - name: Set up Docker Buildx
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-buildx-action@v3
+      - name: Require exclusive Core publisher before remote writes
+        working-directory: soha
+        run: python3 scripts/release-control.py verify --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --images-unused
       - name: Login to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
@@ -260,7 +282,7 @@ jobs:
           binary_sha256="$(cut -d ' ' -f1 soha-linux-amd64.sha256)"
           contracts_module="$(cat soha-contracts-module.txt)"
           web_sha256="$(cat soha-web-dist.sha256)"
-          generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          generated_at="$(date -u -d "@$SOURCE_DATE_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")"
           cat > soha-release-manifest.json <<EOF
           {
             "version": "${RELEASE_VERSION}",
@@ -294,20 +316,14 @@ jobs:
       - name: Publish GitHub release asset
         if: startsWith(github.ref, 'refs/tags/v')
         env:
-          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          asset="soha-linux-amd64"
-          checksum_asset="soha-linux-amd64.sha256"
-          manifest_asset="soha-release-manifest.json"
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" "${asset}" "${checksum_asset}" "${manifest_asset}" --repo "${GITHUB_REPOSITORY}" --clobber
-          else
-            gh release create "${GITHUB_REF_NAME}" "${asset}" "${checksum_asset}" "${manifest_asset}" --repo "${GITHUB_REPOSITORY}" --title "soha ${GITHUB_REF_NAME}" --generate-notes
-          fi
+          set -euo pipefail
+          python3 soha/scripts/publish-release-assets.py --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --latest --title "soha $RELEASE_VERSION" --files soha-linux-amd64 soha-linux-amd64.sha256 soha-release-manifest.json
       - name: Download published release assets and verify
         if: startsWith(github.ref, 'refs/tags/v')
         env:
-          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p downloaded-release

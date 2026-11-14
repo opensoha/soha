@@ -314,8 +314,8 @@ Source metadata identifies `https://github.com/opensoha/soha`, directory
 `contracts`. SDK release tags use `contracts/v<package.json version>`; Root
 `v*` tags belong to Core and are ignored by the SDK version-sync gate.
 
-The current `0.1.29` metadata is a source candidate, not a published release of
-the new Go namespace. Changing the Go module identity requires an intentional
+The current `0.2.0` metadata is a namespace-migration candidate, not a published release of
+the new Go namespace. Changing the Go module identity uses an intentional
 `0.x` minor release in B5, with coordinated consumer migration and public artifact
 verification. Historical released consumers retain their old module path until
 that migration. No `0.1.x` patch publication is implied by this source move.
@@ -325,7 +325,7 @@ From the Root workspace, prepare and verify local artifacts with:
 ```sh
 npm run check:version-sync --workspace contracts
 npm run release:artifacts --workspace contracts
-npm run release:verify --workspace contracts -- dist/release/opensoha-contracts-0.1.29.tgz
+npm run release:verify --workspace contracts -- dist/release/opensoha-contracts-0.2.0.tgz
 ```
 
 The verify argument is relative to `contracts/`. Artifact preparation writes an npm tarball, checksums, a release
@@ -335,7 +335,9 @@ OpenAPI hashes, SBOM and policy checksums, and any supplied consumer matrix.
 These checks prove local source/package consistency only.
 
 The expected SDK publisher is Root `.github/workflows/contracts-release.yml`,
-with the `contracts/v*` tag route. B5 must create and enable that publisher;
+with the `contracts/v*` tag route and protected `release-contracts` environment.
+It uses OIDC trusted publishing and retains human npm 2FA stage approval. Enable
+the publisher only after the legacy publishers are disabled and drained;
 the historical `contracts/.github/workflows/release.yml` is retained but inactive,
 and Root `.github/workflows/release.yml` belongs to Core. A local provenance
 policy neither attests the package nor proves that this publisher exists.
@@ -345,6 +347,10 @@ availability remain separate B5 release qualifications.
 Internal source development uses the Root npm workspace and `go.work`. External
 consumers must adopt the new namespace through a real version after its public
 release is verified; a local source replacement is not public availability proof.
+For `0.2.0`, migrate Go imports from `github.com/opensoha/soha-contracts` to
+`github.com/opensoha/soha/contracts` and pin `v0.2.0` only after public verification.
+The npm name stays `@opensoha/contracts`; the schema compatibility baseline and
+historical consumer revision pins remain unchanged.
 
 ## License
 

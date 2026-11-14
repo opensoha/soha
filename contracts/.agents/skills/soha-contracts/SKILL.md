@@ -38,7 +38,7 @@ import paths.
 - `gen/ts/sohaapi/index.ts` and generated Go DTOs come from OpenAPI.
 - `gen/go/sohaapi/client.go` is the deliberate hand-maintained exception:
   keep its supported method surface stable and cover additions with client tests.
-- Keep optional additions backward compatible during `0.1.x`. Do not remove
+- Keep optional additions backward compatible during `0.1.x` and `0.2.x`. Do not remove
   operations, statuses, properties, or enum values, and do not add required
   request fields without an explicit version decision.
 - Update `compat/**` only for an intentional reviewed baseline change, never

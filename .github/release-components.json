@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "repository": "opensoha/soha",
+  "requiredWorkflow": "ci.yml",
+  "components": {
+    "core": {
+      "directory": ".",
+      "tagPrefix": "v",
+      "workflow": "release.yml",
+      "environment": "release-core",
+      "enableVariable": "RELEASE_CORE_ENABLED",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-web",
+          "workflow": "release.yml"
+        }
+      ],
+      "requiredReleaseTags": [
+        "agent/v0.2.0"
+      ],
+      "images": [
+        {
+          "repository": "opensoha/soha",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-network-gateway",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-proxy-mihomo",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-proxy-sing-box",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-proxy-v2ray",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-radius",
+          "tagPrefix": "v"
+        }
+      ]
+    },
+    "contracts": {
+      "directory": "contracts",
+      "tagPrefix": "contracts/v",
+      "workflow": "contracts-release.yml",
+      "environment": "release-contracts",
+      "enableVariable": "RELEASE_CONTRACTS_ENABLED",
+      "versionFile": "contracts/package.json",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-contracts",
+          "workflow": "release.yml"
+        }
+      ]
+    },
+    "cli": {
+      "directory": "cli",
+      "tagPrefix": "cli/v",
+      "workflow": "cli-release.yml",
+      "environment": "release-cli",
+      "enableVariable": "RELEASE_CLI_ENABLED",
+      "versionFile": "cli/npm/cli/package.json",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-cli",
+          "workflow": "release.yml"
+        }
+      ],
+      "requiredReleaseTags": [
+        "skills/v0.1.4"
+      ],
+      "images": [
+        {
+          "repository": "opensoha/soha-cli",
+          "tagPrefix": "v"
+        }
+      ]
+    },
+    "agent": {
+      "directory": "agent",
+      "tagPrefix": "agent/v",
+      "workflow": "agent-release.yml",
+      "environment": "release-agent",
+      "enableVariable": "RELEASE_AGENT_ENABLED",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-agent",
+          "workflow": "release.yml"
+        }
+      ],
+      "images": [
+        {
+          "repository": "opensoha/soha-agent",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-docker-volume-reader",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-hermes-agent",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-buildpacks-agent",
+          "tagPrefix": "v"
+        },
+        {
+          "repository": "opensoha/soha-buildpacks-agent",
+          "tagPrefix": "daemonless-v"
+        },
+        {
+          "repository": "opensoha/soha-dsh",
+          "tagPrefix": "v"
+        }
+      ]
+    },
+    "connectors": {
+      "directory": "connectors",
+      "tagPrefix": "connectors/v",
+      "workflow": "connectors-release.yml",
+      "environment": "release-connectors",
+      "enableVariable": "RELEASE_CONNECTORS_ENABLED",
+      "versionFile": "connectors/package.json",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-connectors",
+          "workflow": "release.yml"
+        }
+      ]
+    },
+    "skills": {
+      "directory": "skills",
+      "tagPrefix": "skills/v",
+      "workflow": "skills-release.yml",
+      "environment": "release-skills",
+      "enableVariable": "RELEASE_SKILLS_ENABLED",
+      "legacy": [
+        {
+          "repository": "opensoha/soha-skills",
+          "workflow": "release.yml"
+        }
+      ]
+    }
+  }
+}

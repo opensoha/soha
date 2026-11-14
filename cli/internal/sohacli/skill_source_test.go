@@ -46,12 +46,14 @@ func TestRunSkillListUsesLatestPublishedGitHubReleaseByDefault(t *testing.T) {
 			"browser_download_url": assetServer.URL + "/" + name,
 		})
 	}
-	releaseBody := mustJSON(t, map[string]any{
-		"tag_name":   "v0.1.0",
-		"draft":      false,
-		"prerelease": false,
-		"assets":     assets,
-	})
+	releaseBody := mustJSON(t, []map[string]any{
+		{"tag_name": "v9.0.0"},
+		{
+			"tag_name":   "skills/v0.1.0",
+			"draft":      false,
+			"prerelease": false,
+			"assets":     assets,
+		}})
 
 	apiRequests := 0
 	apiPath := ""
@@ -59,7 +61,7 @@ func TestRunSkillListUsesLatestPublishedGitHubReleaseByDefault(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Host == "api.github.com" {
 			apiRequests++
-			apiPath = request.URL.Path
+			apiPath = request.URL.RequestURI()
 			apiAuthorization = request.Header.Get("Authorization")
 			return &http.Response{
 				StatusCode:    http.StatusOK,
@@ -86,7 +88,7 @@ func TestRunSkillListUsesLatestPublishedGitHubReleaseByDefault(t *testing.T) {
 	if out.String() != "delivery-developer\n" {
 		t.Fatalf("unexpected skill list output %q", out.String())
 	}
-	if apiRequests != 1 || apiPath != "/repos/opensoha/soha-skills/releases/latest" {
+	if apiRequests != 1 || apiPath != "/repos/opensoha/soha/releases?per_page=100&page=1" {
 		t.Fatalf("latest release API requests = %d at %q", apiRequests, apiPath)
 	}
 	if apiAuthorization != "" {
@@ -237,6 +239,102 @@ func TestParseGitHubSkillReleaseSourceSupportsLatestAndPinnedReleases(t *testing
 	}
 	if _, err := parseSkillReleaseSource("http://example.com/soha-skills-0.1.0.tar.gz"); err == nil {
 		t.Fatal("expected non-local HTTP release source to fail")
+	}
+}
+
+func TestRootSkillsReleasePaginationAndStableSelection(t *testing.T) {
+	first := make([]githubRelease, 100)
+	for i := range first {
+		first[i] = githubRelease{TagName: "v99.0.0"}
+	}
+	first[0] = githubRelease{TagName: "skills/v0.1.9"}
+	second := []githubRelease{
+		{TagName: "agent/v9.0.0"},
+		{TagName: "skills/v10.0.0", Draft: true},
+		{TagName: "skills/v9.0.0", Prerelease: true},
+		{TagName: "skills/v8.0.0-rc.1"},
+		{TagName: "skills/v07.0.0"},
+		{TagName: "skills/v0.1.10"},
+		{TagName: "skills/v0.1.8"},
+	}
+	requests := 0
+	rt := Runtime{HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.Host != "api.github.com" || request.URL.Path != "/repos/opensoha/soha/releases" || request.URL.Query().Get("per_page") != "100" || request.URL.Query().Get("page") != fmt.Sprint(requests) {
+			t.Fatalf("unexpected release request %s", request.URL)
+		}
+		if request.Header.Get("Authorization") != "" {
+			t.Fatal("GitHub request leaked authentication")
+		}
+		releases := first
+		if requests == 2 {
+			releases = second
+		}
+		raw := mustJSON(t, releases)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(raw)), ContentLength: int64(len(raw)), Request: request}, nil
+	})}}
+	release, err := latestRootSkillsRelease(context.Background(), rt)
+	if err != nil || release.TagName != "skills/v0.1.10" || requests != 2 {
+		t.Fatalf("selected %#v after %d pages: %v", release, requests, err)
+	}
+}
+
+func TestRootSkillsReleaseFailsClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     string
+		status   int
+		length   int64
+		redirect string
+		want     string
+	}{
+		{"no stable skills", `[{"tag_name":"v1.0.0"},{"tag_name":"skills/v1.0.0","draft":true}]`, 200, 0, "", "no published stable"},
+		{"invalid metadata", `{`, 200, 0, "", "decode"},
+		{"API failure", `[]`, 403, 0, "", "unexpected HTTP status"},
+		{"oversized metadata", `[]`, 200, maxSkillsMetadataBytes + 1, "", "exceeds"},
+		{"insecure redirect", `[]`, 200, 0, "http://example.com/releases", "insecure HTTP"},
+		{"missing selected assets", `[{"tag_name":"skills/v0.1.4"}]`, 200, 0, "", "missing asset"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := Runtime{HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if tc.redirect != "" {
+					request, _ = http.NewRequest(http.MethodGet, tc.redirect, nil)
+				}
+				return &http.Response{StatusCode: tc.status, Status: fmt.Sprint(tc.status), Body: io.NopCloser(strings.NewReader(tc.body)), ContentLength: tc.length, Request: request}, nil
+			})}}
+			_, err := resolveLatestGitHubSkillRelease(context.Background(), rt, "opensoha", "soha")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestRootSkillsReleasePageLimit(t *testing.T) {
+	releases := make([]githubRelease, 100)
+	releases[0].TagName = "skills/v0.1.4"
+	raw := mustJSON(t, releases)
+	requests := 0
+	rt := Runtime{HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(raw)), Request: request}, nil
+	})}}
+	_, err := latestRootSkillsRelease(context.Background(), rt)
+	if err == nil || !strings.Contains(err.Error(), "100-page limit") || requests != 100 {
+		t.Fatalf("expected fail-closed page bound, requests=%d err=%v", requests, err)
+	}
+}
+
+func TestRootSkillsReleasePinsEncodeNamespaceAndPreserveLegacy(t *testing.T) {
+	for _, source := range []string{"github:opensoha/soha@skills/v0.1.4", "github:opensoha/soha@v0.1.4"} {
+		spec, err := parseSkillReleaseSource(source)
+		want := "https://github.com/opensoha/soha/releases/download/skills%2Fv0.1.4/soha-skills-0.1.4.tar.gz"
+		if err != nil || spec.Artifact != want || spec.ExpectedVersion != "0.1.4" {
+			t.Fatalf("source %s: %#v %v", source, spec, err)
+		}
+	}
+	if _, err := parseSkillReleaseSource("github:other/repo@skills/v0.1.4"); err == nil {
+		t.Fatal("foreign repository accepted Root component namespace")
 	}
 }
 

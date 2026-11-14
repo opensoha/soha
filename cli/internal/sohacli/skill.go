@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultSkillSource          = "skills/ai-gateway"
-	defaultPublishedSkillSource = "github:opensoha/soha-skills"
+	defaultPublishedSkillSource = "github:opensoha/soha"
 )
 
 func runSkill(ctx context.Context, args []string, rt Runtime) error {

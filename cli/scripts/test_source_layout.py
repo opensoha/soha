@@ -21,7 +21,7 @@ class SourceLayoutTest(unittest.TestCase):
                 self.assertNotIn("GOWORK=off", text)
                 self.assertNotIn("COPY --from=contracts", text)
                 self.assertIn("golang:1.27.4", text)
-                owner = "soha-cli/internal/sohacli.commit" if name.startswith("cli/") else "soha-agent/internal/agent/buildinfo.Commit"
+                owner = "soha/cli/internal/sohacli.commit" if name.startswith("cli/") else "soha/agent/internal/agent/buildinfo.Commit"
                 self.assertIn("github.com/opensoha/" + owner + "=${COMMIT}", text)
         source_copies = {
             "deploy/Dockerfile": ("COPY . ./soha", "COPY --from=web-build /src/contracts ./soha/contracts"),

@@ -6,7 +6,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_RELEASE_BASE_URL = "https://github.com/opensoha/soha-cli/releases/download";
+const DEFAULT_RELEASE_BASE_URL = "https://github.com/opensoha/soha/releases/download";
 const MAX_CHECKSUM_BYTES = 1024 * 1024;
 const MAX_BINARY_BYTES = 200 * 1024 * 1024;
 const CACHE_LOCK_TIMEOUT_MS = 30_000;
@@ -61,7 +61,7 @@ export function defaultCacheRoot(env = process.env) {
 }
 
 function releaseURL(baseURL, version, fileName) {
-  return `${baseURL.replace(/\/+$/u, "")}/v${version}/${fileName}`;
+  return `${baseURL.replace(/\/+$/u, "")}/${encodeURIComponent(`cli/v${version}`)}/${fileName}`;
 }
 
 function assertDownloadURL(value) {

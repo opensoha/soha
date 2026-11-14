@@ -12,7 +12,7 @@ npx -y @opensoha/cli@latest skill update
 ```
 
 The launcher downloads the platform-specific binary from the matching GitHub
-release, verifies it against `checksums.txt`, caches it by CLI version, and
+release under `opensoha/soha` tag `cli/v<version>` (with the slash URL-encoded), verifies it against `checksums.txt`, caches it by CLI version, and
 checks the cached binary before every execution. Supported targets are Linux,
 macOS, and Windows on amd64 or arm64.
 
@@ -21,3 +21,7 @@ in CI for reproducible automation. `setup` records the verified cached native
 binary in the generated MCP configuration, so the agent does not need to run
 an npm download path on every MCP startup. Re-run the latest `setup` command
 when upgrading the configured MCP binary.
+
+The local `0.2.0` candidate requires protected Root publication and a public
+SDK before it is installable. Existing published `0.1.x` packages retain their
+legacy `opensoha/soha-cli` downloads; no old package or release is rewritten.
