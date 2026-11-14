@@ -36,6 +36,42 @@ test('candidate hashes use the actual packed bytes and exact CLI release identit
   assert.equal(receipt.file, file);
 });
 
+test('npm12 exact package-key map retains candidate bytes and public provenance verification', async (t) => {
+  const { descriptor, options } = await fixture(t);
+  const entry = { ...descriptor[0], id: '@opensoha/cli@0.2.0', entryCount: 4, bundled: [] };
+  await writeFile(options.descriptorPath, JSON.stringify({ '@opensoha/cli': entry }));
+  const candidate = await readPackCandidate(options);
+  assert.equal(candidate.integrity, entry.integrity);
+  assert.equal(candidate.version, '0.2.0');
+  const receipt = await verifyPublicNpmRelease(options, async (expected) => {
+    assert.equal(expected.tag, 'cli/v0.2.0');
+    assert.equal(expected.sha, options.sha);
+    assert.equal(expected.workflow, '.github/workflows/cli-release.yml');
+    return { integrity: expected.integrity, sha256: expected.sha256, provenance: 'npm audit signatures passed' };
+  });
+  assert.equal(receipt.sha256, candidate.sha256);
+});
+
+test('npm12 maps reject unknown or extra package keys and malformed entries', async (t) => {
+  const { descriptor, options } = await fixture(t);
+  const entry = descriptor[0];
+  for (const value of [null, true, 'entry', {}, [], [entry, entry],
+    { '@opensoha/contracts': entry }, { '@opensoha/cli': entry, extra: entry },
+    { '@opensoha/cli': null }, { '@opensoha/cli': [] }, { '@opensoha/cli': 'entry' }]) {
+    await writeFile(options.descriptorPath, JSON.stringify(value));
+    await assert.rejects(readPackCandidate(options), /exactly one CLI pack descriptor|invalid CLI pack descriptor entry/u);
+  }
+});
+
+test('npm12 maps preserve strict name, version, filename, size and SRI validation', async (t) => {
+  const { descriptor, options } = await fixture(t);
+  for (const change of [{ name: '@opensoha/contracts' }, { version: '0.2.1' }, { filename: '../escape.tgz' },
+    { size: descriptor[0].size + 1 }, { size: String(descriptor[0].size) }, { integrity: 'sha512-wrong' }]) {
+    await writeFile(options.descriptorPath, JSON.stringify({ '@opensoha/cli': { ...descriptor[0], ...change } }));
+    await assert.rejects(readPackCandidate(options), /identity differs|bytes differ/u);
+  }
+});
+
 test('wrong existing package SRI and signed source rejection cannot become successful recovery', async (t) => {
   const { options } = await fixture(t);
   await assert.rejects(verifyPublicNpmRelease(options, async (candidate) => ({
@@ -88,7 +124,8 @@ test('actual npm pack descriptor and tar pass candidate identity verification', 
   assert.equal(packed.status, 0, packed.stderr);
   const descriptorPath = path.join(directory, 'pack.json');
   await writeFile(descriptorPath, packed.stdout);
-  const candidate = await readPackCandidate({ descriptorPath, packageDirectory: directory, tag: 'cli/v0.2.0', sha: 'a'.repeat(40) });
-  assert.equal(candidate.version, '0.2.0');
+  const { version } = JSON.parse(await readFile(new URL('../npm/cli/package.json', import.meta.url), 'utf8'));
+  const candidate = await readPackCandidate({ descriptorPath, packageDirectory: directory, tag: `cli/v${version}`, sha: 'a'.repeat(40) });
+  assert.equal(candidate.version, version);
   assert.equal(candidate.sha256, createHash('sha256').update(await readFile(candidate.file)).digest('hex'));
 });
