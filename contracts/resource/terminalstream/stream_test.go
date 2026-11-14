@@ -108,8 +108,20 @@ func TestTerminalWireRoundtripEOFResizeAndKnownExit(t *testing.T) {
 	if !ok || got.ExitCode == nil || *got.ExitCode != 42 {
 		t.Fatalf("lost result: %+v", got)
 	}
-	if _, err := backend.Write([]byte("late")); !errors.Is(err, ErrInvalidFrame) {
-		t.Fatalf("output after exit: %v", err)
+	<-backend.Done()
+	if n, err := backend.Write([]byte("late")); n != 0 || !errors.Is(err, ErrInvalidFrame) {
+		t.Fatalf("output after exit: %d, %v", n, err)
+	}
+}
+
+func TestTerminalNonterminalClosePreservesCancellation(t *testing.T) {
+	client, _ := terminalPair(t)
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-client.Done()
+	if n, err := client.Write([]byte("late")); n != 0 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("write after cancellation: %d, %v", n, err)
 	}
 }
 

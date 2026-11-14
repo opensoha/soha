@@ -171,12 +171,15 @@ func (endpoint *Endpoint) Write(data []byte) (int, error) {
 }
 
 func (endpoint *Endpoint) canWriteData() error {
+	endpoint.stateMu.Lock()
+	defer endpoint.stateMu.Unlock()
+	if endpoint.terminal {
+		return ErrInvalidFrame
+	}
 	if endpoint.ctx.Err() != nil {
 		return context.Cause(endpoint.ctx)
 	}
-	endpoint.stateMu.Lock()
-	defer endpoint.stateMu.Unlock()
-	if endpoint.terminal || !endpoint.server && endpoint.eof || !endpoint.ready {
+	if !endpoint.server && endpoint.eof || !endpoint.ready {
 		return ErrInvalidFrame
 	}
 	return nil

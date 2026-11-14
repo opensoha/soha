@@ -252,6 +252,12 @@ test('Task114 imported CR opens source YAML on demand and withdraws it across en
     .getByRole('navigation', { name: '选择环境', exact: true })
     .getByRole('button', { name: /生产环境/ })
     .click()
+  await expect(page).toHaveURL(/applicationEnvironmentId=retail-prod/)
+  await expect(
+    page
+      .getByRole('navigation', { name: '选择环境', exact: true })
+      .getByRole('button', { name: /生产环境/ }),
+  ).toHaveAttribute('aria-current', 'page')
   await page.getByText('查看资源关系详情', { exact: true }).click()
   await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
     'uid-prod',
@@ -259,6 +265,12 @@ test('Task114 imported CR opens source YAML on demand and withdraws it across en
   await expect(page.getByLabel('源配置 YAML')).toHaveCount(0)
   expect(reads).toHaveLength(1)
   await page.goBack()
+  await expect(page).toHaveURL(/applicationEnvironmentId=retail-test/)
+  await expect(
+    page
+      .getByRole('navigation', { name: '选择环境', exact: true })
+      .getByRole('button', { name: /测试环境/ }),
+  ).toHaveAttribute('aria-current', 'page')
   await page.getByText('查看资源关系详情', { exact: true }).click()
   await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
     'uid-test',
@@ -267,6 +279,12 @@ test('Task114 imported CR opens source YAML on demand and withdraws it across en
   await expect(page.getByLabel('源配置 YAML')).toContainText('synthetic-secret')
   expect(reads).toHaveLength(2)
   await page.goForward()
+  await expect(page).toHaveURL(/applicationEnvironmentId=retail-prod/)
+  await expect(
+    page
+      .getByRole('navigation', { name: '选择环境', exact: true })
+      .getByRole('button', { name: /生产环境/ }),
+  ).toHaveAttribute('aria-current', 'page')
   await page.getByText('查看资源关系详情', { exact: true }).click()
   await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
     'uid-prod',

@@ -630,7 +630,7 @@ test('unknown oncall override fixes its target and blocks duplicate submission',
   await expect(modal.getByText(/更新值班覆盖：请求结果不明/)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(modal).toBeVisible()
-  await expect(modal.getByRole('button', { name: '保存覆盖', exact: true })).toBeDisabled()
+  await expect(modal.getByRole('button').filter({ hasText: /^保存覆盖$/ })).toBeDisabled()
   expect(state.writes).toHaveLength(1)
   expect(state.writes[0].path).toBe('/oncall/rotations/rotation-qa')
   expect(state.writes[0].body.name).toBe(rotation.name)
