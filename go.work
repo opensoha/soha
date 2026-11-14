@@ -2,9 +2,9 @@ go 1.27.4
 
 use (
 	.
-	./agent
-	./cli
 	./contracts
+	./cli
+	./agent
 )
 
 replace github.com/opensoha/soha/contracts v0.2.0 => ./contracts
