@@ -42,11 +42,16 @@ class NativeReleaseRecoveryTest(unittest.TestCase):
 
     def test_component_tags_remain_disjoint(self):
         for component in ("cli", "agent"):
+            version = json.loads((ROOT / "cli/npm/cli/package.json").read_text())["version"] if component == "cli" else "0.2.0"
             command = ["python3", str(ROOT / "scripts/release-control.py"), "identity", "--component", component, "--sha", "a" * 40, "--tag"]
-            good = subprocess.check_output([*command, f"{component}/v0.2.0"], text=True)
-            self.assertEqual(json.loads(good)["version"], "0.2.0")
-            for invalid in ("v0.2.0", "contracts/v0.2.0", f"{component}/v0.2.0-rc.1"):
+            good = subprocess.check_output([*command, f"{component}/v{version}"], text=True)
+            self.assertEqual(json.loads(good)["version"], version)
+            for invalid in (f"v{version}", f"contracts/v{version}", f"{component}/v{version}-rc.1"):
                 self.assertNotEqual(subprocess.run([*command, invalid], capture_output=True).returncode, 0)
+            if component == "cli":
+                major, minor, patch = version.split(".")
+                wrong_version = f"cli/v{major}.{minor}.{int(patch) + 1}"
+                self.assertNotEqual(subprocess.run([*command, wrong_version], capture_output=True).returncode, 0)
 
     def test_tar_and_zip_retries_ignore_build_file_metadata(self):
         epoch = 1794614401

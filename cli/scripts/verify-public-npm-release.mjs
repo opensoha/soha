@@ -8,8 +8,15 @@ export async function readPackCandidate({ descriptorPath, packageDirectory, tag,
   if (!match || !/^[a-f0-9]{40}$/u.test(sha || '')) throw new Error('exact stable CLI tag and source SHA required');
   const version = match.slice(1).join('.');
   const descriptor = JSON.parse(await readFile(descriptorPath, 'utf8'));
-  if (!Array.isArray(descriptor) || descriptor.length !== 1) throw new Error('expected exactly one CLI pack descriptor');
-  const entry = descriptor[0];
+  let entry;
+  if (Array.isArray(descriptor) && descriptor.length === 1) {
+    entry = descriptor[0];
+  } else if (descriptor && typeof descriptor === 'object' && Object.keys(descriptor).length === 1 && Object.hasOwn(descriptor, '@opensoha/cli')) {
+    entry = descriptor['@opensoha/cli'];
+  } else {
+    throw new Error('expected exactly one CLI pack descriptor');
+  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('invalid CLI pack descriptor entry');
   if (entry.name !== '@opensoha/cli' || entry.version !== version || entry.filename !== `opensoha-cli-${version}.tgz`) {
     throw new Error('CLI pack identity differs from the release candidate');
   }

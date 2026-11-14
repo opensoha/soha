@@ -22,6 +22,8 @@ binary in the generated MCP configuration, so the agent does not need to run
 an npm download path on every MCP startup. Re-run the latest `setup` command
 when upgrading the configured MCP binary.
 
-The local `0.2.0` candidate requires protected Root publication and a public
-SDK before it is installable. Existing published `0.1.x` packages retain their
-legacy `opensoha/soha-cli` downloads; no old package or release is rewritten.
+The local `0.2.1` candidate requires its own protected Root publication before
+it is installable. Root `cli/v0.2.0` already has its 13 native assets and
+`ghcr.io/opensoha/soha-cli:v0.2.0` image published, but the npm `0.2.0` launcher
+was not published. Existing `0.2.0` artifacts and published `0.1.x` packages
+retain their original contents and download sources; no old release is rewritten.
