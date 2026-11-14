@@ -83,7 +83,9 @@ class ReleaseControlTest(unittest.TestCase):
         with patch.dict(os.environ, {"GITHUB_ACTOR": "fixture", "GH_TOKEN": "not-a-secret"}):
             control.check_images_unused(release, self.config, fetch)
         manifests = [url for url in calls if "/manifests/" in url]
-        self.assertEqual(len(manifests), 6)
+        self.assertEqual(len(manifests), 5)
+        self.assertFalse(any("soha-hermes-agent" in url for url in manifests))
+        self.assertIn("https://ghcr.io/v2/opensoha/soha-buildpacks-agent/manifests/v0.2.0", manifests)
         self.assertIn("https://ghcr.io/v2/opensoha/soha-buildpacks-agent/manifests/daemonless-v0.2.0", manifests)
 
     def test_occupied_unauthorized_or_unknown_images_block(self):

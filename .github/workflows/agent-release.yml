@@ -199,22 +199,6 @@ jobs:
             VERSION=v${{ needs.verify.outputs.version }}
             COMMIT=${{ env.RELEASE_SHA }}
             DATE=${{ needs.verify.outputs.date }}
-      - name: Build Hermes runner image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: agent/deploy/Dockerfile.hermes-agent-runner
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/opensoha/soha-hermes-agent:v${{ needs.verify.outputs.version }}
-            ghcr.io/opensoha/soha-hermes-agent:latest
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-args: |
-            VERSION=v${{ needs.verify.outputs.version }}
-            COMMIT=${{ env.RELEASE_SHA }}
-            DATE=${{ needs.verify.outputs.date }}
       - name: Build Buildpacks runner image
         uses: docker/build-push-action@v6
         with:
