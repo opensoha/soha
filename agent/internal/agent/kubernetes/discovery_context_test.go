@@ -40,7 +40,11 @@ func TestResourceCreateDiscoveryHTTPCancellationStopsBeforeCreate(t *testing.T) 
 			defer server.Close()
 			client := discoveryHTTPTestClient(t, server.URL)
 			var creates atomic.Int32
-			client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "*", func(ktesting.Action) (bool, runtime.Object, error) {
+			fakeDynamic, ok := client.dynamic.(*dynamicfake.FakeDynamicClient)
+			if !ok {
+				t.Fatal("expected *dynamicfake.FakeDynamicClient fixture")
+			}
+			fakeDynamic.PrependReactor("create", "*", func(ktesting.Action) (bool, runtime.Object, error) {
 				creates.Add(1)
 				return true, nil, errors.New("must not create")
 			})
@@ -123,7 +127,11 @@ func TestResourceDiscoveryPreservesTransportAuthenticationAndBodyLifetime(t *tes
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher fixture")
+		}
+		flusher.Flush()
 		// RoundTrip has returned headers; its operation context must still cover body reads.
 		select {
 		case <-r.Context().Done():

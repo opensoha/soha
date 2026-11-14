@@ -454,7 +454,7 @@ func (c *Client) readAggregateLogSource(ctx context.Context, query domainresourc
 	if err != nil {
 		return nil, false, err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	content, _, truncated, err := streamlimit.ReadString(stream, aggregateLogSourceMaxBytes)
 	if err != nil {
 		return nil, false, err
@@ -468,7 +468,7 @@ func (c *Client) streamAggregateLogSource(ctx context.Context, query domainresou
 		sendAggregateLogEvent(ctx, events, domainresource.LogStreamEvent{Type: "source_error", Status: &domainresource.LogStreamStatus{State: "degraded", Message: "log source unavailable"}})
 		return
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 64*1024), aggregateLogSourceMaxBytes)

@@ -32,7 +32,8 @@ cat <<'JSON'
 {"summary":"Hermes identified a release regression.","recommendations":["Rollback release bundle"]}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write fake hermes: %v", err)
 	}
 	workspaceRoot := filepath.Join(root, "workspace")
@@ -74,11 +75,16 @@ JSON
 	if len(recommendations) != 1 || recommendations[0] != "Rollback release bundle" {
 		t.Fatalf("recommendations = %#v", output["recommendations"])
 	}
-	rawOutput := strings.TrimSpace(output["rawOutput"].(string))
+	rawOutput, ok := output["rawOutput"].(string)
+	if !ok {
+		t.Fatal("expected string fixture")
+	}
+	rawOutput = strings.TrimSpace(rawOutput)
 	if !strings.Contains(rawOutput, "Hermes identified a release regression") {
 		t.Fatalf("raw output = %q", rawOutput)
 	}
 	argsPath := filepath.Join(workspaceRoot, "agent-run-1", "command.args")
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	args, err := os.ReadFile(argsPath)
 	if err != nil {
 		t.Fatalf("read fake hermes args: %v", err)
@@ -95,7 +101,8 @@ func TestExecuteAgentRunSendsFailedAnalysisArtifact(t *testing.T) {
 echo "provider failed after collecting context token=raw-secret api_key=raw-key" >&2
 exit 2
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write failing hermes: %v", err)
 	}
 
@@ -183,7 +190,8 @@ cat <<'JSON'
 {"summary":"Hermes accepted fallback skill id."}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write fake hermes: %v", err)
 	}
 	workspaceRoot := filepath.Join(root, "workspace")
@@ -221,7 +229,8 @@ cat <<'JSON'
 {"summary":"Hermes used prefetched soha tool context."}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write fake hermes: %v", err)
 	}
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -297,7 +306,8 @@ cat <<'JSON'
 {"summary":"OpenClaw executor accepted the soha contract."}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write fake openclaw: %v", err)
 	}
 	workspaceRoot := filepath.Join(root, "workspace")
@@ -335,6 +345,7 @@ JSON
 		t.Fatalf("summary = %#v", output["summary"])
 	}
 	argsPath := filepath.Join(workspaceRoot, "agent-run-openclaw", "command.args")
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	args, err := os.ReadFile(argsPath)
 	if err != nil {
 		t.Fatalf("read fake openclaw args: %v", err)
@@ -356,7 +367,8 @@ cat <<'JSON'
 {"summary":"Hermes POC found a pod restart regression.","recommendations":["Inspect payment-api pod logs"]}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write fake hermes: %v", err)
 	}
 
@@ -369,7 +381,7 @@ JSON
 			t.Fatalf("unexpected authorization header %q for %s", got, r.URL.Path)
 		}
 		status := http.StatusAccepted
-		body := map[string]any{}
+		var body map[string]any
 		switch r.URL.Path {
 		case "/api/v1/copilot/agent-runs/claim":
 			claimSeen = true
@@ -492,6 +504,7 @@ JSON
 	if !claimSeen || !toolCallSeen || !runningCallbackSeen || !completedCallbackSeen {
 		t.Fatalf("expected claim/tool-call/running/completed flow, got claim=%v tool=%v running=%v completed=%v", claimSeen, toolCallSeen, runningCallbackSeen, completedCallbackSeen)
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	args, err := os.ReadFile(filepath.Join(workspaceRoot, "agent-run-smoke", "command.args"))
 	if err != nil {
 		t.Fatalf("read fake hermes args: %v", err)
@@ -579,7 +592,8 @@ cat <<'JSON'
 {"summary":"slow Hermes completed after heartbeat"}
 JSON
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write slow hermes: %v", err)
 	}
 	previousInterval := agentRunHeartbeatInterval
@@ -646,7 +660,8 @@ func TestExecuteAgentRunStopsWhenControlPlaneReturnsTerminalStatus(t *testing.T)
 sleep 5
 echo '{"summary":"should not complete"}'
 `
-	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+	// #nosec G306 -- Owner-only executable fixture under t.TempDir; execution permission is required by this test.
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
 		t.Fatalf("write cancelable hermes: %v", err)
 	}
 	previousInterval := agentRunHeartbeatInterval

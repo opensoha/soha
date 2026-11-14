@@ -123,7 +123,11 @@ data:
 		t.Fatalf("analysis = %#v", analysis)
 	}
 
-	actions := client.dynamic.(*dynamicfake.FakeDynamicClient).Actions()
+	fakeDynamic, ok := client.dynamic.(*dynamicfake.FakeDynamicClient)
+	if !ok {
+		t.Fatal("expected *dynamicfake.FakeDynamicClient fixture")
+	}
+	actions := fakeDynamic.Actions()
 	patch, ok := actions[len(actions)-1].(clienttesting.PatchActionImpl)
 	if !ok || patch.GetPatchType() != types.ApplyPatchType || len(patch.PatchOptions.DryRun) != 1 || patch.PatchOptions.DryRun[0] != metav1.DryRunAll || patch.PatchOptions.FieldManager != "opensoha-resource-edit/v1" || patch.PatchOptions.Force == nil || *patch.PatchOptions.Force {
 		t.Fatalf("last action = %#v, want server-side apply with DryRunAll and force=false", actions[len(actions)-1])
@@ -134,7 +138,10 @@ func newSSAFakeDynamicClient(t *testing.T, gvr schema.GroupVersionResource, exis
 	t.Helper()
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "ConfigMapList"}, existing)
 	client.PrependReactor("patch", gvr.Resource, func(action clienttesting.Action) (bool, runtime.Object, error) {
-		patch := action.(clienttesting.PatchActionImpl)
+		patch, ok := action.(clienttesting.PatchActionImpl)
+		if !ok {
+			t.Fatal("expected clienttesting.PatchActionImpl fixture")
+		}
 		var object map[string]any
 		if err := json.Unmarshal(patch.GetPatch(), &object); err != nil {
 			return true, nil, err

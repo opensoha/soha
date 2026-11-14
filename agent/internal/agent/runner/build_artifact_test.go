@@ -65,7 +65,10 @@ func TestExecuteRefreshesWorkspaceArtifactsAfterCommands(t *testing.T) {
 			if tc.digest != "" && artifacts[0]["sizeBytes"] != float64(len(tc.digest)) {
 				t.Fatalf("stale artifact size: %#v", artifacts[0])
 			}
-			artifact := final.Payload["artifact"].(map[string]any)
+			artifact, ok := final.Payload["artifact"].(map[string]any)
+			if !ok {
+				t.Fatal("expected map[string]any fixture")
+			}
 			if got := stringMapValue(artifact, "digest"); got != tc.digest {
 				t.Fatalf("artifact digest = %q, want %q", got, tc.digest)
 			}

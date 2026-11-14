@@ -103,11 +103,15 @@ func certificateFixture(t *testing.T, path string, until time.Time) {
 }
 func supervisorFixture(t *testing.T) (*Supervisor, *fixtureControl, *fixtureObserver) {
 	t.Helper()
-	base, err := os.MkdirTemp("/private/tmp", "task122-h1-")
+	temporary, err := os.MkdirTemp("/tmp", "task122-h1-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	t.Cleanup(func() { _ = os.RemoveAll(temporary) })
+	base, err := filepath.EvalSymlinks(temporary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	configDir := filepath.Join(base, "config")
 	if err = os.Mkdir(configDir, 0700); err != nil {
 		t.Fatal(err)

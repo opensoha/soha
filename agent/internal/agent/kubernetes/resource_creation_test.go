@@ -90,10 +90,21 @@ func TestPreflightResourceCreateStripsClusterScopedNamespace(t *testing.T) {
 func TestCreateResourcesPreflightsAllDocumentsBeforeWriting(t *testing.T) {
 	client, actions := newResourceCreationTestClient(t)
 	calls := 0
-	client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
+	fakeDynamic, ok := client.dynamic.(*dynamicfake.FakeDynamicClient)
+	if !ok {
+		t.Fatal("expected *dynamicfake.FakeDynamicClient fixture")
+	}
+	fakeDynamic.PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
 		calls++
-		create := action.(ktesting.CreateAction)
-		if create.GetObject().(*unstructured.Unstructured).GetName() == "denied" {
+		create, ok := action.(ktesting.CreateAction)
+		if !ok {
+			t.Fatal("expected ktesting.CreateAction fixture")
+		}
+		object, ok := create.GetObject().(*unstructured.Unstructured)
+		if !ok {
+			t.Fatal("expected *unstructured.Unstructured fixture")
+		}
+		if object.GetName() == "denied" {
 			return true, nil, errors.New("dry-run rejected")
 		}
 		return true, create.GetObject(), nil
@@ -199,8 +210,15 @@ func newResourceCreationTestClient(t *testing.T) (*Client, *[]recordedResourceCr
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme)
 	actions := make([]recordedResourceCreate, 0)
 	dynamicClient.PrependReactor("create", "*", func(action ktesting.Action) (bool, runtime.Object, error) {
-		create := action.(ktesting.CreateAction)
-		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+		create, ok := action.(ktesting.CreateAction)
+		if !ok {
+			t.Fatal("expected ktesting.CreateAction fixture")
+		}
+		object, ok := create.GetObject().(*unstructured.Unstructured)
+		if !ok {
+			t.Fatal("expected *unstructured.Unstructured fixture")
+		}
+		object = object.DeepCopy()
 		actions = append(actions, recordedResourceCreate{namespace: action.GetNamespace()})
 		return true, object, nil
 	})
@@ -244,11 +262,22 @@ func generatedConfigMapDocument(index int, prefix string) domainresource.Kuberne
 func TestResourceCreateGenerateNameBindsPrefixAndReturnsPersistentName(t *testing.T) {
 	client, _ := newResourceCreationTestClient(t)
 	var dryRuns []bool
-	client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
-		create := action.(ktesting.CreateActionImpl)
+	fakeDynamic, ok := client.dynamic.(*dynamicfake.FakeDynamicClient)
+	if !ok {
+		t.Fatal("expected *dynamicfake.FakeDynamicClient fixture")
+	}
+	fakeDynamic.PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
+		create, ok := action.(ktesting.CreateActionImpl)
+		if !ok {
+			t.Fatal("expected ktesting.CreateActionImpl fixture")
+		}
 		dryRun := len(create.GetCreateOptions().DryRun) > 0
 		dryRuns = append(dryRuns, dryRun)
-		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+		object, ok := create.GetObject().(*unstructured.Unstructured)
+		if !ok {
+			t.Fatal("expected *unstructured.Unstructured fixture")
+		}
+		object = object.DeepCopy()
 		if object.GetName() != "" || object.GetGenerateName() != "app-" {
 			t.Fatalf("request identity=%+v", object.Object)
 		}
@@ -319,9 +348,20 @@ func TestResourceCreateExplicitNameTakesPrecedenceOverGenerateName(t *testing.T)
 func TestResourceCreateGeneratedPartialBatchRetainsActualFirstName(t *testing.T) {
 	client, _ := newResourceCreationTestClient(t)
 	persistent := 0
-	client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
-		create := action.(ktesting.CreateActionImpl)
-		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+	fakeDynamic, ok := client.dynamic.(*dynamicfake.FakeDynamicClient)
+	if !ok {
+		t.Fatal("expected *dynamicfake.FakeDynamicClient fixture")
+	}
+	fakeDynamic.PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
+		create, ok := action.(ktesting.CreateActionImpl)
+		if !ok {
+			t.Fatal("expected ktesting.CreateActionImpl fixture")
+		}
+		object, ok := create.GetObject().(*unstructured.Unstructured)
+		if !ok {
+			t.Fatal("expected *unstructured.Unstructured fixture")
+		}
+		object = object.DeepCopy()
 		if len(create.GetCreateOptions().DryRun) == 0 {
 			persistent++
 			if object.GetGenerateName() == "second-" {
@@ -350,7 +390,10 @@ func TestResourceCreateDiscoveryValidatesRequestedServedVersion(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client, actions := newResourceCreationTestClient(t)
-			discovery := client.discovery.(*fakediscovery.FakeDiscovery)
+			discovery, ok := client.discovery.(*fakediscovery.FakeDiscovery)
+			if !ok {
+				t.Fatal("expected *fakediscovery.FakeDiscovery fixture")
+			}
 			discovery.Resources = append(discovery.Resources,
 				&metav1.APIResourceList{GroupVersion: "autoscaling/v1", APIResources: []metav1.APIResource{{Name: "horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler", Namespaced: true}}},
 				&metav1.APIResourceList{GroupVersion: "example.io/v1beta1", APIResources: []metav1.APIResource{{Name: "widgets", Kind: "Widget", Namespaced: true}}})
@@ -386,7 +429,10 @@ func TestResourceCreateKnownKindDiscoveryCannotChangePermissionTarget(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			client, actions := newResourceCreationTestClient(t)
 			apiVersion := tc.group + "/v1"
-			discovery := client.discovery.(*fakediscovery.FakeDiscovery)
+			discovery, ok := client.discovery.(*fakediscovery.FakeDiscovery)
+			if !ok {
+				t.Fatal("expected *fakediscovery.FakeDiscovery fixture")
+			}
 			discovery.Resources = append(discovery.Resources, &metav1.APIResourceList{GroupVersion: apiVersion, APIResources: []metav1.APIResource{{Name: tc.resource, Kind: "HorizontalPodAutoscaler", Namespaced: tc.namespaced}}})
 			document := configMapCreateDocument(0, "platform", "app")
 			document.Content = strings.Replace(document.Content, "apiVersion: v1", "apiVersion: "+apiVersion, 1)

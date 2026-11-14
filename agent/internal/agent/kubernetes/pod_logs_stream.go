@@ -25,7 +25,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container s
 	if err != nil {
 		return err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	_, err = io.Copy(stdout, stream)
 	return err
 }

@@ -72,10 +72,10 @@ func (c *Client) InstallHelmChart(ctx context.Context, input domainresource.Helm
 	}
 	installer.Timeout = time.Duration(input.TimeoutSeconds) * time.Second
 	installer.DependencyUpdate = true
-	installer.ChartPathOptions.RepoURL = input.RepositoryURL
-	installer.ChartPathOptions.Version = input.Version
+	installer.RepoURL = input.RepositoryURL
+	installer.Version = input.Version
 
-	chartPath, err := installer.ChartPathOptions.LocateChart(input.ChartName, settings)
+	chartPath, err := installer.LocateChart(input.ChartName, settings)
 	if err != nil {
 		return domainresource.HelmChartInstallResult{}, fmt.Errorf("locate helm chart: %w", err)
 	}

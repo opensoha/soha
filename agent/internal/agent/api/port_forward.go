@@ -180,14 +180,14 @@ func registerPortForwardRoutes(
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		configureWebSocketReadLimit(conn)
 		targetConn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(session.localPort)), 5*time.Second)
 		if err != nil {
 			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "port-forward tunnel is unavailable"))
 			return
 		}
-		defer targetConn.Close()
+		defer func() { _ = targetConn.Close() }()
 		_ = bridgePortForwardTunnel(c.Request.Context(), conn, targetConn)
 	})
 	platform.DELETE("/network/port-forwards/:sessionID", actions.Require(actionPlatformPortForwardsDelete), func(c *gin.Context) {

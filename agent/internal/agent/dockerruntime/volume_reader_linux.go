@@ -27,7 +27,7 @@ func readContainerVolume(ctx context.Context, req protocol.ReadRequest) (protoco
 	if err != nil {
 		return protocol.ReadResult{}, err
 	}
-	defer unix.Close(root)
+	defer func() { _ = unix.Close(root) }()
 	info, err := os.Open("/proc/1/mountinfo")
 	if err != nil {
 		return protocol.ReadResult{}, err
@@ -45,7 +45,7 @@ func readContainerVolume(ctx context.Context, req protocol.ReadRequest) (protoco
 	if err != nil {
 		return protocol.ReadResult{}, err
 	}
-	defer unix.Close(mount)
+	defer func() { _ = unix.Close(mount) }()
 	return readMountedPath(ctx, mount, id, req)
 }
 
@@ -126,7 +126,7 @@ func openVolumeTarget(root int, target string, expected uint64) (int, error) {
 		return -1, err
 	}
 	if id, err := fileMountID(fd); err != nil || id != expected {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return -1, errors.New("container mount was replaced")
 	}
 	return fd, nil
@@ -140,7 +140,7 @@ func readMountedPath(ctx context.Context, mount int, mountID uint64, req protoco
 	if err != nil {
 		return protocol.ReadResult{}, err
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if id, err := fileMountID(fd); err != nil || id != mountID {
 		return protocol.ReadResult{}, errors.New("file is outside the original mount")
 	}
@@ -185,7 +185,7 @@ func readVolumeText(fd int, before unix.Stat_t, req protocol.ReadRequest) (proto
 	if err != nil {
 		return protocol.ReadResult{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(file, req.LimitBytes+1))
 	if err != nil {
 		return protocol.ReadResult{}, err
@@ -217,7 +217,7 @@ func readVolumeDirectory(ctx context.Context, fd int, mountID uint64, stat unix.
 	if err != nil {
 		return protocol.ReadResult{}, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	entries, err := dir.ReadDir(req.Limit + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return protocol.ReadResult{}, err
@@ -262,7 +262,7 @@ func describeVolumeEntry(parent int, mountID uint64, relative, name string) (pro
 	if err != nil {
 		return item, err
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if id, err := fileMountID(fd); err != nil || id != mountID {
 		return item, errors.New("directory entry mount changed")
 	}

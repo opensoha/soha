@@ -90,10 +90,7 @@ func (w dockerRuntimeFlushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func registerDockerRuntimeRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *zap.Logger, actions actionPolicy) *dockerruntime.VolumeReader {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+func registerDockerRuntimeRoutes(router *gin.Engine, cfg cfgpkg.Config, _ *zap.Logger, actions actionPolicy) *dockerruntime.VolumeReader {
 	origins := newWebSocketOriginPolicy(
 		cfg.HTTP.AllowedOrigins,
 		cfg.Auth.BearerToken,
@@ -175,7 +172,7 @@ func handleDockerRuntimeTerminal(upgrader websocket.Upgrader) gin.HandlerFunc {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		configureWebSocketReadLimit(conn)
 
 		var initMessage dockerRuntimeMessage
@@ -207,6 +204,7 @@ func handleDockerRuntimeTerminal(upgrader websocket.Upgrader) gin.HandlerFunc {
 		defer cancel()
 		shell := normalizeDockerRuntimeShell(req.Shell)
 		args := append(dockerRuntimeComposeArgs(workspace, "exec", "-T"), req.ServiceName, shell)
+		// #nosec G204 -- Fixed Docker executable; validated service/shell and generated Compose arguments remain separate without a shell.
 		cmd := exec.CommandContext(ctx, "docker", args...)
 		cmd.Dir = workspace.Dir
 		stdin, err := cmd.StdinPipe()
@@ -245,7 +243,7 @@ func handleDockerRuntimeTerminal(upgrader websocket.Upgrader) gin.HandlerFunc {
 		readDone := make(chan struct{})
 		go func() {
 			defer close(readDone)
-			defer stdin.Close()
+			defer func() { _ = stdin.Close() }()
 			for {
 				var message dockerRuntimeMessage
 				if err := conn.ReadJSON(&message); err != nil {
@@ -441,6 +439,7 @@ func dockerRuntimeLogArgs(workspace dockerRuntimeWorkspace, req dockerRuntimeReq
 func runDockerRuntimeCommand(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	// #nosec G204 -- Fixed Docker executable; validated service/shell and generated Compose arguments remain separate without a shell.
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	var output bytes.Buffer
@@ -457,6 +456,7 @@ func runDockerRuntimeCommand(ctx context.Context, dir string, args ...string) ([
 }
 
 func streamDockerRuntimeCommand(ctx context.Context, dir string, stdout, stderr io.Writer, args ...string) error {
+	// #nosec G204 -- Fixed Docker executable; validated service/shell and generated Compose arguments remain separate without a shell.
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	cmd.Stdout = stdout

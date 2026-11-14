@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { isObject } from "./openapi-contract-utils.mjs";
+import { assertBaselineVersion } from "./baseline-version.mjs";
 
 const openapiPath = "openapi/soha-api.yaml";
 const baselinePath = "compat/openapi-loose-boundaries-0.1.0.json";
@@ -14,9 +15,7 @@ const expected = normalizeEntries(baseline.entries ?? []);
 const added = current.filter((entry) => !expected.has(entryKey(entry)));
 const removed = [...expected.values()].filter((entry) => !current.some((item) => entryKey(item) === entryKey(entry)));
 
-if (baseline.version !== openapi.info?.version) {
-  throw new Error(`${baselinePath} version (${baseline.version}) must match ${openapiPath} info.version (${openapi.info?.version})`);
-}
+assertBaselineVersion(baseline.version, openapi.info?.version);
 if (added.length > 0 || removed.length > 0) {
   for (const entry of added) {
     console.error(`new loose OpenAPI boundary: ${formatEntry(entry)}`);

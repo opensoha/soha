@@ -73,7 +73,10 @@ func TestExecuteManifestTaskPreflightUsesApplyPatch(t *testing.T) {
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), existing)
 	patches := 0
 	dynamicClient.PrependReactor("patch", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
-		patch := action.(ktesting.PatchAction)
+		patch, ok := action.(ktesting.PatchAction)
+		if !ok {
+			t.Fatal("expected ktesting.PatchAction fixture")
+		}
 		var object map[string]any
 		if err := json.Unmarshal(patch.GetPatch(), &object); err != nil {
 			t.Fatal(err)

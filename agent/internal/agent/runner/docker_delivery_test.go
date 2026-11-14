@@ -50,6 +50,7 @@ func TestDeliveryComposePreflightDoesNotTouchLiveWorkspace(t *testing.T) {
 		t.Fatalf("preflight commands: %s", logs)
 	}
 	workspace, _, _ := strings.Cut(lines[0], ":")
+	// #nosec G703 -- The fake Docker process reports its test-owned temporary workspace; this assertion checks cleanup only.
 	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
 		t.Fatalf("private preflight workspace remains: %v", err)
 	}

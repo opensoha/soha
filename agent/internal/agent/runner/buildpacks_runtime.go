@@ -34,6 +34,7 @@ func (b *buildpacksOutput) Write(p []byte) (int, error) {
 }
 
 func buildpacksCommand(ctx context.Context, dir string, env []string, name string, args ...string) (string, error) {
+	// #nosec G204 -- Only fixed pack/git/docker/podman tools are selected by internal callers; arguments are passed without a shell.
 	cmd := exec.CommandContext(ctx, name, args...)
 	configureCommandCancellation(cmd)
 	cmd.Dir, cmd.Env = dir, env

@@ -36,7 +36,12 @@ func (r *Runner) executeGitDockerfileBuild(ctx context.Context, composeDir strin
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve git build workspace: %w", err)
 	}
+	// shortcut: Existing operation-root modes stay unchanged, tighten them during an owner-approved permissions migration.
+	if err := os.MkdirAll(buildRoot, 0o700); err != nil {
+		return nil, buildRoot, fmt.Errorf("create private git build root: %w", err)
+	}
 	repositoryDir := filepath.Join(buildRoot, "repository")
+	// #nosec G301 -- New operation roots above are 0700; repository modes stay readable for build contexts, with existing roots owner-managed.
 	if err := os.MkdirAll(repositoryDir, 0o755); err != nil {
 		return nil, buildRoot, fmt.Errorf("create git build workspace: %w", err)
 	}
@@ -48,6 +53,7 @@ func (r *Runner) executeGitDockerfileBuild(ctx context.Context, composeDir strin
 		if err := os.RemoveAll(repositoryDir); err != nil {
 			return logs, buildRoot, fmt.Errorf("reset git build workspace: %w", err)
 		}
+		// #nosec G301 -- Recreate only the repository leaf under the operation root, preserving build-context readability.
 		if err := os.MkdirAll(repositoryDir, 0o755); err != nil {
 			return logs, buildRoot, fmt.Errorf("recreate git build workspace: %w", err)
 		}
@@ -72,6 +78,7 @@ func (r *Runner) executeGitDockerfileBuild(ctx context.Context, composeDir strin
 	}
 	resolvedCommitPath := filepath.Join(buildRoot, "resolved-commit")
 	fetchRef := spec.Ref
+	// #nosec G304 -- Fixed resolved-commit file inside the validated operation workspace; callers retain that task-owned root.
 	if raw, readErr := os.ReadFile(resolvedCommitPath); readErr == nil {
 		if commit := strings.TrimSpace(string(raw)); gitCommitPattern.MatchString(commit) {
 			fetchRef = commit
@@ -138,6 +145,7 @@ func cleanupGitBuildWorkspace(buildRoot string, preserveResolvedCommit bool) err
 		return os.RemoveAll(buildRoot)
 	}
 	resolvedCommitPath := filepath.Join(buildRoot, "resolved-commit")
+	// #nosec G304 -- Fixed resolved-commit file inside the validated operation workspace; callers retain that task-owned root.
 	raw, err := os.ReadFile(resolvedCommitPath)
 	if err != nil || !gitCommitPattern.MatchString(strings.TrimSpace(string(raw))) {
 		return os.RemoveAll(buildRoot)
@@ -149,6 +157,7 @@ func cleanupGitBuildWorkspace(buildRoot string, preserveResolvedCommit bool) err
 	if err := os.MkdirAll(buildRoot, 0o700); err != nil {
 		return err
 	}
+	// #nosec G703 -- Fixed resolved-commit file inside the validated operation workspace; callers retain that task-owned root.
 	return os.WriteFile(filepath.Join(buildRoot, "resolved-commit"), []byte(commit+"\n"), 0o600)
 }
 

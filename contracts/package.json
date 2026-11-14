@@ -20,7 +20,7 @@
     "validate": "node --test scripts/validate-fixtures.checks.mjs && node scripts/validate.mjs",
     "lint:openapi": "node scripts/lint-openapi.mjs",
     "check:openapi-breaking": "node scripts/check-openapi-breaking.mjs",
-    "check:openapi-loose-boundaries": "node scripts/check-openapi-loose-boundaries.mjs",
+    "check:openapi-loose-boundaries": "node --test scripts/check-baseline-versions.checks.mjs && node scripts/check-openapi-loose-boundaries.mjs",
     "check:json-schema-compat": "node scripts/check-json-schema-compat.mjs",
     "check:openapi-breaking:update": "node scripts/check-openapi-breaking.mjs --update-baseline",
     "release:artifacts": "node scripts/prepare-release-artifacts.mjs",

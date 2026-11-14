@@ -84,8 +84,11 @@ func TestDockerRuntimeTerminalRejectsUntrustedOrigin(t *testing.T) {
 	headers.Set("Authorization", "Bearer agent-token")
 	headers.Set("Origin", "https://evil.example")
 	conn, resp, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1)+"/api/v1/docker/runtime/terminal", headers)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err == nil {
 		t.Fatal("Dial() succeeded, want origin rejection")
@@ -112,12 +115,15 @@ func TestDockerRuntimeTerminalAcceptsConfiguredOrigin(t *testing.T) {
 	headers.Set("Origin", "https://console.example")
 	conn, resp, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1)+"/api/v1/docker/runtime/terminal", headers)
 	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+		_ = resp.Body.Close()
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	if err != nil {
 		t.Fatalf("Dial() error = %v status=%v", err, responseStatus(resp))
 	}
-	conn.Close()
+	_ = conn.Close()
 }
 
 func dockerRuntimeTestRouter(cfg cfgpkg.Config) *gin.Engine {

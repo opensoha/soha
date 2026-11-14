@@ -43,7 +43,7 @@ func TestOutpostForwardAuthRoute(t *testing.T) {
 	req.Header.Set("X-Forwarded-Uri", "/private?from=test")
 	req.Header.Set("X-Forwarded-Host", "app.example.com")
 	req.Header.Set("X-Forwarded-Method", "POST")
-	req.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "proxy-session-1"})
+	req.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "proxy-session-1", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	recorder := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusNoContent || recorder.Header().Get("X-Soha-User") != "alice" {
@@ -63,7 +63,7 @@ func TestOutpostForwardAuthHeaderOverridesCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/outpost/forward-auth", nil)
 	req.Header.Set("X-Forwarded-Uri", "/private")
 	req.Header.Set("X-Soha-Session-Token", "header-session")
-	req.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "cookie-session"})
+	req.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "cookie-session", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	server.httpServer.Handler.ServeHTTP(httptest.NewRecorder(), req)
 	if runtime.request.SessionToken != "header-session" {
 		t.Fatalf("session token = %q, want header-session", runtime.request.SessionToken)

@@ -253,6 +253,9 @@ func TestPodTerminalDeniedWhenActionNotAllowlisted(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer agent-token")
 	conn, resp, err := websocket.DefaultDialer.Dial(strings.Replace(httpServer.URL, "http://", "ws://", 1)+"/api/v1/platform/workloads/pods/api-0/terminal?namespace=platform", headers)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("terminal websocket dial succeeded, want forbidden")
@@ -347,6 +350,9 @@ func TestPortForwardRegisterListAndDeleteWhenAllowlisted(t *testing.T) {
 	}
 
 	conn, resp, err := websocket.DefaultDialer.Dial(strings.Replace(httpServer.URL, "http://", "ws://", 1)+"/api/v1/platform/network/port-forwards/"+createBody.Data.SessionID+"/tunnel", headers)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		if resp != nil {
 			t.Fatalf("tunnel dial status=%d err=%v", resp.StatusCode, err)
@@ -410,7 +416,7 @@ func startTestPortForwardEchoServer(t *testing.T) (int, func()) {
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_, _ = io.Copy(conn, conn)
 			}()
 		}
@@ -725,6 +731,7 @@ func TestRuntimeCancelDeniedWritesAuditFile(t *testing.T) {
 	if runtime.cancelCalled {
 		t.Fatal("CancelActiveTask() was called for denied action")
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	raw, err := os.ReadFile(auditPath)
 	if err != nil {
 		t.Fatalf("read audit file: %v", err)

@@ -275,6 +275,8 @@ test('Puppeteer ESM and Midscene Chromium adapter work with the installed browse
     executablePath: chromium.executablePath(),
     headless: true,
     pipe: true,
+    args: process.platform === 'linux' && process.env.CI === 'true' ? ['--no-sandbox'] : [],
+    dumpio: process.env.CI === 'true',
   })
   t.diagnostic(await browser.version())
   try {

@@ -213,14 +213,21 @@ class GoSourceTest(unittest.TestCase):
             (directory / "go.sum").write_text(sums)
             if directory != workspace.SDK:
                 (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha/contracts/unpublished"\nvar Value = unpublished.Value\n')
-        env = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+        def assert_go(arguments, directory, environment):
+            result = subprocess.run(["go", *arguments], cwd=directory, env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"go {arguments!r}:\n{result.stdout}\n{result.stderr}")
+
+        online = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOTOOLCHAIN": "local"}
+        # Package compilation need not cache .info; offline module graph commands require it.
+        assert_go(["mod", "download", "github.com/google/uuid@v1.6.0"], self.root, online)
+        env = {**online, "GOPROXY": "off", "GOSUMDB": "off"}
         manifests = {p: p.read_bytes() for p in self.root.rglob("go.mod")}
         with patch.dict(os.environ, env):
             workspace.check_go()
             for _, directory in self.modules:
-                subprocess.run(["go", "test", "./..."], cwd=directory, env=env, check=True, capture_output=True)
+                assert_go(["test", "./..."], directory, env)
             for args in (["list", "-m", "all"], ["mod", "download"], ["mod", "download", "all"]):
-                subprocess.run(["go", *args], cwd=self.root, env=env, check=True, capture_output=True)
+                assert_go(args, self.root, env)
             standalone = subprocess.run(["go", "test", "./..."], cwd=self.root, env={**env, "GOWORK": "off"}, capture_output=True)
             self.assertNotEqual(standalone.returncode, 0)
         self.assertEqual(manifests, {p: p.read_bytes() for p in manifests})

@@ -76,6 +76,7 @@ func ReadPrivateFile(path string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 
+	// #nosec G703 -- Explicit absolute private-file configuration; Lstat intentionally checks symlinks and permissions before no-follow open and SameFile validation.
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect private file: %w", err)
@@ -115,6 +116,7 @@ func ReadPrivateFile(path string, maxBytes int64) ([]byte, error) {
 }
 
 func validateSecretDirectory(path string) error {
+	// #nosec G703 -- Explicit absolute private-file configuration; Lstat intentionally checks symlinks and permissions before no-follow open and SameFile validation.
 	info, err := os.Lstat(path)
 	if err != nil {
 		return fmt.Errorf("inspect bearer token directory: %w", err)

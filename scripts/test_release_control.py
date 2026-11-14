@@ -105,6 +105,19 @@ class ReleaseControlTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "occupied or unverified"):
                 control.check_images_unused({"component": "cli", "version": "0.2.0"}, self.config, fetch)
 
+    def test_only_explicit_first_release_can_create_a_new_image_repository(self):
+        config = json.loads(json.dumps(self.config))
+        config["components"]["agent"]["images"] = [
+            image for image in config["components"]["agent"]["images"] if image.get("firstRelease")
+        ]
+        self.assertEqual(len(config["components"]["agent"]["images"]), 2)
+        def fetch(url, authorization):
+            return (200, {"token": "fixture"}) if "/token?" in url else (404, {"errors": [{"code": "NAME_UNKNOWN"}]})
+        with patch.dict(os.environ, {"GITHUB_ACTOR": "fixture", "GH_TOKEN": "not-a-secret"}):
+            control.check_images_unused({"component": "agent", "version": "0.2.0"}, config, fetch)
+            with self.assertRaisesRegex(ValueError, "occupied or unverified"):
+                control.check_images_unused({"component": "agent", "version": "0.2.1"}, config, fetch)
+
     def test_old_or_pr_or_failed_ci_cannot_certify_source(self):
         for change in [{"head_sha": "b" * 40}, {"head_branch": "feature"}, {"event": "pull_request"},
                        {"event": "workflow_dispatch"}, {"status": "in_progress"}, {"conclusion": "failure"}]:

@@ -29,7 +29,7 @@ func (c *Client) GetReplicaSetDetail(ctx context.Context, namespace, name string
 	return domainresource.ReplicaSetDetailView{
 		Name: item.Name, Namespace: item.Namespace, DesiredReplicas: desired,
 		ReadyReplicas: item.Status.ReadyReplicas, AvailableReplicas: item.Status.AvailableReplicas,
-		CreatedAt: item.CreationTimestamp.Time.Format(time.RFC3339), Labels: item.Labels,
+		CreatedAt: item.CreationTimestamp.Format(time.RFC3339), Labels: item.Labels,
 		Annotations: item.Annotations, Selector: item.Spec.Selector.MatchLabels, Pods: pods,
 		RelatedResources: relations,
 	}, nil
@@ -60,7 +60,7 @@ func (c *Client) GetReplicationControllerDetail(ctx context.Context, namespace, 
 		Name: item.Name, Namespace: item.Namespace, DesiredReplicas: desired,
 		CurrentReplicas: item.Status.Replicas, ReadyReplicas: item.Status.ReadyReplicas,
 		AvailableReplicas: item.Status.AvailableReplicas,
-		CreatedAt:         item.CreationTimestamp.Time.Format(time.RFC3339), Labels: item.Labels,
+		CreatedAt:         item.CreationTimestamp.Format(time.RFC3339), Labels: item.Labels,
 		Annotations: item.Annotations, Selector: item.Spec.Selector, Pods: pods,
 		RelatedResources: relations,
 	}, nil

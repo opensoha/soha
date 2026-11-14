@@ -107,6 +107,7 @@ jobs:
       - name: Build binary
         working-directory: agent
         env:
+          GOWORK: 'off'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           VERSION: v${{ needs.verify.outputs.version }}

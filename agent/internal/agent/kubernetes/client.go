@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -246,7 +247,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container stri
 	if err != nil {
 		return domainresource.PodLogsView{}, err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	content, totalBytes, contentTruncated, err := streamlimit.ReadString(stream, domainresource.PodLogsMaxContentBytes)
 	if err != nil {
 		return domainresource.PodLogsView{}, err
@@ -421,7 +422,7 @@ func (c *Client) ListDeploymentRolloutHistory(ctx context.Context, namespace, na
 			Images:        images,
 			Replicas:      replicas,
 			ReadyReplicas: item.Status.ReadyReplicas,
-			CreatedAt:     item.CreationTimestamp.Time.Format(time.RFC3339),
+			CreatedAt:     item.CreationTimestamp.Format(time.RFC3339),
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -1724,7 +1725,7 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 		Phase:                  string(item.Status.Phase),
 		NodeName:               item.Spec.NodeName,
 		PodIP:                  item.Status.PodIP,
-		CreatedAt:              item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:              item.CreationTimestamp.Format(time.RFC3339),
 		Requests:               formatNodeResourceTotals(requests),
 		Limits:                 formatNodeResourceTotals(limits),
 		Labels:                 item.Labels,
@@ -1761,12 +1762,12 @@ func mapPodDetail(item corev1.Pod) domainresource.PodDetailView {
 			Status:             string(condition.Status),
 			Reason:             condition.Reason,
 			Message:            condition.Message,
-			LastTransitionTime: condition.LastTransitionTime.Time.Format(time.RFC3339),
+			LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339),
 		})
 	}
 	startTime := ""
 	if item.Status.StartTime != nil {
-		startTime = item.Status.StartTime.Time.Format(time.RFC3339)
+		startTime = item.Status.StartTime.Format(time.RFC3339)
 	}
 	return domainresource.PodDetailView{
 		Name:               item.Name,
@@ -1778,7 +1779,7 @@ func mapPodDetail(item corev1.Pod) domainresource.PodDetailView {
 		NodeName:           item.Spec.NodeName,
 		ServiceAccountName: item.Spec.ServiceAccountName,
 		QOSClass:           string(item.Status.QOSClass),
-		CreatedAt:          item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:          item.CreationTimestamp.Format(time.RFC3339),
 		StartTime:          startTime,
 		Labels:             item.Labels,
 		Annotations:        item.Annotations,
@@ -2264,7 +2265,7 @@ func mapDeploymentDetail(item appsv1.Deployment) domainresource.DeploymentDetail
 			Status:             string(condition.Status),
 			Reason:             condition.Reason,
 			Message:            condition.Message,
-			LastTransitionTime: condition.LastTransitionTime.Time.Format(time.RFC3339),
+			LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339),
 		})
 	}
 	return domainresource.DeploymentDetailView{
@@ -2277,7 +2278,7 @@ func mapDeploymentDetail(item appsv1.Deployment) domainresource.DeploymentDetail
 		AvailableReplicas:  item.Status.AvailableReplicas,
 		ObservedGeneration: item.Status.ObservedGeneration,
 		Strategy:           string(item.Spec.Strategy.Type),
-		CreatedAt:          item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:          item.CreationTimestamp.Format(time.RFC3339),
 		Labels:             item.Labels,
 		Annotations:        item.Annotations,
 		Selector:           item.Spec.Selector.MatchLabels,
@@ -2310,7 +2311,7 @@ func mapDeploymentRolloutStatus(item appsv1.Deployment) domainresource.Deploymen
 			Status:             string(condition.Status),
 			Reason:             condition.Reason,
 			Message:            condition.Message,
-			LastTransitionTime: condition.LastTransitionTime.Time.Format(time.RFC3339),
+			LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339),
 		})
 	}
 	return domainresource.DeploymentRolloutStatusView{
@@ -2359,7 +2360,7 @@ func mapStatefulSetDetail(item appsv1.StatefulSet) domainresource.StatefulSetDet
 		UpdateStrategy:  string(item.Spec.UpdateStrategy.Type),
 		CurrentRevision: item.Status.CurrentRevision,
 		UpdateRevision:  item.Status.UpdateRevision,
-		CreatedAt:       item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:       item.CreationTimestamp.Format(time.RFC3339),
 		Labels:          item.Labels,
 		Annotations:     item.Annotations,
 		Selector:        item.Spec.Selector.MatchLabels,
@@ -2380,7 +2381,7 @@ func mapDaemonSetDetail(item appsv1.DaemonSet) domainresource.DaemonSetDetailVie
 		AvailableNumber: item.Status.NumberAvailable,
 		UpdatedNumber:   item.Status.UpdatedNumberScheduled,
 		UpdateStrategy:  string(item.Spec.UpdateStrategy.Type),
-		CreatedAt:       item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:       item.CreationTimestamp.Format(time.RFC3339),
 		Labels:          item.Labels,
 		Annotations:     item.Annotations,
 		Selector:        selector,
@@ -2443,14 +2444,14 @@ func mapJobConditions(conditions []batchv1.JobCondition) []domainresource.Worklo
 func mapCronJob(item batchv1.CronJob) domainresource.CronJobView {
 	lastScheduleTime := ""
 	if item.Status.LastScheduleTime != nil {
-		lastScheduleTime = item.Status.LastScheduleTime.Time.Format(time.RFC3339)
+		lastScheduleTime = item.Status.LastScheduleTime.Format(time.RFC3339)
 	}
 	return domainresource.CronJobView{
 		Name:             item.Name,
 		Namespace:        item.Namespace,
 		Schedule:         item.Spec.Schedule,
 		Suspend:          item.Spec.Suspend != nil && *item.Spec.Suspend,
-		ActiveJobs:       int32(len(item.Status.Active)),
+		ActiveJobs:       resourceCount(len(item.Status.Active)),
 		LastScheduleTime: lastScheduleTime,
 		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
 	}
@@ -2459,7 +2460,7 @@ func mapCronJob(item batchv1.CronJob) domainresource.CronJobView {
 func mapCronJobDetail(item batchv1.CronJob) domainresource.CronJobDetailView {
 	lastScheduleTime := ""
 	if item.Status.LastScheduleTime != nil {
-		lastScheduleTime = item.Status.LastScheduleTime.Time.Format(time.RFC3339)
+		lastScheduleTime = item.Status.LastScheduleTime.Format(time.RFC3339)
 	}
 	timeZone := ""
 	if item.Spec.TimeZone != nil {
@@ -2470,11 +2471,11 @@ func mapCronJobDetail(item batchv1.CronJob) domainresource.CronJobDetailView {
 		Namespace:         item.Namespace,
 		Schedule:          item.Spec.Schedule,
 		Suspend:           item.Spec.Suspend != nil && *item.Spec.Suspend,
-		ActiveJobs:        int32(len(item.Status.Active)),
+		ActiveJobs:        resourceCount(len(item.Status.Active)),
 		LastScheduleTime:  lastScheduleTime,
 		ConcurrencyPolicy: string(item.Spec.ConcurrencyPolicy),
 		TimeZone:          timeZone,
-		CreatedAt:         item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:         item.CreationTimestamp.Format(time.RFC3339),
 		Labels:            item.Labels,
 		Annotations:       item.Annotations,
 	}
@@ -2518,7 +2519,7 @@ func mapServiceAccountDetail(item corev1.ServiceAccount) domainresource.ServiceA
 		Secrets:          secrets,
 		ImagePullSecrets: imagePullSecrets,
 		AutomountSAToken: item.AutomountServiceAccountToken != nil && *item.AutomountServiceAccountToken,
-		CreatedAt:        item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:        item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -2565,7 +2566,7 @@ func mapRoleDetail(item rbacv1.Role) domainresource.RoleDetailView {
 		Annotations:   item.Annotations,
 		Rules:         len(item.Rules),
 		RuleSummaries: summarizeRBACPolicyRules(item.Rules),
-		CreatedAt:     item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:     item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:    secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -2596,7 +2597,7 @@ func mapRoleBindingDetail(item rbacv1.RoleBinding) domainresource.RoleBindingDet
 		Annotations: item.Annotations,
 		RoleRef:     fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
 		Subjects:    subjects,
-		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:   item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -2639,14 +2640,14 @@ func mapHorizontalPodAutoscalerDetail(item autoscalingv2.HorizontalPodAutoscaler
 			Status:             string(condition.Status),
 			Reason:             condition.Reason,
 			Message:            condition.Message,
-			LastTransitionTime: condition.LastTransitionTime.Time.Format(time.RFC3339),
+			LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339),
 		})
 	}
 	return domainresource.HorizontalPodAutoscalerDetailView{
 		HorizontalPodAutoscalerView: mapHorizontalPodAutoscaler(item),
 		Labels:                      item.Labels,
 		Annotations:                 item.Annotations,
-		CreatedAt:                   item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:                   item.CreationTimestamp.Format(time.RFC3339),
 		Metrics:                     metrics,
 		Conditions:                  conditions,
 	}
@@ -2768,14 +2769,14 @@ func mapPodDisruptionBudgetDetail(
 			Status:             string(condition.Status),
 			Reason:             condition.Reason,
 			Message:            condition.Message,
-			LastTransitionTime: condition.LastTransitionTime.Time.Format(time.RFC3339),
+			LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339),
 		})
 	}
 	return domainresource.PodDisruptionBudgetDetailView{
 		PodDisruptionBudgetView: mapPodDisruptionBudget(item),
 		Labels:                  item.Labels,
 		Annotations:             item.Annotations,
-		CreatedAt:               item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:               item.CreationTimestamp.Format(time.RFC3339),
 		Selector:                selector,
 		Pods:                    podViews,
 		Workload:                workload,
@@ -3162,9 +3163,7 @@ func buildIngressDetail(item networkingv1.Ingress, backends []domainresource.Ing
 	summary := mapIngress(item)
 	tlsHosts := make([]string, 0)
 	for _, tls := range item.Spec.TLS {
-		for _, host := range tls.Hosts {
-			tlsHosts = append(tlsHosts, host)
-		}
+		tlsHosts = append(tlsHosts, tls.Hosts...)
 	}
 	routes := make([]domainresource.IngressRouteView, 0)
 	addRoute := func(host, path, pathType string, backend networkingv1.IngressBackend) {
@@ -3561,7 +3560,7 @@ func mapClusterRoleDetail(item rbacv1.ClusterRole) domainresource.ClusterRoleDet
 		Rules:            len(item.Rules),
 		AggregationRules: aggregation,
 		RuleSummaries:    summarizeRBACPolicyRules(item.Rules),
-		CreatedAt:        item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:        item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -3590,7 +3589,7 @@ func mapClusterRoleBindingDetail(item rbacv1.ClusterRoleBinding) domainresource.
 		Annotations: item.Annotations,
 		RoleRef:     fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
 		Subjects:    subjects,
-		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:   item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -3612,7 +3611,7 @@ func mapMutatingWebhookConfigurationDetail(item admissionregistrationv1.Mutating
 		Name:        item.Name,
 		Labels:      item.Labels,
 		Annotations: item.Annotations,
-		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:   item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 		Webhooks:    webhooks,
 	}
@@ -3635,7 +3634,7 @@ func mapValidatingWebhookConfigurationDetail(item admissionregistrationv1.Valida
 		Name:        item.Name,
 		Labels:      item.Labels,
 		Annotations: item.Annotations,
-		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:   item.CreationTimestamp.Format(time.RFC3339),
 		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 		Webhooks:    webhooks,
 	}
@@ -3742,7 +3741,7 @@ func mapResourceQuotaDetail(item corev1.ResourceQuota) domainresource.ResourceQu
 		ResourceQuotaView: mapResourceQuota(item),
 		Labels:            item.Labels,
 		Annotations:       item.Annotations,
-		CreatedAt:         item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:         item.CreationTimestamp.Format(time.RFC3339),
 	}
 }
 
@@ -3771,7 +3770,7 @@ func mapLimitRangeDetail(item corev1.LimitRange) domainresource.LimitRangeDetail
 		LimitRangeView: mapLimitRange(item),
 		Labels:         item.Labels,
 		Annotations:    item.Annotations,
-		CreatedAt:      item.CreationTimestamp.Time.Format(time.RFC3339),
+		CreatedAt:      item.CreationTimestamp.Format(time.RFC3339),
 		Rules:          rules,
 	}
 }
@@ -3880,4 +3879,11 @@ func ownedByDeployment(owners []metav1.OwnerReference, uid types.UID) bool {
 		}
 	}
 	return false
+}
+
+func resourceCount(count int) int32 {
+	if count < 0 || count > math.MaxInt32 {
+		return 0
+	}
+	return int32(count)
 }

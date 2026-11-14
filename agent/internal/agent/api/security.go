@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -120,7 +121,7 @@ func newActionAuditSink(cfg cfgpkg.AuditConfig, logger *zap.Logger) actionAuditS
 	return &fileActionAuditSink{path: path}
 }
 
-func (s *fileActionAuditSink) WriteActionAudit(record actionAuditRecord) error {
+func (s *fileActionAuditSink) WriteActionAudit(record actionAuditRecord) (writeErr error) {
 	if s == nil || strings.TrimSpace(s.path) == "" {
 		return nil
 	}
@@ -134,7 +135,7 @@ func (s *fileActionAuditSink) WriteActionAudit(record actionAuditRecord) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { writeErr = errors.Join(writeErr, file.Close()) }()
 	if _, err := file.Write(append(raw, '\n')); err != nil {
 		return err
 	}

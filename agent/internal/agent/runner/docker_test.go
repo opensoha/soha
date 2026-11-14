@@ -163,6 +163,7 @@ func TestPrepareComposeWorkspaceRemovesStaleEnvFileWhenEnvContentIsCleared(t *te
 		t.Fatalf("prepareComposeWorkspace() error = %v", err)
 	}
 	envPath := filepath.Join(dir, ".env")
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	if content, err := os.ReadFile(envPath); err != nil || !strings.Contains(string(content), "APP_ENV=test") {
 		t.Fatalf(".env content = %q err=%v, want APP_ENV=test", content, err)
 	}
@@ -251,6 +252,7 @@ printf '%s\n' "$*" >> "$DOCKER_CALLS"
 	if err != nil {
 		t.Fatalf("executeComposeAction() error = %v logs=%v", err, logs)
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	callBytes, err := os.ReadFile(dockerCalls)
 	if err != nil {
 		t.Fatalf("read docker calls: %v", err)
@@ -297,6 +299,7 @@ printf '%s\n' "$*" >> "$DOCKER_CALLS"
 	if err != nil {
 		t.Fatalf("executeComposeAction() error = %v logs=%v", err, logs)
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	callBytes, err := os.ReadFile(dockerCalls)
 	if err != nil {
 		t.Fatalf("read docker calls: %v", err)
@@ -339,6 +342,7 @@ esac
 	if _, err := runner.executeComposeAction(context.Background(), operation); err == nil {
 		t.Fatal("executeComposeAction() error = nil, want pull failure")
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	callBytes, err := os.ReadFile(dockerCalls)
 	if err != nil {
 		t.Fatalf("read docker calls: %v", err)
@@ -401,6 +405,7 @@ exit 1
 	if _, err := os.Stat(filepath.Join(buildRoot, "repository")); !os.IsNotExist(err) {
 		t.Fatalf("repository checkout stat err = %v, want removed", err)
 	}
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	commit, err := os.ReadFile(filepath.Join(buildRoot, "resolved-commit"))
 	if err != nil {
 		t.Fatalf("read retained resolved commit: %v", err)

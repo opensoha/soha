@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -407,7 +408,7 @@ func mapGatewayResource(item unstructured.Unstructured) domainresource.GatewayVi
 		Namespace:     item.GetNamespace(),
 		GatewayClass:  className,
 		Addresses:     addresses,
-		ListenerCount: int32(len(listeners)),
+		ListenerCount: resourceCount(len(listeners)),
 		AgeSeconds:    secondsSince(item.GetCreationTimestamp().Time),
 	}
 }
@@ -470,7 +471,7 @@ func mapGRPCRouteResource(item unstructured.Unstructured) domainresource.GRPCRou
 		Hostnames:       hostItems,
 		ParentRefs:      parentRefs,
 		BackendServices: backendServices,
-		RuleCount:       int32(len(ruleItems)),
+		RuleCount:       resourceCount(len(ruleItems)),
 		AgeSeconds:      secondsSince(item.GetCreationTimestamp().Time),
 	}
 }
@@ -547,7 +548,7 @@ func gatewayListenerViews(item unstructured.Unstructured) []domainresource.Gatew
 			continue
 		}
 		name, _ := status["name"].(string)
-		attached[name] = int32(gatewayInt64(status["attachedRoutes"]))
+		attached[name] = gatewayInt32(status["attachedRoutes"])
 		conditions[name] = gatewayConditionViewsFromRaw(gatewayNestedSlice(status, "conditions"))
 	}
 	views := make([]domainresource.GatewayListenerView, 0, len(listenerItems))
@@ -565,7 +566,7 @@ func gatewayListenerViews(item unstructured.Unstructured) []domainresource.Gatew
 		views = append(views, domainresource.GatewayListenerView{
 			Name:              name,
 			Protocol:          protocol,
-			Port:              int32(gatewayInt64(listener["port"])),
+			Port:              gatewayInt32(listener["port"]),
 			Hostname:          hostname,
 			TLSMode:           tlsMode,
 			CertificateRefs:   gatewayFormatObjectRefList(item.GetNamespace(), gatewayNestedSlice(tls, "certificateRefs")),
@@ -612,7 +613,7 @@ func gatewayRouteBackendViews(defaultNamespace string, rawBackends []any) []doma
 		}
 		view := domainresource.GatewayRouteBackendView{
 			Kind: kind, Namespace: namespace, Name: name,
-			Port: int32(gatewayInt64(backend["port"])), Weight: int32(gatewayInt64(backend["weight"])),
+			Port: gatewayInt32(backend["port"]), Weight: gatewayInt32(backend["weight"]),
 		}
 		views = append(views, view)
 	}
@@ -921,4 +922,12 @@ func gatewayConditionStatus(item unstructured.Unstructured, conditionType string
 		return strings.TrimSpace(status)
 	}
 	return ""
+}
+
+func gatewayInt32(value any) int32 {
+	number := gatewayInt64(value)
+	if number < math.MinInt32 || number > math.MaxInt32 {
+		return 0
+	}
+	return int32(number)
 }

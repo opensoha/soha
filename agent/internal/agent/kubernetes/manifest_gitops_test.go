@@ -61,6 +61,7 @@ func TestGitOpsAgentWithKubernetes(t *testing.T) {
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	require(err)
 	client := &Client{dynamic: dynamicClient, discovery: discoveryClient}
+	// #nosec G703 -- The test parent supplies its private t.TempDir state file to this test-only child.
 	data, err := os.ReadFile(os.Getenv("SOHA_ARGOCD_TEST_STATE"))
 	require(err)
 	var state struct {

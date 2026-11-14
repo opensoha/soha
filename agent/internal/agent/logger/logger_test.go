@@ -44,6 +44,7 @@ func TestJSONLoggerWritesCanonicalFieldsInOrder(t *testing.T) {
 		t.Fatalf("Sync() error = %v", err)
 	}
 
+	// #nosec G304 -- Fixed fixture file inside this test's private t.TempDir; no external path input.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)

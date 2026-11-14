@@ -74,7 +74,10 @@ func TestPersonalMCPStdioStreamsBoundCommandAndRejectsInjectedArgv(t *testing.T)
 		t.Fatalf("injected argv was not rejected: %v %v", resp, err)
 	}
 	header.Set(contractenv.PersonalMCPStdioHeader, base64.RawURLEncoding.EncodeToString(raw))
-	conn, _, err = websocket.DefaultDialer.DialContext(ctx, url, header)
+	conn, resp, err = websocket.DefaultDialer.DialContext(ctx, url, header)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

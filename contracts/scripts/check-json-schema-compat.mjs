@@ -1,12 +1,15 @@
 import { readFile } from "node:fs/promises";
+import { assertBaselineVersion } from "./baseline-version.mjs";
 
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 const baselinePath = "compat/json-schema-ecosystem-0.1.0.json";
 const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
 const errors = [];
 
-if (baseline.version !== packageJson.version) {
-  errors.push(`${baselinePath} version (${baseline.version}) must match package.json version (${packageJson.version})`);
+try {
+  assertBaselineVersion(baseline.version, packageJson.version);
+} catch (error) {
+  errors.push(error.message);
 }
 
 for (const [schemaFile, expected] of Object.entries(baseline.schemas ?? {})) {

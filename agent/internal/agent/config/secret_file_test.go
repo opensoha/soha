@@ -90,6 +90,7 @@ func TestReadBearerTokenFileRejectsUnsafeFiles(t *testing.T) {
 }
 
 func TestResolveControlPlaneBearerTokenRejectsAmbiguousSources(t *testing.T) {
+	// #nosec G101 -- Synthetic test credential exercises validation only; it is never an operational secret.
 	cfg := Config{ControlPlane: ControlPlaneConfig{
 		BearerToken:     productionControlPlaneToken,
 		BearerTokenFile: "/tmp/runner-token",

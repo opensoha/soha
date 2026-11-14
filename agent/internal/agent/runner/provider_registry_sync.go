@@ -138,7 +138,7 @@ func (r *Runner) doProviderRegistryRequest(req *http.Request, output any) error 
 	if err != nil {
 		return fmt.Errorf("perform provider registry request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxProviderRegistryResponseBytes))
 		return fmt.Errorf("provider registry request returned HTTP %d", resp.StatusCode)

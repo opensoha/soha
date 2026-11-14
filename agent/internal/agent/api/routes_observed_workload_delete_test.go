@@ -39,7 +39,7 @@ func TestObservedWorkloadDeleteUsesAgentPolicyAndKubernetesPreconditions(t *test
 					if tc.kind == "Deployment" {
 						version = "apps/v1"
 					}
-					fmt.Fprintf(w, `{"apiVersion":%q,"kind":%q,"metadata":{"name":"app","namespace":"team","uid":"live-uid","resourceVersion":"7"}}`, version, tc.kind)
+					_, _ = fmt.Fprintf(w, `{"apiVersion":%q,"kind":%q,"metadata":{"name":"app","namespace":"team","uid":"live-uid","resourceVersion":"7"}}`, version, tc.kind)
 					return
 				}
 				if r.Method != http.MethodDelete {
@@ -54,10 +54,10 @@ func TestObservedWorkloadDeleteUsesAgentPolicyAndKubernetesPreconditions(t *test
 				}
 				if tc.kubeConflict {
 					w.WriteHeader(http.StatusConflict)
-					fmt.Fprint(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Conflict","code":409}`)
+					_, _ = fmt.Fprint(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Conflict","code":409}`)
 					return
 				}
-				fmt.Fprint(w, `{"kind":"Status","apiVersion":"v1","status":"Success"}`)
+				_, _ = fmt.Fprint(w, `{"kind":"Status","apiVersion":"v1","status":"Success"}`)
 			}))
 			defer upstream.Close()
 			client, err := k8sagent.New(cfgpkg.KubernetesConfig{ID: "test", KubeconfigData: fmt.Sprintf(`apiVersion: v1

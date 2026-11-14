@@ -181,6 +181,9 @@ jobs:
           if-no-files-found: warn
       - name: Build linux amd64 binary
         working-directory: soha
+        env:
+          GOWORK: 'off'
+          GOFLAGS: -mod=readonly
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o ../soha-linux-amd64 ./cmd/server
           cd ..

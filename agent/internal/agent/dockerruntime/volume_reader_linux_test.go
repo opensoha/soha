@@ -42,7 +42,7 @@ func TestVolumeDirectoryReportsEncodedByteTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	id, err := fileMountID(fd)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestLinuxVolumeReaderAnchorsPathsAndRejectsSpecialFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	id, err := fileMountID(fd)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestLinuxVolumeTargetRequiresOriginalMountIDAndNoSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	id, err := fileMountID(fd)
 	if err != nil {
 		t.Fatal(err)
@@ -141,15 +141,15 @@ func TestLinuxVolumeTargetRequiresOriginalMountIDAndNoSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unix.Close(opened)
+	_ = unix.Close(opened)
 	for _, target := range []string{"/alias", "/data/..", "/"} {
 		if opened, err := openVolumeTarget(fd, target, id); err == nil {
-			unix.Close(opened)
+			_ = unix.Close(opened)
 			t.Fatal("unsafe mount target accepted", target)
 		}
 	}
 	if opened, err := openVolumeTarget(fd, "/data", id+1); err == nil {
-		unix.Close(opened)
+		_ = unix.Close(opened)
 		t.Fatal("changed mount ID accepted")
 	}
 	file, err := unix.Open(filepath.Join(root, "one-file"), unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC, 0600)
@@ -159,12 +159,12 @@ func TestLinuxVolumeTargetRequiresOriginalMountIDAndNoSymlink(t *testing.T) {
 	if _, err := unix.Write(file, []byte("file bind")); err != nil {
 		t.Fatal(err)
 	}
-	unix.Close(file)
+	_ = unix.Close(file)
 	file, err = unix.Open(filepath.Join(root, "one-file"), unix.O_PATH|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(file)
+	defer func() { _ = unix.Close(file) }()
 	req := volumeReadFixture("files.read", "")
 	result, err := readMountedPath(context.Background(), file, id, req)
 	if err != nil || result.Content != "file bind" {

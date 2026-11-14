@@ -133,7 +133,9 @@ def check_images_unused(release, config, fetch=registry_json):
         if status != 200 or not credential.get("token"):
             raise ValueError("Cannot establish authenticated GHCR read capability")
         status, manifest = fetch(f"https://ghcr.io/v2/{repository}/manifests/{tag}", "Bearer " + credential["token"])
-        if status != 404 or [item.get("code") for item in manifest.get("errors", [])] != ["MANIFEST_UNKNOWN"]:
+        codes = [item.get("code") for item in manifest.get("errors", [])]
+        first_package = codes == ["NAME_UNKNOWN"] and image.get("firstRelease") == release["version"]
+        if status != 404 or not (codes == ["MANIFEST_UNKNOWN"] or first_package):
             raise ValueError(f"Immutable image version occupied or unverified: ghcr.io/{repository}:{tag}")
 
 

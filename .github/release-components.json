@@ -101,7 +101,8 @@
         },
         {
           "repository": "opensoha/soha-docker-volume-reader",
-          "tagPrefix": "v"
+          "tagPrefix": "v",
+          "firstRelease": "0.2.0"
         },
         {
           "repository": "opensoha/soha-hermes-agent",
@@ -117,7 +118,8 @@
         },
         {
           "repository": "opensoha/soha-dsh",
-          "tagPrefix": "v"
+          "tagPrefix": "v",
+          "firstRelease": "0.2.0"
         }
       ]
     },

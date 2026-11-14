@@ -31,7 +31,7 @@ func TestPlanStableAndLegacyDrain(t *testing.T) {
 	}
 }
 func TestMemoryNeverInventsMissingProvenance(t *testing.T) {
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	expiry := now.Add(time.Hour).Format(time.RFC3339Nano)
 	v := object([]byte(`{"id":"m","status":"active","owner_type":"user","owner_id":"u","scope_hash":"scope","expires_at":"` + expiry + `","_ownerExists":true,"payload":{"id":"m","status":"active","ownerType":"user","ownerId":"u","scopeHash":"scope","expiresAt":"` + expiry + `"}}`))
 	action, reason := memoryAction(v, nil, now)

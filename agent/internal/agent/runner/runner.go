@@ -57,12 +57,6 @@ type agentRunClaimRequest = sohaapi.AgentRunClaimRequest
 
 type dockerClaimRequest = sohaapi.DockerOperationClaimRequest
 
-type claimResponse = sohaapi.ExecutionTaskEnvelope
-
-type dockerClaimResponse = sohaapi.DockerOperationEnvelope
-
-type agentRunClaimResponse = sohaapi.AgentRunEnvelope
-
 type callbackRequest = sohaapi.ExecutionCallbackRequest
 
 type agentRunCallbackRequest = sohaapi.AgentRunCallbackRequest
@@ -71,15 +65,7 @@ type agentRunToolCallRequest = sohaapi.AgentRunToolCallRequest
 
 type dockerCallbackRequest = sohaapi.DockerOperationCallbackRequest
 
-type callbackResponse = sohaapi.ExecutionTaskEnvelope
-
-type dockerCallbackResponse = sohaapi.DockerOperationEnvelope
-
-type agentRunCallbackResponse = sohaapi.AgentRunEnvelope
-
 type AgentToolCallResult = sohaapi.AgentToolCallResult
-
-type agentRunToolCallResponse = sohaapi.AgentToolCallResultEnvelope
 
 type workspaceSpec struct {
 	Path          string
@@ -352,14 +338,6 @@ func (m *runnerMetrics) markStarted(scope string) {
 	})
 }
 
-func (m *runnerMetrics) markHeartbeat(scope string) {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	m.withScope(scope, func(current *runnerMetricSet) {
-		current.heartbeats++
-		current.lastHeartbeatAt = now
-	})
-}
-
 func (m *runnerMetrics) markCallbackAttempt(scope string) {
 	m.withScope(scope, func(current *runnerMetricSet) {
 		current.callbackAttempts++
@@ -627,7 +605,7 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 		item.Status = "preparing"
 	})
 
-	workspacePath, commandDir, workspaceArtifacts, workspaceLogs, workspaceErr := r.prepareWorkspace(taskCtx, task)
+	workspacePath, commandDir, _, workspaceLogs, workspaceErr := r.prepareWorkspace(taskCtx, task)
 	if len(workspaceLogs) > 0 {
 		r.updateActiveTask(task.ID, func(item *ActiveTask) {
 			item.Status = "running"
@@ -677,7 +655,7 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 			return
 		}
 	}
-	workspaceArtifacts = collectWorkspaceArtifacts(workspacePath, parseWorkspaceSpec(task).ArtifactFiles)
+	workspaceArtifacts := collectWorkspaceArtifacts(workspacePath, parseWorkspaceSpec(task).ArtifactFiles)
 
 	payload := map[string]any{
 		"agentId":       agentID,
@@ -738,6 +716,7 @@ func (r *Runner) executeTaskCommand(ctx, taskCtx context.Context, task Execution
 		zap.Int("command_count", commandCount),
 		zap.String("workspace_path", workspacePath),
 	)
+	// #nosec G204 -- Executing the authenticated, claimed control-plane task command is this runner's explicit responsibility.
 	cmd := exec.CommandContext(commandCtx, "/bin/sh", "-lc", command)
 	configureCommandCancellation(cmd)
 	if environment := secretEnvironment(commandCtx); environment != nil {
@@ -1070,7 +1049,8 @@ func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
 		}
 		safeErrorMessage := redactAgentRuntimeText(errorMessage)
 		safeLogs := redactAgentRuntimeLogs(logs)
-		safeOutput := redactAgentRuntimeValue(output).(map[string]any)
+		// Redaction preserves the map shape of the executor output.
+		safeOutput, _ := redactAgentRuntimeValue(output).(map[string]any)
 		completedAt := time.Now().UTC()
 		toolExecution := agentRunToolExecution(run, startedAt, completedAt, status, safeErrorMessage, safeOutput)
 		artifact := agentRunFailedArtifact(run, safeOutput, safeLogs, []map[string]any{toolExecution}, status, safeErrorMessage)
@@ -1227,7 +1207,7 @@ func (r *Runner) executeCLIAgentRun(ctx context.Context, run AgentRun, spec agen
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("create agent runtime workspace: %w", err)
 	}
 	logs, err := runCommand(ctx, workspace, command, args...)
@@ -1401,6 +1381,7 @@ func (r *Runner) prepareComposeWorkspace(operation DockerOperation) (string, []s
 	if err != nil {
 		return "", nil, err
 	}
+	// #nosec G301 -- Agent control files here are 0600; Git build content is placed below its private operation root.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return dir, nil, fmt.Errorf("create docker compose workspace: %w", err)
 	}
@@ -1809,6 +1790,7 @@ func (r *Runner) fetchDockerRunnerStatus(ctx context.Context, operationID string
 	return operation, true
 }
 
+// shortcut: Existing directory modes stay unchanged, tighten them during an owner-approved permissions migration.
 func (r *Runner) prepareWorkspace(ctx context.Context, task ExecutionTask) (string, string, []map[string]any, []string, error) {
 	spec := parseWorkspaceSpec(task)
 	root := strings.TrimSpace(r.cfg.WorkspaceRoot)
@@ -1825,7 +1807,7 @@ func (r *Runner) prepareWorkspace(ctx context.Context, task ExecutionTask) (stri
 	}
 	logs := []string{fmt.Sprintf("workspace prepared at %s", workspacePath)}
 
-	if err := os.MkdirAll(filepath.Dir(workspacePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(workspacePath), 0o700); err != nil {
 		return workspacePath, "", nil, logs, fmt.Errorf("create workspace parent: %w", err)
 	}
 	if spec.Checkout.Enabled || strings.TrimSpace(spec.Checkout.RepositoryURL) != "" {
@@ -1834,7 +1816,7 @@ func (r *Runner) prepareWorkspace(ctx context.Context, task ExecutionTask) (stri
 		if checkoutErr != nil {
 			return workspacePath, "", nil, logs, checkoutErr
 		}
-	} else if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+	} else if err := os.MkdirAll(workspacePath, 0o700); err != nil {
 		return workspacePath, "", nil, logs, fmt.Errorf("create workspace: %w", err)
 	}
 
@@ -1859,8 +1841,8 @@ func (r *Runner) ensureCheckout(ctx context.Context, workspacePath string, spec 
 	logs := make([]string, 0, 6)
 	hasRepo := hasGitRepository(workspacePath)
 	if !hasRepo && strings.TrimSpace(spec.RepositoryURL) != "" {
-		if empty, err := isEmptyDirectory(workspacePath); err == nil && empty {
-			_ = os.Remove(workspacePath)
+		if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+			return logs, fmt.Errorf("create checkout workspace: %w", err)
 		}
 		commandLogs, err := runCommand(ctx, "", "git", "clone", spec.RepositoryURL, workspacePath)
 		logs = append(logs, commandLogs...)
@@ -1871,7 +1853,7 @@ func (r *Runner) ensureCheckout(ctx context.Context, workspacePath string, spec 
 	}
 	if !hasRepo {
 		if strings.TrimSpace(spec.RepositoryURL) == "" && !spec.Enabled {
-			if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+			if err := os.MkdirAll(workspacePath, 0o700); err != nil {
 				return logs, fmt.Errorf("create workspace: %w", err)
 			}
 			return logs, nil
@@ -1969,6 +1951,7 @@ func parseWorkspaceSpec(task ExecutionTask) workspaceSpec {
 }
 
 func runCommand(ctx context.Context, dir, name string, args ...string) ([]string, error) {
+	// #nosec G204 -- Executable is an administrator-configured provider or an internal fixed tool; arguments are separate and task admission remains enforced.
 	command := exec.CommandContext(ctx, name, args...)
 	configureCommandCancellation(command)
 	if environment := secretEnvironment(ctx); environment != nil {
@@ -2051,6 +2034,7 @@ func imageDigestFromWorkspaceArtifacts(workspacePath string, artifacts []map[str
 		if err != nil {
 			return ""
 		}
+		// #nosec G304 -- Fixed digest filename is resolved inside the task workspace; only a validated image digest is returned.
 		content, err := os.ReadFile(full)
 		if err != nil {
 			return ""
@@ -2085,24 +2069,6 @@ func commandPipelineStage(command string) string {
 func hasGitRepository(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil && info.IsDir()
-}
-
-func isEmptyDirectory(path string) (bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	if !info.IsDir() {
-		return false, fmt.Errorf("%s is not a directory", path)
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return false, err
-	}
-	return len(entries) == 0, nil
 }
 
 func extractCommands(payload map[string]any) []string {

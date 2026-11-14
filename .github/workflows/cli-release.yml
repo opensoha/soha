@@ -109,6 +109,7 @@ jobs:
       - name: Build archive
         working-directory: cli
         env:
+          GOWORK: 'off'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"

@@ -60,7 +60,7 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 		err = fmt.Errorf("helm runtime identity mismatch")
 	}
 	if err == nil && payload.Action == sohaapi.Apply && !r.helmMutationAllowed(payload.Snapshot.Operation) {
-		err = fmt.Errorf("Helm delivery mutation is not allowlisted")
+		err = fmt.Errorf("helm delivery mutation is not allowlisted")
 	}
 	if err == nil {
 		current, ok := r.callback(ctx, task, "running", map[string]any{"helm": sohaapi.HelmExecutionTaskResult{}})

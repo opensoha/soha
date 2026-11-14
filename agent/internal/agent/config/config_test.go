@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	productionAgentToken        = "agent-token-32-characters-minimum"
+	// #nosec G101 -- Synthetic test credential exercises validation only; it is never an operational secret.
+	productionAgentToken = "agent-token-32-characters-minimum"
+	// #nosec G101 -- Synthetic test credential exercises validation only; it is never an operational secret.
 	productionControlPlaneToken = "runner-token-32-characters-minimum"
 )
 

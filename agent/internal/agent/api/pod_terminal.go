@@ -34,7 +34,7 @@ func registerPodTerminalRoutes(
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		configureWebSocketReadLimit(conn)
 
 		ctx, cancel := context.WithCancel(c.Request.Context())
@@ -42,7 +42,7 @@ func registerPodTerminalRoutes(
 		startPodTerminalHeartbeat(ctx, cancel, conn)
 
 		stdinReader, stdinWriter := io.Pipe()
-		defer stdinWriter.Close()
+		defer func() { _ = stdinWriter.Close() }()
 		sizeQueue := newPodTerminalSizeQueue()
 		defer sizeQueue.Close()
 
@@ -85,7 +85,7 @@ func registerPodTerminalRoutes(
 		readDone := make(chan struct{})
 		go func() {
 			defer close(readDone)
-			defer stdinWriter.Close()
+			defer func() { _ = stdinWriter.Close() }()
 			for {
 				var message podTerminalMessage
 				if err := conn.ReadJSON(&message); err != nil {
@@ -181,7 +181,7 @@ func (q *podTerminalSizeQueue) Next() *remotecommand.TerminalSize {
 }
 
 func (q *podTerminalSizeQueue) Push(cols, rows int) {
-	if cols <= 0 || rows <= 0 {
+	if cols <= 0 || rows <= 0 || cols > 65535 || rows > 65535 {
 		return
 	}
 	size := remotecommand.TerminalSize{Width: uint16(cols), Height: uint16(rows)}
