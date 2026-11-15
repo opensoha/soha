@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.27.4-00ADD8?logo=go&logoColor=white"></a>
   <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=111111"></a>
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
@@ -32,7 +32,7 @@
 
 ## Overview
 
-Soha is a control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. This repository owns the open-source Go core/server and consumes the web console as a versioned build artifact.
+Soha is a control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. This repository is the canonical development source for Core, Web, Contracts, CLI, Agent, Connectors and Skills. The server embeds the Web build from the same source revision.
 
 The project is intentionally broader than a resource viewer. Soha connects cluster operations, application delivery, observability, runtime evidence, access control, AI investigation, virtualization, and Docker operations into one cohesive console.
 
@@ -111,7 +111,8 @@ See the published docs for current public architecture and API behavior.
 - CLI source: `cli/`; standalone binary and npm launcher remain independent.
 - Connectors source: `connectors/`; Skills and runtime assets: `skills/`.
 - Core keeps `github.com/opensoha/soha`; the SDK, CLI and Agent source modules use `github.com/opensoha/soha/contracts`, `github.com/opensoha/soha/cli` and `github.com/opensoha/soha/agent`.
-- These source identities do not establish public availability. Existing release download URLs and published versions remain unchanged until their separate release migration.
+- Releases use independent component tags: `contracts/v*`, `cli/v*`, `agent/v*`, `connectors/v*`, `skills/v*`; Core uses `v*`. Released SDK 0.2.0, CLI 0.2.1 and Agent 0.2.0 are available from this repository.
+- The six former component repositories are historical read-only sources. Their existing tags, downloads and compatibility refs remain available; open new issues and pull requests here.
 - `soha` core exposes the control-plane APIs; agent and CLI clients consume those APIs through contracts and HTTP boundaries.
 
 ## Tech Stack
@@ -127,6 +128,12 @@ See the published docs for current public architecture and API behavior.
 
 ```text
 .
+├── contracts/           # public schemas and generated SDK
+├── web/                 # React console
+├── cli/                 # standalone CLI and npm launcher
+├── agent/               # agent and runner runtimes
+├── connectors/          # official connector packages
+├── skills/              # official runtime assets
 ├── cmd/                 # server entrypoint
 ├── configs/             # backend configuration
 ├── internal/            # backend layers and domain modules
@@ -141,8 +148,8 @@ See the published docs for current public architecture and API behavior.
 
 ### Requirements
 
-- Go 1.27.3+
-- Node.js 20+
+- Go 1.27.4+
+- Node.js 22.23.4 (Agent DSH uses its independent Node.js 24 runtime)
 - Docker and Docker Compose only when running the local container stack
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
 
@@ -396,7 +403,7 @@ docker build \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
 
-Standard image builds resolve the immutable contracts dependency from `go.mod` with `GOWORK=off`; they do not need a sibling contracts checkout. Task115 uses a reviewed Git source revision without publishing an SDK package. Its source commit must be reachable before clean remote builds.
+Standard image builds resolve the immutable contracts dependency from `go.mod` with `GOWORK=off`; they do not need a sibling contracts checkout. Release builds use the public `github.com/opensoha/soha/contracts@v0.2.0`; daily source development uses the root `go.work`. Record these two validation modes separately.
 
 
 For local builds, load these images into every target cluster node and set both
@@ -473,8 +480,8 @@ Docker instances and a shared load balancer for normal multi-replica delivery.
 Recommended boundaries:
 
 - Docker image: use `ghcr.io/opensoha/soha`; local builds default to the `local` tag.
-- Agent images: use `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent` built from `agent/`.
-- CLI tool image: use `yshanchui/soha-cli` built from `cli/` for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
+- Agent images: use `ghcr.io/opensoha/soha-agent`, `ghcr.io/opensoha/soha-dsh` and the Buildpacks variants built from `agent/`. Existing Hermes images and the optional provider remain available; new Hermes images are no longer published.
+- CLI tool image: use `ghcr.io/opensoha/soha-cli` built from `cli/` for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
 - Docker Compose: use for local development and single-node trials, not as the primary production orchestrator.
 - Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
 - Kustomize: keep as a lightweight raw YAML customization entrypoint, avoiding a second full Kubernetes template set.
@@ -515,7 +522,7 @@ replicas on the same values during a rollout.
 To copy the CLI into another image, use the tool image directly:
 
 ```Dockerfile
-COPY --from=ghcr.io/opensoha/soha-cli:v0.1.8 /usr/local/bin/soha /usr/local/bin/soha
+COPY --from=ghcr.io/opensoha/soha-cli:v0.2.1 /usr/local/bin/soha /usr/local/bin/soha
 ```
 
 Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/Go-1.27.4-00ADD8?logo=go&logoColor=white"></a>
   <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=111111"></a>
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
@@ -32,7 +32,7 @@
 
 ## 概览
 
-Soha 是一个面向平台团队的控制平面，用于管理 Kubernetes 以及周边运行时基础设施。本仓库负责开源 Go core/server，并消费 Web 控制台的版本化构建产物。
+Soha 是一个面向平台团队的控制平面，用于管理 Kubernetes 以及周边运行时基础设施。本仓库是 Core、Web、Contracts、CLI、Agent、Connectors 与 Skills 的唯一开发源；服务端内嵌同一源码提交构建的 Web。
 
 Soha 的目标不只是资源浏览器。它把集群运维、应用交付、可观测性、运行证据、访问控制、AI 调查、虚拟化和 Docker 运维连接到同一个控制台中。
 
@@ -118,7 +118,7 @@ PostgreSQL + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.27.3、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.27.4、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
@@ -141,8 +141,8 @@ PostgreSQL + Kubernetes 集群
 
 ### 环境要求
 
-- Go 1.27.3+
-- Node.js 20+
+- Go 1.27.4+
+- Node.js 22.23.4（Agent DSH 使用独立的 Node.js 24 runtime）
 - 只有运行本机容器栈时才需要 Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
 
@@ -170,8 +170,7 @@ make init
 
 该命令会安装 Go 依赖并准备配置，不会启动 Docker。默认的 `DEV_DB_MODE=external`
 使用配置中的外部 PostgreSQL；只有 `make init DEV_DB_MODE=local` 才会从
-`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端依赖由 sibling 仓库
-`../soha-web` 自己管理。
+`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端和 SDK 依赖从本仓根目录执行 `npm ci`，唯一根锁文件管理 `contracts/`、`web/`、`connectors/` 和 `cli/npm/cli/`，不使用旧 sibling 检出。
 
 MinIO 的 S3 API 为 `http://127.0.0.1:9000`，控制台为 `http://127.0.0.1:9001`，数据持久化到 `opensoha-minio-data`。本地默认凭据为 `minioadmin` / `minioadmin`；通过环境变量或不提交 Git 的 `deploy/.env` 设置 `SOHA_MINIO_ROOT_USER`、`SOHA_MINIO_ROOT_PASSWORD`，可沿用已有凭据。暴露到回环地址以外前必须更换默认凭据。使用 `docker compose -f deploy/docker-compose.yaml up -d minio` 单独启动；`make init` 和 `make dev` 不启动 MinIO。
 
@@ -212,11 +211,11 @@ go run ./cmd/server
 ### 启动 Agent Runtime
 
 ```bash
-cd ../soha-agent
+cd agent
 go run ./cmd/agent
 ```
 
-默认 agent 配置文件位于 sibling `soha-agent` 仓库的 `configs/agent.config.yaml`。可以通过以下方式覆盖：
+默认 agent 配置文件位于本仓 `agent/` 的 `configs/agent.config.yaml`。可以通过以下方式覆盖：
 
 ```bash
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
@@ -376,7 +375,7 @@ docker build \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
 
-默认镜像构建使用 `GOWORK=off` 解析 `go.mod` 中的不可变 contracts 依赖，不需要相邻 contracts checkout。Task115 使用已审查的 Git 源提交，无需发布 SDK 包；干净的远端构建前需确保该源提交可下载。
+默认镜像构建使用 `GOWORK=off` 解析 `go.mod` 中的不可变 contracts 依赖，不需要相邻 contracts checkout。正式分发使用已公开的 `github.com/opensoha/soha/contracts@v0.2.0`；日常联合开发使用本仓根 `go.work`，两种验证分别记录。
 
 
 本地构建后，将镜像导入每个目标集群节点并将 `deploy/kustomization.yaml`
@@ -440,8 +439,8 @@ Soha 启动不依赖 SecretStore 卷、secret bundle、writer lease 或 secrets 
 推荐边界：
 
 - Docker 镜像：使用 `ghcr.io/opensoha/soha`，本地默认 tag 为 `local`。
-- Agent 镜像：使用 sibling `soha-agent` 仓库维护的 `ghcr.io/opensoha/soha-agent` 与 `ghcr.io/opensoha/soha-hermes-agent`。
-- CLI 工具镜像：使用 sibling `soha-cli` 仓库维护的 `yshanchui/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
+- Agent 镜像：由本仓 `agent/` 维护 `ghcr.io/opensoha/soha-agent`、`ghcr.io/opensoha/soha-dsh` 和 Buildpacks 变体；Hermes 仅保留旧镜像和可选入口，停止新镜像发布。
+- CLI 工具镜像：使用本仓 `cli/` 维护的 `ghcr.io/opensoha/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
 - Docker Compose：面向本地开发和单机试跑，不作为生产编排主路径。
 - Helm：面向线上 Kubernetes 的主交付方式；`soha-helm` 发布 `soha`、`soha-agent`、`soha-hermes-agent` 三个 chart。
 - Kustomize：保留轻量 raw YAML 定制入口，避免维护第二套完整 Kubernetes 模板。
@@ -477,7 +476,7 @@ helm install soha-hermes-agent opensoha/soha-hermes-agent \
 如果需要把 CLI 打进其他镜像，可以直接从工具镜像复制：
 
 ```Dockerfile
-COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
+COPY --from=ghcr.io/opensoha/soha-cli:v0.2.1 /usr/local/bin/soha /usr/local/bin/soha
 ```
 
 Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维护。
@@ -494,11 +493,11 @@ kubectl apply -k deploy
 raw manifest 的 `soha-app-config` 包含 `pgsql`/`opensoha` 标准初始凭据和四项
 公开 system key 默认值。公网发布前请通过 overlay 或外部 Secret 集成覆盖它们。
 
-Identity Outpost 从 sibling `soha-agent` 仓库部署，也可以使用 `soha-agent`
+Identity Outpost 从本仓 `agent/` 部署，也可以使用 `soha-agent`
 Helm Chart 的 `mode=outpost`。必须固定到支持 Identity Outpost `v1` 协议的 Agent
 发布镜像；Server 与 Agent 的 SemVer 可以不同，兼容边界是协议版本与签名配置公钥。
 NGINX Ingress 和 Traefik ForwardAuth 示例位于
-`soha-agent/deploy/kubernetes/outpost/examples`。
+`agent/deploy/kubernetes/outpost/examples`。
 
 ## 文档
 
@@ -513,10 +512,14 @@ NGINX Ingress 和 Traefik ForwardAuth 示例位于
 - 保持中心启动和路由文件轻量。新增领域路由放在 `internal/api/routes` 的领域文件中，新增启动职责放在 `internal/bootstrap` 的关注点文件中，避免继续膨胀单个大文件。
 - Go 大文件先按稳定行为域拆分。平台 handler、平台资源 service 和 AI Gateway 已按同包聚焦文件组织，并用单元测试保护执行任务状态流转。
 - 长耗时工作必须任务化。构建、发布、Docker、Compose、虚拟机控制和 provider 执行都通过持久化任务与 callback 路径完成。
-- 前端实现只进入 `github.com/opensoha/soha-web`。路由、元数据、权限、后端菜单和测试需要跨 artifact 边界保持一致。
+- 前端实现进入本仓 `web/`，公开契约和生成 SDK 进入 `contracts/`；路由、元数据、权限、后端菜单和测试在同一提交中保持一致。
 - 平台 API 返回 Soha DTO，不直接返回原始 Kubernetes 对象，YAML 或明确透传接口除外。
 - 模块可见性、菜单可见性和后端授权是不同边界。
 - 不手改生成产物。应修改源文件后重新构建。
+
+## 唯一开发入口
+
+Core 在仓库根目录，其余组件分别位于 `contracts/`、`web/`、`cli/`、`agent/`、`connectors/`、`skills/`。旧六仓只保留历史、旧版本和固定兼容引用；新 Issue、PR 和源码修改统一进入 `opensoha/soha`。组件保持独立版本/产物，SDK 0.2.0、CLI 0.2.1、Agent 0.2.0 已从主仓公开；历史 tag/附件不覆盖。Hermes 旧镜像和可选入口保留，停止发布新镜像，Buildpacks 两变体继续维护。
 
 ## 贡献
 
@@ -528,7 +531,9 @@ NGINX Ingress 和 Traefik ForwardAuth 示例位于
 
 ```bash
 make test
-cd ../soha-web && npm run typecheck && npm run build
+npm ci
+npm run typecheck --workspace web
+npm run build:web
 ```
 
 ## 项目状态
