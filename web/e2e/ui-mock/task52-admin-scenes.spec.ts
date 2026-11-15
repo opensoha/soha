@@ -927,7 +927,7 @@ for (const status of ['failed', 'partially_applied']) {
 test('rollback failure keeps its reviewed version and the returned application record', async ({
   context,
   page,
-}) => {
+}, info) => {
   const { state, evidence } = await mocks(context, page)
   state.applicationStatus = 'failed'
   await page.goto('/settings/runtime-configuration')
@@ -937,7 +937,43 @@ test('rollback failure keeps its reviewed version and the returned application r
   const dialog = page.getByRole('dialog', { name: '回滚到版本 v3？', exact: true })
   await dialog.getByRole('button', { name: '确认回滚', exact: true }).click()
   await expect(dialog.locator('.soha-operation-feedback')).toContainText('配置应用状态：failed')
-  await expect(dialog.getByRole('button', { name: '确认回滚', exact: true })).toBeDisabled()
+  try {
+    // The exiting loading icon can still contribute to the button's accessible name.
+    await expect(dialog.getByRole('button').filter({ hasText: /^确认回滚$/ })).toBeDisabled()
+  } catch (error) {
+    // Preserve the original assertion even if the dialog disappears during evidence collection.
+    const diagnostics = await Promise.allSettled([
+      dialog.ariaSnapshot({ timeout: 1000 }),
+      dialog.getByRole('button').evaluateAll((buttons) =>
+        buttons.map((button) => ({
+          outerHTML: button.outerHTML,
+          disabled: (button as HTMLButtonElement).disabled,
+          ariaDisabled: button.getAttribute('aria-disabled'),
+        })),
+      ),
+    ])
+    const body = JSON.stringify(
+      {
+        url: page.url(),
+        time: new Date().toISOString(),
+        diagnostics: diagnostics.map((result, index) => ({
+          kind: index === 0 ? 'ariaSnapshot' : 'buttons',
+          ...(result.status === 'fulfilled'
+            ? { value: result.value }
+            : { error: String(result.reason) }),
+        })),
+      },
+      null,
+      2,
+    )
+    console.error('Rollback confirmation diagnostics:', body)
+    await info
+      .attach('rollback-confirmation.json', { body, contentType: 'application/json' })
+      .catch((attachmentError) =>
+        console.error('Rollback diagnostics attachment failed:', attachmentError),
+      )
+    throw error
+  }
   expect(state.writes).toHaveLength(1)
   expect(state.writes[0].body).toMatchObject({ expectedVersion: 4, targetVersion: 3 })
   await dialog.getByRole('button', { name: '查看返回版本' }).click()

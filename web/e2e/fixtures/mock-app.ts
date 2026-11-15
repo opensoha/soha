@@ -23,7 +23,17 @@ export type MockResolver = (
 
 export async function installMocks(context: BrowserContext, page: Page, resolve?: MockResolver) {
   const evidence: BrowserEvidence = { fatal: [], failures: [], missing: [], requests: [] }
-  page.on('pageerror', () => evidence.fatal.push('pageerror'))
+  page.on('pageerror', (error) =>
+    evidence.fatal.push(
+      `pageerror ${JSON.stringify({
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        url: page.url(),
+        time: new Date().toISOString(),
+      })}`,
+    ),
+  )
   page.on('console', (message) => {
     if (
       message.type() === 'error' &&
@@ -31,7 +41,14 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
         message.text(),
       )
     )
-      evidence.fatal.push('fatal console')
+      evidence.fatal.push(
+        `fatal console ${JSON.stringify({
+          message: message.text(),
+          location: message.location(),
+          url: page.url(),
+          time: new Date().toISOString(),
+        })}`,
+      )
   })
   page.on('requestfailed', (request) => {
     if (!request.failure()?.errorText.includes('ERR_ABORTED'))
@@ -75,7 +92,7 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
 }
 
 export function verifyBrowserEvidence(evidence: BrowserEvidence) {
-  expect(evidence.fatal, 'fatal console/runtime').toEqual([])
+  expect(evidence.fatal, `fatal console/runtime\n${evidence.fatal.join('\n')}`).toEqual([])
   expect(evidence.failures, 'network failures').toEqual([])
   expect(evidence.missing, 'missing mocks or forbidden egress').toEqual([])
 }

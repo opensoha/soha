@@ -6,7 +6,7 @@ import { adoptionMocks, openAdoption } from '../fixtures/template-adoption'
 test('manual adoption preserves exclusions after recompare, adjacent diffs and waves', async ({
   context,
   page,
-}) => {
+}, info) => {
   const { state, evidence } = await adoptionMocks(context, page)
   const drawer = await openAdoption(page)
   const checks = drawer.locator('tbody input[type=checkbox]')
@@ -89,7 +89,19 @@ test('manual adoption preserves exclusions after recompare, adjacent diffs and w
     waveSize: 2,
     stopOnFailure: true,
   })
-  verifyBrowserEvidence(evidence)
+  try {
+    verifyBrowserEvidence(evidence)
+  } catch (error) {
+    await info
+      .attach('browser-evidence.json', {
+        body: JSON.stringify(evidence, null, 2),
+        contentType: 'application/json',
+      })
+      .catch((attachmentError) =>
+        console.error('Browser evidence attachment failed:', attachmentError),
+      )
+    throw error
+  }
 })
 
 test('read failures retry without writes and readonly users cannot submit', async ({

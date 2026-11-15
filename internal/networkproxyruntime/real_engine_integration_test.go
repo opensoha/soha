@@ -133,6 +133,10 @@ func realEngineContent(engine, ip string, a, b, port int) string {
 
 func realEngineScenarios(t *testing.T, dialect, binary string, external bool) {
 	t.Helper()
+	binary, err := filepath.Abs(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	state := t.TempDir()
 	ip := realPrivateIP(t)
@@ -142,6 +146,21 @@ func realEngineScenarios(t *testing.T, dialect, binary string, external bool) {
 	desired := lifecycleDesired(1, port)
 	desired.Engine = dialect
 	desired.Content = realEngineContent(dialect, ip, a, b, port)
+	kernelLog := filepath.Join(state, "kernel.log")
+	if dialect == domain.EngineSingBox {
+		var document map[string]any
+		if err := json.Unmarshal([]byte(desired.Content), &document); err != nil {
+			t.Fatal(err)
+		}
+		// Preserve real startup failures; the runtime intentionally discards child stdio.
+		t.Chdir(state)
+		document["log"] = map[string]any{"level": "info", "output": "kernel.log"}
+		content, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		desired.Content = string(content)
+	}
 	if external {
 		self, err := os.Executable()
 		if err != nil {
@@ -168,7 +187,16 @@ func realEngineScenarios(t *testing.T, dialect, binary string, external bool) {
 		desired.EngineDescriptor = &domain.EngineDescriptor{EngineID: policy.EngineID, AdapterID: policy.AdapterID, Version: policy.Version, ProtocolMajor: 1}
 	}
 	e := newEngine(config, "real-test-controller-secret")
-	t.Cleanup(e.stop)
+	t.Cleanup(func() {
+		e.stop()
+		if t.Failed() && dialect == domain.EngineSingBox {
+			raw, err := os.ReadFile(kernelLog)
+			if len(raw) > 16<<10 {
+				raw = raw[len(raw)-(16<<10):]
+			}
+			t.Logf("real sing-box kernel log (last 16 KiB): %s (read error: %v)", raw, err)
+		}
+	})
 	if external {
 		if err := e.configureExternal(); err != nil {
 			t.Fatal(err)
@@ -176,6 +204,13 @@ func realEngineScenarios(t *testing.T, dialect, binary string, external bool) {
 	}
 	if result := e.apply(ctx, desired); result.Status != "applied" {
 		t.Fatalf("real apply: %+v", result)
+	}
+	if dialect == domain.EngineSingBox {
+		raw, err := os.ReadFile(kernelLog)
+		if err != nil || len(raw) == 0 {
+			t.Fatalf("real kernel diagnostics were not retained: bytes=%d err=%v", len(raw), err)
+		}
+		t.Logf("real sing-box kernel diagnostics: bytes=%d sha256=%x", len(raw), sha256.Sum256(raw))
 	}
 	if dialect == domain.EngineMihomo {
 		// Explicitly select both A and B: Mihomo can persist a previous choice.
