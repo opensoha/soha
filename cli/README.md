@@ -23,7 +23,9 @@ Root `cli/v0.2.0` has its 13 native release assets and
 `ghcr.io/opensoha/soha-cli:v0.2.0` image published; the npm `0.2.0` launcher
 was not published because its pack-descriptor verification failed. These public
 `0.2.0` artifacts remain immutable. Version `0.2.1` fixes npm12 descriptor
-handling and must pass its own protected release checks before publication.
+handling. Its native assets, image, Go module and signed npm package are now public.
+The original npm job published successfully, then failed during registry processing;
+its failed run remains part of the release record.
 
 The npm package does not implement MCP in JavaScript. It downloads the native
 binary from the matching GitHub release, verifies `checksums.txt`, caches it by
@@ -36,7 +38,7 @@ go install github.com/opensoha/soha-cli/cmd/soha@v0.1.8
 soha version
 ```
 
-After publication, install the new Go submodule with:
+Install the new Go submodule with:
 
 ```sh
 go install github.com/opensoha/soha/cli/cmd/soha@v0.2.1
@@ -499,3 +501,36 @@ This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
 
 For AI chat recovery, use `soha ai chat request SESSION --request-id ID` to inspect the original request. `native-request` remains a compatible alias. If a stream outcome is unknown, retain the original identifiers and inspect the request, run events, and session messages; do not resend automatically. Recovery decisions and historical Native reconciliation remain server-authoritative.
+
+## Qualify an already published npm release
+
+Use the `verify-existing` dispatch from Root `main` after the verifier commit's
+exact main CI succeeds. This read-only mode checks the immutable CLI tag, its
+source manifest and successful main CI, plus attempt 1 of the original CLI
+release run and its twelve successful non-npm prerequisite jobs. It verifies
+the original public tarball bytes and npm's cryptographic signatures/provenance
+before executing `npx` with fresh npm and binary caches. It never repacks,
+republishes, uploads release assets or pushes images, and needs only repository
+contents/actions read access, without the publisher environment.
+
+For the existing `0.2.1` package:
+
+```sh
+gh workflow run cli-release.yml --repo opensoha/soha --ref main \
+  -f mode=verify-existing -f tag=cli/v0.2.1 \
+  -f sha=711e1ce887f135040e98a21e0210dcbc56d44347 \
+  -f original_run=43662583505 \
+  -f expected_sha256=2f626ff20d2cd4a3401839605fa39ec904e29ee966bce6101670bd7bbdcc205c \
+  -f expected_integrity='sha512-uRvnDLRlL3/ZSh9yKI1NYDIYhPaOdPwrxX25QXNwXT9KN/SBO8kDiQ7EIYci19eoQn4L8l5jkFIxjxUYhaKQeg=='
+```
+
+The qualification artifact records the original source SHA and the separate
+trusted verifier commit/run. Cryptographic npm provenance binds Root,
+`cli-release.yml`, the CLI tag and source SHA; the original run's prerequisites
+are checked separately using GitHub Actions metadata. The receipt does not
+claim a cryptographic binding to that original run ID. Keep the original failed
+release run and all existing `0.2.1` assets unchanged. A successful read-only run
+closes the missing public npm/launcher qualification; it does not rerun the
+original publisher. Normal publication still defaults to `publish`, requires
+`--ref` the exact CLI tag and all existing protected write guards, and waits only
+a bounded time for public registry 404 propagation before strict verification.

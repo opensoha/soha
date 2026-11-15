@@ -6,8 +6,22 @@ on:
       - "cli/v*"
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Publish from the immutable tag, or read-only qualify an existing package from main"
+        type: choice
+        default: publish
+        options: [publish, verify-existing]
+      original_run:
+        description: "verify-existing: original CLI release run ID (attempt 1)"
+        required: false
+      expected_integrity:
+        description: "verify-existing: original published tarball SHA-512 SRI"
+        required: false
+      expected_sha256:
+        description: "verify-existing: original published tarball SHA-256"
+        required: false
       tag:
-        description: "Dispatch with --ref this tag; existing immutable cli/v<version> tag (also used for recovery)"
+        description: "Existing immutable cli/v<version>; publish uses --ref the tag, verify-existing uses --ref main"
         required: true
       sha:
         description: "Exact 40-character main commit of that tag"
@@ -31,6 +45,7 @@ env:
 
 jobs:
   verify:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')
     name: Verify release identity and declared public SDK
     runs-on: ubuntu-latest
     outputs:
@@ -77,6 +92,7 @@ jobs:
           grep -F "soha_${RELEASE_TAG#cli/v}_linux_amd64.tar.gz" cli/README.md
 
   build:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: verify
     runs-on: ubuntu-latest
@@ -137,6 +153,7 @@ jobs:
           path: cli/dist/*
 
   checksums:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')
     name: Checksums
     runs-on: ubuntu-latest
     needs:
@@ -159,6 +176,7 @@ jobs:
           path: release/checksums.txt
 
   release-smoke:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')
     name: Release binary smoke
     runs-on: ubuntu-latest
     needs: build
@@ -189,7 +207,7 @@ jobs:
           ./cli/scripts/release-smoke.sh "${archive}"
 
   github-release:
-    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')) && github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
     name: GitHub Release
     runs-on: ubuntu-latest
     needs: checksums
@@ -244,7 +262,7 @@ jobs:
           diff -u "${expected_assets}" "${actual_assets}"
 
   npm-publish:
-    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')) && github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
     name: npm package
     runs-on: ubuntu-latest
     needs: [github-release, public-download]
@@ -282,11 +300,12 @@ jobs:
           version="${RELEASE_TAG#cli/v}"
           package_file="$(jq -er '.file' "$RUNNER_TEMP/cli-package/candidate.json")"
           if npm view "@opensoha/cli@${version}" version --json --registry=https://registry.npmjs.org > "$RUNNER_TEMP/cli-package/registry.json"; then
-            jq -e --arg version "$version" '. == $version' "$RUNNER_TEMP/cli-package/registry.json"
+            jq -e --arg version "$version" '. == $version or . == [$version]' "$RUNNER_TEMP/cli-package/registry.json"
           else
             jq -e '.error.code == "E404"' "$RUNNER_TEMP/cli-package/registry.json"
             npm publish "$package_file" --access public --provenance --registry=https://registry.npmjs.org
           fi
+          node cli/scripts/verify-existing-npm-release-readiness.mjs "$version"
           node cli/scripts/verify-public-npm-release.mjs verify "$RUNNER_TEMP/cli-package/pack.json" "$RUNNER_TEMP/cli-package" > "$RUNNER_TEMP/cli-package/verified.json"
       - name: Run clean-cache launcher after package and signed provenance verification
         run: |
@@ -296,7 +315,7 @@ jobs:
           jq -e --arg version "$version" --arg commit "$RELEASE_SHA" '.version == $version and .commit == $commit' "$RUNNER_TEMP/cli-version.json"
 
   image:
-    if: github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')) && github.ref_type == 'tag' && github.ref_name == (inputs.tag || github.ref_name) && github.sha == (inputs.sha || github.sha)
     name: Docker image
     runs-on: ubuntu-latest
     needs: [verify, checksums]
@@ -344,6 +363,7 @@ jobs:
             DATE=${{ needs.verify.outputs.date }}
 
   public-download:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish')
     needs: github-release
     runs-on: ubuntu-latest
     steps:
@@ -361,3 +381,62 @@ jobs:
           chmod +x "soha_${version}_linux_amd64"
           ./soha_"${version}"_linux_amd64 version --json > version.json
           jq -e --arg version "$version" --arg commit "$RELEASE_SHA" '.version == $version and .commit == $commit' version.json
+
+  verify-existing:
+    # Unknown modes deliberately enter this job and fail context validation.
+    if: github.event_name == 'workflow_dispatch' && inputs.mode != 'publish'
+    name: Read-only existing npm qualification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_MODE: ${{ inputs.mode }}
+      ORIGINAL_RUN: ${{ inputs.original_run }}
+      EXPECTED_INTEGRITY: ${{ inputs.expected_integrity }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+    steps:
+      - name: Reject untrusted dispatch context before checkout
+        env:
+          WORKFLOW_REFERENCE: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          test "$RELEASE_MODE" = verify-existing
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = opensoha/soha
+          test "$GITHUB_REF" = refs/heads/main
+          test "$WORKFLOW_REFERENCE" = opensoha/soha/.github/workflows/cli-release.yml@refs/heads/main
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.4'
+      - name: Check read-only qualification guards
+        run: node --test cli/scripts/verify-existing-npm-release.checks.mjs
+      - name: Bind immutable source, successful CI and original release prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node cli/scripts/verify-existing-npm-release.mjs authorize "$RUNNER_TEMP/cli-existing-proof.json"
+      - name: Use pinned signature-verifying npm CLI
+        run: npm install --global npm@12.2.2 --ignore-scripts
+      - name: Verify original public bytes and cryptographic provenance
+        run: |
+          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u NPM_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            node cli/scripts/verify-existing-npm-release.mjs verify "$RUNNER_TEMP/cli-existing-proof.json" "$RUNNER_TEMP/cli-existing-public.json"
+      - name: Qualify fresh-cache launcher and record the read-only receipt
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#cli/v}"
+          cache_root="$(mktemp -d "$RUNNER_TEMP/cli-existing-cache.XXXXXX")"
+          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u NPM_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            npm_config_cache="$cache_root/npm" SOHA_NPX_CACHE="$cache_root/binary" \
+            npx -y "@opensoha/cli@${version}" version --json > "$RUNNER_TEMP/cli-existing-version.json"
+          node cli/scripts/verify-existing-npm-release.mjs receipt "$RUNNER_TEMP/cli-existing-proof.json" "$RUNNER_TEMP/cli-existing-public.json" "$RUNNER_TEMP/cli-existing-version.json" "$RUNNER_TEMP/cli-existing-qualification.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-existing-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cli-existing-qualification.json
+          if-no-files-found: error
