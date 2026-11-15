@@ -146,5 +146,9 @@
         }
       ]
     }
+  },
+  "legacyRetirement": {
+    "manifest": ".github/legacy-retirement.json",
+    "sha256": "894d5b7bb80bb50f760c278ee29756cc4b6e1839c60ea4299d9cda9b3f3d8822"
   }
 }

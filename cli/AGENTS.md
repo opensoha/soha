@@ -56,7 +56,7 @@ the workflow or documentation is stale, then update both in the same change.
   repository. The CLI may call public Cloud APIs without owning their logic.
 - Keep the npm package a checksum-verifying launcher for the native Go binary.
   Do not implement a second CLI or MCP server in JavaScript.
-- Official agent-facing skills belong to `opensoha/soha-skills`. The CLI must
+- Official agent-facing skills belong to Root `opensoha/soha`, directory `skills/`. The CLI must
   install verified release assets rather than embed another copy.
 
 ## Implementation Invariants

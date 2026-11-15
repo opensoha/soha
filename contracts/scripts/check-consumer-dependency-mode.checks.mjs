@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, chmodSync, symlinkSync, realpathSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, cpSync, chmodSync, symlinkSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -37,6 +38,8 @@ const original = childProcess.spawnSync;
 childProcess.spawnSync = (command, args, options) => {
   if (command !== "go") return original(command, args, options);
   if (options.env.GOWORK !== "off" || options.env.GOFLAGS !== "-mod=readonly") throw Error("source substitution enabled");
+  if (process.env.ASSERT_ARCHIVED_SDK === "1" && !options.env.GOPROXY.startsWith("file:")) throw Error("missing archived SDK proxy");
+  if (process.env.EXPECTED_ARCHIVED_PROXY && !options.env.GOPROXY.startsWith(process.env.EXPECTED_ARCHIVED_PROXY + ",")) throw Error("archive came from source instead of controls");
   appendFileSync(${JSON.stringify(trace)}, JSON.stringify(args)+"\\n");
   if(args[0] === "list") return { status: 0, stdout: ${JSON.stringify(JSON.stringify(module))} };
   if(args[0] === "mod") return { status: 0, stdout: ${JSON.stringify(JSON.stringify(downloaded))} };
@@ -74,6 +77,24 @@ test("declared Go mode disables workspaces and preserves the consumer directory"
   assert.equal(existsSync(join(root, "soha/keep.txt")), true);
   const calls = readFileSync(join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   assert.deepEqual(calls.map((args) => args[0]), ["list", "mod", "test"]);
+});
+test("archived declared mode keeps the old version and sum with a file mirror and no replacement", (t) => {
+  const root = fixture(t);
+  const version = "v0.1.30-0.20261110173546-4aef3ea31f6a";
+  const sum = "h1:wQuW9V56dc9MReFReBhOxr8BxfTTdQ6ECbVMB7iRYt4=";
+  writeFileSync(join(root, "soha/go.mod"), `module fixture\nrequire github.com/opensoha/soha-contracts ${version}\n`);
+  const env = fakeGo(root, { Version: version, Sum: sum }, { Version: version, Sum: sum });
+  const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha"], { ...env, ASSERT_ARCHIVED_SDK: "1" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readFileSync(join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse).map(args => args[0]), ["list", "mod", "test"]);
+});
+test("an unarchived declared version cannot silently use the old repository", (t) => {
+  const root = fixture(t);
+  const env = fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" });
+  const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha"], env);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /archived module identity/);
+  assert.equal(existsSync(join(root, "trace.jsonl")), false);
 });
 test("declared Go mode rejects a replacement before any test command", (t) => {
   const root = fixture(t); const env = fakeGo(root, { Version: "v0.1.0", Replace: { Dir: "/unit-only" } });
@@ -175,6 +196,7 @@ function candidateFixture(t) {
   mkdirSync(join(contracts, "scripts"), { recursive: true });
   const checker = join(contracts, "scripts/check-consumers.mjs");
   copyFileSync(script, checker);
+  copyFileSync(join(dirname(script), "archived-go-sdk.mjs"), join(contracts, "scripts/archived-go-sdk.mjs"));
   writeFileSync(join(contracts, "package.json"), '{"version":"0.1.0"}');
   const git = (...args) => {
     const result = spawnSync("git", ["-C", contracts, ...args], { encoding: "utf8" });
@@ -375,6 +397,7 @@ function internalFixture(t) {
   write("skills/tools/validate_assets.py", 'from pathlib import Path\nroot = Path(__file__).resolve().parents[2]\nrequired = ' + JSON.stringify(required) + '\nassert all((root / p).is_file() for p in required), "missing same-source schema/Core input"\nPath("ran").write_text("strict fixture validated")\n');
   mkdirSync(join(root, "contracts/scripts"));
   copyFileSync(script, join(root, "contracts/scripts/check-consumers.mjs"));
+  copyFileSync(join(dirname(script), "archived-go-sdk.mjs"), join(root, "contracts/scripts/archived-go-sdk.mjs"));
   mkdirSync(join(root, "scripts"));
   copyFileSync(resolve(dirname(script), "../../scripts/source-workspace.py"), join(root, "scripts/source-workspace.py"));
   copyFileSync(resolve(dirname(script), "../../scripts/check-module-boundaries.go"), join(root, "scripts/check-module-boundaries.go"));
@@ -774,4 +797,116 @@ test("declared module selection ignores exclude blocks", (t) => {
   writeFileSync(join(root, "soha", "go.mod"), `module fixture\nrequire (\n ${modulePath} v0.1.0\n)\nexclude (\n ${modulePath} v0.0.9\n)\n`);
   const result = run(root, ["--declared", "--consumer", "soha"], fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" }));
   assert.equal(result.status, 0, result.stderr);
+});
+
+const recoveredContractsSHA = "f160aa3ae7fc0d7e9215cc0f330f88cabad084d8";
+function recoveryFixture(t) {
+  const root = fixture(t);
+  const source = join(root, "source");
+  const control = join(root, "control");
+  const owner = resolve(dirname(script), "../..");
+  const git = (...args) => {
+    const result = spawnSync("git", args, { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  // Local object-only clone: the immutable tag supplies source, never its old CI tools.
+  git("clone", "--quiet", "--shared", "--no-checkout", owner, source);
+  git("-C", source, "sparse-checkout", "set", "--no-cone", "/contracts/", "/skills/", "/go.work", "/go.mod");
+  git("-C", source, "checkout", "--quiet", "--detach", recoveredContractsSHA);
+  mkdirSync(join(control, "contracts/scripts"), { recursive: true });
+  for (const name of ["check-consumers.mjs", "archived-go-sdk.mjs"]) {
+    copyFileSync(join(dirname(script), name), join(control, "contracts/scripts", name));
+  }
+  writeFileSync(join(control, "contracts/package.json"), '{"version":"9.9.9"}\n');
+  mkdirSync(join(control, ".github"));
+  copyFileSync(join(owner, ".github/legacy-go-sdk.json"), join(control, ".github/legacy-go-sdk.json"));
+  cpSync(join(owner, ".github/legacy-goproxy"), join(control, ".github/legacy-goproxy"), { recursive: true });
+  git("-C", control, "init", "--quiet");
+  git("-C", control, "add", ".");
+  git("-C", control, "-c", "user.name=Unit", "-c", "user.email=unit@example.invalid", "-c", "commit.gpgSign=false", "commit", "--quiet", "-m", "trusted control fixture");
+  const controlSHA = git("-C", control, "rev-parse", "HEAD");
+  const environment = { GITHUB_REPOSITORY: "opensoha/soha", GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main",
+    GITHUB_WORKFLOW_REF: "opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main",
+    NPM_PUBLISH_MODE: "recover", GITHUB_SHA: controlSHA };
+  const args = ["--contracts-root", join(source, "contracts"), "--control-sha", controlSHA, "--contracts-sha", recoveredContractsSHA];
+  const checker = join(control, "contracts/scripts/check-consumers.mjs");
+  return { root, source, control, checker, environment, args, git, controlSHA };
+}
+
+test("current recovery tools bind the actual old tag, schemas, workspace and report identity", (t) => {
+  const f = recoveryFixture(t);
+  assert.equal(existsSync(join(f.source, "contracts/scripts/archived-go-sdk.checks.mjs")), false);
+  const consumer = join(f.root, "soha-skills");
+  mkdirSync(join(consumer, "tools"), { recursive: true });
+  writeFileSync(join(consumer, "tools/validate_assets.py"), 'from pathlib import Path\nimport sys\n' +
+    'assert all(Path(p).is_file() and str(Path(p)).startswith(' + JSON.stringify(join(f.source, "contracts")) + ') for p in sys.argv[2::2])\n');
+  const result = run(f.root, [...f.args, "--consumer", "soha-skills"], f.environment, f.checker);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const report = JSON.parse(readFileSync(join(f.root, "result.json")));
+  assert.equal(report.contractsRevision.head, recoveredContractsSHA);
+  assert.equal(report.expectedContracts.head, recoveredContractsSHA);
+  assert.equal(report.contractsVersion, "0.2.0");
+  assert.equal(report.contractsRoot, join(f.source, "contracts"));
+  assert.equal(report.dependencyMode, "candidate-source");
+  const internal = run(f.root, [...f.args, "--internal-source", "--consumer", "soha-skills", "--dry-run"],
+    { ...f.environment, SOHA_CONSUMER_ROOT: f.source }, f.checker);
+  assert.equal(internal.status, 0, internal.stdout + internal.stderr);
+  const internalReport = JSON.parse(readFileSync(join(f.root, "result.json")));
+  assert.equal(internalReport.workspaceRoot, f.source);
+  assert.equal(internalReport.contractsRevision.head, recoveredContractsSHA);
+  assert.equal(internalReport.workspaceInputs["go.work"], createHash("sha256").update(readFileSync(join(f.source, "go.work"))).digest("hex"));
+  assert.equal(f.git("-C", f.source, "status", "--porcelain"), "");
+});
+
+test("recovery declared mode obtains the exact old module from controls, keeping source and manifests", (t) => {
+  const f = recoveryFixture(t);
+  const archive = JSON.parse(readFileSync(join(f.control, ".github/legacy-go-sdk.json")));
+  const consumer = join(f.root, "soha");
+  const manifest = `module fixture\nrequire ${archive.module} ${archive.version}\n`;
+  writeFileSync(join(consumer, "go.mod"), manifest);
+  writeFileSync(join(consumer, "go.sum"), `${archive.module} ${archive.version} ${archive.sum}\n`);
+  const env = fakeGo(f.root, { Version: archive.version, Sum: archive.sum }, { Version: archive.version, Sum: archive.sum });
+  const result = run(f.root, [...f.args, "--consumer", "soha", "--declared", "--archived-declared-sdk"],
+    { ...f.environment, ...env, ASSERT_ARCHIVED_SDK: "1", EXPECTED_ARCHIVED_PROXY: pathToFileURL(realpathSync(join(f.control, ".github/legacy-goproxy"))).href }, f.checker);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const report = JSON.parse(readFileSync(join(f.root, "result.json")));
+  assert.equal(report.dependencyMode, "declared");
+  assert.equal(report.contractsRevision.head, recoveredContractsSHA);
+  assert.equal(readFileSync(join(consumer, "go.mod"), "utf8"), manifest);
+  assert.equal(readFileSync(join(consumer, "go.sum"), "utf8"), `${archive.module} ${archive.version} ${archive.sum}\n`);
+  assert.equal(f.git("-C", f.source, "status", "--porcelain"), "");
+});
+
+test("recovery rejects source/control identity drift and untrusted caller before consumers run", (t) => {
+  const f = recoveryFixture(t);
+  const args = [...f.args, "--consumer", "soha-skills", "--dry-run"];
+  for (const environment of [{ GITHUB_REF: "refs/tags/contracts/v0.2.0" }, { NPM_PUBLISH_MODE: "stage" },
+    { GITHUB_WORKFLOW_REF: "opensoha/soha/.github/workflows/contracts-ci.yml@refs/heads/main" },
+    { GITHUB_SHA: "b".repeat(40) }]) {
+    const result = run(f.root, args, { ...f.environment, ...environment }, f.checker);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /exact Root main recovery/);
+  }
+  const wrongSource = [...args];
+  wrongSource[wrongSource.indexOf("--contracts-sha") + 1] = "b".repeat(40);
+  assert.match(run(f.root, wrongSource, f.environment, f.checker).stderr, /candidate SHA mismatch/);
+  const wrongControl = [...args];
+  wrongControl[wrongControl.indexOf("--control-sha") + 1] = "b".repeat(40);
+  assert.match(run(f.root, wrongControl, { ...f.environment, GITHUB_SHA: "b".repeat(40) }, f.checker).stderr, /control checkout differs/);
+  for (const [file, message] of [[join(f.source, "contracts/package.json"), /uncommitted source/],
+    [join(f.control, ".github/legacy-go-sdk.json"), /control checkout differs/]]) {
+    const original = readFileSync(file);
+    writeFileSync(file, Buffer.concat([original, Buffer.from("\n")]));
+    const result = run(f.root, args, f.environment, f.checker);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+    if (file.startsWith(f.source)) {
+      const digest = JSON.parse(readFileSync(join(f.root, "result.json"))).contractsRevision.sourceHash;
+      const bound = run(f.root, [...args, "--contracts-source-hash", digest], f.environment, f.checker);
+      assert.notEqual(bound.status, 0);
+      assert.match(bound.stderr, /unmodified tagged source/);
+    }
+    writeFileSync(file, original);
+  }
 });

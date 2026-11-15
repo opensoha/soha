@@ -31,12 +31,9 @@ The npm package does not implement MCP in JavaScript. It downloads the native
 binary from the matching GitHub release, verifies `checksums.txt`, caches it by
 version, and rechecks the cached binary before execution.
 
-Install the retained legacy release with Go:
-
-```sh
-go install github.com/opensoha/soha-cli/cmd/soha@v0.1.8
-soha version
-```
+Legacy `v0.1.x` source and original release files are retained in the Root
+unpublished historical archive for maintainer recovery. Their old repository URLs
+and Go import paths may stop resolving after legacy repository deletion.
 
 Install the new Go submodule with:
 
@@ -45,8 +42,8 @@ go install github.com/opensoha/soha/cli/cmd/soha@v0.2.1
 ```
 
 This command requires the real `cli/v0.2.1` tag and publicly available declared
-SDK; the source candidate alone does not make it installable. Legacy
-`opensoha/soha-cli` tags and release assets remain available at their old URLs.
+SDK; the source candidate alone does not make it installable. Historical tags and original release bytes are preserved in the Root archive;
+new installs use the Root submodule and releases.
 
 For new release binaries, download the platform archive from
 [Root CLI releases](https://github.com/opensoha/soha/releases/tag/cli%2Fv0.2.1), then verify it against `checksums.txt` before placing `soha` on your
@@ -297,15 +294,15 @@ flow.
 
 By default, skills come from the latest stable GitHub Release in
 `opensoha/soha`, filtered to published stable `skills/v*` tags across release
-pages (independent of Core latest). Explicit legacy `github:opensoha/soha-skills@v...`
-pins remain compatible. The CLI resolves the selected release to its concrete semantic
+pages (independent of Core latest). Explicit legacy repository sources are parsed for historical recovery, but their
+old URLs are not guaranteed after repository deletion. The CLI resolves the selected release to its concrete semantic
 version before downloading release assets; it never installs directly from a branch.
-Use `--source github:opensoha/soha-skills@v0.1.0` only to pin a rollback or
+Use `--source github:opensoha/soha@skills/v0.1.4` only to pin a rollback or
 reproducible install. Local checkouts, local release tarballs, and HTTPS release
 asset URLs remain available through `--source` or `SOHA_SKILLS_SOURCE`.
 
 The canonical agent-facing `$soha` skill is owned by
-`soha-skills/agent-skills/soha`; the CLI copies it from the verified release
+Root `skills/agent-skills/soha`; the CLI copies it from the verified release
 instead of embedding a second prompt. Release sources are cached only after the checksum, external and embedded
 manifests, validation report, every packaged file hash, the compatibility
 matrix, and archive paths pass validation. A latest release missing any required

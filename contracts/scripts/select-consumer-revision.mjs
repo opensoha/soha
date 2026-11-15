@@ -18,13 +18,26 @@ export function selectConsumerRevision(revisions, consumer, mode = 'pinned') {
   return mode === 'latest' ? 'main' : revisions[consumer]
 }
 
+export function selectConsumerRepository(consumer) {
+  if (!['soha', 'soha-web', 'soha-app', 'soha-cli', 'soha-agent', 'soha-skills'].includes(consumer)) {
+    throw new Error(`Unknown consumer repository: ${consumer}`)
+  }
+  return consumer === 'soha-app' ? 'opensoha/soha-app' : 'opensoha/soha'
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const revisions = JSON.parse(readFileSync(new URL('../compat/consumer-revisions.json', import.meta.url), 'utf8'))
+    const args = process.argv.slice(2)
+    const index = args.indexOf('--revisions-file')
+    if (args.length && (index !== 0 || args.length !== 2 || !args[1] || args[1].startsWith('--'))) {
+      throw new Error('Only --revisions-file <original-source-manifest> is supported.')
+    }
+    const revisions = JSON.parse(readFileSync(index === 0 ? args[1] : new URL('../compat/consumer-revisions.json', import.meta.url), 'utf8'))
     const consumer = process.env.CONSUMER
     const mode = process.env.CONSUMER_REVISION_MODE || 'pinned'
     const ref = selectConsumerRevision(revisions, consumer, mode)
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `ref=${ref}\n`)
+    const repository = selectConsumerRepository(consumer)
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `ref=${ref}\nrepository=${repository}\n`)
     console.log(`${consumer}: ${mode} -> ${ref}`)
   } catch (error) {
     console.error(`Consumer revision selection failed: ${error.message}`)

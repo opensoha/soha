@@ -187,7 +187,8 @@ prove that an SDK version has been published. Reports label this `internal-sourc
 and bind the source revision plus workspace input digests. Use `--consumer soha`
 or `--consumer soha-web` to select one; `--declared` cannot be combined with this mode.
 The executable workflow is [root Contracts CI](../.github/workflows/contracts-ci.yml).
-Nested legacy publishing workflows are inert; publisher migration remains a separate B4/B5 stage.
+Nested legacy publishing workflows are inert. Root owns publishing; completed
+legacy retirement is recorded in the Root `.github/legacy-retirement.json` manifest.
 
 ## Consumer Matrix
 
@@ -199,6 +200,17 @@ and lockfiles and verify them without the local override.
 
 The external compatibility gate retains all six consumers in two separate modes.
 Place their checkouts outside the source npm workspace and set `SOHA_CONSUMER_ROOT`.
+The reviewed commit pins remain unchanged. Core, Web, CLI, Agent and Skills are
+checked out from Root, with historical commits retained under `archive/consumer/`
+refs; App remains in `opensoha/soha-app`. This is still an external historical
+checkout, not a substitution with the current same-source component.
+
+For declared Go checks, use `--declared --archived-declared-sdk`. The fixed legacy
+SDK's original `.zip`, `.mod` and `.info` are preserved in Root
+`.github/legacy-goproxy`, verified against `.github/legacy-go-sdk.json`, and served
+through a file proxy. Its module path, version, `go.sum`/sumdb identity and
+`GOWORK=off` remain unchanged; no `replace` or candidate source is used. Missing,
+changed or unarchived versions fail before Go can fall back to a deleted source.
 The external candidate gate is:
 
 ```sh
@@ -263,14 +275,14 @@ The `contracts-ci` workflow can validate an explicit unpublished candidate witho
 moving consumer pins or publishing anything:
 
 ```sh
-gh workflow run ci.yml --repo opensoha/soha-contracts --ref <workflow-ref> -f contracts_sha=<40-character-sha> -f consumer_mode=pinned
+gh workflow run contracts-ci.yml --repo opensoha/soha --ref <workflow-ref> -f contracts_sha=<40-character-sha> -f consumer_mode=pinned
 ```
 
 Use a workflow revision and candidate containing this validation interface. The
 optional `contracts_sha` accepts only a full commit SHA; leaving it empty selects
 the workflow event's SHA, never a floating Contracts branch. Both verification and
 consumer jobs check out that SHA. CI retains the fixed consumer revision manifest
-unless `consumer_mode=latest` is explicitly selected. Each consumer job runs declared
+and currently exposes only `consumer_mode=pinned`. Each consumer job runs declared
 dependencies and candidate source separately: a declared failure still permits the
 candidate diagnostic, while either failure keeps the job failed. Step outcomes and
 separate `declared.json`/`candidate.json` artifacts remain visible. Setup failure or
@@ -314,11 +326,11 @@ Source metadata identifies `https://github.com/opensoha/soha`, directory
 `contracts`. SDK release tags use `contracts/v<package.json version>`; Root
 `v*` tags belong to Core and are ignored by the SDK version-sync gate.
 
-The current `0.2.0` metadata is a namespace-migration candidate, not a published release of
-the new Go namespace. Changing the Go module identity uses an intentional
-`0.x` minor release in B5, with coordinated consumer migration and public artifact
-verification. Historical released consumers retain their old module path until
-that migration. No `0.1.x` patch publication is implied by this source move.
+Root `contracts/v0.2.0` and `@opensoha/contracts@0.2.0` were published during B5.
+Historical fixed consumers retain their original module identity through the
+archived exact SDK mirror above. Legacy repository URLs may stop resolving after
+their deletion; new consumers use `github.com/opensoha/soha/contracts`. Retiring
+those repositories does not publish another SDK version.
 
 From the Root workspace, prepare and verify local artifacts with:
 

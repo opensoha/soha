@@ -7,6 +7,10 @@ on:
         description: Exact full Contracts candidate commit SHA
         type: string
         required: false
+      recovery_control_sha:
+        description: Exact main workflow SHA, only for the owning Contracts recovery caller
+        type: string
+        required: false
   workflow_dispatch:
     inputs:
       consumer_mode:
@@ -23,6 +27,11 @@ on:
 permissions:
   contents: read
 
+env:
+  RECOVERY_CONTROL_SHA: ${{ inputs.recovery_control_sha }}
+  CONTRACTS_TOOL_ROOT: ${{ github.workspace }}/${{ inputs.recovery_control_sha && 'control' || 'source' }}
+  NPM_PUBLISH_MODE: ${{ github.event.inputs.publish_mode }}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -34,12 +43,45 @@ jobs:
         working-directory: .
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
-        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+        run: |
+          [[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            [[ "$RECOVERY_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REPOSITORY" = opensoha/soha
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_WORKFLOW_REF" = opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main
+            test "$NPM_PUBLISH_MODE" = recover
+            test "$GITHUB_SHA" = "$RECOVERY_CONTROL_SHA"
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.contracts_sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
           path: source
+      - name: Checkout exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        uses: actions/checkout@v7
+        with:
+          repository: opensoha/soha
+          ref: ${{ inputs.recovery_control_sha }}
+          path: control
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            contracts/scripts/check-consumers.mjs
+            contracts/scripts/select-consumer-revision.mjs
+            contracts/scripts/archived-go-sdk.mjs
+            contracts/scripts/archived-go-sdk.checks.mjs
+            .github/legacy-go-sdk.json
+            .github/legacy-goproxy
+      - name: Verify exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        working-directory: control
+        run: |
+          test "$(git rev-parse HEAD)" = "$RECOVERY_CONTROL_SHA"
+          test -z "$(git diff HEAD --name-only)"
       - name: Verify checked out Contracts SHA
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
@@ -57,6 +99,8 @@ jobs:
           cache-dependency-path: source/contracts/go.sum
       - name: Consumer dependency mode tests
         run: node --test scripts/check-consumer-dependency-mode.checks.mjs
+      - name: Archived SDK mirror tests from selected controls
+        run: node --test "$CONTRACTS_TOOL_ROOT/contracts/scripts/archived-go-sdk.checks.mjs"
       - name: Consumer revision selector tests
         run: node --test scripts/select-consumer-revision.checks.mjs
       - run: npm ci
@@ -99,12 +143,44 @@ jobs:
         working-directory: .
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
-        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+        run: |
+          [[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            [[ "$RECOVERY_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REPOSITORY" = opensoha/soha
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_WORKFLOW_REF" = opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main
+            test "$NPM_PUBLISH_MODE" = recover
+            test "$GITHUB_SHA" = "$RECOVERY_CONTROL_SHA"
+          fi
       - uses: actions/checkout@v7
         with:
           path: source
           ref: ${{ inputs.contracts_sha || github.sha }}
           persist-credentials: false
+      - name: Checkout exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        uses: actions/checkout@v7
+        with:
+          repository: opensoha/soha
+          ref: ${{ inputs.recovery_control_sha }}
+          path: control
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            contracts/scripts/check-consumers.mjs
+            contracts/scripts/select-consumer-revision.mjs
+            contracts/scripts/archived-go-sdk.mjs
+            contracts/scripts/archived-go-sdk.checks.mjs
+            .github/legacy-go-sdk.json
+            .github/legacy-goproxy
+      - name: Verify exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        working-directory: control
+        run: |
+          test "$(git rev-parse HEAD)" = "$RECOVERY_CONTROL_SHA"
+          test -z "$(git diff HEAD --name-only)"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -114,10 +190,21 @@ jobs:
         env:
           CONSUMER: ${{ matrix.consumer }}
           CONSUMER_REVISION_MODE: ${{ inputs.consumer_mode || 'pinned' }}
-        run: node scripts/select-consumer-revision.mjs
+        run: node "$CONTRACTS_TOOL_ROOT/contracts/scripts/select-consumer-revision.mjs" --revisions-file compat/consumer-revisions.json
+      - name: Validate selected consumer repository and immutable pin
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          CONSUMER_REPOSITORY: ${{ steps.consumer-ref.outputs.repository }}
+          CONSUMER_SHA: ${{ steps.consumer-ref.outputs.ref }}
+        run: |
+          [[ "$CONSUMER_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          case "$CONSUMER" in
+            soha-app) test "$CONSUMER_REPOSITORY" = opensoha/soha-app ;;
+            *) test "$CONSUMER_REPOSITORY" = opensoha/soha ;;
+          esac
       - uses: actions/checkout@v7
         with:
-          repository: ${{ (matrix.consumer == 'soha' || matrix.consumer == 'soha-web') && github.repository || format('opensoha/{0}', matrix.consumer) }}
+          repository: ${{ steps.consumer-ref.outputs.repository }}
           path: consumers/${{ matrix.consumer }}
           ref: ${{ steps.consumer-ref.outputs.ref }}
           persist-credentials: false
@@ -130,6 +217,7 @@ jobs:
           test "$(git -C source rev-parse HEAD)" = "$CONTRACTS_SHA"
           printf '### Consumer validation (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
           printf 'Contracts: `%s`\n' "$(git -C source rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Consumer controls: `%s`\n' "$(git -C "$CONTRACTS_TOOL_ROOT" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf '%s: `%s`\n' "$CONSUMER" "$(git -C "consumers/$CONSUMER" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-go@v6
         with:
@@ -143,9 +231,15 @@ jobs:
         id: declared
         env:
           CONSUMER: ${{ matrix.consumer }}
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
           SOHA_CONSUMER_ROOT: ${{ github.workspace }}/consumers
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
-        run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --declared --out ../../consumer-reports/declared.json
+        run: |
+          checker=(npm run check:consumers --)
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            checker=(node "$CONTRACTS_TOOL_ROOT/contracts/scripts/check-consumers.mjs" --contracts-root "$GITHUB_WORKSPACE/source/contracts" --control-sha "$RECOVERY_CONTROL_SHA")
+          fi
+          "${checker[@]}" --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --declared --archived-declared-sdk --out ../../consumer-reports/declared.json
         working-directory: source/contracts
       - name: Verify candidate independently (Go uses Root; declared retains pinned external revisions)
         id: candidate
@@ -156,12 +250,16 @@ jobs:
           SOHA_CONSUMER_ROOT: ${{ github.workspace }}/consumers
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
         run: |
+          checker=(npm run check:consumers --)
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            checker=(node "$CONTRACTS_TOOL_ROOT/contracts/scripts/check-consumers.mjs" --contracts-root "$GITHUB_WORKSPACE/source/contracts" --control-sha "$RECOVERY_CONTROL_SHA")
+          fi
           case "$CONSUMER" in
             soha|soha-cli|soha-agent)
-              SOHA_CONSUMER_ROOT="$GITHUB_WORKSPACE/source" npm run check:consumers -- --internal-source --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --out ../../consumer-reports/candidate.json
+              SOHA_CONSUMER_ROOT="$GITHUB_WORKSPACE/source" "${checker[@]}" --internal-source --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --out ../../consumer-reports/candidate.json
               ;;
             *)
-              npm run check:consumers -- --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --contracts-skill-schema "$GITHUB_WORKSPACE/source/contracts/skills/skill-manifest.schema.json" --contracts-mcp-preset-schema "$GITHUB_WORKSPACE/source/contracts/presets/mcp-preset.schema.json" --contracts-agent-profile-schema "$GITHUB_WORKSPACE/source/contracts/profiles/agent-profile.schema.json" --contracts-permission-catalog "$GITHUB_WORKSPACE/source/contracts/auth/permission-catalog.json" --out ../../consumer-reports/candidate.json
+              "${checker[@]}" --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --contracts-skill-schema "$GITHUB_WORKSPACE/source/contracts/skills/skill-manifest.schema.json" --contracts-mcp-preset-schema "$GITHUB_WORKSPACE/source/contracts/presets/mcp-preset.schema.json" --contracts-agent-profile-schema "$GITHUB_WORKSPACE/source/contracts/profiles/agent-profile.schema.json" --contracts-permission-catalog "$GITHUB_WORKSPACE/source/contracts/auth/permission-catalog.json" --out ../../consumer-reports/candidate.json
               ;;
           esac
         working-directory: source/contracts
@@ -184,28 +282,65 @@ jobs:
 
   internal-source:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source
     steps:
       - name: Validate Contracts candidate SHA
+        working-directory: .
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
-        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+        run: |
+          [[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            [[ "$RECOVERY_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REPOSITORY" = opensoha/soha
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_WORKFLOW_REF" = opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main
+            test "$NPM_PUBLISH_MODE" = recover
+            test "$GITHUB_SHA" = "$RECOVERY_CONTROL_SHA"
+          fi
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.contracts_sha || github.sha }}
+          path: source
+      - name: Checkout exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        uses: actions/checkout@v7
+        with:
+          repository: opensoha/soha
+          ref: ${{ inputs.recovery_control_sha }}
+          path: control
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            contracts/scripts/check-consumers.mjs
+            contracts/scripts/select-consumer-revision.mjs
+            contracts/scripts/archived-go-sdk.mjs
+            contracts/scripts/archived-go-sdk.checks.mjs
+            .github/legacy-go-sdk.json
+            .github/legacy-goproxy
+      - name: Verify exact recovery consumer controls
+        if: inputs.recovery_control_sha != ''
+        working-directory: control
+        run: |
+          test "$(git rev-parse HEAD)" = "$RECOVERY_CONTROL_SHA"
+          test -z "$(git diff HEAD --name-only)"
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: source/package-lock.json
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.4'
           cache-dependency-path: |
-            go.sum
-            contracts/go.sum
-            cli/go.sum
-            agent/go.sum
+            source/go.sum
+            source/contracts/go.sum
+            source/cli/go.sum
+            source/agent/go.sum
       - name: Verify checked out Contracts SHA
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
@@ -215,7 +350,13 @@ jobs:
       - name: Verify five same-source consumers separately from external compatibility
         env:
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
-        run: node contracts/scripts/check-consumers.mjs --internal-source --require-all --out internal-source-report.json
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: |
+          checker=(node contracts/scripts/check-consumers.mjs)
+          if [ -n "$RECOVERY_CONTROL_SHA" ]; then
+            checker=(node "$CONTRACTS_TOOL_ROOT/contracts/scripts/check-consumers.mjs" --contracts-root "$GITHUB_WORKSPACE/source/contracts" --control-sha "$RECOVERY_CONTROL_SHA")
+          fi
+          "${checker[@]}" --internal-source --require-all --contracts-sha "$CONTRACTS_SHA" --out "$GITHUB_WORKSPACE/internal-source-report.json"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

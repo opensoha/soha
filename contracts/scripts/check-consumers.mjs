@@ -5,8 +5,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { archivedGoProxy } from "./archived-go-sdk.mjs";
 
-const contractsRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const args = process.argv.slice(2);
+const toolContractsRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const requestedContractsRoot = valueArg("--contracts-root");
+const controlSHA = valueArg("--control-sha");
+if (requestedContractsRoot === "") throw new Error("--contracts-root requires a value");
+const contractsRoot = requestedContractsRoot === undefined ? toolContractsRoot : resolve(requestedContractsRoot);
 const workspaceRoot = dirname(contractsRoot);
 const contractsTarballPlaceholder = "<contracts-tarball>";
 
@@ -49,10 +55,10 @@ const consumers = [
   },
 ];
 
-const args = process.argv.slice(2);
 const requireAll = args.includes("--internal-source") || args.includes("--require-all") || process.env.SOHA_CONSUMER_REQUIRE_ALL === "1";
 const dryRun = args.includes("--dry-run");
 const declaredSDK = args.includes("--declared");
+const archivedDeclaredSDK = args.includes("--archived-declared-sdk");
 const internalSource = args.includes("--internal-source");
 const allowRemoteNativeDocker = args.includes("--allow-remote-native-docker");
 const consumerRoot = internalSource ? workspaceRoot : resolve(process.env.SOHA_CONSUMER_ROOT ?? dirname(contractsRoot));
@@ -68,6 +74,7 @@ const outputPath = valueArg("--out");
 const expectedContracts = { head: valueArg("--contracts-sha"), sourceHash: valueArg("--contracts-source-hash") };
 const selected = selectedConsumers(args);
 if (internalSource && declaredSDK) throw new Error("--internal-source cannot be combined with --declared");
+if (archivedDeclaredSDK && !declaredSDK) throw new Error("--archived-declared-sdk requires --declared");
 
 if (listOnly) {
   console.log(availableConsumers.map((consumer) => consumer.name).join("\n"));
@@ -86,6 +93,7 @@ let failed = 0;
 const contractsRevision = revision(contractsRoot);
 const results = [];
 try {
+  verifyRecoveryControls();
   verifyContractsIdentity();
   if (internalSource && process.env.SOHA_CONSUMER_ROOT && realpathSync(process.env.SOHA_CONSUMER_ROOT) !== realpathSync(workspaceRoot)) {
     throw new Error("internal-source consumer root must be this workspace");
@@ -174,7 +182,15 @@ for (const target of targets) {
         run("python3", [join(workspaceRoot, "scripts/source-workspace.py"), consumer.kind === "go" ? "check-go" : "check-npm"], workspaceRoot, env);
       }
     } else if (consumer.kind === "go") {
-      if (declaredSDK) env = { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" };
+      if (declaredSDK) {
+        env = { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" };
+        if (archivedDeclaredSDK) {
+          const sdk = declaredSDKRequirement(dir);
+          if (sdk.name === "github.com/opensoha/soha-contracts") {
+            env.GOPROXY = archivedGoProxy(dirname(toolContractsRoot), sdk.name, sdk.version);
+          }
+        }
+      }
       else {
         const temporary = await goWorkspaceEnv(dir);
         env = temporary.env;
@@ -309,6 +325,25 @@ function verifyContractsIdentity() {
   if (!contractsRevision || contractsRevision.head !== head) throw new Error("contracts candidate SHA mismatch");
   if (sourceHash !== undefined ? contractsRevision.sourceHash !== sourceHash : contractsRevision.files.length > 0) {
     throw new Error(sourceHash === undefined ? "contracts candidate has uncommitted source; bind --contracts-source-hash as well" : "contracts candidate source hash mismatch");
+  }
+}
+
+function verifyRecoveryControls() {
+  if (requestedContractsRoot === undefined && controlSHA === undefined) return;
+  if (expectedContracts.sourceHash !== undefined) throw new Error("Recovery requires an unmodified tagged source, not a source hash override");
+  if (!requestedContractsRoot || !expectedContracts.head || !/^[a-f0-9]{40}$/.test(controlSHA ?? "")
+      || process.env.GITHUB_REPOSITORY !== "opensoha/soha" || process.env.GITHUB_EVENT_NAME !== "workflow_dispatch"
+      || process.env.GITHUB_REF !== "refs/heads/main" || process.env.NPM_PUBLISH_MODE !== "recover"
+      || process.env.GITHUB_WORKFLOW_REF !== "opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main"
+      || process.env.GITHUB_SHA !== controlSHA) {
+    throw new Error("Separate consumer controls require the exact Root main recovery workflow and source SHA");
+  }
+  const controls = revision(toolContractsRoot);
+  if (!controls || controls.head !== controlSHA || controls.files.length !== 0) {
+    throw new Error("Consumer control checkout differs from the bound clean workflow SHA");
+  }
+  if (realpathSync(workspaceRoot) === realpathSync(dirname(toolContractsRoot))) {
+    throw new Error("Recovery source and consumer controls must be separate checkouts");
   }
 }
 
@@ -451,15 +486,19 @@ function contractsTarball(packageDir) {
   return join(packageDir, `opensoha-contracts-${packageVersion()}.tgz`);
 }
 
-function declaredSDKModule(consumerDir) {
+function declaredSDKRequirement(consumerDir) {
   const manifest = readFileSync(join(consumerDir, "go.mod"), "utf8");
   const requirements = [...manifest.replace(/\/\/[^\n]*/g, "").matchAll(/^\s*require[ \t]+(?:\(([^)]*)\)|([^\n]+))/gm)]
     .flatMap((match) => (match[1] ?? match[2]).split("\n"));
   const paths = requirements.map((line) => line.trim().split(/\s+/))
     .filter(([name, version, extra]) => ["github.com/opensoha/soha-contracts", "github.com/opensoha/soha/contracts"].includes(name) && version?.startsWith("v") && !extra)
-    .map(([name]) => name);
+    .map(([name, version]) => ({ name, version }));
   if (paths.length !== 1) throw new Error("consumer must declare exactly one supported contracts module");
   return paths[0];
+}
+
+function declaredSDKModule(consumerDir) {
+  return declaredSDKRequirement(consumerDir).name;
 }
 
 async function goWorkspaceEnv(consumerDir) {

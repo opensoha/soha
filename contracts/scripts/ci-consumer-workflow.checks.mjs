@@ -18,6 +18,7 @@ const shaExpression = "${{ inputs.contracts_sha || github.sha }}";
 
 test("explicit candidate SHA is validated before either checkout and never supplies publication credentials", () => {
   assert.equal(workflow.on.workflow_dispatch.inputs.contracts_sha.type, "string");
+  assert.equal(workflow.jobs.verify.steps[1].with["fetch-depth"], 0, "real old-tag fixture requires the original Git objects in CI");
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(source.includes("secrets."), false);
   for (const job of Object.values(workflow.jobs)) {
@@ -28,7 +29,7 @@ test("explicit candidate SHA is validated before either checkout and never suppl
     assert.equal(checkout.with.ref, shaExpression);
     assert.equal(checkout.with["persist-credentials"], false);
     for (const sha of ["a".repeat(40), "main", "abcdef0", "a".repeat(40) + "\n", '$(exit 0)']) {
-      const result = spawnSync("bash", ["-e", "-c", validation.run], { env: { ...process.env, CONTRACTS_SHA: sha } });
+      const result = spawnSync("bash", ["-e", "-c", validation.run], { env: { ...process.env, CONTRACTS_SHA: sha, RECOVERY_CONTROL_SHA: "" } });
       assert.equal(result.status === 0, sha === "a".repeat(40));
     }
     assert.ok(job.steps.some((step) => step.run?.includes('rev-parse HEAD)" = "$CONTRACTS_SHA"')));
@@ -49,7 +50,7 @@ test("existing required consumer jobs and pinned selection remain; neither mode 
     assert.equal(step["continue-on-error"], undefined);
     assert.equal(step.run.includes("||"), false);
   }
-  assert.ok(declared.run.includes("--declared --out ../../consumer-reports/declared.json"));
+  assert.ok(declared.run.includes("--declared --archived-declared-sdk --out ../../consumer-reports/declared.json"));
   assert.ok(candidate.run.includes("--out ../../consumer-reports/candidate.json"));
   assert.equal(summary.if, "always()");
   const artifacts = steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
@@ -79,10 +80,9 @@ for (const failures of [[true, false], [false, true], [true, true], [false, fals
 
 test("external baselines are outside the workspace and internal-source is a separate check", () => {
   const checkout = steps.find((step) => step.with?.path === "consumers/${{ matrix.consumer }}");
-  assert.ok(checkout.with.repository.includes("github.repository"));
-  assert.ok(checkout.with.repository.includes("matrix.consumer == 'soha-web'"));
+  assert.equal(checkout.with.repository, "${{ steps.consumer-ref.outputs.repository }}");
   assert.equal(checkout.with.ref, "${{ steps.consumer-ref.outputs.ref }}");
-  assert.equal(steps.find((step) => step.id === "consumer-ref").run, "node scripts/select-consumer-revision.mjs");
+  assert.equal(steps.find((step) => step.id === "consumer-ref").run, 'node "$CONTRACTS_TOOL_ROOT/contracts/scripts/select-consumer-revision.mjs" --revisions-file compat/consumer-revisions.json');
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.consumer_mode.options, ["pinned"]);
   for (const step of [declared, candidate]) {
     assert.equal(step.env.SOHA_CONSUMER_ROOT, "${{ github.workspace }}/consumers");
@@ -144,11 +144,65 @@ test("native proxy gate is mandatory in Core, both release SDK modes and interna
   const internal = workflow.jobs["internal-source"];
   const consumer = internal.steps.find((step) => step.run?.includes("--internal-source --require-all"));
   assert.match(consumer.name, /five same-source consumers/);
-  assert.deepEqual(internal.steps.find((step) => step.uses?.startsWith("actions/setup-go@")).with["cache-dependency-path"].trim().split("\n"), ["go.sum", "contracts/go.sum", "cli/go.sum", "agent/go.sum"]);
+  assert.deepEqual(internal.steps.find((step) => step.uses?.startsWith("actions/setup-go@")).with["cache-dependency-path"].trim().split("\n"), ["source/go.sum", "source/contracts/go.sum", "source/cli/go.sum", "source/agent/go.sum"]);
   assert.equal(consumer.if, undefined);
   assert.equal(consumer["continue-on-error"], undefined);
   assert.equal(consumer.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS, "1");
   const artifacts = internal.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
   assert.equal(artifacts.if, "always()");
   assert.deepEqual(artifacts.with.path.trim().split("\n"), ["internal-source-report.json", "${{ runner.temp }}/opensoha-consumer-native-*/**"]);
+});
+
+test("recovery controls require the exact owning main caller before any checkout", () => {
+  assert.equal(workflow.on.workflow_call.inputs.recovery_control_sha.type, "string");
+  assert.equal(workflow.on.workflow_dispatch.inputs.recovery_control_sha, undefined);
+  assert.equal(workflow.env.RECOVERY_CONTROL_SHA, "${{ inputs.recovery_control_sha }}");
+  assert.equal(workflow.env.CONTRACTS_TOOL_ROOT, "${{ github.workspace }}/${{ inputs.recovery_control_sha && 'control' || 'source' }}");
+  const sha = "b".repeat(40);
+  const context = { GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REPOSITORY: "opensoha/soha", GITHUB_REF: "refs/heads/main",
+    GITHUB_WORKFLOW_REF: "opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main",
+    GITHUB_SHA: sha, RECOVERY_CONTROL_SHA: sha, CONTRACTS_SHA: "f160aa3ae7fc0d7e9215cc0f330f88cabad084d8", NPM_PUBLISH_MODE: "recover" };
+  for (const job of Object.values(workflow.jobs)) {
+    const run = (change) => spawnSync("bash", ["-e", "-c", job.steps[0].run], { env: { ...process.env, ...context, ...change } });
+    assert.equal(run({}).status, 0);
+    for (const change of [{ GITHUB_REF: "refs/tags/contracts/v0.2.0" }, { GITHUB_EVENT_NAME: "push" },
+      { GITHUB_REPOSITORY: "other/soha" }, { GITHUB_WORKFLOW_REF: "opensoha/soha/.github/workflows/contracts-ci.yml@refs/heads/main" },
+      { GITHUB_SHA: "c".repeat(40) }, { RECOVERY_CONTROL_SHA: "main" }, { NPM_PUBLISH_MODE: "stage" }]) {
+      assert.notEqual(run(change).status, 0);
+    }
+    assert.equal(job.steps[1].with.path, "source");
+    const control = job.steps.find((step) => step.name === "Checkout exact recovery consumer controls");
+    assert.equal(control.if, "inputs.recovery_control_sha != ''");
+    assert.equal(control.with.repository, "opensoha/soha");
+    assert.equal(control.with.ref, "${{ inputs.recovery_control_sha }}");
+    assert.equal(control.with.path, "control");
+    assert.equal(control.with["persist-credentials"], false);
+    assert.ok(control.with["sparse-checkout"].includes(".github/legacy-goproxy"));
+    const identity = job.steps.find((step) => step.name === "Verify exact recovery consumer controls");
+    assert.equal(identity["working-directory"], "control");
+    assert(identity.run.includes('test "$(git rev-parse HEAD)" = "$RECOVERY_CONTROL_SHA"'));
+    assert(identity.run.includes('test -z "$(git diff HEAD --name-only)"'));
+  }
+  const dependency = workflow.jobs.verify.steps.find((step) => step.name === "Consumer dependency mode tests");
+  assert.equal(dependency.run, "node --test scripts/check-consumer-dependency-mode.checks.mjs");
+  assert.equal(workflow.jobs.verify.steps.find((step) => step.name === "Archived SDK mirror tests from selected controls").run,
+    'node --test "$CONTRACTS_TOOL_ROOT/contracts/scripts/archived-go-sdk.checks.mjs"');
+  for (const name of ["Verify staged release workflow", "Verify consumer CI independence and candidate selection"]) {
+    const step = workflow.jobs.verify.steps.find((step) => step.name === name);
+    assert.equal(step["working-directory"], undefined);
+    assert.equal(step.if, undefined);
+    assert.equal(step.run.includes("CONTRACTS_TOOL_ROOT"), false, "YAML tests stay with installed original-source dependencies");
+  }
+  assert.equal(workflow.jobs.verify.defaults.run["working-directory"], "source/contracts");
+  assert.equal(workflow.jobs.verify.steps.find((step) => step.run === "npm ci")["working-directory"], "source");
+  assert.equal(workflow.jobs["internal-source"].defaults.run["working-directory"], "source");
+});
+
+test("missing selector repository cannot silently checkout Root for App", () => {
+  const validation = steps.find((step) => step.name === "Validate selected consumer repository and immutable pin");
+  assert(steps.indexOf(validation) < steps.findIndex((step) => step.with?.path === "consumers/${{ matrix.consumer }}"));
+  const run = (repository) => spawnSync("bash", ["-e", "-c", validation.run], { env: { ...process.env,
+    CONSUMER: "soha-app", CONSUMER_SHA: "a".repeat(40), CONSUMER_REPOSITORY: repository } });
+  assert.equal(run("opensoha/soha-app").status, 0);
+  for (const repository of ["", "opensoha/soha", "other/soha-app"]) assert.notEqual(run(repository).status, 0);
 });

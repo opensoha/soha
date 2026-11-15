@@ -40,7 +40,7 @@ export const builtinCompanionPack: CompanionPackSelection = {
       name: 'Apache License 2.0',
       spdxId: 'Apache-2.0',
       url: 'https://www.apache.org/licenses/LICENSE-2.0',
-      sourceUrl: 'https://github.com/opensoha/soha-web',
+      sourceUrl: 'https://github.com/opensoha/soha/tree/main/web',
       redistributionAllowed: true,
       commercialUseAllowed: true,
     },

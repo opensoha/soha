@@ -249,7 +249,7 @@ export function OutpostDetailDrawer({
                     )}
                     <Space wrap>
                       <Typography.Link
-                        href="https://github.com/opensoha/soha-agent/blob/main/deploy/kubernetes/outpost/README.md"
+                        href="https://github.com/opensoha/soha/blob/main/agent/deploy/kubernetes/outpost/README.md"
                         target="_blank"
                         rel="noreferrer"
                       >

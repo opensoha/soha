@@ -105,6 +105,27 @@ class PublisherTestCase(unittest.TestCase):
 
 
 class ImmutableAssetsTest(PublisherTestCase):
+    def test_recovery_passes_the_same_source_and_policy_to_every_guard(self):
+        self.release["component"] = "contracts"
+        sha = "b" * 40
+        publisher.publish(self.release, [self.file], "Contracts", source_root=self.directory, control_sha=sha)
+        self.assertEqual(self.guard.call_count, 3)
+        for call in self.guard.call_args_list:
+            self.assertEqual(call.args, (self.release,))
+            self.assertEqual(call.kwargs, {"root": self.directory, "policy_root": publisher.control.ROOT, "control_sha": sha})
+
+    def test_recovery_guard_failures_never_reach_publication(self):
+        self.release["component"] = "contracts"
+        for stage in (1, 2, 3):
+            with self.subTest(stage=stage):
+                self.guard.reset_mock()
+                self.guard.side_effect = [None] * (stage - 1) + [ValueError("control drift")]
+                self.api.writes.clear()
+                with self.assertRaisesRegex(ValueError, "control drift"):
+                    publisher.publish(self.release, [self.file], "Contracts", source_root=self.directory, control_sha="b" * 40)
+                self.assertEqual(self.guard.call_count, stage)
+                self.assertEqual(self.api.writes, [])
+
     def test_final_publish_never_reselects_another_release_by_tag(self):
         self.release["component"] = "core"
         replacement = {**copy.deepcopy(self.api.releases[0]), "id": 43}

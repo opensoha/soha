@@ -159,6 +159,7 @@ test("Root publisher preserves CI, protected OIDC stage and exact source handoff
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(workflow.jobs.verify.uses, "./.github/workflows/contracts-ci.yml");
   assert.equal(workflow.jobs.verify.with.contracts_sha, "${{ needs.identity.outputs.sha }}");
+  assert.equal(workflow.jobs.verify.with.recovery_control_sha, "${{ inputs.publish_mode == 'recover' && github.workflow_sha || '' }}");
   assert.deepEqual(workflow.jobs.release.needs, ["identity", "verify", "artifacts"]);
   assert.equal(workflow.jobs.release.environment, "release-contracts");
   assert.deepEqual(workflow.jobs.release.permissions, { actions: "read", contents: "write", "id-token": "write" });
@@ -174,7 +175,8 @@ test("Root publisher preserves CI, protected OIDC stage and exact source handoff
   assert(restore > workflow.jobs.artifacts.steps.findIndex((step) => step.run === "node scripts/verify-stage-run.mjs"));
   assert.equal(workflow.jobs.artifacts.steps[restore].with.name, "contracts-staged-${{ needs.identity.outputs.sha }}");
   const upload = steps.find((step) => step.name === "GitHub release").run;
-  assert(upload.includes('python3 scripts/publish-release-assets.py --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files'));
+  assert(upload.includes('publisher=(python3 scripts/publish-release-assets.py)'));
+  assert(upload.includes('"${publisher[@]}" --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files'));
   assert.equal(/--directory|--latest|--clobber|npm-stage|npm-view|\*/.test(upload), false);
   assert.equal(JSON.stringify(workflow).includes("softprops/action-gh-release"), false);
   const guard = steps.findIndex((step) => step.run?.includes("release-control.py verify"));
@@ -195,8 +197,10 @@ test("Root release input validation rejects unknown modes and injected/mismatche
   const directory = mkdtempSync(join(tmpdir(), "contracts-tag-test-"));
   try {
     const validation = workflow.jobs.identity.steps.find((step) => step.name === "Validate release inputs as data").run;
-    const run = (tag, mode = "stage", runId = "") => spawnSync("bash", ["-e", "-o", "pipefail", "-c", validation], {
-      cwd: directory, encoding: "utf8", env: { ...process.env, RELEASE_TAG: tag, NPM_PUBLISH_MODE: mode, STAGE_RUN_ID: runId },
+    const run = (tag, mode = "stage", runId = "", context = {}) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", validation], {
+      cwd: directory, encoding: "utf8", env: { ...process.env, RELEASE_TAG: tag, NPM_PUBLISH_MODE: mode, STAGE_RUN_ID: runId,
+        GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REPOSITORY: "opensoha/soha", GITHUB_REF: "refs/heads/main",
+        WORKFLOW_REFERENCE: "opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main", ...context },
     });
     assert.equal(run("contracts/v0.2.0").status, 0);
     assert.equal(run("contracts/v0.2.0", "recover", "123").status, 0);
@@ -204,6 +208,11 @@ test("Root release input validation rejects unknown modes and injected/mismatche
     assert.notEqual(run("contracts/v0.2.0", "recover", "123; false").status, 0);
     assert.notEqual(run("contracts/v0.2.0", "stage", "123").status, 0);
     assert.notEqual(run("contracts/v0.2.0", "direct").status, 0);
+    for (const context of [{ GITHUB_EVENT_NAME: "push" }, { GITHUB_REPOSITORY: "other/soha" },
+      { GITHUB_REF: "refs/tags/contracts/v0.2.0" },
+      { WORKFLOW_REFERENCE: "opensoha/soha/.github/workflows/contracts-release.yml@refs/tags/contracts/v0.2.0" }]) {
+      assert.notEqual(run("contracts/v0.2.0", "recover", "123", context).status, 0);
+    }
     const marker = join(directory, "must-not-exist");
     for (const tag of ["v0.2.0", "cli/v0.2.0", "contracts/v0.1.29", "contracts/v0.2.0\ninvalid", "contracts/v0.2.0 ", `contracts/v0.2.0$(touch "${marker}")`]) {
       assert.notEqual(run(tag).status, 0);
@@ -212,6 +221,62 @@ test("Root release input validation rejects unknown modes and injected/mismatche
     const identity = workflow.jobs.identity.steps.find((step) => step.id === "identity").run;
     assert(identity.includes('test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"'));
     assert(identity.includes('test "$GITHUB_SHA" = "$RELEASE_SHA"'));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("recovery binds trusted control checkout to the workflow SHA without replacing source", () => {
+  const checkout = steps.find((step) => step.name === "Checkout exact trusted recovery controls");
+  assert.equal(checkout.if, "inputs.publish_mode == 'recover'");
+  assert.equal(checkout.uses, "actions/checkout@v7");
+  assert.deepEqual(checkout.with, {
+    repository: "opensoha/soha", ref: "${{ github.workflow_sha }}", path: ".release-control", "fetch-depth": 0,
+    "persist-credentials": false, "sparse-checkout-cone-mode": false,
+    "sparse-checkout": "scripts/release-control.py\nscripts/publish-release-assets.py\n.github/release-components.json\n.github/legacy-retirement.json\n",
+  });
+  assert.equal(workflow.jobs.release.env.RELEASE_CONTROL_SHA, "${{ github.workflow_sha }}");
+  assert.equal(steps[0].with.ref, "${{ needs.identity.outputs.sha }}");
+  assert.equal(steps[0].with["persist-credentials"], false);
+  assert.equal(workflow.jobs.identity.env.WORKFLOW_REFERENCE, "${{ github.workflow_ref }}");
+});
+
+test("stage keeps its original guards while recovery uses one pinned control directory and source", () => {
+  const directory = mkdtempSync(join(tmpdir(), "contracts-controls-test-"));
+  try {
+    const bin = join(directory, "bin");
+    const calls = join(directory, "calls");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "python3"), "#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.CONTROL_CALLS, JSON.stringify(process.argv.slice(2)) + '\\n');\n", { mode: 0o755 });
+    const guard = steps.find((step) => step.name === "Enforce handoff and exact-revision release controls");
+    const upload = steps.find((step) => step.name === "GitHub release");
+    for (const mode of ["stage", "recover"]) {
+      writeFileSync(calls, "");
+      const source = join(directory, "source with space");
+      const sha = "b".repeat(40);
+      for (const step of [guard, upload]) {
+        const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", step.run], { cwd: directory, encoding: "utf8",
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CONTROL_CALLS: calls, NPM_PUBLISH_MODE: mode,
+            GITHUB_WORKSPACE: source, RELEASE_CONTROL_SHA: sha, RELEASE_SHA: "a".repeat(40),
+            RELEASE_TAG: "contracts/v0.2.0", RELEASE_VERSION: "0.2.0" } });
+        assert.equal(result.status, 0, result.stderr);
+      }
+      const [check, publish] = readFileSync(calls, "utf8").trim().split("\n").map(JSON.parse);
+      const prefix = mode === "recover" ? ".release-control/" : "";
+      assert.equal(check[0], `${prefix}scripts/release-control.py`);
+      assert.equal(check[1], "verify");
+      assert.equal(publish[0], `${prefix}scripts/publish-release-assets.py`);
+      for (const args of [check, publish]) {
+        assert.equal(args[args.indexOf("--tag") + 1], "contracts/v0.2.0");
+        assert.equal(args[args.indexOf("--sha") + 1], "a".repeat(40));
+        if (mode === "recover") {
+          assert.equal(args[args.indexOf("--source-root") + 1], source);
+          assert.equal(args[args.indexOf("--control-sha") + 1], sha);
+        } else {
+          assert.equal(args.includes("--source-root"), false);
+          assert.equal(args.includes("--control-sha"), false);
+        }
+      }
+      assert.equal(publish.length - publish.indexOf("--files") - 1, 9);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

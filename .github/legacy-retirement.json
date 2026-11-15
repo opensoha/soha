@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 1,
+  "repository": "opensoha/soha",
+  "verifiedAt": "2026-11-15T13:48:18.223521+00:00",
+  "archive": {
+    "repository": "opensoha/soha",
+    "releaseId": 446057312,
+    "draft": true,
+    "verified": true,
+    "indexAssetId": 751109236,
+    "indexName": "archive-index-verified.json",
+    "indexSHA256": "555a463ea609fbfdf826b69cf60334739546d22f8afeacddbbe0013652644adc",
+    "supersededIncompleteIndexAssetId": 751079829,
+    "restoreLayout": "Each tar contains repository.git.bundle, metadata.json, members-sha256.json and assets/ relative to its own root. The index member paths include a local staging repository prefix."
+  },
+  "publishers": [
+    {
+      "repository": "opensoha/soha-contracts",
+      "workflow": "release.yml",
+      "finalHead": "ad054ec63f7cf37149723243115c4a2f4d821736",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "waiting": 0,
+        "in_progress": 0,
+        "queued": 0,
+        "pending": 0,
+        "requested": 0
+      },
+      "snapshot": {
+        "assetId": 751065119,
+        "name": "legacy-soha-contracts-history.tar",
+        "size": 32471040,
+        "sha256": "8211be8d83fa25aec18a873221025bd57fb2871374f2352687a5827d75e2adc9"
+      },
+      "bundle": {
+        "assetId": 751065119,
+        "path": "repository.git.bundle",
+        "size": 4182412,
+        "sha256": "bfad3c1e8df21275689f49ece244e2dc7cbd327c5ce10222c864e60ca23ab5fe"
+      },
+      "metadata": {
+        "assetId": 751065119,
+        "path": "metadata.json",
+        "size": 3419738,
+        "sha256": "4d56e69a6cdf1b135b817ec4a3c4836cc6b0a8dcd6514121be52dbbc54203aec"
+      },
+      "releaseAssets": {
+        "count": 192,
+        "bytes": 20000264,
+        "manifestSha256": "2131a4b9e64292280c4d54e4c7624629830a61ec8e1c12d15457cf9d096c1315",
+        "verified": true
+      },
+      "retainedRefs": 59,
+      "closedPullRequests": 14,
+      "lfsPointers": 0
+    },
+    {
+      "repository": "opensoha/soha-web",
+      "workflow": "release.yml",
+      "finalHead": "2937871b80fa30abc27badb9017febec08b4d863",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "queued": 0,
+        "in_progress": 0,
+        "waiting": 0,
+        "pending": 0,
+        "requested": 0
+      },
+      "snapshot": {
+        "assetId": 751065415,
+        "name": "legacy-soha-web-history.tar",
+        "size": 69160960,
+        "sha256": "e1225d99717b4eadd17f2c1706a424789db36d3a8da0b6b9e1c6075a9981b001"
+      },
+      "bundle": {
+        "assetId": 751065415,
+        "path": "repository.git.bundle",
+        "size": 9091603,
+        "sha256": "4f57b524712ed9aab8ca630440d0c8a543d73f3368fe48eef627536671a47db3"
+      },
+      "metadata": {
+        "assetId": 751065415,
+        "path": "metadata.json",
+        "size": 11420847,
+        "sha256": "b6aadb504b0d01dddea88b1db17b32e8115fc6ca1d2f26c53d12e7fcebfc6efb"
+      },
+      "releaseAssets": {
+        "count": 14,
+        "bytes": 39084545,
+        "manifestSha256": "de6a8d3ce1f5e5799f417086dbff1b60a4b9f4356685d54c45d1d6b447256b93",
+        "verified": true
+      },
+      "retainedRefs": 31,
+      "closedPullRequests": 10,
+      "lfsPointers": 0
+    },
+    {
+      "repository": "opensoha/soha-cli",
+      "workflow": "release.yml",
+      "finalHead": "9d37742a5c606cb6f980a91a35d1ae2ae8e62542",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "in_progress": 0,
+        "queued": 0,
+        "waiting": 0,
+        "requested": 0,
+        "pending": 0
+      },
+      "snapshot": {
+        "assetId": 751066294,
+        "name": "legacy-soha-cli-history.tar",
+        "size": 326901760,
+        "sha256": "0903dede84ea383f65e7295eb3ef49cbbd5aa3c695ae21bffb419205779042d3"
+      },
+      "bundle": {
+        "assetId": 751066294,
+        "path": "repository.git.bundle",
+        "size": 675586,
+        "sha256": "c3d16a72b6f25e3169cbdb6c275431fe71357208ed49c6d9d186af155b8b7762"
+      },
+      "metadata": {
+        "assetId": 751066294,
+        "path": "metadata.json",
+        "size": 315462,
+        "sha256": "214a3237eb3d51bbe92b38810210bb93f51184f8dac514225d1abbf9caeb2fe6"
+      },
+      "releaseAssets": {
+        "count": 52,
+        "bytes": 325019587,
+        "manifestSha256": "8edcceaa5b0255473d166d77c6ad10aea237e780e7214024e9efca5d7628f225",
+        "verified": true
+      },
+      "retainedRefs": 18,
+      "closedPullRequests": 5,
+      "lfsPointers": 0
+    },
+    {
+      "repository": "opensoha/soha-agent",
+      "workflow": "release.yml",
+      "finalHead": "ea84738dda312f057c2ac626631f0ad5cfef48a8",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "waiting": 0,
+        "queued": 0,
+        "in_progress": 0,
+        "requested": 0,
+        "pending": 0
+      },
+      "snapshot": {
+        "assetId": 751067574,
+        "name": "legacy-soha-agent-history.tar",
+        "size": 904181760,
+        "sha256": "fc45f788884dcbe83d4216b49b9aa79a3cf30e8a8ed15695f01b740e56d4984b"
+      },
+      "bundle": {
+        "assetId": 751067574,
+        "path": "repository.git.bundle",
+        "size": 1261137,
+        "sha256": "2800929afb30a3e7c68052d1e36aefa530a8079f8dcebc1577f8e90c2cb352df"
+      },
+      "metadata": {
+        "assetId": 751067574,
+        "path": "metadata.json",
+        "size": 1035699,
+        "sha256": "016bc0cff9bc07e43b31b28c79a0831697ce425a2edaa3340f18c56e0ffac509"
+      },
+      "releaseAssets": {
+        "count": 88,
+        "bytes": 900301937,
+        "manifestSha256": "c107d034a8d4a83ce05e28638d44df8573405e719c9f460f936d275bd3ef6f39",
+        "verified": true
+      },
+      "retainedRefs": 28,
+      "closedPullRequests": 8,
+      "lfsPointers": 0
+    },
+    {
+      "repository": "opensoha/soha-skills",
+      "workflow": "release.yml",
+      "finalHead": "45205560fef5a0d6971c802a1a6a57ff39122fd8",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "queued": 0,
+        "waiting": 0,
+        "pending": 0,
+        "in_progress": 0,
+        "requested": 0
+      },
+      "snapshot": {
+        "assetId": 751071226,
+        "name": "legacy-soha-skills-history.tar",
+        "size": 952320,
+        "sha256": "fb0e8bb1f6d647f2d2c454afb2e8e54bb4faedc9cfc95e482fd40f2a6acfc500"
+      },
+      "bundle": {
+        "assetId": 751071226,
+        "path": "repository.git.bundle",
+        "size": 188734,
+        "sha256": "3a86e37ae2cf62041fbad93ee70f09e25ad34c35dc57bec592d365f1c0e914f3"
+      },
+      "metadata": {
+        "assetId": 751071226,
+        "path": "metadata.json",
+        "size": 212994,
+        "sha256": "bce235e0c458699d20501092a9d2b2380f7d75503a1d1195005aafb1a57c40aa"
+      },
+      "releaseAssets": {
+        "count": 12,
+        "bytes": 237146,
+        "manifestSha256": "4021f44902a7a1884275198ca25f806fb52f61f218b359061606b3eff56e893c",
+        "verified": true
+      },
+      "retainedRefs": 12,
+      "closedPullRequests": 4,
+      "lfsPointers": 0
+    },
+    {
+      "repository": "opensoha/soha-connectors",
+      "workflow": "release.yml",
+      "finalHead": "ffced3d10e4ea345009322caa186b3210348bbc7",
+      "archived": true,
+      "workflowState": "disabled_manually",
+      "activeRunCount": 0,
+      "nonterminalStates": {
+        "in_progress": 0,
+        "queued": 0,
+        "waiting": 0,
+        "pending": 0,
+        "requested": 0
+      },
+      "snapshot": {
+        "assetId": 750988810,
+        "name": "legacy-soha-connectors-history.tar",
+        "size": 430080,
+        "sha256": "b8e26dfd44eb4d962aad4bf0c9cef684ef10ce4bd7de15f2668e916ff64f1dfe"
+      },
+      "bundle": {
+        "assetId": 750988810,
+        "path": "repository.git.bundle",
+        "size": 88333,
+        "sha256": "0d0229d274f0609985774f6fa8536a98d45541cb39d4e63db5bc115dd0911e5c"
+      },
+      "metadata": {
+        "assetId": 750988810,
+        "path": "metadata.json",
+        "size": 104253,
+        "sha256": "013bf8b4a343c170b0f2a94c20e4e485a3ddb3732f699cd9631c03111f4482b8"
+      },
+      "releaseAssets": {
+        "count": 3,
+        "bytes": 48033,
+        "manifestSha256": "ac01cdc95dc0c0c12c1198d4ba981a82eb2e01b1f23f08685a2f96ce0034620b",
+        "verified": true
+      },
+      "retainedRefs": 6,
+      "closedPullRequests": 2,
+      "lfsPointers": 0
+    }
+  ],
+  "consumerRefs": {
+    "refs/archive/consumer/soha-agent/d8ce67c5b52b9b314e8fd6c1f42af9a0313e6db2": "d8ce67c5b52b9b314e8fd6c1f42af9a0313e6db2",
+    "refs/archive/consumer/soha-cli/71301b9fb9f9f2b4acd500483c08094a1b9be83a": "71301b9fb9f9f2b4acd500483c08094a1b9be83a",
+    "refs/archive/consumer/soha-skills/e562189e1416a9e2f8c72f9018e2236dc8d23dd1": "e562189e1416a9e2f8c72f9018e2236dc8d23dd1",
+    "refs/archive/consumer/soha-web/83bcb548005e34ecf86bfc5b56804e680b0d5898": "83bcb548005e34ecf86bfc5b56804e680b0d5898",
+    "refs/archive/consumer/soha/a0885220969bc6a37ac75672214e6fe0b6d2926a": "a0885220969bc6a37ac75672214e6fe0b6d2926a"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "module": "github.com/opensoha/soha-contracts",
+  "version": "v0.1.30-0.20261110173546-4aef3ea31f6a",
+  "sum": "h1:wQuW9V56dc9MReFReBhOxr8BxfTTdQ6ECbVMB7iRYt4=",
+  "goModSum": "h1:oK73bgv1NnwMkHQCMglHZaLE50Ax5z/TBbUdP5pwsEE=",
+  "files": {
+    "v0.1.30-0.20261110173546-4aef3ea31f6a.zip": "fb916593fc11d6b82f1dfe31c19d3e171783aa250fc96f633d18eb035fe18ba1",
+    "v0.1.30-0.20261110173546-4aef3ea31f6a.mod": "c68ec2c2425f9991f36755c23ea541a47df7cb0a05a852cba6fef7b8238056c9",
+    "v0.1.30-0.20261110173546-4aef3ea31f6a.info": "660dd073212b08ff8ffa9976bc6c95dfd9a6c79102a45073da1daa030e176256"
+  },
+  "source": "Original immutable module download bytes already verified by the fixed consumer go.sum; no replacement, import rewrite or new release."
+}

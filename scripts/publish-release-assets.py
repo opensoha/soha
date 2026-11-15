@@ -91,14 +91,18 @@ def compare_existing(files, assets, download):
     return missing
 
 
-def publish(release, files, title, latest=False):
+def publish(release, files, title, latest=False, source_root=None, control_sha=None):
+    if (source_root is None) != (control_sha is None):
+        raise ValueError("Source root and control SHA must be used together")
+    controls = ({"root": source_root, "policy_root": control.ROOT, "control_sha": control_sha}
+                if source_root is not None or control_sha is not None else {})
     if not files or any(not file.is_file() or file.is_symlink() or not re.fullmatch(r"[A-Za-z0-9_.+-]+", file.name) for file in files):
         raise ValueError("Only explicitly selected regular release assets are allowed")
     if len({file.name for file in files}) != len(files):
         raise ValueError("Duplicate local release asset names")
     if latest and release["component"] != "core":
         raise ValueError("Only Core owns the Root latest release")
-    control.verify(release)
+    control.verify(release, **controls)
     repo, tag = release["repository"], release["tag"]
     existing = release_metadata(repo, tag)
     if existing and (existing.get("tag_name") != tag or existing.get("prerelease") is not False):
@@ -107,7 +111,7 @@ def publish(release, files, title, latest=False):
         raise ValueError("Existing release has assets outside the approved set")
     missing = compare_existing(files, existing.get("assets", []) if existing else [],
         lambda asset, output: download_asset(repo, asset, output))
-    control.verify(release)
+    control.verify(release, **controls)
     if existing is None:
         created = json.loads(gh("api", "--method", "POST", f"repos/{repo}/releases",
                                 "--raw-field", f"tag_name={tag}", "--raw-field", f"target_commitish={release['sha']}",
@@ -129,7 +133,7 @@ def publish(release, files, title, latest=False):
         raise ValueError("Release asset upload is incomplete")
     compare_existing(files, current["assets"],
         lambda asset, output: download_asset(repo, asset, output))
-    control.verify(release)
+    control.verify(release, **controls)
     final = release_metadata(repo, tag, release_id)
     if {(asset["id"], asset["name"]) for asset in final["assets"]} != {(asset["id"], asset["name"]) for asset in current["assets"]}:
         raise ValueError("Verified release assets changed before publication")
@@ -151,10 +155,15 @@ def main():
     group.add_argument("--directory", type=Path)
     group.add_argument("--files", nargs="+", type=Path)
     parser.add_argument("--latest", action="store_true")
+    parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--control-sha")
     args = parser.parse_args()
-    release = control.identity(args.component, args.tag, args.sha)
+    if (args.source_root is None) != (args.control_sha is None):
+        parser.error("--source-root and --control-sha must be used together")
+    release = control.identity(args.component, args.tag, args.sha,
+        root=args.source_root or control.ROOT, policy_root=control.ROOT)
     files = sorted(args.directory.iterdir()) if args.directory else args.files
-    publish(release, files, args.title or args.tag, args.latest)
+    publish(release, files, args.title or args.tag, args.latest, args.source_root, args.control_sha)
 
 
 if __name__ == "__main__":

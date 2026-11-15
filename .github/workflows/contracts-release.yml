@@ -34,6 +34,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       NPM_PUBLISH_MODE: ${{ inputs.publish_mode || 'stage' }}
       STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+      WORKFLOW_REFERENCE: ${{ github.workflow_ref }}
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
@@ -45,7 +46,13 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^contracts/v0\.2\.[0-9]+$ ]] || exit 1
           case "$NPM_PUBLISH_MODE" in
             stage) test -z "$STAGE_RUN_ID" ;;
-            recover) [[ "$STAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1 ;;
+            recover)
+              [[ "$STAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+              test "$GITHUB_EVENT_NAME" = workflow_dispatch
+              test "$GITHUB_REPOSITORY" = opensoha/soha
+              test "$GITHUB_REF" = refs/heads/main
+              test "$WORKFLOW_REFERENCE" = opensoha/soha/.github/workflows/contracts-release.yml@refs/heads/main
+              ;;
             *) exit 1 ;;
           esac
       - uses: actions/checkout@v7
@@ -69,6 +76,7 @@ jobs:
     uses: ./.github/workflows/contracts-ci.yml
     with:
       contracts_sha: ${{ needs.identity.outputs.sha }}
+      recovery_control_sha: ${{ inputs.publish_mode == 'recover' && github.workflow_sha || '' }}
 
   artifacts:
     runs-on: ubuntu-latest
@@ -149,6 +157,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
       NPM_PUBLISH_MODE: ${{ inputs.publish_mode || 'stage' }}
       RELEASE_CONTRACTS_ENABLED: ${{ vars.RELEASE_CONTRACTS_ENABLED }}
+      RELEASE_CONTROL_SHA: ${{ github.workflow_sha }}
     defaults:
       run:
         working-directory: contracts
@@ -158,6 +167,21 @@ jobs:
           ref: ${{ needs.identity.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Checkout exact trusted recovery controls
+        if: inputs.publish_mode == 'recover'
+        uses: actions/checkout@v7
+        with:
+          repository: opensoha/soha
+          ref: ${{ github.workflow_sha }}
+          path: .release-control
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/release-control.py
+            scripts/publish-release-assets.py
+            .github/release-components.json
+            .github/legacy-retirement.json
       - uses: actions/setup-node@v6
         with:
           node-version: "22.23.4"
@@ -178,7 +202,13 @@ jobs:
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/release-control.py verify --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+        run: |
+          set -euo pipefail
+          if [ "$NPM_PUBLISH_MODE" = recover ]; then
+            python3 .release-control/scripts/release-control.py verify --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --source-root "$GITHUB_WORKSPACE" --control-sha "$RELEASE_CONTROL_SHA"
+          else
+            python3 scripts/release-control.py verify --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+          fi
       - name: Verify public package or stage for human approval
         id: publish
         env:
@@ -208,7 +238,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/publish-release-assets.py --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files \
+          set -euo pipefail
+          publisher=(python3 scripts/publish-release-assets.py)
+          if [ "$NPM_PUBLISH_MODE" = recover ]; then
+            publisher=(python3 .release-control/scripts/publish-release-assets.py --source-root "$GITHUB_WORKSPACE" --control-sha "$RELEASE_CONTROL_SHA")
+          fi
+          "${publisher[@]}" --component contracts --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --files \
             "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz" \
             "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.tgz.sha256" \
             "contracts/dist/release/opensoha-contracts-${RELEASE_VERSION}.cyclonedx.json" \
