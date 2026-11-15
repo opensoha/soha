@@ -38,11 +38,15 @@ export function context(env = process.env) {
     verifierSha: env.GITHUB_SHA, verificationRun: env.GITHUB_RUN_ID, verificationAttempt: env.GITHUB_RUN_ATTEMPT};
 }
 
-export async function github(endpoint, paginate = false) {
+export function githubArgs(endpoint, paginate = false) {
   const args = ['api', '--method', 'GET'];
   if (paginate) args.push('--paginate', '--slurp');
-  args.push(`repos/${repository}/${endpoint}`);
-  const result = spawnSync('gh', args, {encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024});
+  args.push(endpoint ? `repos/${repository}/${endpoint}` : `repos/${repository}`);
+  return args;
+}
+
+export async function github(endpoint, paginate = false) {
+  const result = spawnSync('gh', githubArgs(endpoint, paginate), {encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024});
   assert.equal(result.status, 0, `GitHub read failed: ${endpoint}: ${result.stderr ?? ''}`);
   return JSON.parse(result.stdout);
 }

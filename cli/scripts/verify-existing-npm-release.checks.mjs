@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {authorize, context, verifyPublic, receipt} from './verify-existing-npm-release.mjs';
+import {authorize, context, githubArgs, verifyPublic, receipt} from './verify-existing-npm-release.mjs';
 import {waitForPublicPackage} from './verify-existing-npm-release-readiness.mjs';
 
 const source = '7'.repeat(40), verifier = '8'.repeat(40), main = '9'.repeat(40);
@@ -37,6 +37,13 @@ function fixture(change = () => {}) {
   change(data);
   return async endpoint => { assert.ok(Object.hasOwn(data, endpoint), `unexpected API read ${endpoint}`); return structuredClone(data[endpoint]); };
 }
+
+test('GitHub transport argv uses the exact Root repository endpoint and preserves GET pagination', () => {
+  assert.deepEqual(githubArgs(''), ['api', '--method', 'GET', 'repos/opensoha/soha']);
+  assert.deepEqual(githubArgs('branches/main'), ['api', '--method', 'GET', 'repos/opensoha/soha/branches/main']);
+  assert.deepEqual(githubArgs('actions/runs/42/attempts/1/jobs?per_page=100', true),
+    ['api', '--method', 'GET', '--paginate', '--slurp', 'repos/opensoha/soha/actions/runs/42/attempts/1/jobs?per_page=100']);
+});
 
 test('qualifies source/main CI and the original failed npm run without branch-protection assumptions', async () => {
   const proof = await authorize(env, fixture());
