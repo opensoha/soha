@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {readFile} from 'node:fs/promises';
+import {mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import {authorize, context, githubArgs, verifyPublic, receipt} from './verify-existing-npm-release.mjs';
 import {waitForPublicPackage} from './verify-existing-npm-release-readiness.mjs';
@@ -163,4 +166,55 @@ test('workflow keeps all normal jobs gated and isolates read-only authority befo
   assert.ok(publish.indexOf('verify-existing-npm-release-readiness.mjs') < publish.indexOf('verify-public-npm-release.mjs verify'));
   assert.match(publish, /release-control.py verify --component cli/);
   assert.match(source.slice(source.indexOf('  image:'), source.indexOf('  public-download:')), /--images-unused/);
+});
+
+test('fresh-cache workflow launchers execute outside the source workspace and retain Root receipt and source checks', async t => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const source = await readFile(new URL('../../.github/workflows/cli-release.yml', import.meta.url), 'utf8');
+  const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'cli-launcher-cwd-')));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const probe = path.join(directory, 'npx-probe.json');
+  const receiptProbe = path.join(directory, 'receipt-probe.json');
+  await writeFile(path.join(directory, 'npx'), `#!${process.execPath}
+const fs = require('node:fs');
+fs.writeFileSync(process.env.NPX_PROBE, JSON.stringify({cwd: process.cwd(), args: process.argv.slice(2), npm: process.env.npm_config_cache, binary: process.env.SOHA_NPX_CACHE, token: process.env.GH_TOKEN}));
+console.log(JSON.stringify({version: process.env.PROBE_VERSION || '0.2.1', commit: process.env.PROBE_COMMIT || process.env.RELEASE_SHA}));
+`, {mode: 0o755});
+  await writeFile(path.join(directory, 'node'), `#!${process.execPath}
+require('node:fs').writeFileSync(process.env.RECEIPT_PROBE, JSON.stringify({cwd: process.cwd(), args: process.argv.slice(2)}));
+`, {mode: 0o755});
+  function step(name) {
+    const start = source.indexOf(`      - name: ${name}\n`);
+    assert.ok(start >= 0);
+    const match = source.slice(start).match(/^        run: \|\n((?:          .*\n|\n)+)/m);
+    assert.ok(match);
+    return match[1].split('\n').map(line => line.slice(10)).join('\n');
+  }
+  const normal = step('Run clean-cache launcher after package and signed provenance verification');
+  const readonly = step('Qualify fresh-cache launcher and record the read-only receipt');
+  const environment = {...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: directory,
+    RELEASE_TAG: 'cli/v0.2.1', RELEASE_SHA: '7'.repeat(40), NPX_PROBE: probe, RECEIPT_PROBE: receiptProbe};
+  for (const command of [normal, readonly]) {
+    const result = spawnSync('bash', ['-c', command], {cwd: root, env: {...environment, GH_TOKEN: 'fixture-only'}, encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr);
+    const actual = JSON.parse(await readFile(probe, 'utf8'));
+    assert.deepEqual(actual.args, ['-y', '@opensoha/cli@0.2.1', 'version', '--json']);
+    assert.equal(path.basename(actual.cwd), 'work');
+    const parent = path.dirname(actual.cwd);
+    assert.ok(parent.startsWith(directory + path.sep));
+    assert.equal(actual.npm, path.join(parent, 'npm'));
+    assert.equal(actual.binary, path.join(parent, 'binary'));
+    if (command === readonly) {
+      assert.equal(actual.token, undefined);
+      const call = JSON.parse(await readFile(receiptProbe, 'utf8'));
+      assert.equal(call.cwd, root.replace(/\/$/, ''));
+      assert.deepEqual(call.args, ['cli/scripts/verify-existing-npm-release.mjs', 'receipt',
+        path.join(directory, 'cli-existing-proof.json'), path.join(directory, 'cli-existing-public.json'),
+        path.join(directory, 'cli-existing-version.json'), path.join(directory, 'cli-existing-qualification.json')]);
+    }
+  }
+  for (const wrong of [{PROBE_VERSION: '0.2.0'}, {PROBE_COMMIT: '8'.repeat(40)}]) {
+    const result = spawnSync('bash', ['-c', normal], {cwd: root, env: {...environment, ...wrong}, encoding: 'utf8'});
+    assert.notEqual(result.status, 0, 'normal launcher must retain exact version/source checks');
+  }
 });

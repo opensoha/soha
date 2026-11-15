@@ -311,7 +311,12 @@ jobs:
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#cli/v}"
-          npm_config_cache="$RUNNER_TEMP/cli-npx-cache" SOHA_NPX_CACHE="$RUNNER_TEMP/cli-binary-cache" npx -y "@opensoha/cli@${version}" version --json > "$RUNNER_TEMP/cli-version.json"
+          cache_root="$(mktemp -d "$RUNNER_TEMP/cli-npx-cache.XXXXXX")"
+          mkdir "$cache_root/work"
+          (
+            cd "$cache_root/work"
+            npm_config_cache="$cache_root/npm" SOHA_NPX_CACHE="$cache_root/binary" npx -y "@opensoha/cli@${version}" version --json
+          ) > "$RUNNER_TEMP/cli-version.json"
           jq -e --arg version "$version" --arg commit "$RELEASE_SHA" '.version == $version and .commit == $commit' "$RUNNER_TEMP/cli-version.json"
 
   image:
@@ -431,9 +436,13 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#cli/v}"
           cache_root="$(mktemp -d "$RUNNER_TEMP/cli-existing-cache.XXXXXX")"
-          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            npm_config_cache="$cache_root/npm" SOHA_NPX_CACHE="$cache_root/binary" \
-            npx -y "@opensoha/cli@${version}" version --json > "$RUNNER_TEMP/cli-existing-version.json"
+          mkdir "$cache_root/work"
+          (
+            cd "$cache_root/work"
+            env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+              npm_config_cache="$cache_root/npm" SOHA_NPX_CACHE="$cache_root/binary" \
+              npx -y "@opensoha/cli@${version}" version --json
+          ) > "$RUNNER_TEMP/cli-existing-version.json"
           node cli/scripts/verify-existing-npm-release.mjs receipt "$RUNNER_TEMP/cli-existing-proof.json" "$RUNNER_TEMP/cli-existing-public.json" "$RUNNER_TEMP/cli-existing-version.json" "$RUNNER_TEMP/cli-existing-qualification.json"
       - uses: actions/upload-artifact@v7
         with:
