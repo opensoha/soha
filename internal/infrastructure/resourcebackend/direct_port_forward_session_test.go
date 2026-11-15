@@ -226,6 +226,11 @@ func TestDirectPortForwardSDKReconnectRebindsOriginalPort(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	// The SDK listens before the session goroutine publishes Ready.
+	deadline = time.Now().Add(3 * time.Second)
+	for session.LastError() != "" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if session.LastError() != "" {
 		t.Fatalf("recovered SDK session still has error: %s", session.LastError())
 	}
