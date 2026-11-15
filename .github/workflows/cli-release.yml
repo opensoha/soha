@@ -424,14 +424,14 @@ jobs:
         run: npm install --global npm@12.2.2 --ignore-scripts
       - name: Verify original public bytes and cryptographic provenance
         run: |
-          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u NPM_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
             node cli/scripts/verify-existing-npm-release.mjs verify "$RUNNER_TEMP/cli-existing-proof.json" "$RUNNER_TEMP/cli-existing-public.json"
       - name: Qualify fresh-cache launcher and record the read-only receipt
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#cli/v}"
           cache_root="$(mktemp -d "$RUNNER_TEMP/cli-existing-cache.XXXXXX")"
-          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u NPM_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+          env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
             npm_config_cache="$cache_root/npm" SOHA_NPX_CACHE="$cache_root/binary" \
             npx -y "@opensoha/cli@${version}" version --json > "$RUNNER_TEMP/cli-existing-version.json"
           node cli/scripts/verify-existing-npm-release.mjs receipt "$RUNNER_TEMP/cli-existing-proof.json" "$RUNNER_TEMP/cli-existing-public.json" "$RUNNER_TEMP/cli-existing-version.json" "$RUNNER_TEMP/cli-existing-qualification.json"

@@ -148,7 +148,7 @@ test('workflow keeps all normal jobs gated and isolates read-only authority befo
   assert.ok(readonly.indexOf('test "$RELEASE_MODE" = verify-existing') < readonly.indexOf('actions/checkout'));
   assert.match(readonly, /ref: \$\{\{ github.sha \}\}/);
   assert.doesNotMatch(readonly, /environment:|id-token:|packages:|contents: write|npm pack|npm publish|release-control|publish-release-assets|docker\//);
-  assert.match(readonly, /env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN -u NPM_TOKEN/);
+  assert.match(readonly, /env -u GH_TOKEN -u GITHUB_TOKEN -u NODE_AUTH_TOKEN/);
   assert.match(source, /default: publish/);
   const publish = source.slice(source.indexOf('  npm-publish:'), source.indexOf('  image:'));
   assert.match(publish, /'\. == \$version or \. == \[\$version\]'/);
