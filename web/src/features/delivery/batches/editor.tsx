@@ -1,8 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { lazy, Suspense, useRef, useState } from 'react'
 import {
-  Alert,
   App,
   Button,
   Checkbox,
@@ -110,6 +110,7 @@ export function DeliveryBatchEditor({
   )
   const [error, setError] = useState<string>()
   const [selectingRecipe, setSelectingRecipe] = useState(false)
+  const [recipeError, setRecipeError] = useState<Error | null>(null)
   const startRequest = useRef<{ signature: string; key: string } | undefined>(undefined)
   const save = useMutation(deliveryMutations.deliveryWorkflows.save(queryClient))
   const create = useMutation(deliveryMutations.batches.create(queryClient))
@@ -160,6 +161,7 @@ export function DeliveryBatchEditor({
         : [...definition.targets, target],
     })
   const selectRecipe = async (id?: string, version?: number) => {
+    setRecipeError(null)
     if (!id) {
       update({ workflowTemplateId: undefined, workflowTemplateVersion: undefined })
       return
@@ -183,7 +185,7 @@ export function DeliveryBatchEditor({
         maxConcurrency: recipe.maxConcurrency as number,
       })
     } catch (failure) {
-      setError((failure as Error).message)
+      setRecipeError(failure instanceof Error ? failure : new Error('流程模板读取失败'))
     } finally {
       setSelectingRecipe(false)
     }
@@ -305,6 +307,12 @@ export function DeliveryBatchEditor({
       <ReadFeedback query={templates} label="流程模板" />
       <ReadFeedback query={versions} label="模板版本" />
       <OperationFeedback
+        pending={selectingRecipe}
+        error={recipeError}
+        label="读取流程模板"
+        readOnly
+      />
+      <OperationFeedback
         pending={save.isPending || create.isPending}
         error={create.error || save.error}
         label={create.submittedAt > save.submittedAt ? '开始交付' : '保存工作流'}
@@ -406,9 +414,9 @@ export function DeliveryBatchEditor({
         size={20}
         style={{ width: '100%', display: tab === 'form' ? undefined : 'none' }}
       >
-        {error ? <Alert type="error" showIcon title={error} /> : null}
+        {error ? <ContextFeedback type="error" showIcon title={error} /> : null}
         {retryOfBatchId ? (
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title="创建新的交付记录，重新检查当前配置和环境；保留原记录。"

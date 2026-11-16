@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementIconButton,
   ManagementRefreshButton,
@@ -35,7 +36,6 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Card,
   DatePicker,
@@ -421,7 +421,7 @@ export function AnnouncementsPage() {
                 })}
               </ul>
             ) : announcementQuery.isError && !readableQueryData(announcementQuery) ? null : (
-              <Alert type="info" showIcon title="当前分组下暂无公告" />
+              <ContextFeedback type="info" showIcon title="当前分组下暂无公告" />
             ),
           }))}
         />
@@ -697,7 +697,7 @@ export function AnnouncementsPage() {
                 ) : null}
               </Space>
             ) : receiptQuery.isError ? null : (
-              <Alert showIcon type="info" title="暂无符合条件的用户" />
+              <ContextFeedback showIcon type="info" title="暂无符合条件的用户" />
             )}
           </Spin>
         </Space>

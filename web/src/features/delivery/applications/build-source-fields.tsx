@@ -1,6 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { useEffect, useRef } from 'react'
 import {
-  Alert,
   Button,
   Card,
   Form,
@@ -65,7 +67,7 @@ export function BuildSourceFields({
       buildSourceType === 'platform_build_template',
     ),
   )
-  const selectedBuildTemplate = versionsQuery.data?.find(
+  const selectedBuildTemplate = readableQueryData(versionsQuery)?.find(
     (item) => item.publishedVersion === templateVersion,
   )
   const variablesPath = JSON.stringify([...prefix, 'config', 'variables'])
@@ -98,7 +100,7 @@ export function BuildSourceFields({
         />
       ) : null}
       {section !== 'repositories' && buildSourceType === 'external_pipeline' ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="使用已接入的 GitLab 仓库。运行时固定源码提交和受保护标签；产物核验、运行跟踪与取消确认由 Soha 完成。"
@@ -346,7 +348,7 @@ export function BuildSourceFields({
                 >
                   <Select
                     loading={buildTemplatesQuery.isFetching}
-                    options={(buildTemplatesQuery.data ?? [])
+                    options={(readableQueryData(buildTemplatesQuery) ?? [])
                       .filter(
                         (template) =>
                           template.id === templateId ||
@@ -362,7 +364,8 @@ export function BuildSourceFields({
                     onChange={(id) =>
                       form.setFieldValue(
                         fieldName('config', 'buildTemplateVersion'),
-                        buildTemplatesQuery.data?.find((item) => item.id === id)?.publishedVersion,
+                        readableQueryData(buildTemplatesQuery)?.find((item) => item.id === id)
+                          ?.publishedVersion,
                       )
                     }
                   />
@@ -392,12 +395,12 @@ export function BuildSourceFields({
                     aria-label="构建模板固定版本"
                     loading={versionsQuery.isFetching}
                     value={templateVersion}
-                    options={versionsQuery.data?.map((item) => ({
+                    options={readableQueryData(versionsQuery)?.map((item) => ({
                       value: item.publishedVersion,
                       label: `v${item.publishedVersion}`,
                     }))}
                     onChange={(version) => {
-                      const next = versionsQuery.data?.find(
+                      const next = readableQueryData(versionsQuery)?.find(
                         (item) => item.publishedVersion === version,
                       )
                       if (
@@ -411,9 +414,7 @@ export function BuildSourceFields({
                       form.setFieldValue(fieldName('config', 'buildTemplateVersion'), version)
                     }}
                   />
-                  {versionsQuery.isError ? (
-                    <Text type="danger">{versionsQuery.error.message}</Text>
-                  ) : null}
+                  <ReadFeedback query={versionsQuery} label="构建模板版本" />
                 </Form.Item>
               </>
             ) : null}

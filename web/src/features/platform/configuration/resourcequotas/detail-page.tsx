@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -17,10 +18,13 @@ import { useI18n } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button } from 'antd'
+import { Button } from 'antd'
 import { useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useIsCurrentDetailTarget, useWorkloadDetailScope } from '../../workloads/shared/detail-scope'
+import {
+  useIsCurrentDetailTarget,
+  useWorkloadDetailScope,
+} from '../../workloads/shared/detail-scope'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { ConfigurationDetailShell } from '../shared/detail-shell'
 import { configurationMutations } from '../shared/mutations'
@@ -230,7 +234,7 @@ function QuotaDetailContent({
               label={zh ? '配额配置' : 'Quota configuration'}
             />
             {configuration.error ? (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="warning"
                 title={

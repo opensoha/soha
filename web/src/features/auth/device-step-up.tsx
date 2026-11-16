@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { providerPortalMFA, requestPasskeyAssertion } from '@/features/provider-portal'
 import { useInlineApiError } from '@/components/request-feedback'
 import type { MFACredential } from '@opensoha/contracts/gen/ts/sohaapi'
-import { Alert, Button, Form, Input, Space, Spin, Typography } from 'antd'
+import { Button, Form, Input, Space, Spin, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 
 export function DeviceStepUp({ onVerified }: { onVerified: () => void }) {
@@ -71,7 +72,7 @@ export function DeviceStepUp({ onVerified }: { onVerified: () => void }) {
         使用已有验证方式完成安全验证，然后重新核对 CLI 登录请求。
       </Typography.Paragraph>
       {error ? (
-        <Alert showIcon type="error" title="验证未完成" description={error.message} />
+        <ContextFeedback showIcon type="error" title="验证未完成" description={error.message} />
       ) : null}
       {credentials === null ? (
         <Spin description="正在读取验证方式" />

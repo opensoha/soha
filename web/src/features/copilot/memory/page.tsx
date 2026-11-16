@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Checkbox, Form, Input, InputNumber, Modal, Popconfirm, Select } from 'antd'
+import { Button, Checkbox, Form, Input, InputNumber, Modal, Popconfirm, Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -60,7 +61,7 @@ function MemoryPoliciesPageContent() {
         </>
       }
       notice={
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title="长期 Memory 默认关闭"
@@ -68,7 +69,7 @@ function MemoryPoliciesPageContent() {
         />
       }
       refreshing={records.isFetching || policies.isFetching}
-      onRefresh={() => void Promise.all([records.refetch(), policies.refetch()])}
+      onRefresh={() => Promise.all([records.refetch(), policies.refetch()])}
       actions={
         <Button
           disabled={blocked}

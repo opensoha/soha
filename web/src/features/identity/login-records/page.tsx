@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -21,7 +22,7 @@ import { formatDateTime } from '@/utils/time'
 import { InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, DatePicker, Select } from 'antd'
+import { DatePicker, Select } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useState } from 'react'
 import { identityApplicationQueries } from '../applications'
@@ -261,10 +262,7 @@ export function IdentityLoginRecordsPage() {
       <ReadFeedback canRead={appsQuery.isEnabled} query={appsQuery} label="身份数据" />
 
       {(visibleLogsQueryData?.length ?? 0) >= APPLICATION_LOGIN_LIMIT ? (
-        <Alert type="warning" showIcon title={t('identity.loginRecords.limit')} />
-      ) : null}
-      {appsQuery.isError && !visibleAppsQueryData ? (
-        <Alert type="warning" showIcon title={t('identity.loginRecords.applicationError')} />
+        <ContextFeedback type="warning" showIcon title={t('identity.loginRecords.limit')} />
       ) : null}
     </ManagementDataPage>
   )

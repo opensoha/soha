@@ -335,7 +335,7 @@ export function DaemonSetDetailPage() {
                     currentLabel={zh ? '当前模板' : 'Current template'}
                     loading={historyQuery.isLoading}
                     error={errorText(historyQuery.error)}
-                    onRefresh={() => void historyQuery.refetch()}
+                    onRefresh={() => historyQuery.refetch()}
                     renderRevision={(record) => (
                       <Suspense fallback={<Spin />}>
                         <Revision
@@ -364,7 +364,7 @@ export function DaemonSetDetailPage() {
                   observedAt={eventsQuery.dataUpdatedAt || Date.now()}
                   loading={eventsQuery.isLoading}
                   error={errorText(eventsQuery.error)}
-                  onRefresh={() => void eventsQuery.refetch()}
+                  onRefresh={() => eventsQuery.refetch()}
                 />
               ) : null,
           },
@@ -395,7 +395,7 @@ export function DaemonSetDetailPage() {
                         { replace: true },
                       )
                     }
-                    onRefresh={() => void metricsQuery.refetch()}
+                    onRefresh={() => metricsQuery.refetch()}
                   />
                 </Suspense>
               ) : null,

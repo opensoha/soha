@@ -1,7 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Checkbox,
   Descriptions,
@@ -146,7 +146,7 @@ export function RadiusServicesPanel({
   return (
     <Flex component="section" vertical gap="middle" aria-label="FreeRADIUS 托管服务">
       <h3>FreeRADIUS 托管服务</h3>
-      <Alert
+      <ContextFeedback
         type="info"
         showIcon
         title="默认关闭，创建配置不会隐式部署"
@@ -276,7 +276,7 @@ export function RadiusServicesPanel({
               },
             ]}
           />
-          <Alert
+          <ContextFeedback
             type="warning"
             title={
               stopped(pool)

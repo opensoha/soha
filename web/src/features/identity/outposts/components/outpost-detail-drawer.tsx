@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -5,7 +6,7 @@ import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Descriptions, Drawer, Space, Tabs, Typography } from 'antd'
+import { Button, Descriptions, Drawer, Space, Tabs, Typography } from 'antd'
 import { Link } from 'react-router-dom'
 import { identityApplicationQueries } from '../../applications'
 import { identityProviderQueries, type IdentityProvider } from '../../providers'
@@ -116,7 +117,11 @@ export function OutpostDetailDrawer({
               children: (
                 <div className="soha-identity-outpost-detail-tab">
                   {outpost.runtimeReason && nextSteps[outpost.runtimeReason] && (
-                    <Alert showIcon type="info" title={nextSteps[outpost.runtimeReason]} />
+                    <ContextFeedback
+                      showIcon
+                      type="info"
+                      title={nextSteps[outpost.runtimeReason]}
+                    />
                   )}
                   <Descriptions
                     bordered
@@ -179,7 +184,7 @@ export function OutpostDetailDrawer({
               label: '部署',
               children:
                 outpost.mode === 'embedded' ? (
-                  <Alert
+                  <ContextFeedback
                     showIcon
                     type={outpost.runtimeStatus === 'available' ? 'success' : 'warning'}
                     title="由当前 Soha 实例提供内置鉴权"
@@ -222,7 +227,7 @@ export function OutpostDetailDrawer({
                       ]}
                     />
                     {!config ? (
-                      <Alert
+                      <ContextFeedback
                         showIcon
                         type="warning"
                         title="部署资料不完整"

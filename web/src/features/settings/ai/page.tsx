@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementIconButton,
   ManagementState,
@@ -37,7 +38,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -598,7 +598,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
           </Space>
         }
       >
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           style={{ marginBottom: 16 }}
@@ -793,7 +793,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             </Button>
           </Popconfirm>
           {localCompanionPack ? (
-            <Alert
+            <ContextFeedback
               className="soha-companion-local-import__status"
               description={
                 getLive2DCubismRuntime()
@@ -1245,7 +1245,10 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             </Form.Item>
             <Form.Item name="sourceKind" label="源类型">
               <Select
-                options={[...AI_DATA_SOURCE_BACKENDS.keys()].map((value) => ({ value, label: value }))}
+                options={[...AI_DATA_SOURCE_BACKENDS.keys()].map((value) => ({
+                  value,
+                  label: value,
+                }))}
                 onChange={(value: string) => {
                   setDataSourceSourceKind(value)
                   dataSourceForm.setFieldsValue({
@@ -1454,7 +1457,8 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
                   value: item.id,
                   label: `${item.name} (${item.sourceKind}/${item.backendType})${isRetiredAIDataSource(item) ? ' · 后端已退役' : ''}`,
                   disabled:
-                    isRetiredAIDataSource(item) && !editingProfile?.enabledSources?.includes(item.id),
+                    isRetiredAIDataSource(item) &&
+                    !editingProfile?.enabledSources?.includes(item.id),
                 }))}
               />
             </Form.Item>

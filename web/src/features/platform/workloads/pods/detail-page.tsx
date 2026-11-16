@@ -473,7 +473,7 @@ export function PodDetailPage() {
             }
             resourceRequests={podDetail?.requests}
             resourceLimits={podDetail?.limits}
-            onRefresh={() => void podMetricsQuery.refetch()}
+            onRefresh={() => podMetricsQuery.refetch()}
           />
         </Suspense>
       ) : null,
@@ -495,7 +495,7 @@ export function PodDetailPage() {
                 : String(podEventsQuery.error)
               : undefined
           }
-          onRefresh={() => void podEventsQuery.refetch()}
+          onRefresh={() => podEventsQuery.refetch()}
         />
       ) : null,
   }

@@ -1,9 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton } from '@/components/management-list'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { SecretRefSelect } from '@/features/secrets'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Descriptions, Drawer, Form, Input, Space, Typography } from 'antd'
+import { App, Button, Descriptions, Drawer, Form, Input, Space, Typography } from 'antd'
 import { useEffect } from 'react'
 import { invokeGatewayTool, type GatewayToolInvocationValues } from './mutations'
 import { stringifyPayload, type GatewayTool } from './types'
@@ -183,7 +184,11 @@ export function GatewayToolInvokeDrawer({
           ) : null}
           {!queryAccessDenied(mutation) && readableQueryData(mutation) ? (
             <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-              <Alert type="success" showIcon title={readableQueryData(mutation)?.data.result} />
+              <ContextFeedback
+                type="success"
+                showIcon
+                title={readableQueryData(mutation)?.data.result}
+              />
               <Text code>{readableQueryData(mutation)?.data.toolName}</Text>
               <pre className="soha-system-json-block">
                 {stringifyPayload(readableQueryData(mutation)?.data)}

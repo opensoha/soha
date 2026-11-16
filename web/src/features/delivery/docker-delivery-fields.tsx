@@ -1,6 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, Button, Form, Input, Select, Space } from 'antd'
+import { Button, Form, Input, Select, Space } from 'antd'
 import { useQuery } from '@tanstack/react-query'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { dockerQueries } from '@/features/docker'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import type { DockerDeliveryConfiguration } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -58,18 +61,18 @@ export function DockerDeliveryFields({ name }: { name: (string | number)[] }) {
       canReadProjects && !!hostId,
     ),
   )
-  const error = hosts.error || projects.error
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
-      {error ? <Alert type="error" showIcon title={error.message} /> : null}
+      <ReadFeedback query={hosts} label="Docker 主机" canRead={canReadHosts} />
+      <ReadFeedback query={projects} label="Docker 项目" canRead={canReadProjects && !!hostId} />
       {!canReadHosts || !canReadProjects ? (
-        <Alert type="warning" showIcon title="需要 Docker 主机和项目的查看权限" />
+        <ContextFeedback type="warning" showIcon title="需要 Docker 主机和项目的查看权限" />
       ) : null}
       <Form.Item name={[...name, 'hostId']} label="Docker 主机" rules={[{ required: true }]}>
         <Select
           showSearch={{ filterOption: false, onSearch: setHostSearch }}
           loading={hosts.isLoading}
-          options={hosts.data?.items.map((item) => ({
+          options={readableQueryData(hosts)?.items.map((item) => ({
             value: item.id,
             label: item.name || item.id,
           }))}
@@ -85,7 +88,7 @@ export function DockerDeliveryFields({ name }: { name: (string | number)[] }) {
           disabled={!hostId}
           showSearch={{ filterOption: false, onSearch: setProjectSearch }}
           loading={projects.isLoading}
-          options={projects.data?.items.map((item) => ({
+          options={readableQueryData(projects)?.items.map((item) => ({
             value: item.id,
             label: item.name || item.id,
           }))}
@@ -109,7 +112,7 @@ export function DockerDeliveryFields({ name }: { name: (string | number)[] }) {
           </Space>
         )}
       </Form.List>
-      <Alert
+      <ContextFeedback
         type="info"
         showIcon
         title="交付时使用版本包中的镜像摘要，先预检再审批。项目配置应包含完整 Compose 内容，其余镜像也需要固定摘要。"

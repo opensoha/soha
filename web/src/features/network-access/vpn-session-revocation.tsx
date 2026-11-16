@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -6,7 +7,7 @@ import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Popconfirm, Space, Typography } from 'antd'
+import { Button, Popconfirm, Space, Typography } from 'antd'
 import { getVPNRevocation, releaseVPNRevocation, revokeVPNSession, vpnKeys } from './vpn-api'
 
 export function VPNSessionRevocation({
@@ -67,7 +68,7 @@ export function VPNSessionRevocation({
   const blocked = change.blocked || query.isPending || query.isError || queryAccessDenied(query)
   if (!canView)
     return (
-      <Alert
+      <ContextFeedback
         type="info"
         title={text('无权限读取 VPN 撤销状态', 'Permission required to read VPN revocation state')}
       />
@@ -81,7 +82,7 @@ export function VPNSessionRevocation({
         query={query}
         label={text('VPN 撤销状态', 'VPN revocation state')}
       />
-      <Alert
+      <ContextFeedback
         showIcon
         type={receipt?.active ? 'warning' : 'info'}
         title={

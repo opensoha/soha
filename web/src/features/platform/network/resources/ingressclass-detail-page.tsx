@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -18,7 +19,7 @@ import {
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Typography } from 'antd'
+import { Button, Card, Typography } from 'antd'
 import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -152,7 +153,7 @@ export function IngressClassDetailPage() {
       {configurationQuery.isEnabled && (
         <ReadFeedback canRead={canRead} query={configurationQuery} label="IngressClass YAML" />
       )}
-      {parameters?.error && <Alert type="warning" showIcon title={parameters.error} />}
+      {parameters?.error && <ContextFeedback type="warning" showIcon title={parameters.error} />}
     </>
   )
   if (!clusterId)

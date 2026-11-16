@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { trafficSegments, rateText } from './traffic-model'
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, useReadRefreshFeedback } from '@/components/request-feedback'
 import { formatBytes } from '@/components/resource-metrics-format'
 import { buildCompactChartSpec, compactMetricColors } from '@/components/resource-metrics-panel'
 import { useI18n } from '@/i18n'
@@ -10,13 +11,14 @@ import { formatDateTime } from '@/utils/time'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { LineChart } from '@visactor/react-vchart'
-import { Alert, Button, Card, Typography } from 'antd'
+import { Button, Card, Typography } from 'antd'
 import { ProxyInstanceHeader, useProxyContext } from './context'
 import { proxyQueries } from './queries'
 import './styles.css'
 export default function ProxyOverviewPage() {
   const { localeCode, t } = useI18n()
   const context = useProxyContext('network_access.proxy_instances.view')
+  const refresh = useReadRefreshFeedback()
   const selected = context.selected
   const traffic = useQuery(proxyQueries.traffic(selected?.id, context.allowed))
   const visibleTrafficData = traffic.isEnabled === false ? undefined : readableQueryData(traffic)
@@ -94,27 +96,16 @@ export default function ProxyOverviewPage() {
         <Button
           icon={<ReloadOutlined />}
           loading={traffic.isFetching}
-          onClick={() => void (traffic.isEnabled === false ? undefined : traffic.refetch())}
+          onClick={() =>
+            void (traffic.isEnabled === false
+              ? undefined
+              : refresh([{ label: '流量采样', refetch: traffic.refetch }]))
+          }
         >
           {t('networkAccess.refresh', '刷新')}
         </Button>
       </div>
-      {traffic.isError && visibleTrafficData ? (
-        <Alert
-          type="warning"
-          showIcon
-          title={t('networkAccess.proxyRuntime.stale', '刷新失败，当前显示上次采样。')}
-        />
-      ) : null}
-      {unavailable ? (
-        <ManagementState
-          kind="error"
-          description={t(
-            'networkAccess.proxyRuntime.trafficError',
-            '代理流量暂不可用，请检查运行时和控制面后重试。',
-          )}
-        />
-      ) : traffic.isLoading ? (
+      {unavailable ? null : traffic.isLoading ? (
         <ManagementState kind="loading" />
       ) : !visibleTrafficData?.supported ? (
         <ManagementState
@@ -127,7 +118,7 @@ export default function ProxyOverviewPage() {
       ) : (
         <>
           {(latest?.rateState === 'gap' || latest?.rateState === 'unknown') && (
-            <Alert
+            <ContextFeedback
               type="info"
               title={latest.rateState === 'gap' ? '采样断档，当前速率未知' : '当前速率尚未建立'}
             />

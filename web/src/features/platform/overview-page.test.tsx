@@ -1,6 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { act, type ReactNode } from 'react'
+import { act, useEffect, type MutableRefObject, type ReactNode } from 'react'
+import { App } from 'antd'
+import { ApiError } from '@/services/api-error'
+import type { ReadRefreshTarget } from '@/components/request-feedback'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,6 +24,7 @@ const testState = vi.hoisted(() => ({
   permissionKeys: ['platform.clusters.view', 'observe.monitoring.view', 'platform.pods.view'],
   queryEnabled: {} as Record<string, boolean | undefined>,
   queryOptions: {} as Record<QueryName, QueryOptions>,
+  operationsRefetch: vi.fn(),
   refetches: {
     clusters: vi.fn(),
     nodes: vi.fn(),
@@ -47,9 +51,10 @@ const testState = vi.hoisted(() => ({
     isLoading: false,
   },
   summary: { data: { data: {} }, isError: false, isLoading: false },
-  alerts: { data: [] as AlertEvent[], isError: false, isLoading: false },
+  alerts: { data: [] as AlertEvent[] | undefined, isError: false, isLoading: false },
+  readError: null as Error | null,
   workload: {
-    data: { data: null as WorkloadOverview | null },
+    data: { data: null } as { data: WorkloadOverview | null } | undefined,
     isError: false,
     isLoading: false,
   },
@@ -72,7 +77,9 @@ vi.mock('@tanstack/react-query', () => ({
     testState.queryOptions[name] = options
     return {
       ...testState[name],
-      error: testState[name].isError ? new Error(`${name} unavailable`) : null,
+      error: testState[name].isError
+        ? (testState.readError ?? new Error(`${name} unavailable`))
+        : null,
       isEnabled: options.enabled !== false,
       isFetching: false,
       refetch: testState.refetches[name],
@@ -130,7 +137,19 @@ vi.mock('@/components/status-tag', () => ({
 }))
 
 vi.mock('./overview/operations-panel', () => ({
-  PlatformOperationsPanel: () => <div>Operations evidence</div>,
+  PlatformOperationsPanel: ({
+    refreshTargetsRef,
+  }: {
+    refreshTargetsRef: MutableRefObject<readonly ReadRefreshTarget[]>
+  }) => {
+    useEffect(() => {
+      refreshTargetsRef.current = [{ label: '资源事件', refetch: testState.operationsRefetch }]
+      return () => {
+        refreshTargetsRef.current = []
+      }
+    }, [refreshTargetsRef])
+    return <div>Operations evidence</div>
+  },
 }))
 
 vi.mock('./overview/resource-finder', () => ({
@@ -173,13 +192,19 @@ async function renderPage() {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  await updatePage()
+}
+
+async function updatePage() {
   await act(async () => {
     root.render(
       <I18nProvider>
-        <MemoryRouter>
-          <OverviewPage />
-          <RouteProbe />
-        </MemoryRouter>
+        <App>
+          <MemoryRouter>
+            <OverviewPage />
+            <RouteProbe />
+          </MemoryRouter>
+        </App>
       </I18nProvider>,
     )
   })
@@ -207,7 +232,9 @@ describe('OverviewPage error states', () => {
     testState.queryEnabled = {}
     testState.queryOptions = {} as Record<QueryName, QueryOptions>
     testState.alertStreamOptions = undefined
+    testState.readError = null
     Object.values(testState.refetches).forEach((refetch) => refetch.mockReset())
+    testState.operationsRefetch.mockReset()
     usePlatformScopeStore.setState({ clusterId: 'cluster-a', namespace: 'team-a' })
     testState.nodes.data = []
     testState.nodes.isError = false
@@ -239,18 +266,110 @@ describe('OverviewPage error states', () => {
   it('does not present cluster alert failures as empty data', async () => {
     testState.permissionKeys.push('observe.alerts.view')
     testState.alerts.isError = true
+    testState.alerts.data = undefined
     await renderPage()
 
-    expect(container.querySelector('.soha-overview-panel-card .is-error')).not.toBeNull()
-    expect(container.textContent).not.toContain('No alert summary')
+    const feedback = container.querySelectorAll('.soha-read-feedback')
+    expect(feedback).toHaveLength(1)
+    expect(feedback[0].closest('.soha-overview-panel-card')).not.toBeNull()
+    expect(feedback[0].textContent).toContain('告警事件读取失败')
+    expect(container.querySelector('.soha-overview-alert-stack')).toBeNull()
+    expect(container.querySelector('.soha-overview-panel-card .is-error')).toBeNull()
+    expect(container.textContent).toContain('近期活跃告警: —')
   })
 
   it('does not present workload failures as an empty runtime summary', async () => {
     testState.workload.isError = true
+    testState.workload.data = undefined
     await renderPage()
 
-    expect(container.querySelector('.soha-overview-runtime-card .is-error')).not.toBeNull()
+    const feedback = container.querySelectorAll('.soha-read-feedback')
+    expect(feedback).toHaveLength(1)
+    expect(feedback[0].closest('.soha-overview-runtime-card')).not.toBeNull()
+    expect(feedback[0].textContent).toContain('工作负载总览读取失败')
+    expect(container.querySelector('.soha-overview-runtime-card .is-error')).toBeNull()
+    expect(container.querySelector('.soha-overview-runtime-layout')).toBeNull()
+    expect(container.textContent).toContain('Pod 总数: —')
     expect(container.textContent).not.toContain('No workload runtime summary for the platform')
+  })
+
+  it('retains readable workload and alert cache with one local feedback per failed query', async () => {
+    testState.permissionKeys.push('observe.alerts.view')
+    testState.workload.data = {
+      data: workloadFixture({
+        namespaceBreakdown: [
+          {
+            namespace: 'cached-team',
+            totalPods: 20,
+            runningPods: 17,
+            atRiskPods: 3,
+            restartingPods: 7,
+          },
+        ],
+      }),
+    }
+    testState.workload.isError = true
+    testState.alerts.data = [
+      {
+        id: 'cached-alert',
+        sourceType: 'prometheus',
+        fingerprint: 'cached-alert',
+        title: 'Cached cluster alert',
+        summary: 'Cached cluster alert',
+        severity: 'warning',
+        status: 'firing',
+        clusterId: 'cluster-a',
+        createdAt: '2026-11-04T00:00:00Z',
+        updatedAt: '2026-11-04T00:00:00Z',
+      },
+    ]
+    testState.alerts.isError = true
+    await renderPage()
+
+    expect(container.querySelectorAll('.soha-read-feedback')).toHaveLength(2)
+    expect(
+      container.querySelector('.soha-overview-runtime-card .soha-read-feedback')?.textContent,
+    ).toContain('未更新')
+    expect(container.querySelector('.soha-overview-runtime-layout')).not.toBeNull()
+    expect(container.querySelector('.soha-overview-namespace-list')?.textContent).toContain(
+      'cached-team',
+    )
+    expect(container.textContent).toContain('运行中: 17')
+    expect(container.textContent).toContain('Pod 总数: 20')
+    expect(container.textContent).toContain('需关注 Pod: 3')
+    expect(container.textContent).toContain('近期活跃告警: 1')
+    expect(container.textContent).toContain('Cached cluster alert')
+    expect(container.querySelector('.soha-overview-alert-stack')).not.toBeNull()
+  })
+
+  it.each([401, 403])('hides workload and alert cache after a %s read denial', async (status) => {
+    testState.permissionKeys.push('observe.alerts.view')
+    testState.workload.data = { data: workloadFixture() }
+    testState.workload.isError = true
+    testState.alerts.data = [
+      {
+        id: 'protected',
+        sourceType: 'prometheus',
+        fingerprint: 'protected',
+        title: 'Protected cluster alert',
+        summary: 'Protected cluster alert',
+        severity: 'critical',
+        status: 'firing',
+        clusterId: 'cluster-a',
+        createdAt: '2026-11-04T00:00:00Z',
+        updatedAt: '2026-11-04T00:00:00Z',
+      },
+    ]
+    testState.alerts.isError = true
+    testState.readError = new ApiError(status, 'Denied')
+    await renderPage()
+
+    expect(container.querySelectorAll('.soha-read-feedback')).toHaveLength(2)
+    expect(container.querySelector('.soha-overview-runtime-layout')).toBeNull()
+    expect(container.querySelector('.soha-overview-alert-stack')).toBeNull()
+    expect(container.textContent).not.toContain('Protected cluster alert')
+    expect(container.textContent).toContain('Pod 总数: —')
+    expect(container.textContent).toContain('近期活跃告警: —')
   })
 
   it('renders zero alert timestamps as empty and keeps the complete severity summary', async () => {
@@ -550,8 +669,33 @@ describe('OverviewPage error states', () => {
     expect(testState.refetches.alerts).toHaveBeenCalledOnce()
   })
 
+  it('aggregates a child-only refresh failure once and blocks duplicate manual refreshes', async () => {
+    let finish!: (result: { isError: boolean; error: Error }) => void
+    testState.operationsRefetch.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    await renderPage()
+    const button = container.querySelector(
+      'button[aria-label="刷新 集群总览"]',
+    ) as HTMLButtonElement
+    await act(async () => {
+      button.click()
+      button.click()
+    })
+    expect(testState.operationsRefetch).toHaveBeenCalledOnce()
+    expect(testState.refetches.clusters).toHaveBeenCalledOnce()
+    await act(async () => {
+      finish({ isError: true, error: new Error('Events unavailable') })
+    })
+    expect(document.querySelectorAll('.ant-notification-notice')).toHaveLength(1)
+    expect(document.body.textContent).toContain('刷新未完成')
+    expect(document.body.textContent).toContain('资源事件未更新')
+  })
+
   it('lets manual refresh recover failed alert and summary queries before automatic signals resume', async () => {
-    testState.permissionKeys.push('observe.alerts.view')
+    testState.permissionKeys.push('observe.alerts.view', 'platform.nodes.view')
     testState.alerts.isError = true
     testState.summary.isError = true
     await renderPage()
@@ -567,6 +711,7 @@ describe('OverviewPage error states', () => {
     await act(async () => testState.alertStreamOptions?.onSignal())
     expect(testState.refetches.alerts).toHaveBeenCalledOnce()
     expect(testState.refetches.summary).toHaveBeenCalledOnce()
+    expect(testState.refetches.nodes).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false })
     expect(container.querySelector('[role="switch"]')?.getAttribute('data-refresh-state')).toBe(
       'failed',
     )
@@ -578,6 +723,8 @@ describe('OverviewPage error states', () => {
       testState.summary.isError = false
     })
     await act(async () => refreshButton.click())
+    // Publish the mocked query recovery as a real query observer would.
+    await updatePage()
     expect(testState.refetches.alerts).toHaveBeenCalledTimes(2)
     expect(testState.refetches.summary).toHaveBeenCalledTimes(2)
     expect(container.querySelector('[role="switch"]')?.getAttribute('data-refresh-state')).toBe(

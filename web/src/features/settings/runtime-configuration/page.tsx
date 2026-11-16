@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementIconButton,
   ManagementQueryField,
@@ -22,7 +23,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   App as AntdApp,
   Button,
   Checkbox,
@@ -438,7 +438,7 @@ export function RuntimeConfigurationPage() {
   if (!permissionQuery.isLoading && !canView) {
     return (
       <div className="soha-page">
-        <Alert showIcon title="无权查看运行时配置" type="warning" />
+        <ContextFeedback showIcon title="无权查看运行时配置" type="warning" />
       </div>
     )
   }
@@ -492,14 +492,14 @@ export function RuntimeConfigurationPage() {
       {runtimeSnapshot &&
       observedSnapshot &&
       runtimeSnapshot.version !== observedSnapshot.version ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={`服务端已更新为 v${observedSnapshot.version}，保留草稿及原始版本 v${runtimeSnapshot.version}。保存将检查版本冲突；放弃草稿后读取新版。`}
         />
       ) : null}
       {runtimeSnapshot?.pendingRestart ? (
-        <Alert
+        <ContextFeedback
           className="soha-runtime-config-alert"
           showIcon
           title="存在等待重启生效的配置"
@@ -508,7 +508,7 @@ export function RuntimeConfigurationPage() {
         />
       ) : null}
       {validation ? (
-        <Alert
+        <ContextFeedback
           className="soha-runtime-config-alert"
           showIcon
           title={validation.valid ? '校验通过' : '校验未通过'}

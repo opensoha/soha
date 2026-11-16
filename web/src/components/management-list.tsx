@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { forwardRef, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { Alert, Button, Card, Empty, Form, Input, Segmented, Space, Spin, Typography } from 'antd'
+import { Button, Card, Empty, Form, Input, Segmented, Space, Spin, Typography } from 'antd'
 import type { AlertProps, ButtonProps, FormProps } from 'antd'
 import {
   ColumnHeightOutlined,
@@ -811,6 +812,7 @@ export function ManagementState({
   const stateClassName = classNames(
     'soha-management-state',
     `is-${kind}`,
+    kind !== 'loading' && kind !== 'empty' && 'is-context',
     compact && 'is-compact',
     !bordered && 'is-borderless',
     className,
@@ -849,7 +851,7 @@ export function ManagementState({
 
   return (
     <div className={stateClassName}>
-      <Alert
+      <ContextFeedback
         action={actions}
         description={resolvedDescription}
         showIcon

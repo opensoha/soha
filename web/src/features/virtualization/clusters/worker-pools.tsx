@@ -1,10 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Drawer,
@@ -91,15 +91,15 @@ export function WorkerReadiness({ operationId }: { operationId: string }) {
   )
   const { localeCode } = useI18n()
   if (!canViewWorkerPools || !canViewTasks) return null
-  if (assessment.error)
+  const evidence = readableQueryData(assessment)
+  if (assessment.isError && !evidence)
     return (
-      <Alert
-        type="error"
-        title={assessment.error.message}
-        action={<Button onClick={() => void assessment.refetch()}>重试</Button>}
+      <ReadFeedback
+        query={assessment}
+        label={localeText(localeCode, '节点就绪证据', 'Worker readiness evidence')}
       />
     )
-  if (!assessment.data)
+  if (!evidence)
     return (
       <Typography.Text type="secondary">
         {localeText(localeCode, '读取节点就绪证据…', 'Reading worker evidence…')}
@@ -107,13 +107,17 @@ export function WorkerReadiness({ operationId }: { operationId: string }) {
     )
   return (
     <Space orientation="vertical">
+      <ReadFeedback
+        query={assessment}
+        label={localeText(localeCode, '节点就绪证据', 'Worker readiness evidence')}
+      />
       <Space>
-        <StatusTag value={assessment.data.verdict} />
-        <Typography.Text>{assessment.data.summary}</Typography.Text>
+        <StatusTag value={evidence.verdict} />
+        <Typography.Text>{evidence.summary}</Typography.Text>
       </Space>
       <Typography.Text type="secondary">
         {localeText(localeCode, '观测时间', 'Observed at')}:{' '}
-        {formatDateTime(assessment.data.evidence[0]?.observedAt)}
+        {formatDateTime(evidence.evidence[0]?.observedAt)}
       </Typography.Text>
       <Typography.Text type="secondary">
         {localeText(
@@ -191,7 +195,8 @@ function WorkerPoolsContent({
   )
   const removed = useMutation(virtualizationMutations.deleteWorkerPool(queryClient))
   const created = useMutation(virtualizationMutations.createWorker(queryClient))
-  const imageItems = Array.isArray(images.data) ? images.data : (images.data?.items ?? [])
+  const imageData = readableQueryData(images)
+  const imageItems = Array.isArray(imageData) ? imageData : (imageData?.items ?? [])
   function edit(pool?: VirtualizationWorkerPool) {
     saved.reset()
     form.resetFields()
@@ -255,7 +260,6 @@ function WorkerPoolsContent({
       pendingCreation.current = false
     }
   }
-  const error = pools.error ?? removed.error
   return (
     <Drawer
       open
@@ -270,23 +274,7 @@ function WorkerPoolsContent({
             'Use an independent PVE provider and an Ubuntu 24.04 amd64 template with containerd and matching kubeadm/kubelet. Saving configuration does not create nodes.',
           )}
         </Typography.Paragraph>
-        {storageError && <Alert type="error" title={storageError} />}
-        {error && (
-          <Alert
-            type="error"
-            title={error.message}
-            action={
-              <Button
-                onClick={() => {
-                  removed.reset()
-                  void pools.refetch()
-                }}
-              >
-                {text('重试', 'Retry')}
-              </Button>
-            }
-          />
-        )}
+        {storageError && <ContextFeedback type="error" title={storageError} />}
         <ReadFeedback query={pools} label={text('节点池', 'Worker pools')} />
         <ComputeMutationFeedback
           operations={[
@@ -411,7 +399,7 @@ function WorkerPoolsContent({
           ]}
         />
         {creation && (
-          <Alert
+          <ContextFeedback
             type="info"
             title={creation.pool.spec.name}
             description={
@@ -467,9 +455,8 @@ function WorkerPoolsContent({
         <ComputeMutationFeedback
           operations={[{ label: text('保存节点池', 'Save worker pool'), mutation: saved }]}
         />
-        {(clusters.error || images.error) && (
-          <Alert type="error" title={(clusters.error ?? images.error)?.message} />
-        )}
+        <ReadFeedback query={clusters} label={text('目标集群选项', 'Target cluster choices')} />
+        <ReadFeedback query={images} label={text('模板镜像选项', 'Template image choices')} />
         <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
           <Form.Item name="connectionId" hidden>
             <Input />
@@ -494,7 +481,10 @@ function WorkerPoolsContent({
           >
             <Select
               disabled={Boolean(editing?.revision)}
-              options={clusters.data?.map((item) => ({ value: item.id, label: item.name }))}
+              options={readableQueryData(clusters)?.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
             />
           </Form.Item>
           <Form.Item

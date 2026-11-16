@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -7,7 +8,7 @@ import type { ApiResponse } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { DeploymentUnitOutlined, RightOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Space, Typography } from 'antd'
+import { Button, Space, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { platformSharedKeys } from './keys'
 
@@ -148,7 +149,7 @@ export function ResourceGitOpsStatus({
   return (
     <>
       <ReadFeedback canRead={query.isEnabled} query={query} label="资源记录" />
-      <Alert
+      <ContextFeedback
         showIcon
         icon={<DeploymentUnitOutlined />}
         type={status.drifted ? 'warning' : 'info'}

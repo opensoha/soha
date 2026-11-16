@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -10,7 +11,7 @@ import { EyeOutlined, LineChartOutlined, ReloadOutlined, ShareAltOutlined } from
 import type { ObservabilityService } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Descriptions, Drawer, Form, Space, Typography } from 'antd'
+import { Descriptions, Drawer, Form, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { ObservabilityServiceQuery } from './api'
@@ -211,7 +212,7 @@ export function ObservabilityServicesPage() {
         }}
       />
       {servicesData?.meta.warnings?.map((warning) => (
-        <Alert key={warning} title={warning} showIcon type="warning" />
+        <ContextFeedback key={warning} title={warning} showIcon type="warning" />
       ))}
       {services.error instanceof ApiError && services.error.status === 404 ? (
         <Text type="secondary">请确认服务查询 Provider 和链接指定的数据源仍可用。</Text>
@@ -221,7 +222,7 @@ export function ObservabilityServicesPage() {
         error={services.error}
         hasReadData={services.data !== undefined}
         refreshing={services.isFetching}
-        onRefresh={() => void services.refetch()}
+        onRefresh={() => services.refetch()}
         loading={services.isLoading}
         columnSettingIconOnly
         columnSettingPlacement="header"

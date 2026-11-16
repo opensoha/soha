@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { localeText, useI18n } from '@/i18n'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
@@ -23,7 +24,6 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
-  Alert,
   Button,
   Card,
   Drawer,
@@ -603,7 +603,7 @@ export function NetworkTopologyRuntimePage() {
             </Tooltip>
           </div>
           {data && (!data.graphVersion || data.truncated || failures.length > 0) && (
-            <Alert
+            <ContextFeedback
               className="soha-topology-coverage-alert"
               type="warning"
               showIcon

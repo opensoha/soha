@@ -1,4 +1,6 @@
-import { Alert, Button, Form, Input, InputNumber, Select, Switch } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { ReadFeedback } from '@/components/request-feedback'
+import { Button, Form, Input, InputNumber, Select, Switch } from 'antd'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type {
@@ -115,29 +117,21 @@ export function EndpointResponsePolicyFields({ can }: { can: (key: string) => bo
           <Select mode="tags" tokenSeparators={[',']} />
         </Form.Item>
       </div>
-      {(sites.isError || bindings.isError || devices.isError) && (
-        <Alert
-          className="endpoint-response-form-alert"
-          type="warning"
-          showIcon
-          title={text(
-            '部分范围选项加载失败，可重试或输入已知 ID',
-            'Some scope choices could not load. Retry or enter a known ID.',
-          )}
-          action={
-            <Button
-              onClick={() => {
-                if (can('network_access.sites.view') && sites.isError) void sites.refetch()
-                if (can('network_access.sites.view') && bindings.isError) void bindings.refetch()
-                if (can('network_access.endpoint_devices.view') && devices.isError)
-                  void devices.refetch()
-              }}
-            >
-              {text('重试', 'Retry')}
-            </Button>
-          }
-        />
-      )}
+      <ReadFeedback
+        query={sites}
+        canRead={can('network_access.sites.view')}
+        label={text('站点选项', 'Site choices')}
+      />
+      <ReadFeedback
+        query={bindings}
+        canRead={can('network_access.sites.view')}
+        label={text('网络设备选项', 'NAS choices')}
+      />
+      <ReadFeedback
+        query={devices}
+        canRead={can('network_access.endpoint_devices.view')}
+        label={text('终端选项', 'Endpoint choices')}
+      />
       <h3>{text('失联判断', 'Loss detection')}</h3>
       <Form.Item name="signal" label={text('检测信号', 'Signal')} rules={[{ required: true }]}>
         <Select
@@ -150,7 +144,7 @@ export function EndpointResponsePolicyFields({ can }: { can: (key: string) => bo
           ]}
         />
       </Form.Item>
-      <Alert
+      <ContextFeedback
         className="endpoint-response-form-alert"
         type="info"
         showIcon
@@ -371,7 +365,7 @@ export function EndpointResponsePolicyFields({ can }: { can: (key: string) => bo
       >
         <Switch />
       </Form.Item>
-      <Alert
+      <ContextFeedback
         className="endpoint-response-form-alert"
         showIcon
         type="warning"

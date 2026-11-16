@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { operationModalStyles } from '@/components/modal-styles'
 import { useI18n } from '@/i18n'
-import { Alert, App, Button, Collapse, Form, Input, Modal, Select, Switch } from 'antd'
+import { App, Button, Collapse, Form, Input, Modal, Select, Switch } from 'antd'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import {
@@ -355,7 +356,7 @@ export function ProviderConfigFields({
       {providerType === 'saml' ? (
         <>
           {!samlAvailable ? (
-            <Alert
+            <ContextFeedback
               showIcon
               title="SAML runtime unavailable"
               description={samlUnavailableReason || 'The server has not enabled SAML providers.'}

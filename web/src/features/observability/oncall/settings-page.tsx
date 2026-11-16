@@ -639,7 +639,7 @@ export function OnCallSettingsPage() {
                 error={assignmentsQuery.error}
                 hasReadData={assignmentsQuery.data !== undefined}
                 refreshing={assignmentsQuery.isFetching}
-                onRefresh={() => void assignmentsQuery.refetch()}
+                onRefresh={() => assignmentsQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -672,7 +672,7 @@ export function OnCallSettingsPage() {
                 error={schedulesQuery.error}
                 hasReadData={schedulesQuery.data !== undefined}
                 refreshing={schedulesQuery.isFetching}
-                onRefresh={() => void schedulesQuery.refetch()}
+                onRefresh={() => schedulesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -711,7 +711,7 @@ export function OnCallSettingsPage() {
                 error={rotationsQuery.error}
                 hasReadData={rotationsQuery.data !== undefined}
                 refreshing={rotationsQuery.isFetching}
-                onRefresh={() => void rotationsQuery.refetch()}
+                onRefresh={() => rotationsQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -750,7 +750,7 @@ export function OnCallSettingsPage() {
                 error={policiesQuery.error}
                 hasReadData={policiesQuery.data !== undefined}
                 refreshing={policiesQuery.isFetching}
-                onRefresh={() => void policiesQuery.refetch()}
+                onRefresh={() => policiesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"

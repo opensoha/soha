@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
@@ -12,7 +13,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { EyeOutlined, PlusOutlined, ReloadOutlined, RocketOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Descriptions, Drawer, Form, Input, Modal, Select, Space, Tabs } from 'antd'
+import { Button, Descriptions, Drawer, Form, Input, Modal, Select, Space, Tabs } from 'antd'
 import { useEffect, useState } from 'react'
 import { evaluationMutations } from './mutations'
 import { evaluationQueries } from './queries'
@@ -222,7 +223,7 @@ export function EvaluationStudioPage() {
         <>
           {!datasetOpen && createDatasetMutation.feedback}
           {!runOpen && startRunMutation.feedback}
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title="候选执行器尚未接入"
@@ -282,7 +283,7 @@ export function EvaluationStudioPage() {
                   loading={runsQuery.isLoading}
                   error={runsQuery.error}
                   hasReadData={readableQueryData(runsQuery) !== undefined}
-                  onRetry={() => void runsQuery.refetch()}
+                  onRetry={() => runsQuery.refetch()}
                   rowKey="id"
                   empty={
                     runsQuery.isError ? (
@@ -307,7 +308,7 @@ export function EvaluationStudioPage() {
                   loading={datasetsQuery.isLoading}
                   error={datasetsQuery.error}
                   hasReadData={readableQueryData(datasetsQuery) !== undefined}
-                  onRetry={() => void datasetsQuery.refetch()}
+                  onRetry={() => datasetsQuery.refetch()}
                   rowKey={(dataset) => datasetKey(dataset)}
                   empty={
                     datasetsQuery.isError ? (
@@ -534,7 +535,7 @@ export function EvaluationStudioPage() {
           loading={resultsQuery.isLoading}
           error={resultsQuery.error}
           hasReadData={readableQueryData(resultsQuery) !== undefined}
-          onRetry={() => void resultsQuery.refetch()}
+          onRetry={() => resultsQuery.refetch()}
           rowKey="sampleId"
           empty={
             <ManagementState

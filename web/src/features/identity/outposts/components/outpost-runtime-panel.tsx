@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useRef, useState } from 'react'
 import {
   useIsMutating,
@@ -6,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { Alert, Button, Checkbox, Descriptions, Input, InputNumber, Space, Typography } from 'antd'
+import { Button, Checkbox, Descriptions, Input, InputNumber, Space, Typography } from 'antd'
 import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { isApiError } from '@/services/api-error'
@@ -209,7 +210,7 @@ export function OutpostRuntimePanel({ id }: { id: string }) {
       mutation.reset()
     }
   }
-  if (!canRead) return <Alert type="warning" showIcon title="没有查看运行部署的权限" />
+  if (!canRead) return <ContextFeedback type="warning" showIcon title="没有查看运行部署的权限" />
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
       <ReadFeedback canRead={canRead} query={query} label="运行部署" />
@@ -268,7 +269,7 @@ export function OutpostRuntimePanel({ id }: { id: string }) {
         </Button>
       )}
       {error && intent && (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title={conflict ? '配置代次冲突' : uncertain ? '结果未知，保留原操作意图' : '操作未完成'}
@@ -349,7 +350,7 @@ export function OutpostRuntimePanel({ id }: { id: string }) {
             ]}
           />
           {runtime.phase === 'pending' && !runtime.latestTaskId && runtime.owner === 'soha' && (
-            <Alert
+            <ContextFeedback
               type="info"
               showIcon
               title="槽位已绑定，尚未观察到部署"
@@ -357,14 +358,14 @@ export function OutpostRuntimePanel({ id }: { id: string }) {
             />
           )}
           {runtimeUnsettled && (
-            <Alert
+            <ContextFeedback
               type="warning"
               showIcon
               title="部署仍在进行中或结果未知"
               description="请核对最近任务 ID、配置代次和观察状态；重新读取不会确认部署成功，当前暂停新操作。"
             />
           )}
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title="部署就绪与鉴权健康分别观察"
@@ -372,7 +373,7 @@ export function OutpostRuntimePanel({ id }: { id: string }) {
           />
           {!canManage && <Typography.Text type="warning">没有管理运行部署的权限。</Typography.Text>}
           {runtime.owner === 'external' && (
-            <Alert
+            <ContextFeedback
               type="info"
               showIcon
               title="外部部署不会自动接管"

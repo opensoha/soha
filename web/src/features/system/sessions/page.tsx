@@ -295,7 +295,7 @@ export function OnlineUsersPage() {
         ),
         error: sessionsQuery.error,
         hasReadData: readableQueryData(sessionsQuery) !== undefined,
-        onRetry: () => void refetch(),
+        onRetry: () => refetch(),
         columns,
         dataSource: filteredSessions,
         rowKey: 'id',

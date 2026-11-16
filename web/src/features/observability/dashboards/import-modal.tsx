@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
@@ -9,7 +10,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UploadFile } from 'antd'
-import { Alert, App, Button, Modal, Segmented, Select, Space, Typography, Upload } from 'antd'
+import { App, Button, Modal, Segmented, Select, Space, Typography, Upload } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../observability-pages.css'
@@ -154,7 +155,7 @@ export function ImportDashboardModal({
           onChange={setSourceMode}
         />
         {dataSourcesQuery.isSuccess && dataSources.length === 0 ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title="没有可用的 Prometheus 数据源"

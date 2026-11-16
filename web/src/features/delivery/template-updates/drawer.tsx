@@ -1,6 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useMemo, useState, type Key } from 'react'
 import {
-  Alert,
   Button,
   Checkbox,
   Drawer,
@@ -357,7 +357,7 @@ export function TemplateAdoptionDrawer({
             { title: '分批采用与审批' },
           ]}
         />
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="采用配置后，再选择是否部署"
@@ -366,7 +366,7 @@ export function TemplateAdoptionDrawer({
         {preview.feedback}
         {batch.feedback}
         {editError ? (
-          <Alert type="error" showIcon title="请修正变量配置" description={editError} />
+          <ContextFeedback type="error" showIcon title="请修正变量配置" description={editError} />
         ) : null}
         {!result ? (
           <>
@@ -403,8 +403,8 @@ export function TemplateAdoptionDrawer({
               loading={targetsQuery.isLoading}
               error={targetsQuery.error}
               hasReadData={Boolean(targetPage)}
-              onRetry={() => void targetsQuery.refetch()}
-              onRefresh={() => void targetsQuery.refetch()}
+              onRetry={() => targetsQuery.refetch()}
+              onRefresh={() => targetsQuery.refetch()}
               refreshing={targetsQuery.isFetching}
               enableColumnSelection={false}
               localSorting={false}
@@ -669,24 +669,19 @@ export function TemplateAdoptionDrawer({
               </Checkbox>
             ) : null}
             {!canExecute ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 title="缺少采用权限"
                 description="提交采用批次需要工作流执行和应用环境配置更新权限，服务端会逐项重新校验当前权限。"
               />
             ) : null}
             {batch.isSuccess ? (
-              <Alert
-                type="success"
-                showIcon
-                title="批次已创建"
-                description="请在现有交付批次中核对审批、失败、跳过与配置采用结果。配置采用成功后，可另行创建部署 Plan 发布应用。"
-                action={
-                  <Link to={`/delivery/batches/${encodeURIComponent(batch.data.id)}`}>
-                    查看进度
-                  </Link>
-                }
-              />
+              <Typography.Paragraph>
+                <Link to={`/delivery/batches/${encodeURIComponent(batch.data.id)}`}>
+                  查看采用批次 {batch.data.id}
+                </Link>
+                。核对审批、失败、跳过与配置采用结果；配置采用成功后，可另行创建部署 Plan 发布应用。
+              </Typography.Paragraph>
             ) : null}
           </>
         )}

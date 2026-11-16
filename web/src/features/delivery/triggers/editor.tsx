@@ -1,6 +1,8 @@
-import { useState } from 'react'
-import { Alert, Button, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ContextFeedback } from '@/components/context-feedback'
+import { useOperationMutation } from '@/components/use-operation-mutation'
+import { useRef, useState } from 'react'
+import { App, Button, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd'
+import { useQueryClient } from '@tanstack/react-query'
 import { deliveryMutations } from '../mutations'
 import type { DeliveryTrigger, DeliveryTriggerInput } from '../types'
 import { useUnsavedDocument } from '../documents/use-unsaved-document'
@@ -26,18 +28,26 @@ const refKey = (ref: TriggerTarget['webhookRefs'][number]) =>
 export function TriggerEditor({
   target,
   item,
+  readOnly = false,
   onClose,
 }: {
   target: TriggerTarget
   item?: DeliveryTrigger
+  readOnly?: boolean
   onClose: () => void
 }) {
   const [form] = Form.useForm<TriggerForm>()
+  const { message } = App.useApp()
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   useUnsavedDocument(dirty)
   const client = useQueryClient()
-  const save = useMutation(deliveryMutations.triggers.save(client))
+  const save = useOperationMutation(deliveryMutations.triggers.save(client), {
+    label: ['保存触发器', 'Save trigger'],
+    target: () => item?.name || target.targetId,
+  })
   const initialZone = item?.schedule?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone
   const type =
     Form.useWatch('type', form) ??
@@ -49,7 +59,9 @@ export function TriggerEditor({
     if (!save.isPending && (!dirty || window.confirm('放弃未保存的触发器配置？'))) onClose()
   }
   const submit = async () => {
+    if (readOnlyRef.current || save.blocked) return
     setError('')
+    let writeStarted = false
     try {
       const values = await form.validateFields()
       const common = {
@@ -95,12 +107,15 @@ export function TriggerEditor({
           },
         }
       }
+      if (readOnlyRef.current) return
+      writeStarted = true
       await save.mutateAsync({ id: item?.id, input })
+      message.success('触发器配置已保存')
       form.resetFields()
       save.reset()
       onClose()
     } catch (failure) {
-      if (failure instanceof Error) setError(failure.message)
+      if (!writeStarted && failure instanceof Error) setError(failure.message)
     }
   }
   return (
@@ -110,10 +125,12 @@ export function TriggerEditor({
       width={720}
       okText="保存触发器"
       confirmLoading={save.isPending}
+      okButtonProps={{ disabled: readOnly || save.blocked }}
       onOk={() => void submit()}
       onCancel={close}
     >
-      {error ? <Alert type="error" title="触发器保存失败" description={error} /> : null}
+      {save.feedback}
+      {error ? <ContextFeedback type="error" title="请修正触发器配置" description={error} /> : null}
       {target.targetKind === 'workflow' ? (
         <Typography.Paragraph>
           目标版本：v{target.workflowVersion}
@@ -125,7 +142,7 @@ export function TriggerEditor({
       <Form
         form={form}
         layout="vertical"
-        disabled={save.isPending}
+        disabled={readOnly || save.blocked}
         onValuesChange={() => setDirty(true)}
         initialValues={{
           name: item?.name ?? '',

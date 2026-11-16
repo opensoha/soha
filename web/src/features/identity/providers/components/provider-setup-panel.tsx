@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -6,7 +7,7 @@ import { isApiError } from '@/services/api-error'
 import { readableQueryData } from '@/utils/query-feedback'
 import { InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Descriptions, Space, Typography } from 'antd'
+import { Button, Descriptions, Space, Typography } from 'antd'
 import { identityProviderQueries } from '../queries'
 import type { IdentityProvider } from '../types'
 import { ProxySetupPanel } from './proxy-setup-panel'
@@ -79,7 +80,7 @@ export function ProviderSetupPanel({ provider }: { provider: IdentityProvider })
           </Button>
         </Space>
       </div>
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title="真实接入验证需在业务应用中完成"
@@ -91,7 +92,7 @@ export function ProviderSetupPanel({ provider }: { provider: IdentityProvider })
         </Typography.Paragraph>
       ))}
       {setup.migrationRequired ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title="Legacy Core Reverse Proxy：仍需迁移"

@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Card, Spin, Typography, Tooltip } from 'antd'
+import { Button, Card, Spin, Typography, Tooltip } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import { TableCellLink, TableCellText } from '@/components/table-cell-content'
@@ -232,7 +233,7 @@ function ClusterDetailContent({ clusterId }: { clusterId: string }) {
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={summary.health?.status === 'healthy' ? 'success' : 'info'}
         title={formatClusterHealth(summary.health?.status || 'unknown', localeCode)}

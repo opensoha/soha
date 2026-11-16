@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { useKubernetesResourceActions } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { ManagementDataPage } from '@/components/management-data-page'
@@ -32,7 +33,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { PauseCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Select, Tooltip, Typography, type TableColumnsType } from 'antd'
+import { Button, Select, Tooltip, Typography, type TableColumnsType } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../styles.css'
@@ -359,7 +360,7 @@ export function NetworkPortForwardPage() {
             />
           }
         >
-          <Alert
+          <ContextFeedback
             showIcon
             type="info"
             title={zh ? 'Core 主机端口转发' : 'Core-host port forwarding'}
@@ -370,7 +371,7 @@ export function NetworkPortForwardPage() {
             }
           />
           {capability.status !== 'available' && capability.reason && (
-            <Alert
+            <ContextFeedback
               showIcon
               type={capability.status === 'unsupported' ? 'warning' : 'info'}
               title={zh ? '当前模式能力' : 'Connection-mode capability'}

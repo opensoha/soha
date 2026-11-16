@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
-import { Alert, Button, Form, Popconfirm, Space, Switch, Typography } from 'antd'
+import { Button, Form, Popconfirm, Space, Switch, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   EndpointChannelControls,
@@ -128,7 +129,7 @@ function ChannelPolicy({
     platform !== 'windows'
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-      <Alert
+      <ContextFeedback
         type="warning"
         showIcon
         title={text(
@@ -141,13 +142,13 @@ function ChannelPolicy({
         )}
       />
       {platform !== 'windows' ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title={text('该平台原生通道尚不支持', 'Native channels are unsupported on this platform')}
         />
       ) : null}
       {!read && (edit || publish) ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text(
@@ -168,7 +169,7 @@ function ChannelPolicy({
       {save.feedback}
       {release.feedback}
       {data && revision !== undefined && revision !== data.policy.revision ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={text('策略已被其他管理员更新', 'Policy updated by another administrator')}

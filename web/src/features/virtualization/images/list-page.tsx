@@ -421,7 +421,7 @@ export function VirtualizationImagesPage({
             ) : null
           }
           refreshing={imagesQuery.isFetching}
-          onRefresh={() => void imagesQuery.refetch()}
+          onRefresh={() => imagesQuery.refetch()}
           loading={imagesQuery.isLoading}
           dataSource={imagesPage.items}
           columns={columns}

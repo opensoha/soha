@@ -1,18 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Space,
-  Spin,
-  Typography,
-} from 'antd'
+import { Button, Checkbox, Form, Input, InputNumber, Modal, Space, Spin, Typography } from 'antd'
 import {
   ClearOutlined,
   DeleteOutlined,
@@ -404,7 +394,7 @@ export function useNodeActions({
               />
               {drainStateQuery.isFetching && <Spin size="small" />}
               {drainState && (
-                <Alert
+                <ContextFeedback
                   type="info"
                   showIcon
                   title={
@@ -434,7 +424,7 @@ export function useNodeActions({
             </>
           )}
 
-          <Alert type="warning" showIcon title={copy.drainWarning} />
+          <ContextFeedback type="warning" showIcon title={copy.drainWarning} />
           <Form
             form={drainForm}
             layout="vertical"

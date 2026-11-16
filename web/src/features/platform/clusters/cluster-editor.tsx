@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { PlusOutlined } from '@ant-design/icons'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Spin, Typography } from 'antd'
+import { Button, Card, Form, Input, Modal, Select, Space, Spin, Typography } from 'antd'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { usePlatformMutation, platformResourceTarget } from '../shared/use-platform-mutation'
@@ -223,7 +224,7 @@ export function ClusterEditor({
         label={zh ? '集群详情' : 'Cluster detail'}
       />
       {!allowed ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           title={zh ? '没有集群编辑权限' : 'Cluster edit permission required'}
         />
@@ -232,7 +233,7 @@ export function ClusterEditor({
       ) : cluster && !detail ? null : (
         <>
           {detail?.connection.sourceType === 'config' && (
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title={

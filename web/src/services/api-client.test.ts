@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAuthSession, restoreAuthSession } from '@/features/auth/auth-api'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { api } from './api-client'
-import { API_ERROR_EVENT, type ApiErrorEventDetail } from './api-error'
+import { API_ERROR_EVENT, ApiError, type ApiErrorEventDetail } from './api-error'
 
 vi.mock('@/features/auth/auth-api', async () => {
   const actual = await vi.importActual<typeof import('@/features/auth/auth-api')>(
@@ -42,6 +43,7 @@ describe('api client error handling', () => {
     vi.mocked(clearAuthSession).mockClear()
     vi.mocked(restoreAuthSession).mockClear()
     vi.mocked(restoreAuthSession).mockResolvedValue('unauthenticated')
+    useAuthStore.setState({ accessToken: 'expired-token' })
     usePreferencesStore.setState({ localeCode: 'zh_CN' })
   })
 
@@ -127,7 +129,7 @@ describe('api client error handling', () => {
       await expect(
         api.postResponse('/export', {}, new AbortController().signal),
       ).rejects.toMatchObject({
-        status: status === 'unavailable' ? 0 : 401,
+        status: status === 'unavailable' ? 503 : 401,
       })
       expect(fetchMock).toHaveBeenCalledTimes(1)
       expect(restoreAuthSession).toHaveBeenCalledTimes(1)
@@ -255,39 +257,122 @@ describe('api client error handling', () => {
     ])
   })
 
-  it('keeps auth state when token refresh is temporarily unavailable', async () => {
-    vi.mocked(restoreAuthSession).mockResolvedValueOnce('unavailable')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
+  it.each([
+    {
+      name: 'JSON write',
+      method: 'POST',
+      run: () => api.postWithHeaders('/resources', { name: 'demo' }, { 'x-operation': 'save' }),
+    },
+    { name: 'JSON read', method: 'GET', run: () => api.get('/resources') },
+    { name: 'text read', method: 'GET', run: () => api.getText('/resources') },
+    { name: 'void write', method: 'POST', run: () => api.postVoid('/resources') },
+    {
+      name: 'download',
+      method: 'POST',
+      run: () => api.postResponse('/resources', {}, new AbortController().signal),
+    },
+    { name: 'upload', method: 'POST', run: () => api.upload('/resources', new FormData()) },
+  ])(
+    'keeps the original $name rejection when refresh is unavailable',
+    async ({ run, method, name }) => {
+      vi.mocked(restoreAuthSession).mockResolvedValueOnce('unavailable')
+      const fetchMock = vi.fn<typeof fetch>(async () =>
         jsonResponse(
-          { error: { code: 'token_expired', message: 'token expired', request_id: 'req-401' } },
+          { error: { code: 'token_expired', message: 'token expired', request_id: 'body-401' } },
           {
             status: 401,
             statusText: 'Unauthorized',
             headers: { 'x-request-id': 'req-401' },
           },
         ),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const error: unknown = await run().catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(ApiError)
+      if (!(error instanceof ApiError)) throw error
+      expect(error).toMatchObject({
+        code: 'auth_refresh_unavailable',
+        kind: 'server',
+        message: '登录状态暂时无法恢复，请稍后重试。',
+        method,
+        path: '/resources',
+        status: 503,
+        requestId: 'req-401',
+        requestOutcome: 'rejected',
+        originalCause: {
+          status: 401,
+          code: 'token_expired',
+          method,
+          path: '/resources',
+          requestId: 'req-401',
+        },
+      })
+
+      expect(writeOutcomeUnknown(error)).toBe(false)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(restoreAuthSession).toHaveBeenCalledTimes(1)
+      expect(clearAuthSession).not.toHaveBeenCalled()
+      expect(useAuthStore.getState().accessToken).toBe('expired-token')
+      if (name === 'JSON write') {
+        expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ name: 'demo' }))
+        expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('x-operation')).toBe('save')
+      }
+      if (name === 'upload') expect(fetchMock.mock.calls[0]?.[1]?.body).toBeInstanceOf(FormData)
+      expect(events).toEqual([
+        expect.objectContaining({
+          code: 'auth_refresh_unavailable',
+          kind: 'server',
+          method,
+          path: '/resources',
+          requestId: 'req-401',
+          status: 503,
+        }),
+      ])
+    },
+  )
+
+  it('localizes refresh unavailability and retains an envelope request ID', async () => {
+    usePreferencesStore.setState({ localeCode: 'en_US' })
+    vi.mocked(restoreAuthSession).mockResolvedValueOnce('unavailable')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(
+          { error: { code: 'token_expired', message: 'expired', request_id: 'body-401' } },
+          { status: 401 },
+        ),
       ),
     )
+    await expect(api.post('/resources')).rejects.toMatchObject({
+      message: 'Your sign-in session could not be restored right now. Please try again later.',
+      requestId: 'body-401',
+      requestOutcome: 'rejected',
+    })
+  })
 
-    await expect(api.get('/clusters')).rejects.toMatchObject({
-      kind: 'network',
-      message: 'Authentication refresh is temporarily unavailable',
-      path: '/auth/refresh',
-      status: 0,
+  it('keeps a lost response after one authenticated replay uncertain', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'expired' } }, { status: 401 }))
+      .mockRejectedValueOnce(new TypeError('response lost'))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(restoreAuthSession).mockImplementationOnce(async () => {
+      useAuthStore.setState({ accessToken: 'refreshed-token' })
+      return 'authenticated'
     })
 
+    const error: unknown = await api
+      .post('/resources', { name: 'demo' })
+      .catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(ApiError)
+    if (!(error instanceof ApiError)) throw error
+    expect(error).toMatchObject({ status: 0, method: 'POST', path: '/resources' })
+    expect(error.requestOutcome).toBeUndefined()
+    expect(writeOutcomeUnknown(error)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(restoreAuthSession).toHaveBeenCalledTimes(1)
     expect(clearAuthSession).not.toHaveBeenCalled()
-    expect(events).toEqual([
-      expect.objectContaining({
-        kind: 'network',
-        method: 'POST',
-        path: '/auth/refresh',
-        status: 0,
-      }),
-    ])
   })
 
   it('classifies forbidden and server errors for global notification handling', async () => {

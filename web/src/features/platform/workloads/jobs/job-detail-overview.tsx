@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Card, Typography } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { BooleanTag } from '@/components/status-tag'
@@ -107,7 +108,7 @@ export function JobDetailOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={
           state === 'failed'

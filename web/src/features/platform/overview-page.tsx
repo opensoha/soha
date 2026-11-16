@@ -6,7 +6,11 @@ import {
   type OverviewChipItem,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
-import { ReadFeedback } from '@/components/request-feedback'
+import {
+  ReadFeedback,
+  useReadRefreshFeedback,
+  type ReadRefreshTarget,
+} from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { observabilityAlertQueries, useAlertEventStream } from '@/features/observability'
@@ -27,7 +31,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Space, Spin, Tooltip, Typography } from 'antd'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import './overview.css'
 import {
@@ -102,7 +106,8 @@ export function OverviewPage() {
   const clusterId = usePlatformScopeStore((state) => state.clusterId)
   const setNamespace = usePlatformScopeStore((state) => state.setNamespace)
   const refresh = useWorkloadRefresh()
-  const [refreshToken, setRefreshToken] = useState(0)
+  const refreshWithFeedback = useReadRefreshFeedback()
+  const operationsRefreshTargets = useRef<readonly ReadRefreshTarget[]>([])
   const [operationsRefreshState, setOperationsRefreshState] = useState({
     isFetching: false,
     isError: false,
@@ -337,9 +342,7 @@ export function OverviewPage() {
   }
 
   const workloadValue = (value: number | undefined) =>
-    !clusterId || !canViewWorkloads || workloadOverviewQuery.isError || workloadOverviewLoading
-      ? '-'
-      : (value ?? '-')
+    !clusterId || !workloadOverview ? '—' : (value ?? '—')
   const overviewStats = [
     {
       key: 'nodes',
@@ -378,10 +381,7 @@ export function OverviewPage() {
         localeCode === 'zh_CN'
           ? '最近 50 条告警记录中的活跃项'
           : 'Active in the latest 50 alert records',
-      value:
-        !clusterId || !canViewAlerts || alertEventsQuery.isError || alertEventsQuery.isLoading
-          ? '-'
-          : effectiveFiringCount,
+      value: visibleAlertEventsQueryData === undefined ? '—' : effectiveFiringCount,
       icon: <WarningOutlined />,
       tone: effectiveFiringCount > 0 ? 'warning' : 'default',
     },
@@ -424,31 +424,31 @@ export function OverviewPage() {
     {
       key: 'running',
       label: formatPlatformOverviewText('running', localeCode),
-      value: workloadOverview?.runningPods ?? 0,
+      value: workloadOverview?.runningPods ?? '—',
       tone: 'success',
     },
     {
       key: 'pending',
       label: formatPlatformOverviewText('pending', localeCode),
-      value: workloadOverview?.pendingPods ?? 0,
+      value: workloadOverview?.pendingPods ?? '—',
       tone: 'warning',
     },
     {
       key: 'completed',
       label: localeCode === 'zh_CN' ? '已完成' : 'Completed',
-      value: workloadOverview?.succeededPods ?? 0,
+      value: workloadOverview?.succeededPods ?? '—',
       tone: 'default',
     },
     {
       key: 'failed',
       label: localeCode === 'zh_CN' ? '失败' : 'Failed',
-      value: workloadOverview?.failedPods ?? 0,
+      value: workloadOverview?.failedPods ?? '—',
       tone: 'danger',
     },
     {
       key: 'unknown',
       label: localeCode === 'zh_CN' ? '未知' : 'Unknown',
-      value: workloadOverview?.unknownPods ?? 0,
+      value: workloadOverview?.unknownPods ?? '—',
       tone: 'default',
     },
   ] satisfies OverviewChipItem[]
@@ -457,16 +457,6 @@ export function OverviewPage() {
     <div className="soha-page soha-overview-page soha-platform-overview-page">
       <ReadFeedback canRead={clustersQuery.isEnabled} query={clustersQuery} label="集群目录" />
       <ReadFeedback canRead={summaryQuery.isEnabled} query={summaryQuery} label="监控汇总" />
-      <ReadFeedback
-        canRead={alertEventsQuery.isEnabled}
-        query={alertEventsQuery}
-        label="告警事件"
-      />
-      <ReadFeedback
-        canRead={workloadOverviewQuery.isEnabled}
-        query={workloadOverviewQuery}
-        label="工作负载总览"
-      />
 
       <h1 className="soha-platform-overview-heading">
         {localeCode === 'zh_CN' ? 'Kubernetes 总览' : 'Kubernetes overview'}
@@ -490,14 +480,23 @@ export function OverviewPage() {
             nodesQuery,
             operationsRefreshState,
           ]}
-          onRefresh={() => {
-            setRefreshToken((value) => value + 1)
-            return Promise.allSettled(
-              [clustersQuery, summaryQuery, alertEventsQuery, workloadOverviewQuery]
-                .filter((query) => query.isEnabled)
-                .map((query) => query.refetch()),
-            )
-          }}
+          onRefresh={() =>
+            refreshWithFeedback([
+              ...[
+                { label: '集群目录', query: clustersQuery },
+                { label: '监控汇总', query: summaryQuery },
+                { label: '告警事件', query: alertEventsQuery },
+                { label: '工作负载总览', query: workloadOverviewQuery },
+                { label: '节点容量', query: nodesQuery },
+              ]
+                .filter(({ query }) => query.isEnabled)
+                .map(({ label, query }) => ({
+                  label,
+                  refetch: () => query.refetch({ cancelRefetch: false }),
+                })),
+              ...operationsRefreshTargets.current,
+            ])
+          }
         />
       </div>
       <div className="soha-overview-metric-grid">
@@ -540,6 +539,11 @@ export function OverviewPage() {
             ) : null
           }
         >
+          <ReadFeedback
+            canRead={workloadOverviewQuery.isEnabled}
+            query={workloadOverviewQuery}
+            label="工作负载总览"
+          />
           {!canViewWorkloads ? (
             <ManagementState
               bordered={false}
@@ -562,14 +566,7 @@ export function OverviewPage() {
             <div className="flex items-center justify-center h-56">
               <Spin size="large" />
             </div>
-          ) : workloadOverviewQuery.isError ? (
-            <ManagementState
-              bordered={false}
-              compact
-              kind="error"
-              title={localeCode === 'zh_CN' ? 'Pod 运行态势加载失败' : 'Failed to load pod runtime'}
-            />
-          ) : !workloadOverview ? (
+          ) : workloadOverviewQuery.isError && !workloadOverview ? null : !workloadOverview ? (
             <ManagementState
               bordered={false}
               compact
@@ -672,7 +669,7 @@ export function OverviewPage() {
           className="soha-overview-panel-card"
           title={localeCode === 'zh_CN' ? '当前集群告警' : 'Current Cluster Alerts'}
           extra={
-            canViewAlerts && clusterId && !alertEventsQuery.isError ? (
+            canViewAlerts && clusterId && visibleAlertEventsQueryData !== undefined ? (
               <Space size={6} wrap>
                 <OverviewHint
                   label={localeCode === 'zh_CN' ? '告警接收信息' : 'Alert reception information'}
@@ -701,6 +698,11 @@ export function OverviewPage() {
             ) : null
           }
         >
+          <ReadFeedback
+            canRead={alertEventsQuery.isEnabled}
+            query={alertEventsQuery}
+            label="告警事件"
+          />
           {!clusterId ? (
             <ManagementState
               bordered={false}
@@ -719,14 +721,8 @@ export function OverviewPage() {
                   : 'No permission to view alert summary'
               }
             />
-          ) : alertEventsQuery.isError ? (
-            <ManagementState
-              bordered={false}
-              compact
-              kind="error"
-              title={localeCode === 'zh_CN' ? '集群告警加载失败' : 'Failed to load cluster alerts'}
-            />
-          ) : alertEventsQuery.isLoading ? (
+          ) : alertEventsQuery.isError &&
+            visibleAlertEventsQueryData === undefined ? null : alertEventsQuery.isLoading ? (
             <div className="soha-platform-ops-loading">
               <Spin size="small" />
             </div>
@@ -809,7 +805,7 @@ export function OverviewPage() {
         key={clusterId || 'no-cluster'}
         clusterId={clusterId}
         refresh={refresh}
-        refreshToken={refreshToken}
+        refreshTargetsRef={operationsRefreshTargets}
         onRefreshStateChange={setOperationsRefreshState}
         connectionMode={currentCluster?.connectionMode}
         localeCode={localeCode}
@@ -880,17 +876,10 @@ export function OverviewPage() {
             <div className="soha-platform-ops-loading">
               <Spin size="small" />
             </div>
-          ) : workloadOverviewQuery.isError ? (
-            <ManagementState
-              bordered={false}
-              compact
-              kind="error"
-              title={
-                localeCode === 'zh_CN'
-                  ? '命名空间分布加载失败'
-                  : 'Namespace distribution failed to load'
-              }
-            />
+          ) : workloadOverviewQuery.isError && !workloadOverview ? (
+            <Text type="secondary">
+              {localeCode === 'zh_CN' ? '工作负载读取失败' : 'Workload read failed'}
+            </Text>
           ) : namespaceBreakdown.length === 0 ? (
             <ManagementState
               bordered={false}

@@ -139,7 +139,7 @@ export function NetworkWorkloadsPane({ canUpdate }: { canUpdate: boolean }) {
         loading={query.isLoading}
         error={query.error}
         refreshing={query.isFetching}
-        onRefresh={() => void query.refetch()}
+        onRefresh={() => query.refetch()}
         getSearchValues={(item) => [
           item.id,
           item.serviceAccountId,

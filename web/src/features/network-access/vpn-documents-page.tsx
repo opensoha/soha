@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { operationModalStyles } from '@/components/modal-styles'
@@ -13,7 +14,7 @@ import type {
   NetworkVPNSelectionPolicyConfig,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Drawer, Form, Modal, Popconfirm, Space, Typography } from 'antd'
+import { Button, Drawer, Form, Modal, Popconfirm, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { TablePane } from './table-pane'
@@ -112,7 +113,7 @@ export default function VPNDocumentsPage() {
           loading={query.isPending && allowed('view')}
           error={query.isEnabled === false ? null : query.error}
           refreshing={query.isFetching}
-          onRefresh={() => void (query.isEnabled === false ? undefined : query.refetch())}
+          onRefresh={() => (query.isEnabled === false ? undefined : query.refetch())}
           searchPlaceholder={text('搜索方案或策略', 'Search profiles or policies')}
           getSearchValues={(d) => [d.configuration.name, d.id]}
           createAction={
@@ -222,7 +223,7 @@ export default function VPNDocumentsPage() {
       ) && <> {mutation.feedback} </>}
 
       {!allowed('view') && !permissions.isPending ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           description={text('没有查看此配置的权限', 'You cannot view these configurations')}

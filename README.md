@@ -1,11 +1,11 @@
 <h1 align="center">soha</h1>
 
 <p align="center">
-  <strong>A unified Kubernetes platform console for modern platform teams.</strong>
+  <strong>Soha helps small and medium-sized businesses solve everyday operations challenges.</strong>
 </p>
 
 <p align="center">
-  Operate clusters, ship applications, investigate incidents, and manage runtime work from one permission-aware control plane.
+  Help small teams manage, maintain, and keep their business systems running.
 </p>
 
 <p align="center">
@@ -32,22 +32,23 @@
 
 ## Overview
 
-Soha is a control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. This repository is the canonical development source for Core, Web, Contracts, CLI, Agent, Connectors and Skills. The server embeds the Web build from the same source revision.
+Soha helps small and medium-sized businesses with self-managed systems and limited operations staff bring resource access, daily maintenance, application delivery, and incident handling into one permission-aware workspace. This repository is the canonical development source for Core, Web, Contracts, CLI, Agent, Connectors and Skills. The server embeds the Web build from the same source revision.
 
-The project is intentionally broader than a resource viewer. Soha connects cluster operations, application delivery, observability, runtime evidence, access control, AI investigation, virtualization, and Docker operations into one cohesive console.
+Soha evolves around practical operations needs. Its current capabilities span internal network and identity access, Kubernetes, virtualization, Docker, application delivery, observability, and AI-assisted investigation. They help lower the learning curve, reduce repetitive work, and keep business systems running. Supported platforms, deployment requirements, and experimental limitations are documented with each capability.
 
 ## Why soha
 
 - **One runtime**: ship the API and embedded console as a single application container when you want a compact deployment.
-- **Operator-first workflows**: list-first resource pages, scoped actions, YAML, events, metrics, logs, and long-running operation records are treated as first-class surfaces.
+- **Everyday operations workflows**: start from resources and applications to maintain systems, deliver changes, and investigate issues, with scoped actions, events, metrics, logs, and long-running operation records.
 - **Permission-aware by design**: menus, routes, buttons, API authorization, audit logs, and scope grants are modeled as separate but aligned control points.
 - **Agent-ready architecture**: remote clusters, AI providers, Docker operations, and durable execution tasks can run through token-protected runner claim/callback paths.
-- **Built to evolve**: platform, delivery, observability, AI, virtualization, and Docker workbench capabilities share one modular-monolith backend and one route-driven frontend shell.
+- **Extend as needs grow**: network access, resources, delivery, observability, AI, and other capabilities share one modular backend and frontend shell, with future additions driven by practical operations needs.
 
 ## Features
 
 | Area | What Soha Provides |
 | --- | --- |
+| Internal network and identity access | Application directory, identity providers, Outposts, sites and network resources, access policies, and managed VPN and proxy access through the App. Native platform and physical-device support depend on the corresponding deployment and acceptance requirements. |
 | Platform operations | Multi-cluster inventory, nodes, namespaces, workloads, network, storage, CRDs, Helm, YAML, logs, events, metrics, and action surfaces. |
 | Application delivery | Applications, services, containers, build templates, workflow templates, release bundles, execution tasks, approvals, releases, registries, and delivery records. |
 | Observability | Monitoring overview, alert inventory, alert events, notification policy, healing policy, on-call routing, schedules, escalations, and event streams. |

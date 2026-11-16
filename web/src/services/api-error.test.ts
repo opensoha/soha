@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createApiErrorFromResponse } from './api-error'
+import { ApiError, createApiErrorFromResponse } from './api-error'
 
 describe('API error envelope validation', () => {
   it.each([
@@ -42,14 +42,26 @@ describe('API error envelope validation', () => {
     expect(createApiErrorFromResponse(response, body)).toMatchObject(expected)
   })
 
-  it('prefers the response request ID over the envelope', () => {
-    const response = new Response(null, {
-      status: 403,
-      headers: { 'x-request-id': 'response-id' },
-    })
-    const error = createApiErrorFromResponse(response, {
-      error: { code: 'denied', message: 'Denied', request_id: 'body-id' },
-    })
-    expect(error.requestId).toBe('response-id')
+  it.each(['x-request-id', 'x-correlation-id', 'x-trace-id'])(
+    'prefers the %s response request ID over the envelope',
+    (header) => {
+      const response = new Response(null, {
+        status: 403,
+        headers: { [header]: 'response-id' },
+      })
+      const error = createApiErrorFromResponse(response, {
+        error: { code: 'denied', message: 'Denied', request_id: 'body-id' },
+      })
+      expect(error.requestId).toBe('response-id')
+    },
+  )
+
+  it('records an explicit rejection without inferring it from a refresh error code', () => {
+    const options = { code: 'auth_refresh_unavailable', method: 'POST', path: '/resources' }
+    const ordinary = new ApiError(503, 'unavailable', options)
+    const rejected = new ApiError(503, 'unavailable', { ...options, requestOutcome: 'rejected' })
+    expect(ordinary.requestOutcome).toBeUndefined()
+    expect(rejected.requestOutcome).toBe('rejected')
+    expect(rejected.kind).toBe('server')
   })
 })

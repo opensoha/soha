@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { rateText } from './traffic-model'
 import { AdminTable } from '@/components/admin-table'
 import {
@@ -21,7 +22,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Card, Popconfirm, Typography } from 'antd'
+import { Button, Card, Popconfirm, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { closeConnection } from './api'
 import { ProxyInstanceHeader, useProxyContext } from './context'
@@ -259,7 +260,7 @@ export default function ProxyConnectionsPage() {
             query={command}
             label={text('关闭命令回执', 'Close command receipt')}
           />
-          <Alert
+          <ContextFeedback
             showIcon
             type={
               receipt?.status === 'closed' || receipt?.status === 'not-found'
@@ -405,7 +406,7 @@ export default function ProxyConnectionsPage() {
             localSorting
             loading={snapshot.isLoading}
             refreshing={snapshot.isFetching}
-            onRefresh={() => void (snapshot.isEnabled === false ? undefined : snapshot.refetch())}
+            onRefresh={() => (snapshot.isEnabled === false ? undefined : snapshot.refetch())}
             pagination={{ pageSize: 15, showSizeChanger: false }}
             empty={
               keyword

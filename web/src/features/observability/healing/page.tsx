@@ -307,7 +307,7 @@ export function HealingPage() {
                 error={policiesQuery.error}
                 hasReadData={policiesQuery.data !== undefined}
                 refreshing={policiesQuery.isFetching}
-                onRefresh={() => void policiesQuery.refetch()}
+                onRefresh={() => policiesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 headerExtra={
@@ -339,7 +339,7 @@ export function HealingPage() {
                 error={runsQuery.error}
                 hasReadData={runsQuery.data !== undefined}
                 refreshing={runsQuery.isFetching}
-                onRefresh={() => void runsQuery.refetch()}
+                onRefresh={() => runsQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"

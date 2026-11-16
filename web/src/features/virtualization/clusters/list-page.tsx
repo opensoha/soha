@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
@@ -7,7 +8,6 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
-  Alert,
   Button,
   Descriptions,
   Drawer,
@@ -115,21 +115,21 @@ function ConnectionDeletePreview({
   return (
     <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
       {pendingTaskCount > 0 ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title="存在未完成任务"
           description="请先取消或等待 queued/running 任务结束后再删除连接。"
         />
       ) : forceRequired ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title="仅删除 Soha 中的连接与同步记录"
           description="不会删除 PVE/KubeVirt 中的 VM、镜像、磁盘或其他 Provider 资源。确认后会删除 Soha 连接和本地同步记录，并为历史任务保留连接与 VM 快照。"
         />
       ) : (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="仅删除 Soha 中的连接"
@@ -257,7 +257,7 @@ export function VirtualizationClustersPage() {
                     : localeText(localeCode, '请求失败', 'Request failed'),
                 ]
             return (
-              <Alert
+              <ContextFeedback
                 key={ids[index]}
                 type={healthy ? 'success' : 'error'}
                 showIcon
@@ -917,7 +917,7 @@ export function VirtualizationClustersPage() {
             </Descriptions.Item>
           </Descriptions>
           {selectedConnectionOperation?.message ? (
-            <Alert
+            <ContextFeedback
               type={isAbnormalOperation(selectedConnectionOperation.status) ? 'error' : 'info'}
               title={selectedConnectionOperation.message}
             />

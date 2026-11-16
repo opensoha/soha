@@ -99,11 +99,22 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
         <Form.Item name="appTitle" label="网页标题">
           <Input placeholder="浏览器标签页标题" />
         </Form.Item>
-        <Form.Item name="sidebarTitle" label="侧边栏标题">
-          <Input placeholder="左侧品牌栏文字" />
+        <Form.Item
+          name="sidebarTitle"
+          label="品牌名称"
+          extra="用于侧边栏，以及登录页左侧大标题和右侧卡片名称。"
+        >
+          <Input placeholder="例如：Soha" />
         </Form.Item>
-        <Form.Item name="slogan" label="标语">
-          <Input placeholder="登录页主标题" />
+        <Form.Item
+          name="slogan"
+          label="登录页标语"
+          extra="显示在登录页左侧品牌名称下方，支持换行。"
+        >
+          <Input.TextArea
+            autoSize={{ minRows: 2, maxRows: 4 }}
+            placeholder={defaultBrandingSettings.slogan}
+          />
         </Form.Item>
 
         <div className="soha-branding-section-title">企业 Logo</div>
@@ -113,8 +124,8 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
         <div className="soha-branding-upload-grid">
           <BrandingUploadField
             field="expandedLogoUrl"
-            label="登录页主视觉与展开侧边栏 Logo"
-            hint="用于登录页左侧主视觉和展开侧边栏；支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 200 × 60 px；单个文件不超过 2 MB"
+            label="展开侧边栏 Logo"
+            hint="用于展开侧边栏；支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 200 × 60 px；单个文件不超过 2 MB"
             previewWidth={200}
             previewHeight={60}
             disabled={blocked || !canManageBrandingSettings}
@@ -145,7 +156,7 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
           <BrandingUploadField
             field="darkExpandedLogoUrl"
             label="暗色展开 Logo"
-            hint="用于暗色侧边栏和登录页主视觉；未上传时沿用原图。建议使用透明底 PNG、SVG 或 WebP，200 × 60 px，不超过 2 MB"
+            hint="用于暗色展开侧边栏；未上传时沿用原图。建议使用透明底 PNG、SVG 或 WebP，200 × 60 px，不超过 2 MB"
             previewWidth={200}
             previewHeight={60}
             darkPreview

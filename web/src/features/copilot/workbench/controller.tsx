@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { canonicalAgentProviderId } from './agent-selection'
 import { RuntimeAssemblySummary, RuntimeProfileControl } from './components/runtime-profile'
 import { runtimeAssemblyFromMetadata } from './runtime-profile'
 import { ManagementState } from '@/components/management-list'
-import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
+import { MutationFeedback, OperationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -33,7 +34,6 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -2355,7 +2355,7 @@ export function AIWorkbenchController() {
         alerts={
           <>
             {memoryDegraded ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="长期记忆暂不可用"
@@ -2393,7 +2393,7 @@ export function AIWorkbenchController() {
               ]}
             />
             {requestRecovery.pending && !currentStreamPending ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 title={
                   requestRecovery.cancelling
@@ -2410,15 +2410,25 @@ export function AIWorkbenchController() {
                 action={<Button onClick={requestRecovery.recheck}>重新读取</Button>}
               />
             ) : null}
-            {requestRecovery.error ? (
-              <Alert
+            <OperationFeedback
+              label="停止任务"
+              target={currentSession?.id}
+              error={requestRecovery.requestError}
+              actions={
+                requestRecovery.requestError ? (
+                  <Button onClick={cancelMessageStream}>重试停止</Button>
+                ) : undefined
+              }
+            />
+            {requestRecovery.error && !requestRecovery.requestError ? (
+              <ContextFeedback
                 type="error"
                 title={requestRecovery.error}
                 action={<Button onClick={cancelMessageStream}>重试停止</Button>}
               />
             ) : null}
             {!canUseChat ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="当前账号缺少 observe.ai.chat 权限，无法发送消息或创建会话。"
@@ -2428,7 +2438,7 @@ export function AIWorkbenchController() {
             {lastRetryableInput &&
             !requestRecovery.error &&
             requestRecovery.canRetry(lastRetryableInput.request.requestId) ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="上一次 Workbench 流式调用可重试"
@@ -3274,7 +3284,7 @@ export function AIWorkbenchController() {
               </Space>
             </Card>
             {legacyPlatformMessages.length > 0 ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="已隐藏旧版平台上下文回复"
@@ -3414,7 +3424,7 @@ export function AIWorkbenchController() {
               {!enabledDataSources.some((item) =>
                 ['logs', 'metrics', 'traces'].includes(item.sourceKind),
               ) ? (
-                <Alert
+                <ContextFeedback
                   type="info"
                   showIcon
                   title="当前还没有可用的 logs / metrics / traces 数据源"
@@ -3453,7 +3463,7 @@ export function AIWorkbenchController() {
                         </div>
                       ) : null}
                       {selectedGraphNode.kind === 'missing_source' ? (
-                        <Alert
+                        <ContextFeedback
                           type="info"
                           showIcon
                           title="当前会话缺少这类观测源"
@@ -3461,7 +3471,7 @@ export function AIWorkbenchController() {
                         />
                       ) : null}
                       {selectedGraphNode.kind === 'recommendation' ? (
-                        <Alert
+                        <ContextFeedback
                           type="success"
                           showIcon
                           title="建议的下一步动作"
@@ -3508,7 +3518,7 @@ export function AIWorkbenchController() {
         </WorkbenchPanel>
         <WorkbenchPanel title="执行记录" open={panel === 'thinking'} onClose={() => setPanel(null)}>
           {toolCalls.length > 0 ? (
-            <Alert
+            <ContextFeedback
               type={
                 toolCalls.some((item) => thoughtChainStatus(item.status) === 'error')
                   ? 'warning'
@@ -3642,7 +3652,7 @@ export function AIWorkbenchController() {
                   ))}
                 </div>
                 {unavailableSelectedAdapterIds.length > 0 ? (
-                  <Alert
+                  <ContextFeedback
                     style={{ marginTop: 12 }}
                     type="warning"
                     showIcon
@@ -3662,7 +3672,7 @@ export function AIWorkbenchController() {
                     placeholder="选择本会话默认执行器"
                   />
                   {activeAgentProvider ? (
-                    <Alert
+                    <ContextFeedback
                       type={activeAgentProvider.supportsAsync ? 'info' : 'success'}
                       showIcon
                       title={`${activeAgentProvider.name} · ${activeAgentProvider.supportsAsync ? '异步 runner' : '内置同步分析'}`}
@@ -3800,7 +3810,7 @@ export function AIWorkbenchController() {
 
               <Card size="small" title="Scope Overrides">
                 <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                  <Alert
+                  <ContextFeedback
                     type="info"
                     showIcon
                     title="Scope override 会叠加到当前会话范围"
@@ -3891,7 +3901,7 @@ export function AIWorkbenchController() {
       >
         {currentSession ? (
           <Space orientation="vertical" size={14} style={{ width: '100%' }}>
-            <Alert
+            <ContextFeedback
               type="info"
               showIcon
               title="选择本次任务需要的能力"
@@ -4018,14 +4028,7 @@ export function AIWorkbenchController() {
                     setAnalysisIntent((current) => ({ ...current, metricKey: value }))
                   }
                 />
-                {metricCatalogQuery.isError ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    title="指标目录加载失败"
-                    description={metricCatalogQuery.error.message}
-                  />
-                ) : null}
+                <ReadFeedback query={metricCatalogQuery} label="指标目录" />
               </Space>
             ) : null}
             {defaultAnalysis &&
@@ -4095,14 +4098,7 @@ export function AIWorkbenchController() {
                 <Text type="secondary">
                   仅显示最近的已完成记录，执行前会重新核对当前权限和会话范围。
                 </Text>
-                {inspectionRunsQuery.isError ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    title="巡检记录加载失败"
-                    description={inspectionRunsQuery.error.message}
-                  />
-                ) : null}
+                <ReadFeedback query={inspectionRunsQuery} label="巡检记录" />
               </Space>
             ) : null}
             <Space orientation="vertical" size={8} style={{ width: '100%' }}>
@@ -4141,17 +4137,17 @@ export function AIWorkbenchController() {
               </Space>
             </Card>
             {analysisCapabilities.some((kind) => !analysisCapabilityAllowed(kind)) ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="缺少所选专业能力或工具执行权限，无法开始分析。"
               />
             ) : null}
             {analysisUnavailableReason ? (
-              <Alert type="warning" showIcon title={analysisUnavailableReason} />
+              <ContextFeedback type="warning" showIcon title={analysisUnavailableReason} />
             ) : null}
             {analysisInputReason ? (
-              <Alert type="info" showIcon title={analysisInputReason} />
+              <ContextFeedback type="info" showIcon title={analysisInputReason} />
             ) : null}
           </Space>
         ) : (

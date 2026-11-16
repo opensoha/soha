@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
-import { Alert, Card, Typography } from 'antd'
+import { Card, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import type { ReactNode } from 'react'
 import { publicIngressURL, type ConfiguredIngressRoute } from './configuration'
@@ -96,7 +97,11 @@ export function IngressRulesTable({
       : []),
   ]
   return routes === undefined ? (
-    <Alert showIcon type="info" title={zh ? '规则数据未返回' : 'Rule data was not returned'} />
+    <ContextFeedback
+      showIcon
+      type="info"
+      title={zh ? '规则数据未返回' : 'Rule data was not returned'}
+    />
   ) : (
     <AdminTable
       dataSource={preview ? routes.slice(0, 5) : routes}
@@ -126,7 +131,7 @@ export function IngressBackends({
     zh = localeCode === 'zh_CN'
   if (!canReadServices)
     return (
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title={zh ? '无 Service 查看权限' : 'Service access unavailable'}
@@ -134,7 +139,7 @@ export function IngressBackends({
     )
   if (ingress.backends === undefined)
     return (
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title={

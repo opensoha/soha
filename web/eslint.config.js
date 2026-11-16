@@ -37,6 +37,26 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/context-feedback.tsx', '**/*.test.*', '**/*.spec.*'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'antd',
+              importNames: ['Alert'],
+              message:
+                'Use ContextFeedback for persistent context, ReadFeedback for reads, or OperationFeedback for request notifications.',
+            },
+          ],
+          patterns: ['antd/es/alert', 'antd/es/alert/*', 'antd/lib/alert', 'antd/lib/alert/*'],
+        },
+      ],
+    },
+  },
+  {
     files: ['*.config.js', '*.config.ts', 'eslint.config.js', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {

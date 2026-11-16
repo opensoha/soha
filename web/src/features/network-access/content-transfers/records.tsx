@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd'
+import { Button, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   ManagedContentRecord,
@@ -239,7 +240,7 @@ export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
       ) : null}
       {kind === 'cases' ? (
         <>
-          <Alert
+          <ContextFeedback
             type="info"
             title={text(
               '审查不授予正文读取权，不能自审；批准仍需本人重新提交原内容。',
@@ -284,7 +285,7 @@ export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
         rowKey="id"
         dataSource={data?.items ?? []}
         loading={query.isFetching}
-        onRefresh={() => void refresh()}
+        onRefresh={() => refresh()}
         pagination={{
           current: Math.floor(offset / limit) + 1,
           pageSize: limit,
@@ -499,7 +500,7 @@ function CaseDialog({
         <Typography.Text copyable>{record.id}</Typography.Text>
         <TransferState record={record} />
         {record.networkHoldId ? (
-          <Alert
+          <ContextFeedback
             type="warning"
             title={text(
               '网络审查需要独立联动权限；过期事件批准只解除本来源限制，不延长原传输许可。',

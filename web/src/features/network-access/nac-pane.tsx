@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
@@ -27,7 +28,6 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Descriptions,
   Divider,
@@ -318,7 +318,7 @@ export function NetworkNASBindingsPane({
         loading={query.isLoading}
         refreshing={query.isFetching}
         error={query.isEnabled === false ? null : query.error}
-        onRefresh={() => void (query.isEnabled === false ? undefined : query.refetch())}
+        onRefresh={() => (query.isEnabled === false ? undefined : query.refetch())}
         searchPlaceholder={searchPlaceholder}
         getSearchValues={(item) => [
           item.name,
@@ -495,7 +495,7 @@ export function NetworkNASBindingsPane({
                   }}
                 />
               </Form.Item>
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="info"
                 title={
@@ -580,14 +580,6 @@ export function NetworkNASBindingsPane({
                 )}
               </Form.List>
             </>
-          )}
-          {(create.error || update.error) && (
-            <Alert
-              showIcon
-              type="error"
-              title={text('配置未保存', 'Configuration was not saved')}
-              description={(create.error ?? update.error)?.message}
-            />
           )}
         </Form>
       </Modal>
@@ -718,7 +710,7 @@ export function NetworkSiteProfileBindingsPane({ canManage }: { canManage: boole
         loading={query.isLoading}
         refreshing={query.isFetching}
         error={query.isEnabled === false ? null : query.error}
-        onRefresh={() => void (query.isEnabled === false ? undefined : query.refetch())}
+        onRefresh={() => (query.isEnabled === false ? undefined : query.refetch())}
         searchPlaceholder={t('networkAccess.search.siteProfiles', '搜索站点、等级或 Filter-Id')}
         getSearchValues={(item) => [item.siteId, item.accessProfile, item.filterId, item.vlanId]}
         createAction={
@@ -977,7 +969,7 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
         loading={query.isLoading}
         refreshing={query.isFetching}
         error={query.isEnabled === false ? null : query.error}
-        onRefresh={() => void (query.isEnabled === false ? undefined : query.refetch())}
+        onRefresh={() => (query.isEnabled === false ? undefined : query.refetch())}
         searchPlaceholder={t('networkAccess.search.sessions', '搜索用户、设备、站点或 NAS')}
         getSearchValues={(item) => [
           item.subjectId,
@@ -1074,7 +1066,7 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
               {text('重新生成计划', 'Regenerate plan')}
             </Button>
             {plan.willDisconnect ? (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="warning"
                 title={t(

@@ -54,12 +54,12 @@ export function ReleasesPage() {
     <div className="soha-page">
       <DeliveryTable
         refreshing={releasesQuery.isFetching}
-        onRefresh={() => void releasesQuery.refetch()}
+        onRefresh={() => releasesQuery.refetch()}
         isError={releasesQuery.isError}
         error={releasesQuery.error}
         hasReadData={releasesQuery.data !== undefined}
         errorDescription="暂时无法读取发布记录。"
-        onRetry={() => void releasesQuery.refetch()}
+        onRetry={() => releasesQuery.refetch()}
         localSorting
         columns={columns}
         dataSource={releasesQuery.data ?? []}

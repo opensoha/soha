@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -17,7 +18,7 @@ import {
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card } from 'antd'
+import { Button, Card } from 'antd'
 import { useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -117,7 +118,7 @@ export function ReferenceGrantDetailPage() {
     <>
       <ReadFeedback canRead={canRead} query={query} label="ReferenceGrant" />
       {mismatch && (
-        <Alert
+        <ContextFeedback
           type="error"
           showIcon
           title={

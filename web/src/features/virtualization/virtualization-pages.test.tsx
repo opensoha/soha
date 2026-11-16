@@ -1344,6 +1344,51 @@ describe('virtualization pages', () => {
     expect(tabTexts).not.toContain('Provider Raw')
   })
 
+  it.each([true, false])(
+    'keeps the VM power fence only for an unconfirmed response (rejected=%s)',
+    async (rejected) => {
+      const originalGet = testState.apiGet.getMockImplementation()!
+      testState.apiPost.mockRejectedValueOnce(
+        new ApiError(503, 'refresh unavailable', {
+          code: 'auth_refresh_unavailable',
+          method: 'POST',
+          ...(rejected ? { requestOutcome: 'rejected' as const } : {}),
+        }),
+      )
+      await testState.apiGet.withImplementation(
+        async (path) => {
+          if (path === '/virtualization/vms/vm-1/detail')
+            return {
+              data: {
+                vm: {
+                  id: 'vm-1',
+                  name: 'build-vm',
+                  provider: 'kubevirt',
+                  status: 'stopped',
+                  allowedActions: ['start'],
+                },
+                operations: [],
+              },
+            } as never
+          return originalGet(path)
+        },
+        async () => {
+          const container = await renderWithProviders(
+            <VirtualizationVmDetailPage />,
+            '/virtualization/vms/vm-1',
+          )
+          const start = container.querySelector<HTMLButtonElement>('button[aria-label="启动"]')!
+          expect(start.disabled).toBe(false)
+          await clickButtonByLabel(container, '启动')
+          await waitForPostCall('/virtualization/vms/vm-1/power')
+          await vi.waitFor(() => expect(document.body.textContent).toContain('refresh unavailable'))
+          expect(start.disabled).toBe(!rejected)
+          expect(container.textContent?.includes('请求结果不明')).toBe(!rejected)
+        },
+      )
+    },
+  )
+
   it('hides VM actions without manage permission', async () => {
     testState.permissionSnapshot = {
       permissionKeys: ['virtualization.vms.view'],
@@ -1746,8 +1791,12 @@ describe('virtualization pages', () => {
     await act(async () => document.querySelector<HTMLButtonElement>('.ant-modal-close')!.click())
     await act(async () => new Promise((resolve) => setTimeout(resolve, 400)))
     await clickButtonByLabel(container, '编辑规格')
-    expect(document.querySelector('.ant-modal')?.textContent).toContain('请求结果不明')
-    expect(document.querySelector('.ant-modal')?.textContent).toContain('flavor-1')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        '请求结果不明',
+      ),
+    )
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain('flavor-1')
   })
 
   it('keeps optional PVE defaults collapsed while editing a connection', async () => {

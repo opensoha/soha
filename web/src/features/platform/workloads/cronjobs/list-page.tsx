@@ -290,7 +290,7 @@ export function WorkloadsCronJobsPage() {
               resourceLabel="CronJobs"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              onRefresh={() => void cronJobsQuery.refetch()}
+              onRefresh={() => cronJobsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

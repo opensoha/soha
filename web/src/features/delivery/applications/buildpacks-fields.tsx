@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect } from 'react'
-import { Alert, Button, Form, Input, type FormInstance } from 'antd'
+import { Button, Form, Input, type FormInstance } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { deliveryQueries } from '../queries'
 
@@ -30,7 +31,7 @@ export function BuildpacksFields({
   return (
     <>
       {!capability.data?.ready ? (
-        <Alert
+        <ContextFeedback
           type={capability.isError ? 'error' : 'warning'}
           showIcon
           title={

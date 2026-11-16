@@ -1,4 +1,5 @@
-import { Alert, Button, Space, Tag, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Space, Tag, Typography } from 'antd'
 import { LinkOutlined } from '@ant-design/icons'
 import type {
   TemplateUsageApplication,
@@ -383,7 +384,7 @@ export function TemplateUsageImpactPanel({
 }: TemplateUsageImpactPanelProps) {
   if (loading) {
     return (
-      <Alert
+      <ContextFeedback
         showIcon
         title={localeCode === 'en_US' ? 'Loading template impact' : '正在加载模板影响面'}
         type="info"
@@ -392,7 +393,7 @@ export function TemplateUsageImpactPanel({
   }
   if (!usage) return null
   return (
-    <Alert
+    <ContextFeedback
       showIcon
       title={usageTitle(usage, localeCode)}
       description={usageDescription(usage, localeCode, onNavigate)}

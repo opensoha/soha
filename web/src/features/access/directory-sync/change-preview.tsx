@@ -1,4 +1,5 @@
-import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Descriptions, Modal, Space, Tag } from 'antd'
 import type { ReactNode } from 'react'
 import type { DirectoryChangeCounts, DirectorySyncPreview } from './types'
 
@@ -66,7 +67,7 @@ export function ChangePreviewModal({
       {feedback}
       {preview ? (
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Alert showIcon type="info" title="当前仅为预览，尚未写入组织或用户数据" />
+          <ContextFeedback showIcon type="info" title="当前仅为预览，尚未写入组织或用户数据" />
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="组织">
               <ChangeCounts counts={preview.organizations} />
@@ -78,7 +79,7 @@ export function ChangePreviewModal({
             ) : null}
           </Descriptions>
           {preview.warnings?.map((warning) => (
-            <Alert key={warning} showIcon type="warning" title={warning} />
+            <ContextFeedback key={warning} showIcon type="warning" title={warning} />
           ))}
         </Space>
       ) : null}

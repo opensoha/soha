@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { operationModalStyles } from '@/components/modal-styles'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, Card, Descriptions, Modal, Space, Tag, Typography } from 'antd'
+import { Card, Descriptions, Modal, Space, Tag, Typography } from 'antd'
 import { useState } from 'react'
 import { pluginMutations } from '../mutations'
 import type { MarketplacePlugin } from '../plugin-model'
@@ -25,7 +26,7 @@ function InstallReview({ plugin }: { plugin: MarketplacePlugin }) {
   const latestVersion = latestMarketplaceVersion(plugin)
   return (
     <Space orientation="vertical" size={12} className="soha-plugin-install-review">
-      <Alert
+      <ContextFeedback
         showIcon
         type={plugin.riskLevel === 'read' ? 'info' : 'warning'}
         title="插件安装只保存 manifest 快照和 requested permissions，不会直接授予能力。"

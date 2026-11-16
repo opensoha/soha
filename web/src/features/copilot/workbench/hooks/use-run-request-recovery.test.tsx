@@ -166,6 +166,7 @@ describe.each(['dsh'])('%s request cancellation recovery', (providerKind) => {
     vi.mocked(workbenchApi.agentRuns.cancel).mockRejectedValueOnce(new Error('offline'))
     await recheck()
     expect(recovery.error).toContain('offline')
+    expect(recovery.requestError?.message).toBe('offline')
     expect(pendingRunRequests(scope(), 'session-1')).toEqual(['request-1'])
     await recheck()
     expect(workbenchApi.agentRuns.cancel).toHaveBeenCalledTimes(2)
@@ -176,6 +177,7 @@ describe.each(['dsh'])('%s request cancellation recovery', (providerKind) => {
     await recheck()
     expect(recovery.pending).toBe(false)
     expect(recovery.error).toBeUndefined()
+    expect(recovery.requestError).toBeUndefined()
     expect(workbenchApi.agentRuns.cancel).toHaveBeenCalledTimes(2)
   })
 
@@ -245,6 +247,7 @@ describe.each(['dsh'])('%s request cancellation recovery', (providerKind) => {
     })
     await act(flush)
     expect(recovery.error).toContain('offline')
+    expect(recovery.requestError?.message).toBe('offline')
     await act(async () => root.unmount())
     client.clear()
     root = createRoot(document.createElement('div'))
@@ -267,6 +270,7 @@ describe.each(['dsh'])('%s request cancellation recovery', (providerKind) => {
       await flush()
     })
     expect(recovery.error).toContain('停止意图保存失败')
+    expect(recovery.requestError).toBeUndefined()
     expect(recovery.pending).toBe(true)
     write.mockRestore()
     await act(async () => {

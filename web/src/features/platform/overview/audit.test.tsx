@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { PlatformOperationsPanel } from './operations-panel'
+import type { ReadRefreshTarget } from '@/components/request-feedback'
 
 interface EvidenceStreamOptions {
   enabled?: boolean
@@ -70,6 +71,7 @@ vi.mock('antd', () => ({
 
 let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
+const refreshTargetsRef = { current: [] as readonly ReadRefreshTarget[] }
 
 async function renderPanel() {
   container = document.createElement('div')
@@ -78,14 +80,14 @@ async function renderPanel() {
   await updatePanel()
 }
 
-async function updatePanel(refreshToken = 0) {
+async function updatePanel(events = true) {
   await act(async () =>
     root.render(
       <MemoryRouter>
         <PlatformOperationsPanel
           clusterId="cluster-a"
           localeCode="zh_CN"
-          refreshToken={refreshToken}
+          refreshTargetsRef={refreshTargetsRef}
           refresh={{
             enabled: true,
             hidden: false,
@@ -94,7 +96,7 @@ async function updatePanel(refreshToken = 0) {
           }}
           permissions={{
             nodes: true,
-            events: true,
+            events,
             audit: false,
             operations: false,
             hpas: false,
@@ -114,6 +116,7 @@ beforeAll(() => {
 })
 beforeEach(() => {
   state.stream = undefined
+  refreshTargetsRef.current = []
   state.nodesFailed = true
   state.eventsFailed = true
   state.nodesRefetch.mockReset()
@@ -181,9 +184,14 @@ it('uses manual refresh to recover failed evidence queries and resumes automatic
   expect(state.nodesRefetch).not.toHaveBeenCalled()
   expect(state.eventsRefetch).not.toHaveBeenCalled()
 
-  await updatePanel(1)
+  await act(async () => {
+    await Promise.all([
+      state.nodesRefetch({ cancelRefetch: false }),
+      ...refreshTargetsRef.current.map((target) => target.refetch()),
+    ])
+  })
   await act(async () => state.stream?.onEvent())
-  expect(state.nodesRefetch).toHaveBeenCalledOnce()
+  expect(state.nodesRefetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false })
   expect(state.eventsRefetch).toHaveBeenCalledOnce()
 
   state.nodesRefetch.mockImplementation(() => {
@@ -192,12 +200,26 @@ it('uses manual refresh to recover failed evidence queries and resumes automatic
   state.eventsRefetch.mockImplementation(() => {
     state.eventsFailed = false
   })
-  await updatePanel(2)
+  await act(async () => {
+    await Promise.all([
+      state.nodesRefetch({ cancelRefetch: false }),
+      ...refreshTargetsRef.current.map((target) => target.refetch()),
+    ])
+  })
   expect(state.nodesRefetch).toHaveBeenCalledTimes(2)
   expect(state.eventsRefetch).toHaveBeenCalledTimes(2)
-  // The query observer publishes the successful manual reads without another refresh token.
-  await updatePanel(2)
+  // The query observer publishes the successful manual reads.
+  await updatePanel()
   await act(async () => state.stream?.onEvent())
   expect(state.nodesRefetch).toHaveBeenCalledTimes(3)
   expect(state.eventsRefetch).toHaveBeenCalledTimes(3)
+})
+
+it('registers only enabled child refresh targets and releases them on unmount', async () => {
+  await renderPanel()
+  expect(refreshTargetsRef.current.map((target) => target.label)).toEqual(['资源事件', '集群能力'])
+  await updatePanel(false)
+  expect(refreshTargetsRef.current.map((target) => target.label)).toEqual(['集群能力'])
+  await act(async () => root.unmount())
+  expect(refreshTargetsRef.current).toEqual([])
 })

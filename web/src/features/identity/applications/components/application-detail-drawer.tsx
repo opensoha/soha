@@ -1,10 +1,11 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Descriptions, Drawer, Space, Tabs, Typography } from 'antd'
+import { Button, Descriptions, Drawer, Space, Tabs, Typography } from 'antd'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { identityOutpostQueries } from '../../outposts'
@@ -101,7 +102,7 @@ export function ApplicationDetailDrawer({
   }
   const configuration =
     application?.providerType === 'link' ? (
-      <Alert type="info" showIcon title="Link 只提供入口链接，目标系统自行认证。" />
+      <ContextFeedback type="info" showIcon title="Link 只提供入口链接，目标系统自行认证。" />
     ) : !canViewProvider ? (
       <ManagementState kind="no-permission" title="没有查看认证接入的权限" />
     ) : providersQuery.isError && !visibleProvidersQueryData ? null : providersQuery.isPending ? (
@@ -109,7 +110,7 @@ export function ApplicationDetailDrawer({
     ) : provider ? (
       <>
         {provider.id !== application?.providerId && (
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title="已有认证接入尚未完成绑定"
@@ -197,7 +198,7 @@ export function ApplicationDetailDrawer({
                 label: '概览',
                 children: (
                   <>
-                    <Alert
+                    <ContextFeedback
                       type="info"
                       showIcon
                       title="未验证真实登录"

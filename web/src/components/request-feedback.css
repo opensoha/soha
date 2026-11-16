@@ -1,6 +1,49 @@
-.soha-read-feedback,
-.soha-operation-feedback {
+.soha-read-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-block: 8px 12px;
+  padding-block: 8px;
+  color: var(--soha-text-primary);
+  font-size: var(--soha-font-size);
+  line-height: var(--soha-line-height);
+}
+.soha-read-feedback-icon {
+  color: var(--soha-danger);
+}
+.soha-read-feedback.is-stale .soha-read-feedback-icon {
+  color: var(--soha-warning);
+}
+.soha-read-feedback-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-read-feedback-details {
+  color: var(--soha-text-secondary);
+}
+.soha-read-feedback-details summary {
+  cursor: pointer;
+}
+.soha-read-feedback-details summary:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-read-feedback-details[open] {
+  flex-basis: 100%;
+}
+.soha-read-feedback-details div {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.soha-operation-feedback-details summary {
+  cursor: pointer;
+  color: var(--soha-text-secondary);
+}
+.soha-operation-feedback-details summary:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
 }
 .soha-feedback-live-dot {
   display: inline-block;
@@ -15,10 +58,10 @@
     animation: soha-feedback-activity var(--soha-motion-activity) var(--soha-motion-ease) infinite;
   }
 }
-.soha-operation-feedback[data-motion-paused='true'] .soha-feedback-live-dot {
+.soha-feedback-live-dot[data-motion-paused='true'] {
   animation-play-state: paused;
 }
-.soha-operation-feedback[data-motion-disabled='true'] .soha-feedback-live-dot {
+.soha-feedback-live-dot[data-motion-disabled='true'] {
   animation: none;
 }
 @keyframes soha-feedback-activity {

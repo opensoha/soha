@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import {
@@ -11,7 +12,7 @@ import {
 } from '@ant-design/icons'
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Card, Popover, Space, Typography } from 'antd'
+import { Button, Card, Popover, Space, Typography } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import type {
   ComputeHealthStatus,
@@ -627,7 +628,7 @@ export function ComputeOverviewPage() {
             label={localeText(localeCode, '计算资源总览', 'Compute overview')}
           />
           {overview?.partial ? (
-            <Alert
+            <ContextFeedback
               showIcon
               type="warning"
               title={localeText(

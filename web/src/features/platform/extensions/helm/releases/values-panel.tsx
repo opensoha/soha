@@ -1,4 +1,5 @@
-import { Alert, Button } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button } from 'antd'
 import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
 import { useI18n } from '@/i18n'
 
@@ -7,7 +8,7 @@ interface HelmReleaseValuesPanelProps {
   applying: boolean
   canEdit: boolean
   draft: string
-  error?: Error | null
+  readFailed?: boolean
   onApply: () => void
   onChange: (value: string) => void
   onReset: () => void
@@ -21,7 +22,7 @@ export function HelmReleaseValuesPanel({
   applying,
   canEdit,
   draft,
-  error,
+  readFailed,
   onApply,
   onChange,
   onReset,
@@ -30,20 +31,10 @@ export function HelmReleaseValuesPanel({
   onCompareLatest,
 }: HelmReleaseValuesPanelProps) {
   const { localeCode } = useI18n()
-  if (error) {
-    return (
-      <Alert
-        type="error"
-        showIcon
-        title={localeCode === 'zh_CN' ? 'values.yaml 加载失败' : 'Failed to load values.yaml'}
-        description={error.message}
-      />
-    )
-  }
   return (
     <>
       {serverChanged ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={
@@ -75,7 +66,7 @@ export function HelmReleaseValuesPanel({
         applyDisabled={applyDisabled}
         leftLabel={localeCode === 'zh_CN' ? '已提交参数' : 'Submitted values'}
         rightLabel={localeCode === 'zh_CN' ? '更新草稿' : 'Draft'}
-        editable={canEdit && !applying}
+        editable={canEdit && !applying && !readFailed}
         saveDisabled
       />
     </>

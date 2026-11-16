@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -18,10 +19,13 @@ import { useI18n } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button } from 'antd'
+import { Button } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useIsCurrentDetailTarget, useWorkloadDetailScope } from '../../workloads/shared/detail-scope'
+import {
+  useIsCurrentDetailTarget,
+  useWorkloadDetailScope,
+} from '../../workloads/shared/detail-scope'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { ConfigurationDetailShell } from '../shared/detail-shell'
 import { configurationMutations } from '../shared/mutations'
@@ -263,7 +267,7 @@ function HPADetailContent({
               label={zh ? '扩缩配置' : 'Autoscaling configuration'}
             />
             {configuration.error ? (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="warning"
                 title={

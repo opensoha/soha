@@ -97,11 +97,11 @@ async function renderWithProviders(node: React.ReactNode, route: string) {
 
   await act(async () => {
     root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[route]}>
+          <AntdApp>{node}</AntdApp>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
   })
 
@@ -302,8 +302,15 @@ describe('frontend access authorization splits', () => {
       permissionKeys: ['access.roles.update', 'access.roles.view', 'future.permission.view'],
     }
     expect(apiPutMock).toHaveBeenCalledWith('/access/roles/role-1', values)
-    expect(dialog.textContent).toContain('角色已被更新')
-    expect(dialog.textContent).toContain('req-role-edit')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      '角色已被更新',
+    )
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'req-role-edit',
+    )
     expect(name.value).toBe(' Support updated ')
     expect(actions.every((input) => input.checked)).toBe(true)
     apiPutMock.mockImplementationOnce(async () => {
@@ -375,10 +382,17 @@ describe('frontend access authorization splits', () => {
         submit.click()
       })
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(300)
+        await vi.advanceTimersByTimeAsync(500)
       })
       expect(apiPostMock).toHaveBeenCalledTimes(1)
-      expect(dialog.textContent).toContain('保存：正在提交请求')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      expect(
+        [...document.querySelectorAll('.soha-operation-feedback')]
+          .map((item) => item.textContent)
+          .join(),
+      ).toContain('保存：正在提交请求')
       expect(field.disabled).toBe(true)
       expect(dialog.querySelector<HTMLButtonElement>('.ant-modal-close')?.disabled).toBe(true)
       const cancel = Array.from(dialog.querySelectorAll('button')).find(
@@ -396,9 +410,15 @@ describe('frontend access authorization splits', () => {
         rejectSave(new ApiError(409, '名称已存在', { requestId: 'req-save' }))
         await vi.advanceTimersByTimeAsync(300)
       })
-      expect(dialog.textContent).toContain('保存：操作请求失败')
-      expect(dialog.textContent).toContain('名称已存在')
-      expect(dialog.textContent).toContain('req-save')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300)
+      })
+      const feedback = [...document.querySelectorAll('.soha-operation-feedback')]
+        .map((item) => item.textContent)
+        .join()
+      expect(feedback).toContain('保存：操作请求失败')
+      expect(feedback).toContain('名称已存在')
+      expect(feedback).toContain('req-save')
       expect(field.value).toBe('Test resource')
       expect(field.disabled).toBe(false)
       expect(document.querySelector('.ant-message-error')).toBeNull()

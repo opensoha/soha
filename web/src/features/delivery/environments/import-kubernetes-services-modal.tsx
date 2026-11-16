@@ -1,6 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { useMemo, useState, type Key } from 'react'
 import {
-  Alert,
   App,
   Button,
   Form,
@@ -138,16 +140,19 @@ export function ImportKubernetesServicesModal({
       open && step >= 1 && source === 'helm',
     ),
   )
-  const candidates = candidatesQuery.data?.items ?? []
+  const candidateData = readableQueryData(candidatesQuery)
+  const helmReleaseData = readableQueryData(helmReleasesQuery)
+  const services = readableQueryData(servicesQuery)
+  const candidates = candidateData?.items ?? []
   const helmReleases = useMemo(() => {
     const keyword = search.trim().toLowerCase()
-    return (helmReleasesQuery.data ?? []).filter(
+    return (helmReleaseData ?? []).filter(
       (item) =>
         !keyword ||
         item.name.toLowerCase().includes(keyword) ||
         item.chart?.toLowerCase().includes(keyword),
     )
-  }, [helmReleasesQuery.data, search])
+  }, [helmReleaseData, search])
   const selectedHelmReleases = useMemo(() => {
     const keys = new Set(selectedKeys.map(String))
     return helmReleases.filter((item) => keys.has(item.name))
@@ -293,7 +298,7 @@ export function ImportKubernetesServicesModal({
       if (
         serviceId &&
         (!canMapExistingService ||
-          !servicesQuery.data?.some((service) => service.id === serviceId && service.enabled))
+          !services?.some((service) => service.id === serviceId && service.enabled))
       ) {
         message.error('服务目录已变化或不可用，请重新选择已有服务')
         return
@@ -478,7 +483,7 @@ export function ImportKubernetesServicesModal({
                     <Select
                       showSearch={{ optionFilterProp: 'label' }}
                       loading={clustersQuery.isLoading}
-                      options={(clustersQuery.data ?? []).map((item) => ({
+                      options={(readableQueryData(clustersQuery) ?? []).map((item) => ({
                         value: item.id,
                         label: `${item.name} (${item.id})`,
                       }))}
@@ -497,7 +502,7 @@ export function ImportKubernetesServicesModal({
                       showSearch={{ optionFilterProp: 'label' }}
                       disabled={!clusterId}
                       loading={namespacesQuery.isLoading}
-                      options={(namespacesQuery.data ?? []).map((item) => ({
+                      options={(readableQueryData(namespacesQuery) ?? []).map((item) => ({
                         value: item.name,
                         label: item.name,
                       }))}
@@ -517,19 +522,13 @@ export function ImportKubernetesServicesModal({
                     clearSelection()
                   }}
                 />
-                {(source === 'helm' ? helmReleasesQuery.isError : candidatesQuery.isError) ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    title={
-                      source === 'helm'
-                        ? helmReleasesQuery.error?.message
-                        : candidatesQuery.error?.message
-                    }
-                  />
-                ) : null}
-                {candidatesQuery.data?.truncated ? (
-                  <Alert
+                {source === 'helm' ? (
+                  <ReadFeedback query={helmReleasesQuery} label="Helm Release" />
+                ) : (
+                  <ReadFeedback query={candidatesQuery} label="工作负载" />
+                )}
+                {candidateData?.truncated ? (
+                  <ContextFeedback
                     type="warning"
                     showIcon
                     title="结果已限制为前 200 个工作负载，请缩小搜索范围。"
@@ -573,7 +572,7 @@ export function ImportKubernetesServicesModal({
             ) : null}
             {step === 2 ? (
               <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-                <Alert
+                <ContextFeedback
                   type="info"
                   showIcon
                   title={ownershipMode === 'managed' ? '托管发布' : '仅观察模式'}
@@ -683,14 +682,7 @@ export function ImportKubernetesServicesModal({
                     每个资源可以创建新服务，或关联此应用已有服务。同一服务可在不同环境使用不同
                     namespace。
                   </p>
-                  {servicesQuery.isError ? (
-                    <Alert
-                      type="error"
-                      showIcon
-                      title="服务目录读取失败，请刷新后重试"
-                      action={<Button onClick={() => void servicesQuery.refetch()}>重试</Button>}
-                    />
-                  ) : null}
+                  <ReadFeedback query={servicesQuery} label="服务目录" />
                   {(source === 'helm'
                     ? selectedHelmReleases.map((item) => ({
                         key: item.name,
@@ -717,7 +709,7 @@ export function ImportKubernetesServicesModal({
                           !selectedApplication || !canMapExistingService || servicesQuery.isError
                         }
                         placeholder={canCreateService ? '创建新服务（按资源身份）' : '选择已有服务'}
-                        options={(servicesQuery.data ?? [])
+                        options={(services ?? [])
                           .filter((service) => service.enabled)
                           .map((service) => ({
                             value: service.id,

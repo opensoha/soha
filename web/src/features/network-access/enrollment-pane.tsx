@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { useOperationMutation } from '@/components/use-operation-mutation'
@@ -12,7 +13,6 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Form,
   Input,
@@ -207,7 +207,7 @@ export function NetworkEnrollmentPane({
         loading={enrollments.isLoading}
         error={enrollments.isEnabled === false ? null : enrollments.error}
         refreshing={enrollments.isFetching}
-        onRefresh={() => void (enrollments.isEnabled === false ? undefined : enrollments.refetch())}
+        onRefresh={() => (enrollments.isEnabled === false ? undefined : enrollments.refetch())}
         searchPlaceholder={t('networkAccess.enrollment.search', '搜索运行时、设备、主体或状态')}
         getSearchValues={(item) => [
           item.runtimeId,
@@ -348,7 +348,7 @@ export function NetworkEnrollmentPane({
         {revokeEnrollment.feedback}
 
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={t('networkAccess.enrollment.secretOnce', '明文令牌只展示一次')}

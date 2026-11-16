@@ -1,7 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Checkbox,
   Form,
@@ -152,7 +152,7 @@ export function DeploymentPanel({ id, canUpdate }: { id: string; canUpdate: bool
         <Button onClick={() => void query.refetch()}>刷新观察</Button>
       </div>
       <ReadFeedback canRead query={query} label="部署" />
-      <Alert
+      <ContextFeedback
         type={data?.state === 'ready' ? 'success' : 'info'}
         title={`部署 · ${data?.state ?? '未知'}`}
         description={
@@ -212,14 +212,14 @@ export function DeploymentPanel({ id, canUpdate }: { id: string; canUpdate: bool
         </ol>
       </div>
       {(!data?.slotId || data.state === 'unbound') && (
-        <Alert
+        <ContextFeedback
           type="warning"
           title="待安装者配置批准的部署目标"
           description="由安装者提供批准目标信息后可在下方绑定。服务端会精确校验安装策略，不能提交任意部署模板。"
         />
       )}
       {data?.owner && data.owner !== 'soha-managed' && (
-        <Alert
+        <ContextFeedback
           type="warning"
           title="当前由外部工具管理"
           description="停止原控制方并满足安装者接管条件后，才可显式移交。"
@@ -264,7 +264,7 @@ export function DeploymentPanel({ id, canUpdate }: { id: string; canUpdate: bool
       </Button>
       {bindingOpen && (
         <Form form={bindingForm} layout="vertical" onFinish={(input) => bind.mutate(input)}>
-          <Alert
+          <ContextFeedback
             type="info"
             title="填写安装者导出的批准目标信息"
             description="Soha 仅绑定已有批准工作负载，不接受 YAML、镜像或任意模板。移交控制权前必须停止原控制方。"
@@ -336,7 +336,7 @@ export function DeploymentPanel({ id, canUpdate }: { id: string; canUpdate: bool
         </Button>
       </Space>
       {confirmationStale && (
-        <Alert type="warning" title="部署观察或权限已变化，请刷新后重新确认。" />
+        <ContextFeedback type="warning" title="部署观察或权限已变化，请刷新后重新确认。" />
       )}
       {control.feedback}
       {reconcile.feedback}

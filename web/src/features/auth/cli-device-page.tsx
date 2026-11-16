@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useInlineApiError } from '@/components/request-feedback'
 import { isApiError } from '@/services/api-error'
 import { useAuthStore } from '@/stores/auth-store'
@@ -14,7 +15,7 @@ import {
   ExclamationOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Form, Input, Spin } from 'antd'
+import { Button, Form, Input, Spin } from 'antd'
 import type { FormInstance } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -329,7 +330,7 @@ export function CLIDevicePage() {
             </Button>
           </div>
         ) : auth === 'unavailable' ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title="暂时无法检查登录状态"
@@ -345,7 +346,7 @@ export function CLIDevicePage() {
               </span>
             </div>
             {error ? (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type={phase === 'uncertain' ? 'warning' : 'error'}
                 title={phase === 'uncertain' ? '原决定的结果尚未确认' : '请求未完成'}
@@ -411,7 +412,7 @@ export function CLIDevicePage() {
                     核对原决定
                   </Button>
                 ) : confirmationExpired ? (
-                  <Alert
+                  <ContextFeedback
                     showIcon
                     type="warning"
                     title="确认已过期"

@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Form, Input, Select, Space, Switch, Typography } from 'antd'
+import { Button, Form, Input, Select, Space, Switch, Typography } from 'antd'
 import type { NetworkProxyRule, NetworkProxyRulesInput } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -13,7 +14,7 @@ export function RulesPanel({ id, canUpdate }: { id: string; canUpdate: boolean }
   return (
     <section className="soha-proxy-workspace-section">
       <h2>组织与个人规则</h2>
-      <Alert type="info" title="平台保护与组织强制规则优先；个人规则不能绕过保护" />
+      <ContextFeedback type="info" title="平台保护与组织强制规则优先；个人规则不能绕过保护" />
       <Space wrap>
         <Button type={!personal ? 'primary' : 'default'} onClick={() => setPersonal(false)}>
           组织规则

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
@@ -12,7 +13,6 @@ import {
 import type { PersonalFeedItem, PersonalFeedSettings } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -127,16 +127,16 @@ export function PersonalFeed({
       {refresh.feedback}
       {feedback.feedback}
       {!settingsOpen ? settings.feedback : null}
-      {page?.error ? <Alert type="warning" title={page.error} /> : null}
+      {page?.error ? <ContextFeedback type="warning" title={page.error} /> : null}
       {page && !page.searchTools.length ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title="尚未接入可用的网页搜索工具"
           description="接入并授权只读网页搜索能力后，可在动态偏好里选择。"
         />
       ) : null}
       {page && page.searchTools.length > 0 && !available ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title="选择内容来源后开始更新"
           action={

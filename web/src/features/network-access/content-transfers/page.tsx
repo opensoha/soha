@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, Space, Tabs } from 'antd'
+import { Space, Tabs } from 'antd'
 import type { ManagedContentRecord } from '@opensoha/contracts/gen/ts/sohaapi'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAuthStore } from '@/stores/auth-store'
@@ -45,7 +46,7 @@ function Workspace({ viewer, access }: { viewer: string; access: TransferAccess 
   }
   if (!access.view && !access.destinationView && !access.events)
     return (
-      <Alert
+      <ContextFeedback
         type="warning"
         showIcon
         title={text(
@@ -57,7 +58,7 @@ function Workspace({ viewer, access }: { viewer: string; access: TransferAccess 
   return (
     <TransferContext.Provider value={{ viewer, scope, access, text, resume }}>
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text(

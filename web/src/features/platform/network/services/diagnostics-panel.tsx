@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -8,7 +9,7 @@ import { toScopeKey, type ApiResponse } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { PlayCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Select, Space, Spin, Typography } from 'antd'
+import { Button, Select, Space, Spin, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { buildServiceDiagnosticCommand } from './diagnostics-model'
 import { serviceKeys } from './keys'
@@ -157,7 +158,7 @@ export function ServiceDiagnosticsPanel({
           : 'Actively checks DNS and TCP from the selected Pod; never runs automatically. UDP/SCTP are not tested.'}
       </Typography.Text>
       {visiblePodsQueryData?.length === 0 ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title={
@@ -168,7 +169,7 @@ export function ServiceDiagnosticsPanel({
         />
       ) : null}
       {probe.data ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type={probe.data.success ? 'success' : 'error'}
           title={

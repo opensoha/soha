@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { hasPermission } from '@/features/auth'
 import { systemKeys } from '@/features/system'
 import { api } from '@/services/api-client'
@@ -8,7 +9,7 @@ import type {
   WorkbenchSendMessageStreamRequest,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App as AntdApp, Button, Select, Space } from 'antd'
+import { App as AntdApp, Button, Select, Space } from 'antd'
 import {
   lazy,
   Suspense,
@@ -875,7 +876,7 @@ export function GlobalAIAssistantProvider({
             disabled={!canUseChat || Boolean(cancellation)}
             feedback={
               cancellation ? (
-                <Alert
+                <ContextFeedback
                   showIcon
                   type="warning"
                   title="后台任务取消待确认"

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
   platformResourceTarget,
@@ -6,7 +7,7 @@ import {
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Form, Input, Modal, Select, Space } from 'antd'
+import { App, Form, Input, Modal, Select, Space } from 'antd'
 import { useRef, useState } from 'react'
 import { crdMutations } from './mutations'
 import type { CRD } from './types'
@@ -80,7 +81,7 @@ export function DeleteCRDDefinitionModal({
       {mutation.feedback}
 
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={zh ? '此操作会删除该 CRD 的所有实例' : 'All instances of this CRD will be deleted'}
@@ -129,7 +130,7 @@ export function DeleteCRDDefinitionModal({
           </Form.Item>
         </Form>
         {selected && !allowed ? (
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title={

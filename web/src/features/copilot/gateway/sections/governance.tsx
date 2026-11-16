@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { lazy, Suspense } from 'react'
 import { PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Descriptions, Select, Space, Tabs } from 'antd'
+import { Button, Descriptions, Select, Space, Tabs } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementQueryField,
@@ -339,11 +340,11 @@ export function GatewayGovernanceSection(props: GatewayGovernanceSectionProps) {
                   ) : status.recommendations?.length ? (
                     <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                       {status.recommendations.map((item) => (
-                        <Alert key={item} type="warning" showIcon title={item} />
+                        <ContextFeedback key={item} type="warning" showIcon title={item} />
                       ))}
                     </Space>
                   ) : (
-                    <Alert
+                    <ContextFeedback
                       type="success"
                       showIcon
                       title="AI Gateway governance controls are healthy"

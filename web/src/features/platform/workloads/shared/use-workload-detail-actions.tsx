@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapabilityForCluster } from '@/features/platform/cluster-capabilities'
@@ -12,7 +13,7 @@ import {
   type MutationObserverOptions,
   type QueryClient,
 } from '@tanstack/react-query'
-import { Alert, Button, InputNumber, Modal, Tooltip } from 'antd'
+import { Button, InputNumber, Modal, Tooltip } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 type Target = { readonly scope: ScopeKey; readonly name: string; readonly uid?: string }
@@ -348,7 +349,7 @@ export function useWorkloadDetailActions({
           </p>
         )}
         {dialog?.action === 'delete' && (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={
@@ -374,7 +375,7 @@ export function useWorkloadDetailActions({
           </>
         )}
         {!ready && !submitting && !selected.isError && (
-          <Alert
+          <ContextFeedback
             type="warning"
             title={
               capability.reason ||

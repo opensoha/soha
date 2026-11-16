@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
@@ -20,7 +21,6 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Descriptions,
   Form,
@@ -186,11 +186,13 @@ export function LogCollectionCard({ scope, localeCode }: { scope: ScopeKey; loca
               },
             ]}
           />
-          {state?.lastError ? <Alert type="warning" showIcon title={state.lastError} /> : null}
+          {state?.lastError ? (
+            <ContextFeedback type="warning" showIcon title={state.lastError} />
+          ) : null}
           {enable.isPending ||
           disable.isPending ||
           ['installing', 'stopping'].includes(state.status) ? (
-            <Alert
+            <ContextFeedback
               type="info"
               showIcon
               title={
@@ -346,10 +348,15 @@ export function LogCollectionCard({ scope, localeCode }: { scope: ScopeKey; loca
               ]}
             />
             {plan.blockers.map((item) => (
-              <Alert key={item} type="error" showIcon title={displayMessage(item, zh)} />
+              <ContextFeedback key={item} type="error" showIcon title={displayMessage(item, zh)} />
             ))}
             {plan.warnings.map((item) => (
-              <Alert key={item} type="warning" showIcon title={displayMessage(item, zh)} />
+              <ContextFeedback
+                key={item}
+                type="warning"
+                showIcon
+                title={displayMessage(item, zh)}
+              />
             ))}
           </Space>
         ) : (

@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { QuestionCircleOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Tooltip } from 'antd'
+import { Button, Card, Tooltip } from 'antd'
 import { Link } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -115,7 +116,7 @@ export function PvOverview({
       }
     >
       {detail.status === 'Released' ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title={
@@ -126,7 +127,11 @@ export function PvOverview({
         />
       ) : null}
       {detail.status === 'Failed' ? (
-        <Alert showIcon type="error" title={zh ? 'PV 状态为 Failed' : 'PV phase is Failed'} />
+        <ContextFeedback
+          showIcon
+          type="error"
+          title={zh ? 'PV 状态为 Failed' : 'PV phase is Failed'}
+        />
       ) : null}
       <Card
         className="soha-detail-card"

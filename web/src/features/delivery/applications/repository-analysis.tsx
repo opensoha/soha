@@ -1,5 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { MutationFeedback } from '@/components/request-feedback'
 import { useState } from 'react'
-import { Alert, Button, Card, Input, Select, Space, Typography } from 'antd'
+import { Button, Card, Input, Select, Space, Typography } from 'antd'
 import { useMutation } from '@tanstack/react-query'
 import type { RepositoryAnalysisInput } from '@opensoha/contracts/gen/ts/sohaapi'
 import { deliveryApi } from '../api'
@@ -85,8 +87,17 @@ export function RepositoryAnalysis({
         <Typography.Text type="secondary">
           选择仓库内的项目目录，查看构建建议。分析结果不会修改已选构建方式。
         </Typography.Text>
-        {current && analysis.error ? (
-          <Alert type="error" showIcon title={analysis.error.message} />
+        {current ? (
+          <MutationFeedback
+            operations={[
+              {
+                mutation: analysis,
+                label: '分析源码',
+                target: analysis.variables?.repositoryId,
+                readOnly: true,
+              },
+            ]}
+          />
         ) : null}
         {result ? (
           <>
@@ -125,7 +136,7 @@ export function RepositoryAnalysis({
               </div>
             ))}
             {result.warnings.map((warning, index) => (
-              <Alert
+              <ContextFeedback
                 key={`${warning.code}:${index}`}
                 type="warning"
                 showIcon

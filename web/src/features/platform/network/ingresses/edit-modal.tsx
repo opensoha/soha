@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag } from '@/components/status-tag'
@@ -9,7 +10,7 @@ import {
 import { useI18n } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Modal, Spin } from 'antd'
+import { App, Button, Modal, Spin } from 'antd'
 import { useId, useMemo, useState } from 'react'
 import { stringify } from 'yaml'
 import { useNetworkEditSource } from '../shared/use-network-edit-source'
@@ -144,16 +145,16 @@ export function IngressEditModal({
           )
         }
       >
-        <ReadFeedback query={query} canRead={query.isEnabled} label="Ingress YAML" />
+        <ReadFeedback query={query} canRead={query.isEnabled && !plan.data} label="Ingress YAML" />
         {plan.feedback}
         {update.feedback}
         {!update.isSuccess && sourceChanged && (
-          <Alert showIcon type="warning" title={changedMessage} />
+          <ContextFeedback showIcon type="warning" title={changedMessage} />
         )}
         {update.isSuccess ? null : query.isLoading ? (
           <Spin />
         ) : loaded.error ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="error"
             title={zh ? 'Ingress 配置加载失败' : 'Ingress configuration could not be read'}
@@ -182,6 +183,7 @@ export function IngressEditModal({
         loading={update.isPending}
         feedback={
           <>
+            <ReadFeedback query={query} canRead={query.isEnabled} label="Ingress YAML" />
             {plan.feedback}
             {update.feedback}
           </>

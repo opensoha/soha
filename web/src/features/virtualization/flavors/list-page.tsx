@@ -279,7 +279,7 @@ export function VirtualizationFlavorsPage() {
             ) : null
           }
           refreshing={flavorsQuery.isFetching}
-          onRefresh={() => void flavorsQuery.refetch()}
+          onRefresh={() => flavorsQuery.refetch()}
           loading={flavorsQuery.isLoading}
           dataSource={flavorRows}
           columns={columns}

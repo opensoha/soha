@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { MigrationAssessment, planMigrations } from '../template-migration'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Drawer, Input, Space, Typography } from 'antd'
+import { Button, Card, Descriptions, Drawer, Input, Space, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
@@ -144,7 +145,7 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
                 />
               </label>
             ) : null}
-            <Alert
+            <ContextFeedback
               type={plan.status === 'waiting_approval' ? 'warning' : 'info'}
               showIcon
               title={

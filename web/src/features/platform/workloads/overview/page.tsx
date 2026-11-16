@@ -318,7 +318,7 @@ export function WorkloadsOverviewPage() {
             label={localeCode === 'zh_CN' ? '刷新概览' : 'Refresh overview'}
             loading={refreshingOverview}
             disabled={refreshingOverview}
-            onRefresh={() => void refreshOverview()}
+            onRefresh={() => refreshOverview()}
           />
         </ManagementTableToolbar>
       </div>
@@ -385,7 +385,7 @@ export function WorkloadsOverviewPage() {
               disabled={!clusterId}
               label={localeCode === 'zh_CN' ? '刷新事件' : 'Refresh events'}
               loading={eventsQuery.isFetching}
-              onRefresh={() => void eventsQuery.refetch()}
+              onRefresh={() => eventsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

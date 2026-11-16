@@ -1,6 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { ReadFeedback, useReadRefreshFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Input, Space, Typography } from 'antd'
+import { Button, Input, Space, Typography } from 'antd'
 import { workbenchQueries } from '../queries'
 import { buildSessionReference, validSessionReferenceId } from '../session-reference'
 import type { WorkbenchContextReference } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -38,14 +41,14 @@ export function SessionReferenceReader({
     gcTime: 0,
     retry: false,
   })
+  const refresh = useReadRefreshFeedback()
   const loading = Boolean(readId) && (session.isFetching || messages.isFetching)
-  const failed = session.isError || messages.isError
+  const sessionData = readableQueryData(session)?.data
+  const messagesData = readableQueryData(messages)?.data
   const reference = useMemo(() => {
-    if (!readId || loading || failed || !session.data?.data || !messages.data?.data)
-      return undefined
-    if (session.data.data.id !== readId) return undefined
-    return buildSessionReference(session.data.data, messages.data.data, new Date().toISOString())
-  }, [readId, loading, failed, session.data, messages.data])
+    if (!readId || !sessionData || !messagesData || sessionData.id !== readId) return undefined
+    return buildSessionReference(sessionData, messagesData, new Date().toISOString())
+  }, [readId, sessionData, messagesData])
 
   const read = () => {
     const id = value.trim()
@@ -59,8 +62,10 @@ export function SessionReferenceReader({
     }
     setInputError('')
     if (id === readId) {
-      void session.refetch()
-      void messages.refetch()
+      void refresh([
+        { label: '来源会话', refetch: session.refetch },
+        { label: '来源消息', refetch: messages.refetch },
+      ])
     } else setReadId(id)
   }
 
@@ -82,18 +87,12 @@ export function SessionReferenceReader({
         onPressEnter={read}
         status={inputError ? 'error' : undefined}
       />
-      {inputError ? <Alert type="error" title={inputError} /> : null}
+      {inputError ? <ContextFeedback type="error" title={inputError} /> : null}
       <Button onClick={read} loading={loading}>
         读取会话
       </Button>
-      {failed && readId ? (
-        <Alert
-          type="error"
-          showIcon
-          title="无法读取此会话"
-          description="会话可能不存在、已归档、无访问权限，或服务暂时不可用。可以重试。"
-        />
-      ) : null}
+      <ReadFeedback query={session} canRead={Boolean(readId)} label="来源会话" />
+      <ReadFeedback query={messages} canRead={Boolean(readId)} label="来源消息" />
       {reference ? (
         <>
           <Typography.Text strong>
@@ -103,7 +102,7 @@ export function SessionReferenceReader({
             读取 {reference.snapshot.returnedMessageCount} 条，引用{' '}
             {reference.snapshot.quotedMessageCount} 条。
           </Typography.Text>
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title="引用为当前读取的快照，不会自动同步"

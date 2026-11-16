@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { useOperationMutation } from '@/components/use-operation-mutation'
@@ -12,7 +13,6 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Form,
   Input,
@@ -190,7 +190,7 @@ export function NetworkAccessGrantPane({ canCreate, canRevoke }: NetworkAccessGr
         loading={grants.isLoading}
         error={grants.isEnabled === false ? null : grants.error}
         refreshing={grants.isFetching}
-        onRefresh={() => void (grants.isEnabled === false ? undefined : grants.refetch())}
+        onRefresh={() => (grants.isEnabled === false ? undefined : grants.refetch())}
         searchPlaceholder={t('networkAccess.grant.search', '搜索主体、设备、站点、资源或状态')}
         getSearchValues={(item) => [
           item.id,
@@ -238,7 +238,7 @@ export function NetworkAccessGrantPane({ canCreate, canRevoke }: NetworkAccessGr
         {createGrant.feedback}
         {revokeGrant.feedback}
 
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title={t('networkAccess.grant.mfaRequired', '创建前需要近期完成 MFA 验证')}
@@ -324,7 +324,7 @@ export function NetworkAccessGrantPane({ canCreate, canRevoke }: NetworkAccessGr
         {revokeGrant.feedback}
 
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={t('networkAccess.grant.secretOnce', '明文授权令牌只展示一次')}

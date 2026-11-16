@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { accessQueries } from '@/features/access'
@@ -16,7 +17,6 @@ import type { IdentityApplicationOnboardingInput } from '@opensoha/contracts/gen
 import { useQuery } from '@tanstack/react-query'
 import type { FormInstance } from 'antd'
 import {
-  Alert,
   App,
   Avatar,
   Button,
@@ -579,7 +579,7 @@ export function ApplicationFormModal({
             </Form.Item>
           )}
           {!wizard && (
-            <Alert
+            <ContextFeedback
               type="warning"
               showIcon
               title="清空全部访问规则会允许所有已登录用户访问"
@@ -682,7 +682,7 @@ export function ApplicationFormModal({
               </Space>
               <div className="soha-identity-policy-conditions">
                 {!stepUpAvailable ? (
-                  <Alert
+                  <ContextFeedback
                     showIcon
                     title={t('identity.applications.mfaUnavailableTitle', 'MFA 升级验证不可用')}
                     description={
@@ -758,7 +758,7 @@ export function ApplicationFormModal({
             {providerType !== 'link' && (
               <>
                 {!canConfigureProvider ? (
-                  <Alert
+                  <ContextFeedback
                     type="warning"
                     showIcon
                     title="缺少创建认证接入的权限"
@@ -836,7 +836,11 @@ export function ApplicationFormModal({
                   { key: 'status', label: '启用状态', children: '停用；完成接入验证后再启用' },
                 ]}
               />
-              <Alert type="info" showIcon title="保存后提供接入资料，真实登录尚未验证。" />
+              <ContextFeedback
+                type="info"
+                showIcon
+                title="保存后提供接入资料，真实登录尚未验证。"
+              />
             </>
           )}
           <div className="soha-identity-form-actions">

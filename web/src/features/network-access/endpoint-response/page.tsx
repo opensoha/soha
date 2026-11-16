@@ -1,7 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Descriptions,
@@ -117,7 +117,7 @@ export function EndpointResponseEvents({ can, filters }: PaneProps) {
   ]
   return (
     <>
-      <Alert
+      <ContextFeedback
         className="endpoint-response-form-alert"
         type="info"
         showIcon
@@ -139,7 +139,7 @@ export function EndpointResponseEvents({ can, filters }: PaneProps) {
         refreshing={events.isFetching}
         error={events.error}
         hasReadData={events.data !== undefined}
-        onRetry={() => void events.refetch()}
+        onRetry={() => events.refetch()}
         viewportScroll
         toolbar={
           <ManagementTableToolbar>
@@ -300,7 +300,7 @@ export function EndpointResponseEvents({ can, filters }: PaneProps) {
         okText={text('重新评估并恢复', 'Reevaluate and recover')}
         cancelText={text('取消', 'Cancel')}
       >
-        <Alert
+        <ContextFeedback
           className="endpoint-response-form-alert"
           type="warning"
           showIcon
@@ -374,7 +374,7 @@ export function EndpointMaintenance({ can, filters }: PaneProps) {
   >()
   return (
     <>
-      <Alert
+      <ContextFeedback
         className="endpoint-response-form-alert"
         type="info"
         showIcon
@@ -393,7 +393,7 @@ export function EndpointMaintenance({ can, filters }: PaneProps) {
         refreshing={windows.isFetching}
         error={windows.error}
         hasReadData={windows.data !== undefined}
-        onRetry={() => void windows.refetch()}
+        onRetry={() => windows.refetch()}
         viewportScroll
         columns={[
           { title: text('终端', 'Endpoint'), dataIndex: 'deviceId' },

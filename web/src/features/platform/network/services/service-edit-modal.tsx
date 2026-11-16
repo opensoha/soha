@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { ReadFeedback } from '@/components/request-feedback'
 import type { ServiceFormValues } from '@/features/platform/resource-creation/forms'
@@ -13,7 +14,7 @@ import {
 import { useI18n } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Modal, Spin } from 'antd'
+import { App, Button, Modal, Spin } from 'antd'
 import { useId, useMemo, useState } from 'react'
 import { parse, stringify } from 'yaml'
 import { useNetworkEditSource } from '../shared/use-network-edit-source'
@@ -181,21 +182,29 @@ export function ServiceEditModal({
           )
         }
       >
-        <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
+        <ReadFeedback
+          canRead={yamlQuery.isEnabled && !planMutation.data}
+          query={yamlQuery}
+          label="YAML"
+        />
         {updateMutation.feedback}
         {planMutation.feedback}
-        {!success && sourceChanged && <Alert showIcon type="warning" title={changedMessage} />}
+        {!success && sourceChanged && (
+          <ContextFeedback showIcon type="warning" title={changedMessage} />
+        )}
         {success ? null : yamlQuery.isLoading ? (
           <div className="soha-resource-create-loading">
             <Spin size="large" />
           </div>
         ) : error ? (
-          <Alert
-            description={error}
-            showIcon
-            title={isChinese ? 'Service 配置加载失败' : 'Failed to load Service configuration'}
-            type="error"
-          />
+          yamlQuery.isError && !source ? null : (
+            <ContextFeedback
+              description={error}
+              showIcon
+              title={isChinese ? 'Service 配置加载失败' : 'Failed to load Service configuration'}
+              type="error"
+            />
+          )
         ) : loaded.values ? (
           <ServiceEditorForm
             id={formId}

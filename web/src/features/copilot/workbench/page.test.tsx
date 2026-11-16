@@ -1039,12 +1039,12 @@ async function renderPage(route = '/ai-workbench/root-cause?session=session-1') 
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <AntdApp>
-          <MemoryRouter initialEntries={[route]}>
+        <MemoryRouter initialEntries={[route]}>
+          <AntdApp>
             <LocationProbe />
             <AIWorkbenchPage />
-          </MemoryRouter>
-        </AntdApp>
+          </AntdApp>
+        </MemoryRouter>
       </QueryClientProvider>,
     )
   })
@@ -2745,7 +2745,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       save.click()
       await flushAsyncWork()
     })
-    await waitForWorkbenchText(dialog, '保存会话：请求结果不明')
+    await waitForWorkbenchText(document.body, '保存会话：请求结果不明')
     expect(dialog.querySelector<HTMLInputElement>('[aria-label="会话名称"]')?.value).toBe(
       '支付告警调查',
     )

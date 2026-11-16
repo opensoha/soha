@@ -1,4 +1,5 @@
-import { Alert, Card, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Card, Typography } from 'antd'
 import './manifest-deployment-state.css'
 import { Link } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
@@ -53,7 +54,7 @@ export function ManifestDeploymentState({
           </Typography.Text>
         </details>
         {deployment.status.lastErrorMessage ? (
-          <Alert showIcon type="error" title={deployment.status.lastErrorMessage} />
+          <ContextFeedback showIcon type="error" title={deployment.status.lastErrorMessage} />
         ) : null}
         <ManifestResourceInventoryTable items={deployment.status.inventory ?? []} />
       </div>

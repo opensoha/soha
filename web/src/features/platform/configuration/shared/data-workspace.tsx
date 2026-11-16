@@ -1,5 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
+import { isApiError } from '@/services/api-error'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -10,7 +12,7 @@ import {
   PlusOutlined,
   UndoOutlined,
 } from '@ant-design/icons'
-import { Alert, App, Button, Card, Input, Segmented, Spin } from 'antd'
+import { App, Button, Card, Input, Segmented, Spin } from 'antd'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   configurationDataRows,
@@ -173,13 +175,15 @@ export function ConfigurationDataWorkspace({
       setEdit(null)
       setView('edit')
     } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : zh
-            ? '应用失败，草稿已保留。'
-            : 'Apply failed. Your draft is preserved.',
-      )
+      // Request errors belong to the mutation owner; local pre-write validation stays here.
+      if (!isApiError(failure))
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : zh
+              ? '应用失败，草稿已保留。'
+              : 'Apply failed. Your draft is preserved.',
+        )
     } finally {
       setSaving(false)
     }
@@ -346,7 +350,7 @@ export function ConfigurationDataWorkspace({
         styles={{ body: { padding: 0 } }}
       >
         {conflict ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={
@@ -356,8 +360,8 @@ export function ConfigurationDataWorkspace({
             }
           />
         ) : null}
-        {error ? <Alert showIcon type="error" title={error} /> : null}
-        {readOnlyReason ? <Alert showIcon type="info" title={readOnlyReason} /> : null}
+        {error ? <ContextFeedback showIcon type="error" title={error} /> : null}
+        {readOnlyReason ? <ContextFeedback showIcon type="info" title={readOnlyReason} /> : null}
         <section
           className="soha-configuration-data-document"
           aria-label={zh ? '数据内容' : 'Data content'}

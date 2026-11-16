@@ -785,7 +785,7 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 	item := domainsettings.BrandingSettings{
 		AppTitle:         "Soha",
 		SidebarTitle:     "Soha",
-		Slogan:           "Soha 是一种能力！",
+		Slogan:           "让人手有限的团队，更轻松地管理、维护和保障业务运行。",
 		LoginLogoURL:     "/logo.svg",
 		ExpandedLogoURL:  "/logo.svg",
 		CollapsedLogoURL: "/logo.svg",

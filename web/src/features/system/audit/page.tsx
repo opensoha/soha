@@ -450,7 +450,7 @@ function AuditLogsPageContent({
         dataSource: filteredLogs,
         hasReadData: rawLogs !== undefined,
         error: query.error,
-        onRetry: () => void refetch(),
+        onRetry: () => refetch(),
         refreshing: isFetching,
         rowKey: 'id',
         loading: isLoading,

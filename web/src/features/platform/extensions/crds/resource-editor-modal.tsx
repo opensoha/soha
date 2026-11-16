@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
@@ -10,7 +11,7 @@ import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Card, Modal, Spin } from 'antd'
+import { App, Button, Card, Modal, Spin } from 'antd'
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { crdMutations } from './mutations'
 import { crdQueries } from './queries'
@@ -187,7 +188,7 @@ export function CRDResourceEditor({
           }
         >
           {mode === 'create' ? (
-            <Alert banner showIcon type="info" description={bannerDescription} />
+            <ContextFeedback banner showIcon type="info" description={bannerDescription} />
           ) : null}
           <div>
             {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
@@ -227,7 +228,7 @@ export function CRDResourceEditor({
             )}
           </div>
           {customResourceCapabilityReason ? (
-            <Alert
+            <ContextFeedback
               showIcon
               type="warning"
               style={{ marginTop: 12 }}

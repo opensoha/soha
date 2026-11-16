@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Descriptions,
@@ -28,7 +27,7 @@ import type {
   NetworkEndpointResponsePolicyRevision,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
-import { requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
+import { OperationFeedback, useInlineApiError } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
@@ -238,7 +237,7 @@ export function EndpointResponsePolicies({
         refreshing={policies.isFetching}
         error={policies.error}
         hasReadData={policies.data !== undefined}
-        onRetry={() => void policies.refetch()}
+        onRetry={() => policies.refetch()}
         viewportScroll
         toolbar={
           <ManagementTableToolbar>
@@ -350,15 +349,14 @@ export function EndpointResponsePolicies({
                         </Button>
                       </Form>
                     )}
-                    {preview.error && (
-                      <Alert
-                        className="endpoint-response-form-alert"
-                        type="error"
-                        showIcon
-                        title={text('预览失败', 'Preview failed')}
-                        description={requestErrorMessage(preview.error, localeCode)}
-                      />
-                    )}
+                    <OperationFeedback
+                      readOnly
+                      pending={preview.isPending}
+                      error={preview.error}
+                      label={text('联动规则预览', 'Response policy preview')}
+                      target={selected.id}
+                      submittedAt={preview.submittedAt}
+                    />
                     {preview.data && (
                       <Descriptions
                         className="endpoint-response-detail"
@@ -449,7 +447,7 @@ export function EndpointResponsePolicies({
                       refreshing={revisions.isFetching}
                       error={revisions.error}
                       hasReadData={revisions.data !== undefined}
-                      onRetry={() => void revisions.refetch()}
+                      onRetry={() => revisions.refetch()}
                       columns={[
                         { title: text('版本', 'Revision'), dataIndex: 'revision' },
                         {

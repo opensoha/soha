@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -11,7 +12,7 @@ import { CloseOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Viewport } from '@xyflow/react'
-import { Alert, Button, Card, Segmented, Spin, Switch, Typography } from 'antd'
+import { Button, Card, Segmented, Spin, Switch, Typography } from 'antd'
 import {
   lazy,
   Suspense,
@@ -355,7 +356,7 @@ export function WorkloadRelationships({
             )}
           </div>
           {graph?.warnings.length ? (
-            <Alert showIcon type="warning" title={graph.warnings.join(' · ')} />
+            <ContextFeedback showIcon type="warning" title={graph.warnings.join(' · ')} />
           ) : null}
           {!graph ? (
             query.isLoading ? (

@@ -148,7 +148,11 @@ it('prevents duplicate confirmation and retains failed context for retry', async
     reject(new Error('Rejected target'))
     await new Promise((r) => setTimeout(r, 0))
   })
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Rejected target')
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Rejected target')
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30))
+  })
+  expect(document.querySelector('.ant-notification')?.textContent).toContain('Rejected target')
   expect(ok()?.disabled).toBe(false)
   await click(ok())
   expect(run).toHaveBeenCalledTimes(2)

@@ -263,7 +263,7 @@ export function IdentityProvidersPage() {
                   isLoading={providersQuery.isLoading}
                   isError={providersQuery.isError && !visibleProvidersQueryData}
                   onRetry={() =>
-                    void (providersQuery.isEnabled === false ? undefined : providersQuery.refetch())
+                    providersQuery.isEnabled === false ? undefined : providersQuery.refetch()
                   }
                   searchActions={
                     <ManagementTableToolbar>

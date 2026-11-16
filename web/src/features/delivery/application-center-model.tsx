@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { MutationFeedback } from '@/components/request-feedback'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, Button, Form, Input, Modal, Select, Switch } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Switch } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -394,7 +395,7 @@ export function ApplicationForm({
         ]}
       />
       {application && conflicted ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           title="应用配置已被其他人更新"
           description="当前草稿已保留。重新加载会放弃本次修改并载入最新配置。"
@@ -661,7 +662,7 @@ export function ApplicationCenterModals({ state }: { state: ApplicationCenterSta
           </Form.Item>
           {state.editingBinding ? (
             <>
-              <Alert
+              <ContextFeedback
                 type="info"
                 showIcon
                 title="默认位置仅用于新增目标"

@@ -144,3 +144,42 @@ it('cancels queued fallback when inline feedback claims the query result', async
     release()
   }
 })
+
+it('keeps temporary sign-in recovery failure separate from session expiry', async () => {
+  await mount('/portal')
+  await act(async () =>
+    emitApiError(
+      new ApiError(503, '登录状态暂时无法恢复，请稍后重试。', {
+        code: 'auth_refresh_unavailable',
+        method: 'POST',
+        path: '/portal/applications/app/launch',
+        requestId: 'req-rejected',
+        requestOutcome: 'rejected',
+      }),
+    ),
+  )
+  await flushNotifications()
+  expect(container.textContent).toBe('/portal')
+  expect(notifications.error).not.toHaveBeenCalled()
+  expect(notifications.warning).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: '登录状态暂时无法恢复',
+      duration: 0,
+      description: expect.stringContaining('req-rejected'),
+    }),
+  )
+})
+
+it('does not claim a lost response proves the request never reached the server', async () => {
+  await mount()
+  await act(async () =>
+    emitApiError(new ApiError(0, 'connection lost', { method: 'POST', path: '/records' })),
+  )
+  await flushNotifications()
+  expect(notifications.error).toHaveBeenCalledWith(
+    expect.objectContaining({
+      duration: 0,
+      description: expect.stringContaining('未能获取服务响应'),
+    }),
+  )
+})

@@ -75,7 +75,7 @@ export function ControllerDetailPage({
                 observedAt={events.dataUpdatedAt || Date.now()}
                 loading={events.isLoading}
                 error={events.error?.message}
-                onRefresh={() => void events.refetch()}
+                onRefresh={() => events.refetch()}
               />
             ) : null,
         },
@@ -103,7 +103,7 @@ export function ControllerDetailPage({
                             { replace: true },
                           )
                         }
-                        onRefresh={() => void metricQuery.refetch()}
+                        onRefresh={() => metricQuery.refetch()}
                       />
                     </Suspense>
                   ) : null,

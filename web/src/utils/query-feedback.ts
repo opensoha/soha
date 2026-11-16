@@ -11,6 +11,7 @@ export function readableQueryData<T>(query: { data?: T; error: Error | null }) {
 export function writeOutcomeUnknown(error?: Error | null) {
   return Boolean(
     error instanceof ApiError &&
+    error.requestOutcome !== 'rejected' &&
     error.method?.toUpperCase() !== 'GET' &&
     !(error.status === 501 && error.code === 'unsupported_operation') &&
     ![400, 401, 403, 404, 409, 422, 429].includes(error.status),

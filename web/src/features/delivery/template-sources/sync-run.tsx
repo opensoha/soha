@@ -1,7 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, App, Button, Card, Descriptions, Select, Space, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Select, Space, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
+import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { formatDateTime } from '@/utils/time'
 import { deliveryApi } from '../api'
@@ -36,7 +39,8 @@ export function TemplateSourceSync({
   const [selectedId, setSelectedId] = useState('')
   const [attempt, setAttempt] = useState<DeliveryTemplateSyncInput>()
   const runs = useQuery(deliveryQueries.templateSources.runs(source.id, offset))
-  const runId = selectedId || source.lastSyncRunId || runs.data?.[0]?.id || ''
+  const readableRuns = readableQueryData(runs)
+  const runId = selectedId || source.lastSyncRunId || readableRuns?.[0]?.id || ''
   const run = useQuery(deliveryQueries.templateSources.run(source.id, runId))
   const saveResult = async (result: DeliveryTemplateSyncRun) => {
     client.setQueryData(deliveryKeys.templateSources.run(source.id, result.id), result)
@@ -73,6 +77,7 @@ export function TemplateSourceSync({
     run.data?.preview?.expiresAt && Date.parse(run.data.preview.expiresAt) <= Date.now(),
   )
   const valid =
+    !run.isError &&
     run.data?.status === 'ready' &&
     run.data.preview?.valid &&
     !expired &&
@@ -107,16 +112,25 @@ export function TemplateSourceSync({
           刷新记录
         </Button>
       </Space>
-      {sync.error || apply.error ? (
-        <Alert
-          type="error"
-          showIcon
-          title={(sync.error || apply.error)?.message}
-          description="可刷新记录或恢复本次操作的结果。已失败的记录恢复后，可以再次读取 Git。"
-        />
-      ) : null}
-      {runs.isError ? <Alert type="error" title="同步历史读取失败" /> : null}
-      {runs.data?.length ? (
+      <MutationFeedback
+        operations={[
+          {
+            mutation: sync,
+            label: '读取并预览 Git 来源',
+            target: source.name,
+            description: '可刷新记录或恢复本次操作的结果。已失败的记录恢复后，可以再次读取 Git。',
+            receipt: { message: 'Git 来源读取请求已返回，请核对同步记录。' },
+          },
+          {
+            mutation: apply,
+            label: '导入 Git 提交',
+            target: source.name,
+            description: '可刷新记录或恢复本次操作的结果。',
+          },
+        ]}
+      />
+      <ReadFeedback query={runs} label="同步历史" />
+      {readableRuns?.length ? (
         <Space wrap>
           <Select
             aria-label="同步记录"
@@ -126,7 +140,7 @@ export function TemplateSourceSync({
               setSelectedId(value)
               apply.reset()
             }}
-            options={runs.data.map((item) => ({
+            options={readableRuns.map((item) => ({
               value: item.id,
               label: `${formatDateTime(item.createdAt)} · ${runLabels[item.status]} · ${item.resolvedCommit?.slice(0, 12) || item.id}`,
             }))}
@@ -135,18 +149,17 @@ export function TemplateSourceSync({
             上一页
           </Button>
           <Button
-            disabled={runs.data.length < 50 || runs.isFetching}
+            disabled={readableRuns.length < 50 || runs.isFetching}
             onClick={() => setOffset(offset + 50)}
           >
             下一页
           </Button>
         </Space>
       ) : null}
+      <ReadFeedback query={run} label="同步记录" />
       {run.isLoading ? (
         <ManagementState compact kind="loading" />
-      ) : run.isError ? (
-        <Alert type="error" title="同步记录读取失败" description={run.error.message} />
-      ) : run.data ? (
+      ) : run.isError && !readableQueryData(run) ? null : run.data ? (
         <>
           <Descriptions
             size="small"
@@ -182,7 +195,11 @@ export function TemplateSourceSync({
             ]}
           />
           {run.data.errorMessage ? (
-            <Alert type="error" title={run.data.errorMessage} description={run.data.errorCode} />
+            <ContextFeedback
+              type="error"
+              title={run.data.errorMessage}
+              description={run.data.errorCode}
+            />
           ) : null}
           {run.data.preview ? (
             <>
@@ -198,7 +215,10 @@ export function TemplateSourceSync({
               ) : null}
             </>
           ) : run.data.status === 'ready' ? (
-            <Alert type="info" title="仅发起本次同步且仍有对象权限的用户可以查看候选和导入" />
+            <ContextFeedback
+              type="info"
+              title="仅发起本次同步且仍有对象权限的用户可以查看候选和导入"
+            />
           ) : null}
           {run.data.removed?.length ? (
             <Card size="small" title="来源中已移除的文件">
@@ -226,7 +246,7 @@ export function TemplateSourceSync({
             </Button>
           ) : null}
           {run.data.result ? (
-            <Alert
+            <ContextFeedback
               type="success"
               showIcon
               title={`已导入 ${run.data.result.objects.length} 个对象`}

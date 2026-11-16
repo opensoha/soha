@@ -26,6 +26,8 @@ export function ComputeMutationFeedback({ operations }: { operations: ComputeOpe
   const latest = latestSubmittedOperation(operations)
   return latest ? (
     <ComputeOperationFeedback
+      notificationKey={`soha-operation-${latest.mutation.submittedAt}-${latest.label}-${latest.target ?? ''}`}
+      submittedAt={latest.mutation.submittedAt}
       label={latest.label}
       target={latest.target}
       pending={latest.mutation.isPending}

@@ -1,0 +1,39 @@
+.soha-context-feedback.ant-alert {
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--soha-text-primary);
+  font-size: var(--soha-font-size);
+  line-height: var(--soha-line-height);
+}
+.soha-context-feedback.ant-alert .ant-alert-icon {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+.soha-context-feedback.ant-alert .ant-alert-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-context-feedback.ant-alert .ant-alert-title,
+.soha-context-feedback.ant-alert .ant-alert-message {
+  color: var(--soha-text-primary);
+  font-size: var(--soha-font-size);
+  line-height: var(--soha-line-height);
+  font-weight: 500;
+}
+.soha-context-feedback.ant-alert .ant-alert-description {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  line-height: 1.6;
+}
+.soha-context-feedback.ant-alert .ant-alert-actions {
+  margin-inline-start: auto;
+}
+@media (max-width: 575px) {
+  .soha-context-feedback.ant-alert {
+    flex-wrap: wrap;
+  }
+}

@@ -67,7 +67,7 @@ export function RuntimeAssetsSettings({ owner, canManage }: { owner: string; can
           onRefresh={
             owner && !queryAccessDenied(catalog) ? () => void catalog.refetch() : undefined
           }
-          onRetry={() => void catalog.refetch()}
+          onRetry={() => catalog.refetch()}
           empty="运营注册表中暂无运行资产。"
           columns={[
             {

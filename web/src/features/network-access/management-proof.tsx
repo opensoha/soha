@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
-import { Alert, Form, Input, Modal, Typography } from 'antd'
+import { Form, Input, Modal, Typography } from 'antd'
 import { SafetyCertificateOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import type {
@@ -87,7 +88,7 @@ export function ManagementProofAction({
         <Typography.Paragraph>
           {device.name} · {device.siteId}
         </Typography.Paragraph>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text(

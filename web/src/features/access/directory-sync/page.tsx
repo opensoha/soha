@@ -361,7 +361,7 @@ export function DirectorySyncPage() {
       rowKey="id"
       loading={connectionsQuery.isLoading}
       refreshing={connectionsQuery.isFetching}
-      onRefresh={() => void connectionsQuery.refetch()}
+      onRefresh={() => connectionsQuery.refetch()}
       placeholder="搜索连接、目录类型、状态或同步方式"
       searchKeyword={search}
       setSearchKeyword={setSearch}
@@ -405,12 +405,6 @@ export function DirectorySyncPage() {
                 description="当前账号没有登录源目录查看权限。LDAP / SCIM 等独立凭据配置仍可填写。"
               />
             )}
-            <OperationFeedback
-              label="保存目录连接"
-              target={editing?.id ?? createMutation.variables?.name}
-              pending={createMutation.isPending || updateMutation.isPending}
-              error={saveError}
-            />
           </>
         }
         blocked={writesBlocked || connectionsQuery.isError}
@@ -450,7 +444,6 @@ export function DirectorySyncPage() {
               pending={previewMutation.isPending}
               error={previewMutation.error}
             />
-            {syncMutation.variables === previewConnection?.id ? feedback : null}
             {previewMutation.isError && previewConnection ? (
               <Button size="small" onClick={() => void loadPreview(previewConnection)}>
                 重试读取预览
@@ -479,7 +472,6 @@ export function DirectorySyncPage() {
         styles={{ header: { minHeight: 32 }, title: visuallyHiddenModalTitleStyle }}
         onCancel={() => setSelectedId('')}
       >
-        {feedback}
         <Space wrap>
           <Button
             size="small"
@@ -527,7 +519,7 @@ export function DirectorySyncPage() {
                     }
                     statusLoading={runtimeStatusQuery.isLoading}
                     onRetry={(eventId) =>
-                      void perform(() =>
+                      perform(() =>
                         retryEventMutation.mutateAsync({ connectionId: selected.id, eventId }),
                       )
                     }

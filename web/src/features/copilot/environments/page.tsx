@@ -64,7 +64,7 @@ function EnvironmentsPageContent() {
         </>
       }
       refreshing={templates.isFetching || leases.isFetching}
-      onRefresh={() => void Promise.all([templates.refetch(), leases.refetch()])}
+      onRefresh={() => Promise.all([templates.refetch(), leases.refetch()])}
       actions={
         <>
           <Popconfirm disabled={blocked} title="确认运行环境 GC？" onConfirm={() => gc.mutate()}>

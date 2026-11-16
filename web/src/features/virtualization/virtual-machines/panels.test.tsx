@@ -111,6 +111,30 @@ describe('VM panel presentation and protected cache', () => {
     expect(container.textContent).toContain('1.25 %')
     expect(container.querySelector('[data-testid="metric-chart"]')).not.toBeNull()
   })
+  it('retains metric data on a temporary failure and reports an explicit failed retry', async () => {
+    state.read.mockResolvedValue(metrics)
+    await render(<VMMetricsPanel range={60} vmId="vm-test" onRangeChange={vi.fn()} />)
+    state.read.mockRejectedValue(new ApiError(503, 'metric upstream unavailable'))
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['metrics'] })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(container.querySelector('[data-testid="metric-chart"]')).not.toBeNull()
+    expect(container.querySelector('.soha-read-feedback')?.textContent).toContain('上次读取结果')
+    expect(document.querySelector('.ant-notification-notice')).toBeNull()
+
+    const retry = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="重试读取运行指标"]',
+    )
+    expect(retry).not.toBeNull()
+    await act(async () => {
+      retry!.click()
+      await new Promise((resolve) => setTimeout(resolve, 80))
+    })
+    expect(state.read).toHaveBeenCalledTimes(3)
+    expect(container.querySelector('[data-testid="metric-chart"]')).not.toBeNull()
+    expect(document.querySelector('.ant-notification-notice')?.textContent).toContain('刷新未完成')
+  })
   for (const status of [401, 403]) {
     it(`removes cached metric series after ${status}`, async () => {
       client.setQueryData(['metrics'], metrics)

@@ -1,10 +1,13 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import type { KubernetesSecurityFinding } from '@opensoha/contracts/gen/ts/sohaapi'
-import { Alert, Space, Spin, Typography } from 'antd'
+import { Space, Spin, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState, ManagementTableToolbar } from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { buildKubernetesResourcePath } from '@/features/platform/shared/resource-ref'
@@ -15,7 +18,14 @@ import { resourceInsightQueries } from './queries'
 export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
   const { localeCode } = useI18n()
   const postureQuery = useQuery(resourceInsightQueries.posture(scope))
-  const posture = postureQuery.data
+  const posture = readableQueryData(postureQuery)
+  const readFeedback = (
+    <ReadFeedback
+      canRead={postureQuery.isEnabled}
+      query={postureQuery}
+      label={localeCode === 'zh_CN' ? '安全态势' : 'Security posture'}
+    />
+  )
 
   if (postureQuery.isLoading) {
     return (
@@ -24,29 +34,33 @@ export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
       </div>
     )
   }
-  if (postureQuery.error || !posture) {
-    return (
-      <Alert
+  if (!posture) {
+    return postureQuery.isError ? (
+      readFeedback
+    ) : (
+      <ContextFeedback
         showIcon
         type="warning"
         title={localeCode === 'zh_CN' ? '安全态势暂不可用' : 'Security posture unavailable'}
-        description={postureQuery.error?.message}
       />
     )
   }
   if (posture.status === 'unsupported') {
     return (
-      <Alert
-        showIcon
-        type="info"
-        title={localeCode === 'zh_CN' ? '未检测到 Kubescape' : 'Kubescape was not detected'}
-        description={
-          localeCode === 'zh_CN'
-            ? '安装 Kubescape Operator 后，此处会读取配置与漏洞扫描摘要。'
-            : posture.message ||
-              'Install the Kubescape Operator to expose configuration and vulnerability summaries.'
-        }
-      />
+      <>
+        {readFeedback}
+        <ContextFeedback
+          showIcon
+          type="info"
+          title={localeCode === 'zh_CN' ? '未检测到 Kubescape' : 'Kubescape was not detected'}
+          description={
+            localeCode === 'zh_CN'
+              ? '安装 Kubescape Operator 后，此处会读取配置与漏洞扫描摘要。'
+              : posture.message ||
+                'Install the Kubescape Operator to expose configuration and vulnerability summaries.'
+          }
+        />
+      </>
     )
   }
 
@@ -98,8 +112,13 @@ export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
 
   return (
     <div className="soha-detail-stack">
+      {readFeedback}
       {posture.status !== 'available' || posture.warnings.length ? (
-        <Alert showIcon type="warning" title={posture.message || posture.warnings.join(' ')} />
+        <ContextFeedback
+          showIcon
+          type="warning"
+          title={posture.message || posture.warnings.join(' ')}
+        />
       ) : null}
       <AdminTable
         className="soha-platform-table"

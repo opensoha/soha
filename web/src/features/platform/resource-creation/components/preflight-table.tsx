@@ -1,4 +1,5 @@
-import { Alert, Table, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Table, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
@@ -77,7 +78,7 @@ export function ResourcePreflightTable({ items }: { items: ResourcePreflightItem
   return (
     <div className="soha-resource-create-table-section">
       {warningCount > 0 ? (
-        <Alert
+        <ContextFeedback
           showIcon
           title={
             isChinese

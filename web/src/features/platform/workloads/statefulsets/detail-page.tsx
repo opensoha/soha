@@ -349,7 +349,7 @@ export function StatefulSetDetailPage() {
                     sourceLabel="ControllerRevision"
                     loading={historyQuery.isLoading}
                     error={errorText(historyQuery.error)}
-                    onRefresh={() => void historyQuery.refetch()}
+                    onRefresh={() => historyQuery.refetch()}
                     renderRevision={(record) => (
                       <Suspense fallback={<Spin />}>
                         <Revision
@@ -378,7 +378,7 @@ export function StatefulSetDetailPage() {
                   observedAt={eventsQuery.dataUpdatedAt || Date.now()}
                   loading={eventsQuery.isLoading}
                   error={errorText(eventsQuery.error)}
-                  onRefresh={() => void eventsQuery.refetch()}
+                  onRefresh={() => eventsQuery.refetch()}
                 />
               ) : null,
           },
@@ -409,7 +409,7 @@ export function StatefulSetDetailPage() {
                         { replace: true },
                       )
                     }
-                    onRefresh={() => void metricsQuery.refetch()}
+                    onRefresh={() => metricsQuery.refetch()}
                   />
                 </Suspense>
               ) : null,

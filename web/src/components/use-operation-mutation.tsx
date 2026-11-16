@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { useMutation, type UseMutationOptions } from '@tanstack/react-query'
 import { OperationFeedback } from '@/components/request-feedback'
 import { localeText, useI18n } from '@/i18n'
@@ -19,6 +19,7 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
 ) {
   const { localeCode } = useI18n()
   const label = localeText(localeCode, ...feedback.label)
+  const feedbackKey = useId()
   const fence = useRef(false)
   const uncertain = useRef<{ variables: TVariables }>()
   const [target, setTarget] = useState('')
@@ -74,8 +75,8 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
             <p>
               {localeText(
                 localeCode,
-                '当前页已暂停再次提交；普通刷新不会确认或解锁原请求。请保留请求 ID 核对审计与资源记录。',
-                'Further submissions are paused on this page. Refresh does not confirm or unlock the original request. Keep the request ID to check audit and resource records.',
+                '关闭提示不会解除此操作的防重复提交保护。',
+                'Closing this notice does not release the duplicate-submission protection.',
               )}
             </p>
           </>
@@ -121,6 +122,8 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
     },
     feedback: (
       <OperationFeedback
+        notificationKey={`soha-operation-${feedbackKey}`}
+        submittedAt={mutation.submittedAt}
         label={label}
         target={target}
         pending={mutation.isPending}

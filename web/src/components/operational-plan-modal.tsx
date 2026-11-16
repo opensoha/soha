@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { localeText, useI18n } from '@/i18n'
 import type { OperationalPlan } from '@opensoha/contracts/gen/ts/sohaapi'
-import { Alert, Checkbox, Descriptions, Modal } from 'antd'
+import { Checkbox, Descriptions, Modal } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { StatusTag } from './status-tag'
 
@@ -137,7 +138,7 @@ export function OperationalPlanModal({
             />
           ) : null}
           {resourceUpdate && resourceUpdate.conflicts.length > 0 ? (
-            <Alert
+            <ContextFeedback
               description={
                 <ul className="list-disc pl-5">
                   {resourceUpdate.conflicts.map((conflict) => (
@@ -153,7 +154,7 @@ export function OperationalPlanModal({
             />
           ) : null}
           {warnings.length > 0 ? (
-            <Alert
+            <ContextFeedback
               description={
                 <ul className="list-disc pl-5">
                   {warnings.map((warning) => (
@@ -178,7 +179,7 @@ export function OperationalPlanModal({
             }))}
           />
           {!plan.ready ? (
-            <Alert
+            <ContextFeedback
               showIcon
               title={localeText(
                 localeCode,

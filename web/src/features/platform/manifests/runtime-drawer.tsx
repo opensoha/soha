@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
@@ -6,7 +7,7 @@ import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-ta
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Card, Descriptions, Drawer, Space, Tabs, Tooltip, Typography } from 'antd'
+import { Button, Card, Descriptions, Drawer, Space, Tabs, Tooltip, Typography } from 'antd'
 import { FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import type { UseQueryResult } from '@tanstack/react-query'
@@ -140,7 +141,7 @@ export function ManifestRuntimeDrawer({
           {deploymentQuery?.isError ? (
             <ReadFeedback query={deploymentQuery} label={text('部署记录', 'Deployment records')} />
           ) : !ready ? (
-            <Alert
+            <ContextFeedback
               showIcon
               type={selected.readState === 'error' ? 'error' : 'info'}
               title={
@@ -160,7 +161,7 @@ export function ManifestRuntimeDrawer({
             />
           ) : null}
           {ready && deployment?.status.lastErrorMessage ? (
-            <Alert
+            <ContextFeedback
               type="error"
               showIcon
               title={

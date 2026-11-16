@@ -1,4 +1,5 @@
-import { Alert, Form, Input, Space, Switch, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Form, Input, Space, Switch, Typography } from 'antd'
 import type {
   TemplateMigrationPolicy,
   TemplateMigrationAssessment,
@@ -72,7 +73,7 @@ export function TemplateMigrationFields({ path = ['migrationPolicy'] }: { path?:
 export function MigrationAssessment({ value }: { value?: TemplateMigrationAssessment }) {
   if (!value) return null
   return (
-    <Alert
+    <ContextFeedback
       type={value.blocked ? 'error' : value.requiresApproval ? 'warning' : 'info'}
       showIcon
       title={

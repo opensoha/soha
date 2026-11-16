@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { MihomoBundleFields, type ProfileBundle } from './mihomo-bundle-fields'
 import { ManagementIconButton } from '@/components/management-list'
@@ -18,7 +19,6 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Checkbox,
   Divider,
@@ -354,7 +354,7 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
       )}
 
       <h1 className="soha-proxy-sr-only">{t('networkAccess.mihomo.pageTitle', '代理隧道')}</h1>
-      <Alert
+      <ContextFeedback
         type="info"
         showIcon
         description={t(
@@ -368,7 +368,7 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
         loading={profiles.isLoading}
         refreshing={profiles.isFetching}
         error={profiles.isEnabled === false ? null : profiles.error}
-        onRefresh={() => void (profiles.isEnabled === false ? undefined : profiles.refetch())}
+        onRefresh={() => (profiles.isEnabled === false ? undefined : profiles.refetch())}
         searchPlaceholder={t('networkAccess.mihomo.search', '搜索名称、设备或节点')}
         getSearchValues={(item) => [
           item.name,
@@ -465,13 +465,13 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
               />
               {binding?.deliveryMode === 'direct_subscription' && (
                 <>
-                  <Alert type="warning" title="直接交付真实上游参数，不是内网映射" />
+                  <ContextFeedback type="warning" title="直接交付真实上游参数，不是内网映射" />
                   <Checkbox checked={disclosure} onChange={(e) => setDisclosure(e.target.checked)}>
                     我已确认向授权设备披露上游参数
                   </Checkbox>
                 </>
               )}
-              {bindingError && <Alert type="error" title={bindingError} />}
+              {bindingError && <ContextFeedback type="error" title={bindingError} />}
             </>
           )}
           <Form.Item

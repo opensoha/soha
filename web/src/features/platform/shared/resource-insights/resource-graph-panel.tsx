@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementRefreshButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -24,7 +25,7 @@ import {
   type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Alert, Button, Empty, Space, Spin, Switch, Typography } from 'antd'
+import { Button, Empty, Space, Spin, Switch, Typography } from 'antd'
 import dagre from 'dagre'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -399,7 +400,7 @@ export function ResourceGraphPanel({
         </Typography.Text>
       </Space>
       {graph.warnings.length ? (
-        <Alert showIcon type="warning" title={graph.warnings.join(' ')} />
+        <ContextFeedback showIcon type="warning" title={graph.warnings.join(' ')} />
       ) : null}
       <ReactFlowProvider>
         <ResourceGraphCanvas

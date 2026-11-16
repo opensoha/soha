@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Empty, Input, Space, Typography } from 'antd'
+import { Button, Empty, Input, Space, Typography } from 'antd'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -165,7 +166,7 @@ function RelationsExplorer({ domain, kind, resourceId }: RelationsProps) {
       {data ? (
         <>
           {data.nextCursor ? (
-            <Alert
+            <ContextFeedback
               type="info"
               showIcon
               action={

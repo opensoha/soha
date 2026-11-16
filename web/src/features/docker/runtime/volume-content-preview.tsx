@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef } from 'react'
-import { Alert, Button, Input, Popconfirm, Space, Typography } from 'antd'
+import { Button, Input, Popconfirm, Space, Typography } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DockerVolumeFileReadInput } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -115,7 +116,7 @@ export function VolumeContentPreview({
       ) : null}
       {decision && !decision.allowed ? <DecisionEvidence decision={decision} /> : null}
       {decision && !decision.allowed ? (
-        <Alert
+        <ContextFeedback
           type={decision.requiredAction === 'acknowledge' ? 'warning' : 'error'}
           showIcon
           title={

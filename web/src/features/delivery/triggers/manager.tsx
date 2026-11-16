@@ -1,6 +1,9 @@
+import { ReadFeedback } from '@/components/request-feedback'
+import { useOperationMutation } from '@/components/use-operation-mutation'
+import { readableQueryData } from '@/utils/query-feedback'
 import { useState } from 'react'
-import { Alert, Button, Modal, Space, Switch, Typography } from 'antd'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button, Modal, Space, Switch, Typography } from 'antd'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
@@ -35,9 +38,11 @@ function EventStatus({ event }: { event?: DeliveryTriggerEvent }) {
   )
 }
 
-export function DeliveryTriggerManager(target: TriggerTarget) {
+export function DeliveryTriggerManager(target: TriggerTarget & { readOnly?: boolean }) {
   const permissions = usePermissionSnapshot().data?.data
-  const allowed = (action: string) => hasPermission(permissions, `delivery.triggers.${action}`)
+  const allowed = (action: string) =>
+    (action === 'view' || !target.readOnly) &&
+    hasPermission(permissions, `delivery.triggers.${action}`)
   const [offset, setOffset] = useState(0)
   const [editing, setEditing] = useState<{ item?: DeliveryTrigger }>()
   const [history, setHistory] = useState<DeliveryTrigger>()
@@ -45,7 +50,12 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
   const triggers = useQuery(
     deliveryQueries.triggers.list(target.targetKind, target.targetId, offset, allowed('view')),
   )
-  const toggle = useMutation(deliveryMutations.triggers.save(client))
+  const toggle = useOperationMutation(deliveryMutations.triggers.save(client), {
+    label: ['更新触发器', 'Update trigger'],
+    target: ({ input }) => input.name,
+    receipt: () => ({ message: '触发器配置已更新' }),
+  })
+  const items = readableQueryData(triggers)
   if (!allowed('view'))
     return <ManagementState compact kind="no-permission" title="无权查看触发器" />
   return (
@@ -55,21 +65,13 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
           ? '自动同步只更新草稿。发布模板和执行工作流由各自入口操作。'
           : `触发后创建交付记录，执行结果请查看关联交付。新配置固定使用工作流 v${target.workflowVersion}。`}
       </Typography.Text>
-      {toggle.error ? (
-        <Alert type="error" title="触发器更新失败" description={toggle.error.message} />
-      ) : null}
-      {triggers.isError ? (
-        <ManagementState
-          compact
-          kind="error"
-          title="触发器读取失败"
-          actions={<Button onClick={() => void triggers.refetch()}>重试</Button>}
-        />
-      ) : (
+      {toggle.feedback}
+      <ReadFeedback query={triggers} label="触发器" />
+      {triggers.isError && !items ? null : (
         <AdminTable
           rowKey="id"
           loading={triggers.isPending}
-          dataSource={triggers.data ?? []}
+          dataSource={items ?? []}
           pagination={false}
           enableColumnSelection={false}
           viewportScroll={false}
@@ -78,7 +80,11 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
           toolbarExtra={
             <Space>
               <Button onClick={() => void triggers.refetch()}>刷新</Button>
-              <Button type="primary" disabled={!allowed('create')} onClick={() => setEditing({})}>
+              <Button
+                type="primary"
+                disabled={!allowed('create') || triggers.isError}
+                onClick={() => setEditing({})}
+              >
                 添加触发器
               </Button>
             </Space>
@@ -106,7 +112,7 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
                 <Switch
                   aria-label={`启用 ${item.name}`}
                   checked={item.enabled}
-                  disabled={!allowed('update') || toggle.isPending}
+                  disabled={!allowed('update') || toggle.blocked || triggers.isError}
                   onChange={(enabled) =>
                     toggle.mutate({ id: item.id, input: triggerInput(item, enabled) })
                   }
@@ -121,7 +127,7 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
                 <Space>
                   <Button
                     type="link"
-                    disabled={!allowed('update')}
+                    disabled={!allowed('update') || triggers.isError}
                     onClick={() => setEditing({ item })}
                   >
                     配置
@@ -135,7 +141,7 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
           ]}
         />
       )}
-      {offset > 0 || triggers.data?.length === 50 ? (
+      {offset > 0 || items?.length === 50 ? (
         <Space>
           <Button
             disabled={offset === 0 || triggers.isFetching}
@@ -144,7 +150,7 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
             上一页
           </Button>
           <Button
-            disabled={(triggers.data?.length ?? 0) < 50 || triggers.isFetching}
+            disabled={(items?.length ?? 0) < 50 || triggers.isFetching}
             onClick={() => setOffset(offset + 50)}
           >
             下一页
@@ -152,7 +158,12 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
         </Space>
       ) : null}
       {editing ? (
-        <TriggerEditor target={target} item={editing.item} onClose={() => setEditing(undefined)} />
+        <TriggerEditor
+          target={target}
+          item={editing.item}
+          readOnly={triggers.isError || !allowed(editing.item ? 'update' : 'create')}
+          onClose={() => setEditing(undefined)}
+        />
       ) : null}
       {history ? (
         <TriggerHistory key={history.id} item={history} onClose={() => setHistory(undefined)} />
@@ -164,19 +175,14 @@ export function DeliveryTriggerManager(target: TriggerTarget) {
 function TriggerHistory({ item, onClose }: { item: DeliveryTrigger; onClose: () => void }) {
   const [offset, setOffset] = useState(0)
   const events = useQuery(deliveryQueries.triggers.events(item.id, offset))
+  const items = readableQueryData(events)
   return (
     <Modal open title={`${item.name} · 触发记录`} width={1000} footer={null} onCancel={onClose}>
-      {events.isError ? (
-        <ManagementState
-          compact
-          kind="error"
-          title="触发记录读取失败"
-          actions={<Button onClick={() => void events.refetch()}>重试</Button>}
-        />
-      ) : (
+      <ReadFeedback query={events} label="触发记录" />
+      {events.isError && !items ? null : (
         <AdminTable
           rowKey="id"
-          dataSource={events.data ?? []}
+          dataSource={items ?? []}
           loading={events.isPending}
           pagination={false}
           enableColumnSelection={false}
@@ -243,7 +249,7 @@ function TriggerHistory({ item, onClose }: { item: DeliveryTrigger; onClose: () 
           上一页
         </Button>
         <Button
-          disabled={(events.data?.length ?? 0) < 50 || events.isFetching}
+          disabled={(items?.length ?? 0) < 50 || events.isFetching}
           onClick={() => setOffset(offset + 50)}
         >
           下一页

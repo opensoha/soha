@@ -1,9 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { OperationFeedback, useInlineApiError } from '@/components/request-feedback'
 import type { PersonalAccessToken } from '@/features/copilot'
 import { isApiError } from '@/services/api-error'
 import { useAuthStore } from '@/stores/auth-store'
 import { useMutation } from '@tanstack/react-query'
-import { Alert, Button, Space, Typography } from 'antd'
+import { Button, Space, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { authProfileApi } from './profile-api'
 import { CredentialRequestNotSentError } from './governed-credentials-api'
@@ -167,7 +168,7 @@ export function useProfileKeyRotation(
           receipt={receipt ? { message: receipt } : undefined}
         />
         {record ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title="保留原轮换请求供核对"

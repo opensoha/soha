@@ -1,18 +1,8 @@
+import { MutationFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
-import {
-  Alert,
-  App,
-  Button,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Tabs,
-  Typography,
-} from 'antd'
+import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
 import { CopyOutlined, PlusOutlined, StopOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementDataPage } from '@/components/management-data-page'
@@ -169,11 +159,17 @@ export function DeploymentTemplatesPage() {
     if (sourceDirty || sourceReadOnly) return
     await form.validateFields()
     const raw = form.getFieldValue('definition') as ServiceDeploymentTemplateInput
-    const input = { ...raw, migrationPolicy: migrationPolicyInput(raw.migrationPolicy) }
-    const payload =
-      input.source.renderer === 'helm'
-        ? { ...input, source: { ...input.source, helm: parseHelmSource(input.source.helm!) } }
-        : input
+    let payload: ServiceDeploymentTemplateInput
+    try {
+      const input = { ...raw, migrationPolicy: migrationPolicyInput(raw.migrationPolicy) }
+      payload =
+        input.source.renderer === 'helm'
+          ? { ...input, source: { ...input.source, helm: parseHelmSource(input.source.helm!) } }
+          : input
+    } catch (error) {
+      if (error instanceof Error) message.error(error.message)
+      return
+    }
     const item = editor?.item
     const saved = item
       ? await update.mutateAsync({
@@ -220,23 +216,16 @@ export function DeploymentTemplatesPage() {
             />
           ),
         }}
-        beforeQuery={
-          query.isError ? (
-            <ManagementState
-              kind="error"
-              description={query.error.message}
-              actions={<Button onClick={() => void query.refetch()}>重试</Button>}
-            />
-          ) : null
-        }
         table={{
           rowKey: 'id',
           loading: query.isLoading,
-          dataSource: (query.data ?? []).filter((item) =>
+          error: query.error,
+          hasReadData: readableQueryData(query) !== undefined,
+          dataSource: (readableQueryData(query) ?? []).filter((item) =>
             `${item.name} ${item.key}`.toLowerCase().includes(appliedSearch.toLowerCase()),
           ),
           enableDensity: true,
-          onRefresh: () => void query.refetch(),
+          onRefresh: () => query.refetch(),
           refreshing: query.isFetching,
           columnSettingPlacement: 'header',
           columnSettingIconOnly: true,
@@ -374,11 +363,7 @@ export function DeploymentTemplatesPage() {
                     type="primary"
                     disabled={sourceDirty || sourceReadOnly}
                     loading={create.isPending || update.isPending}
-                    onClick={() =>
-                      void save().catch((error: unknown) => {
-                        if (error instanceof Error) void message.error(error.message)
-                      })
-                    }
+                    onClick={() => void save().catch(() => {})}
                   >
                     保存草稿
                   </Button>
@@ -389,14 +374,12 @@ export function DeploymentTemplatesPage() {
             {editor?.item ? (
               <DocumentSourcePanel kind="DeploymentTemplate" id={editor.item.id} />
             ) : null}
-            {create.error || update.error ? (
-              <Alert
-                type="error"
-                showIcon
-                title="保存失败，草稿已保留"
-                description={(create.error || update.error)?.message}
-              />
-            ) : null}
+            <MutationFeedback
+              operations={[
+                { mutation: create, label: '保存部署模板', target: editor?.item?.name },
+                { mutation: update, label: '保存部署模板', target: editor?.item?.name },
+              ]}
+            />
             <Tabs
               activeKey={editorMode}
               onChange={(next) => {

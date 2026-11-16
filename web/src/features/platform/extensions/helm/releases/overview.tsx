@@ -1,4 +1,5 @@
-import { Alert, Card, Tooltip } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Card, Tooltip } from 'antd'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
@@ -73,7 +74,7 @@ export function HelmReleaseOverview({
         </p>
       </Card>
       {capabilityReason ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={zh ? 'Helm 写入受限' : 'Helm writes limited'}

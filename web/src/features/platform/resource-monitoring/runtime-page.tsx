@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { localeText, useI18n } from '@/i18n'
 import { AdminTable } from '@/components/admin-table'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -16,7 +17,6 @@ import { formatDateTime } from '@/utils/time'
 import { useDocumentHidden } from '@/utils/use-document-hidden'
 import { useQueries, type UseQueryResult } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Card,
   DatePicker,
@@ -965,23 +965,15 @@ function MonitoringSection({
   return (
     <>
       <ReadFeedback label={title} query={query} canRead={Boolean(clusterId)} />
-      {(data?.truncated || query.isError) && (
-        <Alert
+      {data?.truncated && (
+        <ContextFeedback
           showIcon
           type="warning"
-          title={
-            data?.truncated
-              ? localeText(
-                  localeCode,
-                  '结果达到预算，请选择节点或缩短窗口',
-                  'Result budget reached. Select a node or shorten the window.',
-                )
-              : localeText(
-                  localeCode,
-                  '此面板刷新失败，保留允许显示的上次结果',
-                  'This section failed to refresh. The last permitted result is retained.',
-                )
-          }
+          title={localeText(
+            localeCode,
+            '结果达到预算，请选择节点或缩短窗口',
+            'Result budget reached. Select a node or shorten the window.',
+          )}
           description={
             data
               ? `${localeText(localeCode, '上次成功生成：', 'Last successful result: ')}${formatDateTime(data.generatedAt)}`
@@ -992,7 +984,7 @@ function MonitoringSection({
       {data && (
         <section id={`monitoring-${view}`} className="soha-monitoring-section" aria-label={title}>
           {unavailable && (
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title={localeText(

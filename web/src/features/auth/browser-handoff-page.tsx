@@ -1,9 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { readableQueryData } from '@/utils/query-feedback'
 import { AppstoreOutlined, UserOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Avatar, Button, Card, Spin, Typography } from 'antd'
+import { Avatar, Button, Card, Spin, Typography } from 'antd'
 import { useParams } from 'react-router-dom'
 import { completeBrowserHandoff, inspectBrowserHandoff } from './browser-handoff-api'
 import './browser-handoff-page.css'
@@ -55,8 +56,8 @@ export function BrowserHandoffPage({
           <div className="soha-browser-handoff-loading">
             <Spin description="正在检查安全交接" />
           </div>
-        ) : handoffQuery.error || !handoff ? (
-          <Alert
+        ) : handoffQuery.isError ? null : !handoff ? (
+          <ContextFeedback
             showIcon
             type="error"
             title="无法继续"

@@ -271,7 +271,11 @@ describe('proxy runtime pages', () => {
       )
       if (scenario === 'rejected') {
         await act(async () =>
-          vi.waitFor(() => expect(container.textContent).toContain('epoch conflict')),
+          vi.waitFor(() =>
+            expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+              'epoch conflict',
+            ),
+          ),
         )
         expect(disconnect?.disabled).toBe(false)
         expect(apiMocks.getCloseCommand).not.toHaveBeenCalled()

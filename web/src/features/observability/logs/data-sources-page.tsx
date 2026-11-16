@@ -12,12 +12,7 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
-import {
-  EditOutlined,
-  ExperimentOutlined,
-  PlusOutlined,
-  PoweroffOutlined,
-} from '@ant-design/icons'
+import { EditOutlined, ExperimentOutlined, PlusOutlined, PoweroffOutlined } from '@ant-design/icons'
 import type {
   ObservabilityDataSource,
   ObservabilityDataSourceInput,
@@ -249,7 +244,8 @@ export function LogDataSourcesPage() {
   }
 
   function submit(values: DataSourceFormValues) {
-    if (blocked || !providers.some((provider) => provider.providerKey === values.providerKey)) return
+    if (blocked || !providers.some((provider) => provider.providerKey === values.providerKey))
+      return
     const input = buildDataSourceInput(values)
     if (editing) {
       updateMutation.mutate(
@@ -415,7 +411,7 @@ export function LogDataSourcesPage() {
         error={sourcesQuery.error}
         hasReadData={sourcesQuery.data !== undefined}
         refreshing={sourcesQuery.isFetching}
-        onRefresh={() => void sourcesQuery.refetch()}
+        onRefresh={() => sourcesQuery.refetch()}
         headerExtra={
           canCreate ? (
             <ManagementTableToolbar>

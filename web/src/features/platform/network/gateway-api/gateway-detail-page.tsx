@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -19,7 +20,7 @@ import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card } from 'antd'
+import { Button, Card } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -163,9 +164,11 @@ export function GatewayDetailPage() {
       {configurationQuery.isEnabled && (
         <ReadFeedback canRead={canRead} query={configurationQuery} label="Gateway YAML" />
       )}
-      {configuration?.error && <Alert showIcon type="warning" title={configuration.error} />}
+      {configuration?.error && (
+        <ContextFeedback showIcon type="warning" title={configuration.error} />
+      )}
       {identityMismatch && (
-        <Alert
+        <ContextFeedback
           showIcon
           type="error"
           title={

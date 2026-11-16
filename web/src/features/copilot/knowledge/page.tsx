@@ -286,7 +286,7 @@ export function KnowledgeCenterPage() {
         loading: basesQuery.isLoading,
         error: basesQuery.error,
         hasReadData: readableQueryData(basesQuery) !== undefined,
-        onRetry: () => void basesQuery.refetch(),
+        onRetry: () => basesQuery.refetch(),
         rowKey: 'id',
         toolbarExtra: (
           <ManagementTableToolbar>

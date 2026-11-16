@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, Button, Drawer, Input, Popconfirm, Select, Space, Typography } from 'antd'
+import { Button, Drawer, Input, Popconfirm, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   DockerVolumeDLPCase,
@@ -105,7 +106,7 @@ function ActivityDrawer({
       onClose={onClose}
     >
       <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text(
@@ -132,7 +133,7 @@ function ActivityDrawer({
           dataSource={activity.isSuccess && !activity.isFetching ? activity.data : []}
           loading={activity.isFetching}
           pagination={{ pageSize: 8, showSizeChanger: false }}
-          onRefresh={() => void refresh()}
+          onRefresh={() => refresh()}
           columns={[
             {
               title: text('事件 / 时间', 'Event / Time'),

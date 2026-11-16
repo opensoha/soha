@@ -252,7 +252,7 @@ export function DeliveryTestingPage() {
             }
             error={canViewBundles ? bundlesQuery.error : null}
             hasReadData={bundleData !== undefined}
-            onRetry={() => void bundlesQuery.refetch()}
+            onRetry={() => bundlesQuery.refetch()}
             loading={canViewBundles && bundlesQuery.isLoading}
             columns={columns}
             pagination={false}

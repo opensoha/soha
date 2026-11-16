@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ChartPackageOverview } from './package-overview'
 import { ChartReadme } from './readme'
@@ -18,7 +19,6 @@ import { CloudDownloadOutlined, LinkOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Card,
   Checkbox,
@@ -36,7 +36,7 @@ import {
   Tag,
   Typography,
 } from 'antd'
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { cloneElement, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { helmMutations } from '../mutations'
 import { helmQueries } from '../queries'
@@ -345,7 +345,50 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
       <ReadFeedback canRead={valuesQuery.isEnabled} query={valuesQuery} label="Helm Values" />
       <ReadFeedback canRead={progressQuery.isEnabled} query={progressQuery} label="安装进度" />
 
-      {installMutation.feedback}
+      {cloneElement(installMutation.feedback, {
+        description:
+          installError && installTarget
+            ? formatHelmInstallError(installError, localeCode, installTarget)
+            : undefined,
+        actions: installTarget ? (
+          installConflict ? (
+            <Space>
+              <Button
+                size="small"
+                onClick={() => {
+                  form.setFieldsValue({
+                    releaseName: retryHelmReleaseName(
+                      installTarget.releaseName,
+                      installTarget.chartName,
+                    ),
+                  })
+                  setInstallTarget(null)
+                  setInstallResult(null)
+                  setInstallError('')
+                  setInstallStartedAt(null)
+                }}
+              >
+                Use new name
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  onClose()
+                  navigate(
+                    '/helm/releases?' +
+                      new URLSearchParams({
+                        clusterId: clusterId || '',
+                        namespace: installTarget.namespace,
+                      }),
+                  )
+                }}
+              >
+                View releases
+              </Button>
+            </Space>
+          ) : undefined
+        ) : undefined,
+      })}
 
       <Space orientation="vertical" size={14} style={{ width: '100%' }}>
         <Space align="start" size={14}>
@@ -463,7 +506,7 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
               children: (
                 <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                   {!canInstall ? (
-                    <Alert
+                    <ContextFeedback
                       showIcon
                       type="warning"
                       title={
@@ -554,7 +597,7 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                     title={localeCode === 'zh_CN' ? '本次安装的 Values' : 'Installation values'}
                   >
                     {valuesState.serverChanged ? (
-                      <Alert
+                      <ContextFeedback
                         type="warning"
                         showIcon
                         title={
@@ -647,58 +690,6 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                             },
                           ]}
                         />
-                        {installError ? (
-                          <Alert
-                            type={installConflict ? 'warning' : 'error'}
-                            showIcon
-                            title={
-                              installConflict ? 'Release name already in use' : 'Install failed'
-                            }
-                            description={formatHelmInstallError(
-                              installError,
-                              localeCode,
-                              installTarget,
-                            )}
-                            action={
-                              installConflict ? (
-                                <Space>
-                                  <Button
-                                    size="small"
-                                    onClick={() => {
-                                      form.setFieldsValue({
-                                        releaseName: retryHelmReleaseName(
-                                          installTarget.releaseName,
-                                          installTarget.chartName,
-                                        ),
-                                      })
-                                      setInstallTarget(null)
-                                      setInstallResult(null)
-                                      setInstallError('')
-                                      setInstallStartedAt(null)
-                                    }}
-                                  >
-                                    Use new name
-                                  </Button>
-                                  <Button
-                                    size="small"
-                                    onClick={() => {
-                                      onClose()
-                                      navigate(
-                                        '/helm/releases?' +
-                                          new URLSearchParams({
-                                            clusterId: clusterId || '',
-                                            namespace: installTarget.namespace,
-                                          }),
-                                      )
-                                    }}
-                                  >
-                                    View releases
-                                  </Button>
-                                </Space>
-                              ) : undefined
-                            }
-                          />
-                        ) : null}
                         {installResult ? (
                           <Space orientation="vertical" style={{ width: '100%' }}>
                             <Descriptions

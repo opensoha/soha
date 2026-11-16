@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementDensityButton,
   ManagementIconButton,
@@ -18,7 +19,6 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, StarOutlined } from '@ant-d
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   App,
   Avatar,
   Button,
@@ -390,7 +390,7 @@ export function LoginSettingsPage({ embedded = false }: SettingsPageProps = {}) 
               return (
                 <>
                   {type === 'saml' ? (
-                    <Alert
+                    <ContextFeedback
                       type="warning"
                       showIcon
                       style={{ marginBottom: 16 }}

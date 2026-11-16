@@ -1,8 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Checkbox,
   Form,
@@ -334,7 +334,7 @@ export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean
                 </Form.Item>
               </>
             )}
-            <Alert
+            <ContextFeedback
               type={mode === 'direct_subscription' ? 'warning' : 'info'}
               showIcon
               title={
@@ -372,7 +372,7 @@ export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean
           {save.feedback}
           {preview && (
             <>
-              <Alert
+              <ContextFeedback
                 type={preview.supported ? 'success' : 'error'}
                 title={preview.supported ? '转换通过' : '整版转换失败，未丢弃不支持的配置'}
                 description={`${preview.nodes.length} 个节点 · ${preview.groups.length} 个策略组`}
@@ -420,7 +420,7 @@ export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean
               ))}
             </div>
             {target.deliveryMode === 'direct_subscription' && (
-              <Alert type="warning" title="激活后获准设备可获得真实上游参数" />
+              <ContextFeedback type="warning" title="激活后获准设备可获得真实上游参数" />
             )}
             <Popconfirm title="确认发布范围与交付方式？" onConfirm={() => scopeForm.submit()}>
               <Button type="primary" disabled={!canUpdate || busy || !readableQueryData(rules)}>

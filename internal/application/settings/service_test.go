@@ -163,7 +163,7 @@ func TestResolveBrandingSettingsRemainsAvailableToAuthBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveBrandingSettings returned error: %v", err)
 	}
-	if item.Slogan != "Soha 是一种能力！" {
+	if item.Slogan != "让人手有限的团队，更轻松地管理、维护和保障业务运行。" {
 		t.Fatalf("slogan = %q, want default slogan", item.Slogan)
 	}
 	if item.LoginLogoURL != "/logo.svg" || item.ExpandedLogoURL != "/logo.svg" || item.CollapsedLogoURL != "/logo.svg" || item.FaviconURL != "/logo.svg" {
@@ -178,13 +178,17 @@ func TestBrandingSettingsPersistSlogan(t *testing.T) {
 	item, err := service.UpdateBrandingSettings(
 		context.Background(),
 		domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}},
-		domainsettings.BrandingSettings{AppTitle: "Soha", SidebarTitle: "Soha", Slogan: "  让平台协作更简单  "},
+		domainsettings.BrandingSettings{AppTitle: "Soha", SidebarTitle: "Soha", Slogan: "  让平台协作更简单\n一起处理运维问题  "},
 	)
 	if err != nil {
 		t.Fatalf("UpdateBrandingSettings returned error: %v", err)
 	}
-	if item.Slogan != "让平台协作更简单" {
+	if item.Slogan != "让平台协作更简单\n一起处理运维问题" {
 		t.Fatalf("slogan = %q, want trimmed slogan", item.Slogan)
+	}
+	persisted, err := service.ResolveBrandingSettings(context.Background())
+	if err != nil || persisted.Slogan != "让平台协作更简单\n一起处理运维问题" {
+		t.Fatalf("resolved custom slogan = %q, err = %v", persisted.Slogan, err)
 	}
 }
 

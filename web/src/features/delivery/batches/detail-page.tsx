@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { lazy, Suspense, useRef, useState } from 'react'
-import { Alert, Button, Descriptions, Drawer, Popconfirm, Space, Typography } from 'antd'
+import { Button, Descriptions, Drawer, Popconfirm, Space, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -302,7 +303,7 @@ export function DeliveryBatchDetailPage() {
         }
       />
       {templateBatch ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="模板配置采用批次"
@@ -310,10 +311,14 @@ export function DeliveryBatchDetailPage() {
         />
       ) : null}
       {batch.partialView ? (
-        <Alert type="info" showIcon title="当前仅显示可查看的目标，状态和计数对应这些目标。" />
+        <ContextFeedback
+          type="info"
+          showIcon
+          title="当前仅显示可查看的目标，状态和计数对应这些目标。"
+        />
       ) : null}
       {batch.stopSummary ? (
-        <Alert
+        <ContextFeedback
           type={batch.stopReason === 'failure' ? 'error' : 'info'}
           showIcon
           title={batch.stopSummary}

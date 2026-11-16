@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import type { ReactNode } from 'react'
-import { Alert, Button, Card, Space, Tag, Tooltip, Typography } from 'antd'
+import { Button, Card, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   ArrowRightOutlined,
   QuestionCircleOutlined,
@@ -192,7 +193,7 @@ export function DeliveryGatewayReadinessPanel({
             </Tag>
             {manifestQuery.isFetching ? <Tag>刷新中</Tag> : null}
           </Space>
-          <Alert
+          <ContextFeedback
             showIcon
             type={tone.alertType}
             title={tone.title}

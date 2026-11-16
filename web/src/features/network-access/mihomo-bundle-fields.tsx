@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Select, Typography } from 'antd'
+import { Select, Typography } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -26,7 +27,7 @@ export function MihomoBundleFields({
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {!canView ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title="无代理实例查看权限，无法浏览或更换发布包"
           description={
@@ -77,7 +78,7 @@ export function MihomoBundleFields({
                 />
               </label>
               {!bundles.isLoading && !active.length && (
-                <Alert type="info" title="此实例暂无已激活发布包" />
+                <ContextFeedback type="info" title="此实例暂无已激活发布包" />
               )}
             </>
           )}

@@ -268,7 +268,7 @@ describe('plugin list page data boundaries', () => {
     expect(container.textContent).toContain('network unavailable')
     expect(
       Array.from(container.querySelectorAll('button')).some(
-        (button) => button.textContent === '重试读取',
+        (button) => button.getAttribute('aria-label') === '重试读取插件市场',
       ),
     ).toBe(true)
   })

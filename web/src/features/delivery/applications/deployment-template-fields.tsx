@@ -1,6 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
-  Alert,
   Button,
   Card,
   Form,
@@ -160,20 +162,22 @@ export function useServiceDeployment(
       enabled && Boolean(original?.manifestPackageId),
     ),
   )
+  const environmentData = readableQueryData(environmentsQuery)
+  const oldTemplateData = readableQueryData(oldTemplateQuery)
+  const packageData = readableQueryData(packageQuery)
   const packageSnapshot = useRef<ManifestPackage | undefined>(undefined)
-  const environmentSnapshot = useRef<typeof environmentsQuery.data>(undefined)
-  const helmEnvironmentSnapshot = useRef<typeof environmentsQuery.data>(undefined)
-  const dockerEnvironmentSnapshot = useRef<typeof environmentsQuery.data>(undefined)
+  const environmentSnapshot = useRef<typeof environmentData>(undefined)
+  const helmEnvironmentSnapshot = useRef<typeof environmentData>(undefined)
+  const dockerEnvironmentSnapshot = useRef<typeof environmentData>(undefined)
   const initialHelmSource = useRef<DeploymentTemplateHelmSource | undefined>(undefined)
   const initializedTemplate = useRef('')
   const previousTemplate = useRef<ServiceDeploymentTemplate | undefined>(undefined)
-  const template = templateQuery.data
+  const template = readableQueryData(templateQuery)
   const selection = `${templateId}:${version}`
   useEffect(() => {
-    if (values?.mode !== 'docker' || !environmentsQuery.data || dockerEnvironmentSnapshot.current)
-      return
+    if (values?.mode !== 'docker' || !environmentData || dockerEnvironmentSnapshot.current) return
     dockerEnvironmentSnapshot.current = structuredClone(
-      environmentsQuery.data.filter((item) => item.applicationId === applicationId),
+      environmentData.filter((item) => item.applicationId === applicationId),
     )
     const existing = dockerEnvironmentSnapshot.current.flatMap((environment) =>
       (environment.targets ?? [])
@@ -194,20 +198,20 @@ export function useServiceDeployment(
         ),
       },
     })
-  }, [applicationId, environmentsQuery.data, form, service?.id, values?.mode])
+  }, [applicationId, environmentData, form, service?.id, values?.mode])
   useEffect(() => {
-    if (environmentsQuery.data && !environmentSnapshot.current)
-      environmentSnapshot.current = structuredClone(environmentsQuery.data)
-  }, [environmentsQuery.data])
+    if (environmentData && !environmentSnapshot.current)
+      environmentSnapshot.current = structuredClone(environmentData)
+  }, [environmentData])
   useEffect(() => {
     if (
       (template?.source.renderer !== 'helm' && values?.mode !== 'helm') ||
-      !environmentsQuery.data ||
+      !environmentData ||
       helmEnvironmentSnapshot.current
     )
       return
     helmEnvironmentSnapshot.current = structuredClone(
-      environmentsQuery.data.filter((item) => item.applicationId === applicationId),
+      environmentData.filter((item) => item.applicationId === applicationId),
     )
     const existing = helmEnvironmentSnapshot.current.flatMap((environment) =>
       (environment.targets ?? [])
@@ -260,7 +264,7 @@ export function useServiceDeployment(
         ),
       )
     }
-  }, [applicationId, environmentsQuery.data, form, service?.id, template, values?.mode])
+  }, [applicationId, environmentData, form, service?.id, template, values?.mode])
   useEffect(() => {
     if (!template || initializedTemplate.current === selection) return
     const initial =
@@ -286,8 +290,8 @@ export function useServiceDeployment(
     previousTemplate.current = template
   }, [form, original, selection, template, templateId, version])
   useEffect(() => {
-    if (!packageQuery.data || packageSnapshot.current || !oldTemplateQuery.data) return
-    const item = packageQuery.data
+    if (!packageData || packageSnapshot.current || !oldTemplateData) return
+    const item = packageData
     packageSnapshot.current = structuredClone(item)
     form.setFieldValue(
       ['deployment', 'environmentIds'],
@@ -299,7 +303,7 @@ export function useServiceDeployment(
         item.bindings.map((binding) => [
           binding.applicationEnvironmentId,
           deploymentParameterFields(
-            oldTemplateQuery.data.parameterSchema,
+            oldTemplateData.parameterSchema,
             binding.templateParameters ?? {},
           ),
         ]),
@@ -314,7 +318,7 @@ export function useServiceDeployment(
         ]),
       ),
     )
-  }, [form, oldTemplateQuery.data, packageQuery.data])
+  }, [form, oldTemplateData, packageData])
 
   const prepare = async (
     serviceKey: string,
@@ -514,9 +518,7 @@ export function useServiceDeployment(
     packageSnapshot,
     original,
     selection,
-    environments: (environmentsQuery.data ?? []).filter(
-      (item) => item.applicationId === applicationId,
-    ),
+    environments: (environmentData ?? []).filter((item) => item.applicationId === applicationId),
   }
 }
 
@@ -609,12 +611,9 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
     original &&
     (original.templateId !== values?.templateId || original.version !== values?.version),
   )
-  const error =
-    templatesQuery.error ||
-    versionsQuery.error ||
-    templateQuery.error ||
-    oldTemplateQuery.error ||
-    state.packageQuery.error
+  const templates = readableQueryData(templatesQuery)
+  const versions = readableQueryData(versionsQuery)
+  const oldTemplate = readableQueryData(oldTemplateQuery)
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
       <Form.Item name={['deployment', 'mode']} label="部署配置">
@@ -634,7 +633,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
         />
       </Form.Item>
       {values?.mode === 'independent' ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="保存后使用当前已保存的配置、参数和环境关联；本次尚未保存的模板调整不会用于副本。"
@@ -653,7 +652,11 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
       ) : null}
       {values?.mode === 'template' ? (
         <>
-          {error ? <Alert type="error" showIcon title={error.message} /> : null}
+          <ReadFeedback query={templatesQuery} label="部署模板" />
+          <ReadFeedback query={versionsQuery} label="部署模板版本" />
+          <ReadFeedback query={templateQuery} label="所选部署模板" />
+          <ReadFeedback query={oldTemplateQuery} label="原部署模板" />
+          <ReadFeedback query={state.packageQuery} label="部署清单包" />
           <Form.Item
             name={['deployment', 'templateId']}
             label="部署模板"
@@ -664,7 +667,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
               loading={templatesQuery.isLoading}
               showSearch={{ optionFilterProp: 'label' }}
               onChange={(id) => {
-                const item = templatesQuery.data?.find((candidate) => candidate.id === id)
+                const item = templates?.find((candidate) => candidate.id === id)
                 form.setFieldValue(
                   ['deployment', 'version'],
                   id === original?.templateId
@@ -673,7 +676,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
                 )
                 form.setFieldValue(['deployment', 'acceptedVersion'], undefined)
               }}
-              options={(templatesQuery.data ?? []).map((item) => ({
+              options={(templates ?? []).map((item) => ({
                 value: item.id,
                 label: item.name,
                 disabled:
@@ -688,7 +691,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
             <Select
               disabled={Boolean(original && !original.detached)}
               loading={versionsQuery.isLoading}
-              options={(versionsQuery.data ?? []).map((item) => ({
+              options={(versions ?? []).map((item) => ({
                 value: item.publishedVersion,
                 label: `v${item.publishedVersion}`,
               }))}
@@ -709,10 +712,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
             </Space>
           ) : null}
           {changed ? (
-            <Button
-              onClick={() => setDiffOpen(true)}
-              disabled={!template || !oldTemplateQuery.data}
-            >
+            <Button onClick={() => setDiffOpen(true)} disabled={!template || !oldTemplate}>
               查看并确认版本差异
             </Button>
           ) : null}
@@ -744,7 +744,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
               <Suspense fallback={<Text>加载差异…</Text>}>
                 <DiffEditor
                   title="配置与参数"
-                  original={templateContent(oldTemplateQuery.data)}
+                  original={templateContent(oldTemplate)}
                   modified={templateContent(template)}
                   editable={false}
                   leftLabel={`原版本 v${original?.version}`}
@@ -765,9 +765,7 @@ export function DeploymentEnvironmentFields({ state }: { state: DeploymentState 
     return <Text>保留已有部署配置；可在环境设置中继续关联。</Text>
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
-      {environmentsQuery.error ? (
-        <Alert type="error" showIcon title={environmentsQuery.error.message} />
-      ) : null}
+      <ReadFeedback query={environmentsQuery} label="关联环境" />
       <Form.Item name={['deployment', 'environmentIds']} label="关联环境">
         <Select
           mode="multiple"
@@ -844,7 +842,7 @@ export function DeploymentEnvironmentFields({ state }: { state: DeploymentState 
                 required
               />
             ) : (
-              <Alert key={key} type="error" title={`参数 ${key} 已不存在，请移除覆盖`} />
+              <ContextFeedback key={key} type="error" title={`参数 ${key} 已不存在，请移除覆盖`} />
             ),
           )}
         </Card>

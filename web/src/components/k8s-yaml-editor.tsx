@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Editor, { DiffEditor, loader, useMonaco } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
@@ -9,7 +10,7 @@ import {
   FileSearchOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Card, Checkbox, Segmented, Space, Tooltip, Typography, theme } from 'antd'
+import { Button, Card, Checkbox, Segmented, Space, Tooltip, Typography, theme } from 'antd'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { resolveThemeMode } from '@/theme/app-theme'
 import { configureMonacoYaml, type MonacoYaml } from 'monaco-yaml'
@@ -439,7 +440,7 @@ export function K8sYamlEditor({
           </Space>
         </div>
         {serverChanged ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={
@@ -455,7 +456,7 @@ export function K8sYamlEditor({
           />
         ) : null}
         {applyDisabledReason || error || fullscreenError ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="error"
             title={applyDisabledReason || error?.message || fullscreenError}

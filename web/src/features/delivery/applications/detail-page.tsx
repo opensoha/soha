@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { MigrationAssessment, planMigrations } from '../template-migration'
 import { ManifestDeploymentState } from './manifest-deployment-state'
 import { WorkflowProgress, WorkloadProgress } from './delivery-progress'
@@ -10,7 +11,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import './styles.css'
 import './workspace.css'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -2317,7 +2317,7 @@ export function ApplicationDetailPage() {
         isError={detailQuery.isError}
         error={detailQuery.error}
         hasReadData={detailQuery.data !== undefined}
-        onRetry={() => void detailQuery.refetch()}
+        onRetry={() => detailQuery.refetch()}
         dataSource={bindings.filter((binding) => binding.workflowTemplateId)}
         empty={
           <ManagementState
@@ -2482,7 +2482,7 @@ export function ApplicationDetailPage() {
           </label>
         ) : null}
         {confirmedDeliveryPlan ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="success"
             title="计划已确认并触发执行"
@@ -2494,7 +2494,7 @@ export function ApplicationDetailPage() {
             }
           />
         ) : (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title="确认前不会触发执行"
@@ -2722,7 +2722,7 @@ export function ApplicationDetailPage() {
             />
           </Form.Item>
           {selectedWorkflowCreateBinding?.workflowTemplateId ? (
-            <Alert
+            <ContextFeedback
               showIcon
               type="warning"
               title="该环境已有工作流"
@@ -2766,12 +2766,6 @@ export function ApplicationDetailPage() {
         </Form>
       </Modal>
       <div className="soha-application-pane">
-        {runtime && runtimeQuery.isError ? (
-          <Alert type="warning" showIcon title="运行状态刷新失败，当前显示上次读取的结果" />
-        ) : null}
-        {activeTab === 'delivery' && detail && detailQuery.isError ? (
-          <Alert type="warning" showIcon title="工作流刷新失败，当前显示上次读取的结果" />
-        ) : null}
         {invalidEnvironment ? (
           <ManagementState
             kind="not-found"
@@ -3550,7 +3544,7 @@ export function ApplicationDetailPage() {
                     </Button>
                   ) : null}
                   {writeOutcomeUnknown(createDeliveryPlanMutation.error) ? (
-                    <Alert
+                    <ContextFeedback
                       type="warning"
                       showIcon
                       title="未收到计划标识，当前无法直接重读该计划"
@@ -3756,7 +3750,7 @@ export function ApplicationDetailPage() {
                     <div className="soha-application-delivery-actions__footer">
                       <div className="soha-application-delivery-actions__summary">
                         {deliveryActionKind !== 'build' && deliveryTargetCapabilityReason ? (
-                          <Alert
+                          <ContextFeedback
                             showIcon
                             type="warning"
                             title="当前目标集群限制交付写入"
@@ -4282,7 +4276,7 @@ export function ApplicationDetailPage() {
           {isApiError(managementState.updateAppMutation.error) &&
           (managementState.updateAppMutation.error.status === 409 ||
             writeOutcomeUnknown(managementState.updateAppMutation.error)) ? (
-            <Alert
+            <ContextFeedback
               type="warning"
               title={
                 writeOutcomeUnknown(managementState.updateAppMutation.error)

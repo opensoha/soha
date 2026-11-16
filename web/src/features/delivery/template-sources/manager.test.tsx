@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { deliveryApi } from '../api'
 import { deliveryKeys } from '../keys'
+import { ApiError } from '@/services/api-error'
 import type {
   DeliveryDocumentSourceInfo,
   DeliveryTemplateSource,
@@ -170,6 +171,43 @@ async function click(label: string) {
   await act(async () => button(label).click())
   await settle()
 }
+
+it('blocks an already-open source editor when its background detail read fails', async () => {
+  vi.mocked(deliveryApi.repositories.list).mockResolvedValue([])
+  await render(<TemplateSourceManager onClose={() => {}} />)
+  await click('编辑配置')
+  expect(button('保存配置').disabled).toBe(false)
+  const name = document.querySelector<HTMLInputElement>('input[id$="_name"], input[id="name"]')!
+  expect(name.value).toBe(originalSource.name)
+
+  vi.mocked(deliveryApi.templateSources.detail).mockRejectedValue(new Error('temporarily offline'))
+  await act(async () => client.invalidateQueries({ queryKey: deliveryKeys.all }))
+  await settle()
+  expect(button('保存配置').disabled).toBe(true)
+  expect(name.value).toBe(originalSource.name)
+  await act(async () => button('保存配置').click())
+  expect(deliveryApi.templateSources.update).not.toHaveBeenCalled()
+  expect(deliveryApi.templateSources.create).not.toHaveBeenCalled()
+})
+
+it('retains source details on a temporary read failure and hides them after access is denied', async () => {
+  await render(<TemplateSourceManager onClose={() => {}} />)
+  vi.mocked(deliveryApi.templateSources.detail).mockRejectedValue(new Error('temporarily offline'))
+  await act(async () => client.invalidateQueries({ queryKey: deliveryKeys.all }))
+  await settle()
+  expect(document.body.textContent).toContain('来源详情未更新，正在展示上次读取结果')
+  expect(document.body.textContent).toContain('读取并预览')
+  expect(button('读取并预览').disabled).toBe(true)
+  expect(button('编辑配置').disabled).toBe(true)
+  expect(document.body.querySelector('[aria-label="重试读取来源详情"]')).not.toBeNull()
+
+  vi.mocked(deliveryApi.templateSources.detail).mockRejectedValue(new ApiError(403, 'forbidden'))
+  await act(async () => client.invalidateQueries({ queryKey: deliveryKeys.all }))
+  await settle()
+  expect(document.body.textContent).toContain('来源详情无访问权限')
+  expect(document.body.textContent).not.toContain('读取并预览')
+  expect(document.body.querySelector('[aria-label="重试读取来源详情"]')).toBeNull()
+})
 
 it('retries lost read/apply responses using the same candidate and shows removed-file impact', async () => {
   vi.mocked(deliveryApi.templateSources.sync)

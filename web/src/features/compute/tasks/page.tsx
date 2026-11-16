@@ -1,9 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useEffect, useMemo, useState } from 'react'
 import {
   App,
-  Alert,
   Descriptions,
   Drawer,
   Empty,
@@ -683,7 +683,7 @@ export function ComputeTasksPage() {
         {selectedTask ? (
           <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             {selectedTask.failure ? (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="error"
                 title={selectedTask.failure.message || selectedTask.failure.code}

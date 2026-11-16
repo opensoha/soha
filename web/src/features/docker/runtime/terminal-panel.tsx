@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DisconnectOutlined, LinkOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Select, Space, Typography } from 'antd'
+import { Button, Card, Select, Space, Typography } from 'antd'
 import type { Terminal } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -273,7 +274,7 @@ export function DockerProjectTerminalPanel({
             </Button>
           </Space>
         </div>
-        {connectionError ? <Alert showIcon type="error" title={connectionError} /> : null}
+        {connectionError ? <ContextFeedback showIcon type="error" title={connectionError} /> : null}
         {serviceOptions.length === 0 ? (
           <ManagementState
             compact

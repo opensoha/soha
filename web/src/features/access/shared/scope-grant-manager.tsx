@@ -440,7 +440,7 @@ function ScopeGrantSession({
         dataSource={grants}
         error={grantsQuery.error}
         hasReadData={grantsQuery.data !== undefined}
-        onRetry={() => void grantsQuery.refetch()}
+        onRetry={() => grantsQuery.refetch()}
         empty={
           <ManagementState
             bordered={false}

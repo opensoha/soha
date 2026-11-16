@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { Link } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import {
@@ -24,7 +25,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, App, Button, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { MetadataTag } from '@/components/status-tag'
 import { NetworkStatusTag } from '../network-status-tag'
@@ -280,7 +281,7 @@ export default function ProxyInstancesPage() {
           '管理服务器上的 Mihomo、sing-box 与 V2Ray 实例。配置保存后由已登记的 Linux 运行时拉取并应用。',
         )}
       </Typography.Text>
-      <Alert
+      <ContextFeedback
         type="info"
         showIcon
         title={text(
@@ -338,7 +339,7 @@ export default function ProxyInstancesPage() {
         refreshing={instances.isFetching}
         error={instances.error ?? undefined}
         hasReadData={visibleInstancesData !== undefined}
-        onRefresh={() => void (instances.isEnabled === false ? undefined : instances.refetch())}
+        onRefresh={() => (instances.isEnabled === false ? undefined : instances.refetch())}
         localSorting
         pagination={{ pageSize: 15, showSizeChanger: false }}
         toolbarExtra={
@@ -367,22 +368,20 @@ export default function ProxyInstancesPage() {
         }}
         onOk={() => {
           if (canCreate && !readDenied)
-            void createForm
-              .validateFields()
-              .then((values) =>
-                create.mutate({
-                  ...values,
-                  engineDescriptor:
-                    values.engine === 'external' && values.engineDescriptor
-                      ? {
-                          ...values.engineDescriptor,
-                          protocolMajor: 1,
-                          protocolMinor: 0,
-                          capabilities: [],
-                        }
-                      : undefined,
-                }),
-              )
+            void createForm.validateFields().then((values) =>
+              create.mutate({
+                ...values,
+                engineDescriptor:
+                  values.engine === 'external' && values.engineDescriptor
+                    ? {
+                        ...values.engineDescriptor,
+                        protocolMajor: 1,
+                        protocolMinor: 0,
+                        capabilities: [],
+                      }
+                    : undefined,
+              }),
+            )
         }}
         closable={!operationBlocked}
         cancelButtonProps={{ disabled: operationBlocked }}
@@ -416,7 +415,10 @@ export default function ProxyInstancesPage() {
           </Form.Item>
           {createEngine === 'external' && (
             <>
-              <Alert type="info" title="外部内核须由安装者预先登记，页面不会下载或安装程序" />
+              <ContextFeedback
+                type="info"
+                title="外部内核须由安装者预先登记，页面不会下载或安装程序"
+              />
               <Form.Item
                 name={['engineDescriptor', 'engineId']}
                 label="内核名称"
@@ -493,7 +495,7 @@ export default function ProxyInstancesPage() {
         {configure.feedback}
         {enroll.feedback}
 
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={t(
@@ -507,7 +509,7 @@ export default function ProxyInstancesPage() {
           className="soha-server-proxy-config-form"
           disabled={operationBlocked || !canUpdate}
         >
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title={text(
@@ -632,7 +634,7 @@ export default function ProxyInstancesPage() {
         {configure.feedback}
         {enroll.feedback}
 
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={t(

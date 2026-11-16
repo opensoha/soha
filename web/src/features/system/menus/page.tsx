@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
@@ -20,7 +21,6 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
-  Alert,
   Button,
   Form,
   Input,
@@ -512,7 +512,7 @@ export function MenusPage() {
           shellClassName="soha-management-table-shell"
           error={menuQuery.error}
           hasReadData={readableQueryData(menuQuery) !== undefined}
-          onRetry={() => void refetch()}
+          onRetry={() => refetch()}
           columns={columns}
           dataSource={filteredMenuTree}
           rowKey="id"
@@ -613,7 +613,7 @@ export function MenusPage() {
 
                 return (
                   <>
-                    <Alert
+                    <ContextFeedback
                       showIcon
                       type={visibilitySummary.mode === 'unmapped' ? 'warning' : 'info'}
                       title={

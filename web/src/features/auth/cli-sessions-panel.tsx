@@ -105,7 +105,7 @@ export function CLISessionsPanel() {
         localSorting={false}
         loading={query.isLoading}
         refreshing={query.isFetching}
-        onRefresh={() => void query.refetch()}
+        onRefresh={() => query.refetch()}
         hasReadData={Boolean(page)}
         error={query.error}
         tableSize="small"

@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Space } from 'antd'
+import { Button, Space } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Terminal } from '@xterm/xterm'
 import type {
@@ -206,9 +207,9 @@ export function VMSSHTerminal({
           {uncertainDisconnect ? '连接已断开 · 执行结果待核验' : (receipt.data?.status ?? state)}
         </span>
       </Space>
-      {error ? <Alert type="error" showIcon title={error} /> : null}
+      {error ? <ContextFeedback type="error" showIcon title={error} /> : null}
       {receipt.data?.reason ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type={receipt.data.status === 'unknown' ? 'warning' : 'info'}
           title={

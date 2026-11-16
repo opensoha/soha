@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
@@ -7,7 +8,7 @@ import type {
   PersonalGuestRuntimeInput,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Drawer, Input, Space, Tabs, Typography } from 'antd'
+import { App, Button, Drawer, Input, Space, Tabs, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { workbenchKeys } from '../keys'
 import { workbenchMutations } from '../mutations'
@@ -217,15 +218,9 @@ export function PersonalWorkspace({
                 工具接通：{toolsQuery.data.data.status}；完成后在助手资料中核对环境。
               </Typography.Text>
             )}
-            {query.isError && (
-              <Alert
-                type="error"
-                title="工作空间读取失败，操作已暂停"
-                action={<Button onClick={() => void query.refetch()}>重试读取</Button>}
-              />
-            )}
+            {query.isError && <Typography.Text type="secondary">操作已暂停</Typography.Text>}
             {!ready && (
-              <Alert
+              <ContextFeedback
                 type="info"
                 title="环境尚未通过当前就绪检查"
                 description="请先接通执行能力并核对环境。聊天仍可继续。"

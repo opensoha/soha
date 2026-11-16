@@ -259,7 +259,7 @@ export function WorkloadsDaemonSetsPage() {
               resourceLabel="DaemonSets"
               disabled={!clusterId}
               label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onRefresh={() => void daemonSetsQuery.refetch()}
+              onRefresh={() => daemonSetsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

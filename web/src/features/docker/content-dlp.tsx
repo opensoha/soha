@@ -1,16 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Input,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Typography,
-} from 'antd'
+import { Button, Drawer, Form, Input, Popconfirm, Select, Space, Switch, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   DockerVolumeDLPContent,
@@ -181,7 +171,7 @@ function DLPDrawer({
         <Typography.Text>
           {text('项目', 'Project')}: {projectId}
         </Typography.Text>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text(
@@ -194,7 +184,7 @@ function DLPDrawer({
           )}
         />
         {!canRead && (canEdit || canPublish) ? (
-          <Alert
+          <ContextFeedback
             type="info"
             title={text(
               '操作草稿还需要策略查看权限',
@@ -435,7 +425,7 @@ function DLPDrawer({
             dataSource={readableQueryData(eventsQuery) ?? []}
             loading={eventsQuery.isLoading}
             pagination={{ pageSize: 10, showSizeChanger: false }}
-            onRefresh={() => void eventsQuery.refetch()}
+            onRefresh={() => eventsQuery.refetch()}
             columns={[
               { title: text('事件', 'Event'), dataIndex: 'id', ellipsis: true },
               {

@@ -329,6 +329,19 @@
   padding-block: 12px;
 }
 
+.soha-management-state.is-context {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.soha-management-state .soha-context-feedback.ant-alert {
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .soha-management-state.is-loading {
   display: flex;
   min-height: 72px;

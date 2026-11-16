@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AimOutlined, EditOutlined } from '@ant-design/icons'
-import { Alert, Button, Descriptions, Space, Typography } from 'antd'
+import { Button, Descriptions, Space, Typography } from 'antd'
 import { Link, useNavigate } from 'react-router-dom'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { localeText, useI18n } from '@/i18n'
@@ -155,7 +156,7 @@ export function NodeEvidence({
         </div>
       ))}
       {(node.conditions ?? []).map((condition, index) => (
-        <Alert
+        <ContextFeedback
           key={index}
           type={
             condition.status === 'True' && condition.observedGeneration === node.generation

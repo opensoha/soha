@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import { ManagementTableToolbar, ManagementToolbarSearch } from '@/components/management-list'
-import { Alert, Button, Card, Tooltip, type TableColumnsType } from 'antd'
+import { Button, Card, Tooltip, type TableColumnsType } from 'antd'
 import { Link } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
@@ -184,7 +185,7 @@ export function ScRelations({
         />
       </ManagementTableToolbar>
       {truncated ? (
-        <Alert
+        <ContextFeedback
           className="soha-sc-truncation"
           showIcon
           type="warning"

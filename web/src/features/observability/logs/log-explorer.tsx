@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
@@ -26,7 +27,6 @@ import {
 import type { LogEntry, LogQuery, LogStreamEvent } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -759,7 +759,7 @@ export function LogExplorer({
       {showQueryControls ? (
         <Card className="soha-log-query-card">
           {mode === 'history' && !supportsDurable ? (
-            <Alert
+            <ContextFeedback
               className="soha-log-inline-alert"
               showIcon
               type="warning"
@@ -1160,7 +1160,7 @@ export function LogExplorer({
         </Flex>
 
         {mode === 'live' && streamMessage ? (
-          <Alert
+          <ContextFeedback
             className="soha-log-inline-alert"
             showIcon
             type={streamState === 'degraded' ? 'warning' : 'info'}
@@ -1168,7 +1168,7 @@ export function LogExplorer({
           />
         ) : null}
         {page?.partial || (page?.warnings?.length ?? 0) > 0 ? (
-          <Alert
+          <ContextFeedback
             className="soha-log-inline-alert"
             showIcon
             type="warning"

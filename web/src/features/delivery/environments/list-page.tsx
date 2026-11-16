@@ -95,12 +95,12 @@ export function ApplicationEnvironmentsPage() {
     <div className="soha-page">
       <DeliveryTable
         refreshing={bindingsQuery.isFetching}
-        onRefresh={() => void bindingsQuery.refetch()}
+        onRefresh={() => bindingsQuery.refetch()}
         isError={bindingsQuery.isError}
         error={bindingsQuery.error}
         hasReadData={bindingsQuery.data !== undefined}
         errorDescription="暂时无法读取应用环境。"
-        onRetry={() => void bindingsQuery.refetch()}
+        onRetry={() => bindingsQuery.refetch()}
         localSorting
         columns={columns}
         dataSource={bindingsQuery.data ?? []}

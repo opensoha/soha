@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useRef, useState } from 'react'
-import { Alert, App, Button, Card, Descriptions, Popconfirm, Space, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Popconfirm, Space, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   ProgressiveRolloutControlInput,
@@ -197,7 +198,7 @@ function RolloutPanel({ task }: { task: ExecutionTask }) {
               ]}
             />
             {state.aborted ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="已请求停止发布"

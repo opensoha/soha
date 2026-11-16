@@ -260,7 +260,7 @@ export function NodeDetailPage() {
                       : 'Node events could not be read'
                     : undefined
                 }
-                onRefresh={() => void eventsQuery.refetch()}
+                onRefresh={() => eventsQuery.refetch()}
                 resourceLabel="Node"
               />
             ) : (

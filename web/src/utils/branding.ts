@@ -6,7 +6,7 @@ const BRANDING_STORAGE_KEY = 'soha-branding'
 export const defaultBrandingSettings: BrandingSettings = {
   appTitle: 'Soha',
   sidebarTitle: 'Soha',
-  slogan: 'Soha 是一种能力！',
+  slogan: '让人手有限的团队，更轻松地管理、维护和保障业务运行。',
   loginLogoUrl: appBrowserPath('/logo.svg'),
   expandedLogoUrl: appBrowserPath('/logo.svg'),
   collapsedLogoUrl: appBrowserPath('/logo.svg'),

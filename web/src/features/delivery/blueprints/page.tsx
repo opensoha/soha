@@ -108,7 +108,11 @@ const FILE_KIND_OPTIONS = [
 ]
 
 type FileTemplatePreset =
-  'dockerfile' | 'yaml_manifest' | 'helm_values' | 'helm_chart' | 'kustomization'
+  | 'dockerfile'
+  | 'yaml_manifest'
+  | 'helm_values'
+  | 'helm_chart'
+  | 'kustomization'
 
 interface FileTemplateDraft {
   path: string
@@ -1696,7 +1700,7 @@ export function DeliveryBlueprintsPage() {
         </>
       }
       onItemSelect={handleSelectListItem}
-      onRetry={() => void blueprintsQuery.refetch()}
+      onRetry={() => blueprintsQuery.refetch()}
       onSearchChange={setSearchText}
       renderItemActions={(item) => (
         <span className="soha-delivery-blueprint-list__item-actions">

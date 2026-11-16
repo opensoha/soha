@@ -1,4 +1,5 @@
-import { Alert, Form, Input, Modal, Select, Switch } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Form, Input, Modal, Select, Switch } from 'antd'
 import type { ReactNode } from 'react'
 import { accessMutationModalStyles } from '../shared/mutation-footer'
 import type { LoginProviderSettings } from '@/features/settings'
@@ -199,7 +200,7 @@ export function DirectoryConnectionModal({
         {['feishu', 'wecom', 'dingtalk'].includes(providerType ?? '') &&
         mode === 'scheduled_and_realtime' ? (
           <>
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title="目录事件回调"
@@ -219,7 +220,7 @@ export function DirectoryConnectionModal({
         ) : null}
         {providerType === 'scim' ? (
           <>
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title="SCIM 入站凭据"
@@ -236,7 +237,7 @@ export function DirectoryConnectionModal({
         ) : null}
         {providerType === 'ldap' ? (
           <>
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title="LDAP 连接"
@@ -272,7 +273,7 @@ export function DirectoryConnectionModal({
           </>
         ) : null}
         {connection?.policy.syncPeople && !canManagePeople ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="info"
             title="人员同步策略保持不变"

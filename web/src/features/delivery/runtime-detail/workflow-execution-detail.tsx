@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useDocumentHidden } from '@/utils/use-document-hidden'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Alert, App, Button, Card, Collapse, Descriptions, Space, Typography, theme } from 'antd'
+import { App, Button, Card, Collapse, Descriptions, Space, Typography, theme } from 'antd'
 import {
   ArrowLeftOutlined,
   CheckOutlined,
@@ -11,7 +12,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { StatusTag } from '@/components/status-tag'
-import { requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
+import { OperationFeedback, ReadFeedback, requestErrorMessage } from '@/components/request-feedback'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { deliveryKeys } from '../keys'
@@ -69,7 +70,6 @@ export function WorkflowExecutionDetail({
   const [acknowledged, setAcknowledged] = useState(false)
   const [actionError, setActionError] = useState('')
   const [decisionError, setDecisionError] = useState<Error | null>(null)
-  useInlineApiError(actionError ? decisionError : null)
   const decisionDialog = useRef<ReturnType<typeof modal.confirm> | null>(null)
   const state = workflowExecutionState(record.status)
   const summary = workflowExecutionSummary(record)
@@ -122,14 +122,18 @@ export function WorkflowExecutionDetail({
       })
       await onRefresh()
     } catch (error) {
-      setDecisionError(error instanceof Error ? error : null)
+      setDecisionError(error instanceof Error ? error : new Error('审批请求未提交，请重试。'))
       const uncertain =
         writeStarted && !saved && writeOutcomeUnknown(error instanceof Error ? error : null)
       const message = `${saved ? '审批已提交，执行记录尚未更新。' : uncertain ? '审批请求结果不明，请先核对执行记录，不要重复提交。' : '审批未提交。'}${error instanceof Error ? requestErrorMessage(error, 'zh_CN') : '请重试。'}`
       setActionError(message)
       if (!saved) {
         decisionDialog.current?.update({
-          content: <Alert type={uncertain ? 'warning' : 'error'} showIcon title={message} />,
+          content: uncertain ? (
+            <ContextFeedback type="warning" showIcon title={message} />
+          ) : (
+            <Typography.Paragraph>{message}</Typography.Paragraph>
+          ),
           okButtonProps: {
             'aria-label': action === 'approve' ? '确认批准' : '确认拒绝',
             loading: false,
@@ -221,26 +225,30 @@ export function WorkflowExecutionDetail({
         </Space>
       </header>
 
-      {refreshError ? (
-        <Alert
-          type="warning"
-          showIcon
-          title="证据未更新，正在展示上次记录"
-          description={
+      <ReadFeedback
+        query={{
+          data: record,
+          error:
             refreshError instanceof Error
-              ? requestErrorMessage(refreshError, 'zh_CN')
-              : '刷新失败，请重试。'
-          }
-          action={
-            <Button size="small" onClick={() => void onRefresh().catch(() => {})}>
-              重试
-            </Button>
-          }
-        />
-      ) : null}
-      {actionError ? <Alert type="error" showIcon title={actionError} /> : null}
+              ? refreshError
+              : refreshError
+                ? new Error('执行证据刷新失败，请重试。')
+                : null,
+          isError: Boolean(refreshError),
+          isFetching: refreshing,
+          refetch: onRefresh,
+        }}
+        label="执行证据"
+      />
+      <OperationFeedback
+        pending={Boolean(submitting)}
+        error={actionError && !acknowledged ? decisionError : null}
+        label="审批执行"
+        target={record.id}
+        description={actionError || undefined}
+      />
       {acknowledged && workflowCanReview(record) ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title="审批已提交，等待执行记录确认"
@@ -305,7 +313,7 @@ export function WorkflowExecutionDetail({
 
       <Card className="soha-execution-stages-panel" title="执行节点" size="small">
         {selectedKey && !summary.stages.some((stage) => stage.key === selectedKey) ? (
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title="所选节点不在本次执行记录中"

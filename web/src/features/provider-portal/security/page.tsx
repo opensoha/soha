@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { operationModalStyles } from '@/components/modal-styles'
 import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
@@ -20,7 +21,6 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -411,7 +411,7 @@ export function PortalSecurityPage() {
                   {runtimeQuery.isPending ? (
                     <Spin size="small" />
                   ) : !runtime ? null : !mfaAvailable ? (
-                    <Alert
+                    <ContextFeedback
                       showIcon
                       title="MFA runtime unavailable"
                       description="This server has no usable MFA challenge runtime."
@@ -589,7 +589,7 @@ export function PortalSecurityPage() {
         title="Register authenticator"
       >
         {verifyMutation.feedback}
-        <Alert
+        <ContextFeedback
           showIcon
           title="Scan this provisioning URI in your authenticator app"
           description={<Text copyable>{totpChallenge?.provisioningUri}</Text>}
@@ -657,7 +657,7 @@ export function PortalSecurityPage() {
         open={!denied && recoveryCodes.length > 0}
         title="Recovery codes"
       >
-        <Alert
+        <ContextFeedback
           showIcon
           title="Shown once"
           description="Store these codes securely. Each code can be used only once."

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeOperationFeedback, ComputeMutationFeedback } from '@/features/compute'
@@ -6,7 +7,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
-  Alert,
   AutoComplete,
   Button,
   Collapse,
@@ -204,7 +204,7 @@ function TaskProgressBanner({
       : localeText(localeCode, '正在等待任务完成...', 'Waiting for the task to complete...'))
   const taskStatus = task?.status ? <StatusTag value={task.status} /> : null
   return (
-    <Alert
+    <ContextFeedback
       className="soha-vrt-task-banner"
       type={isError ? 'warning' : 'info'}
       showIcon
@@ -895,7 +895,7 @@ export function VirtualizationVmsPage() {
       </Form.Item>
       {managedGuestAccess ? (
         <>
-          <Alert
+          <ContextFeedback
             showIcon
             type="info"
             title="首次启动公钥初始化"
@@ -1149,7 +1149,7 @@ export function VirtualizationVmsPage() {
               ) : null
             }
             refreshing={vmsQuery.isFetching}
-            onRefresh={() => void vmsQuery.refetch()}
+            onRefresh={() => vmsQuery.refetch()}
             loading={vmsQuery.isLoading}
             dataSource={vmPage.items}
             columns={columns}
@@ -1383,7 +1383,7 @@ export function VirtualizationVmsPage() {
                       />
                     </Form.Item>
                     {selectedFlavor ? (
-                      <Alert
+                      <ContextFeedback
                         className="mb-3"
                         type="info"
                         showIcon
@@ -1466,7 +1466,7 @@ export function VirtualizationVmsPage() {
                 fieldNames: ['cpu', 'memoryMiB', 'diskGiB'],
                 children: (
                   <>
-                    <Alert
+                    <ContextFeedback
                       className="soha-vrt-form-alert"
                       type="info"
                       showIcon
@@ -1602,7 +1602,7 @@ export function VirtualizationVmsPage() {
                             </Form.Item>
                           </>
                         ) : (
-                          <Alert
+                          <ContextFeedback
                             type="info"
                             showIcon
                             title={localeText(
@@ -2084,7 +2084,7 @@ export function VirtualizationVmsPage() {
                             ) : null}
                           </>
                         ) : (
-                          <Alert
+                          <ContextFeedback
                             type="info"
                             showIcon
                             title={localeText(
@@ -2103,7 +2103,7 @@ export function VirtualizationVmsPage() {
                 title: localeText(localeCode, '确认', 'Review'),
                 children: (
                   <>
-                    <Alert
+                    <ContextFeedback
                       showIcon
                       type="info"
                       title={
@@ -2187,7 +2187,7 @@ export function VirtualizationVmsPage() {
         }}
         destroyOnHidden
       >
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title={localeText(
@@ -2319,7 +2319,7 @@ export function VirtualizationVmsPage() {
             fieldNames: ['cpu', 'memoryMiB'],
             children: (
               <>
-                <Alert
+                <ContextFeedback
                   className="soha-vrt-form-alert"
                   type="info"
                   showIcon
@@ -2600,7 +2600,7 @@ export function VirtualizationVmsPage() {
           {
             title: localeText(localeCode, '确认', 'Review'),
             children: (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="warning"
                 title={localeText(

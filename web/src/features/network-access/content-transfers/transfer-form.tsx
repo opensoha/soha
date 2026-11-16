@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
-import { Alert, Button, Form, Input, Popconfirm, Select, Space, Typography } from 'antd'
+import { Button, Form, Input, Popconfirm, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   ManagedContentRecord,
@@ -165,7 +166,7 @@ export function TransferForm({
         label={text('已发布目的连接', 'Published destinations')}
       />
       {targets?.length === 0 ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title={text(
             '尚无可用目的连接，请联系管理员配置并发布。',
@@ -174,7 +175,7 @@ export function TransferForm({
         />
       ) : null}
       {retryRecord ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title={text(
             '使用既有记录重试原内容',
@@ -279,7 +280,7 @@ export function TransferForm({
           {text('检查并提交', 'Inspect and submit')}
         </Button>
       </Form>
-      {selectionError ? <Alert type="error" title={selectionError} /> : null}
+      {selectionError ? <ContextFeedback type="error" title={selectionError} /> : null}
       {send.feedback}
       {requestId ? (
         <Typography.Text copyable>

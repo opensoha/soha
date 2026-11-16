@@ -1,4 +1,5 @@
-import { Alert, Form, Input, Select, Switch } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Form, Input, Select, Switch } from 'antd'
 import type { FormInstance } from 'antd'
 import type { DirectoryConnectionInput, DirectoryProviderType } from './types'
 
@@ -18,7 +19,7 @@ export function DirectoryPolicyForm({
 
   return (
     <>
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title="组织始终同步"
@@ -42,14 +43,16 @@ export function DirectoryPolicyForm({
         />
       </Form.Item>
       {syncPeople ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title="人员同步已开启"
           description="同步可能创建或更新用户、身份关联和组织成员关系；解绑抑制仍会阻止自动重绑。"
         />
       ) : null}
-      {!canManagePeople ? <Alert showIcon type="warning" title="缺少开启人员同步的权限" /> : null}
+      {!canManagePeople ? (
+        <ContextFeedback showIcon type="warning" title="缺少开启人员同步的权限" />
+      ) : null}
       <Form.Item name={['policy', 'mode']} label="同步方式">
         <Select
           options={[

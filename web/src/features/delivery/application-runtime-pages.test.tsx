@@ -1305,9 +1305,9 @@ async function renderWithProviders(
   await act(async () => {
     root.render(
       <I18nProvider>
-        <AntApp>
-          <QueryClientProvider client={queryClient}>
-            <MemoryRouter initialEntries={[route]}>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[route]}>
+            <AntApp>
               <Routes>
                 <Route path="/execution-history" element={<LocationProbe />} />
                 <Route
@@ -1339,9 +1339,9 @@ async function renderWithProviders(
                   }
                 />
               </Routes>
-            </MemoryRouter>
-          </QueryClientProvider>
-        </AntApp>
+            </AntApp>
+          </MemoryRouter>
+        </QueryClientProvider>
       </I18nProvider>,
     )
   })
@@ -1978,7 +1978,10 @@ describe('ApplicationDetailPage workbench', () => {
       )
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    const feedback = container.querySelector('.soha-operation-feedback')!
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')).not.toBeNull(),
+    )
+    const feedback = document.querySelector('.soha-operation-feedback')!
     expect(feedback.textContent).toContain('操作请求失败')
     expect(feedback.textContent).toContain('集成测试 · 原始工作流')
     expect(feedback.textContent).toContain('workflow-conflict')
@@ -2024,15 +2027,21 @@ describe('ApplicationDetailPage workbench', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(container.textContent).toContain('请求结果不明')
-    expect(container.textContent).toContain('workflow-unknown')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        '请求结果不明',
+      ),
+    )
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'workflow-unknown',
+    )
     expect(findButton(container, '保存工作流').disabled).toBe(true)
     expect((editor.parentElement as HTMLElement).inert).toBe(false)
     const reads = testState.apiGet.mock.calls.filter(
       ([path]) => path === '/application-environments',
     ).length
     await act(async () => {
-      findButton(container, '核对环境记录').click()
+      findButton(document.body, '核对环境记录').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })

@@ -1,7 +1,8 @@
+import { ReadFeedback } from '@/components/request-feedback'
 import { useMemo, useState } from 'react'
 import type { PermissionDefinition } from '@opensoha/contracts/gen/ts/sohaapi'
-import { Alert, Button, Checkbox, Empty, Spin, Tree } from 'antd'
-import { LeftOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons'
+import { Button, Checkbox, Empty, Spin, Tree } from 'antd'
+import { LeftOutlined, RightOutlined } from '@ant-design/icons'
 import type { DataNode } from 'antd/es/tree'
 import { useI18n } from '@/i18n'
 import { buildRolePermissionTreeData } from './permission-model'
@@ -26,7 +27,7 @@ type PermissionBrowserData = {
 
 type RolePermissionBrowserProps = {
   definitions: PermissionDefinition[]
-  error?: boolean
+  error?: Error | null
   loading?: boolean
   permissionKeys: string[]
   onChange: (permissionKeys: string[]) => void
@@ -265,18 +266,14 @@ export function RolePermissionBrowser({
   }
   if (error) {
     return (
-      <Alert
-        showIcon
-        title={t('access.roles.catalogLoadFailed', '权限目录加载失败')}
-        description={t('access.roles.catalogLoadFailedDescription', '请重试后再配置角色权限。')}
-        type="error"
-        action={
-          onRetry ? (
-            <Button size="small" icon={<ReloadOutlined />} onClick={onRetry}>
-              {t('common.retry', '重试')}
-            </Button>
-          ) : null
-        }
+      <ReadFeedback
+        label={t('access.roles.form.permissions', '权限目录')}
+        query={{
+          error,
+          isError: true,
+          isFetching: Boolean(loading),
+          refetch: onRetry,
+        }}
       />
     )
   }

@@ -1,6 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert,
   App,
   Button,
   Descriptions,
@@ -246,7 +246,7 @@ export function ManifestOperationsPanel({ item }: { item: ManifestPackage }) {
   const sourceTab = (
     <Form form={sourceForm} layout="vertical" requiredMark="optional">
       {sourceQuery.data?.lastErrorMessage ? (
-        <Alert showIcon type="error" title={sourceQuery.data.lastErrorMessage} />
+        <ContextFeedback showIcon type="error" title={sourceQuery.data.lastErrorMessage} />
       ) : null}
       <div className="soha-manifest-form-grid">
         <Form.Item label="来源模式" name="mode" rules={[{ required: true }]}>
@@ -593,7 +593,7 @@ export function ManifestOperationsPanel({ item }: { item: ManifestPackage }) {
           ) : null}
         </Form>
       ) : (
-        <Alert showIcon type="info" title="当前资源包尚未配置环境绑定" />
+        <ContextFeedback showIcon type="info" title="当前资源包尚未配置环境绑定" />
       )}
     </Space>
   )

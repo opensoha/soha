@@ -1,4 +1,5 @@
-import { Alert, Steps } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Steps } from 'antd'
 import { useI18n } from '@/i18n'
 import type { PersistentVolumeClaimDetail } from '@/types/platform'
 import { assessPersistentVolumeClaim } from './lifecycle-model'
@@ -46,7 +47,7 @@ export function PersistentVolumeClaimLifecyclePanel({
         ]}
       />
       {messages.map((message, index) => (
-        <Alert
+        <ContextFeedback
           key={assessment.risks[index]}
           showIcon
           type={assessment.risks[index] === 'lost' ? 'error' : 'warning'}

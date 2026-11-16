@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
@@ -28,7 +29,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { Alert, Button, Card, Typography } from 'antd'
+import { Button, Card, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useNetworkDetailScope } from '../shared/detail-scope'
@@ -160,7 +161,7 @@ export function ServiceDetailPage() {
     <ManagementState compact kind="unsupported" description={description} />
   )
   const unknownData = (description: string) => (
-    <Alert
+    <ContextFeedback
       showIcon
       type="info"
       title={zh ? '后端数据未确认' : 'Backend data not confirmed'}
@@ -334,7 +335,9 @@ export function ServiceDetailPage() {
       }
     >
       <Card title={zh ? '访问地址' : 'Addresses'} className="soha-detail-card">
-        {configuration.error && <Alert showIcon type="warning" title={configuration.error} />}
+        {configuration.error && (
+          <ContextFeedback showIcon type="warning" title={configuration.error} />
+        )}
         <WorkloadOverviewConfiguration
           items={[
             { label: zh ? '类型' : 'Type', children: <ServiceTypeTag type={service.type} /> },

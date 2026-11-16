@@ -1,4 +1,5 @@
-import { Alert, Button, Form, Input, Modal, Radio, Select, Space } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Form, Input, Modal, Radio, Select, Space } from 'antd'
 import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
@@ -105,7 +106,11 @@ export function DeliveryTargetEditor({
       <ReadFeedback query={repositories} label="源码仓库" />
       <ReadFeedback query={history} label="Helm 历史版本" />
       {observeOnly ? (
-        <Alert showIcon type="warning" title="此部署目标仅用于观察，请选择可交付的目标。" />
+        <ContextFeedback
+          showIcon
+          type="warning"
+          title="此部署目标仅用于观察，请选择可交付的目标。"
+        />
       ) : null}
       <Form
         form={form}
@@ -280,7 +285,7 @@ export function DeliveryTargetEditor({
                 />
               </Form.Item>
             ) : null}
-            <Alert
+            <ContextFeedback
               showIcon
               type="info"
               title={

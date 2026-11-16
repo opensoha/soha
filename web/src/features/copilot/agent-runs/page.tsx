@@ -48,9 +48,15 @@ export function AgentRunsPage() {
       key: 'runtimeAssembly',
       width: 220,
       render: (_value, run) =>
-        run.runtimeAssembly || run.output?.runtimeHooks
-          ? <RuntimeAssemblySummary assembly={run.runtimeAssembly} hookOutcomes={run.output?.runtimeHooks} toolExecutions={run.toolExecutions} />
-          : '-',
+        run.runtimeAssembly || run.output?.runtimeHooks ? (
+          <RuntimeAssemblySummary
+            assembly={run.runtimeAssembly}
+            hookOutcomes={run.output?.runtimeHooks}
+            toolExecutions={run.toolExecutions}
+          />
+        ) : (
+          '-'
+        ),
     },
     {
       title: 'Skills',
@@ -104,7 +110,7 @@ export function AgentRunsPage() {
         loading: runsQuery.isLoading,
         error: runsQuery.error,
         hasReadData: runsQuery.data !== undefined,
-        onRetry: () => void runsQuery.refetch(),
+        onRetry: () => runsQuery.refetch(),
         rowKey: 'id',
         empty: runsQuery.isError ? (
           <ManagementState kind="error" title="Agent Runs 加载失败" />

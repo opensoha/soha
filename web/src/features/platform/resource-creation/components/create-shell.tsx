@@ -9,7 +9,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { createUUID } from '@/utils/uuid'
 import { CheckCircleOutlined, FileTextOutlined, FormOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Collapse, Spin, Tabs, Typography } from 'antd'
+import { App, Button, Collapse, Spin, Tabs, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PreparedResourceManifest, ResourceFormDefinition } from '../forms'
 import {
@@ -90,7 +90,6 @@ function ShellBody({
   const [formValues, setFormValues] = useState<unknown>()
   const [draft, setDraft] = useState(defaultTemplate)
   const [preparedManifest, setPreparedManifest] = useState<PreparedResourceManifest | null>(null)
-  const [preparationError, setPreparationError] = useState<string | null>(null)
   const [preparingManifest, setPreparingManifest] = useState(false)
   const formRevision = useRef(0)
   const [preflightRequestFingerprint, setPreflightRequestFingerprint] = useState<string | null>(
@@ -170,7 +169,6 @@ function ShellBody({
     setMode(form || registryFormSupported ? initialMode : 'yaml')
     setDraft(defaultTemplate)
     setPreparedManifest(null)
-    setPreparationError(null)
     setPreparingManifest(false)
     formRevision.current += 1
     setPreflightRequestFingerprint(null)
@@ -221,7 +219,6 @@ function ShellBody({
     if (platformWriteBlocked) return
     formRevision.current += 1
     setPreparedManifest(null)
-    setPreparationError(null)
     setPreparingManifest(false)
     setPreflightRequestFingerprint(null)
     setIdempotencyKey(null)
@@ -234,7 +231,6 @@ function ShellBody({
     const revision = formRevision.current
     setPreflightRequestFingerprint(null)
     setIdempotencyKey(null)
-    setPreparationError(null)
     preflightMutation.reset()
     executeMutation.reset()
 
@@ -266,7 +262,6 @@ function ShellBody({
     } catch (error) {
       if (revision !== formRevision.current) return
       const detail = error instanceof Error ? error.message : String(error)
-      setPreparationError(detail)
       void message.error(detail)
       return
     } finally {
@@ -422,24 +417,6 @@ function ShellBody({
             {isChinese ? '生成 Manifest 并预检' : 'Build manifest and preflight'}
           </Button>
         </div>
-      ) : null}
-
-      {preparationError ? (
-        <Alert
-          description={preparationError}
-          showIcon
-          title={isChinese ? 'Manifest 生成失败' : 'Manifest generation failed'}
-          type="error"
-        />
-      ) : null}
-
-      {preflightMutation.isError ? (
-        <Alert
-          description={resourceCreationErrorMessage(preflightMutation.error, isChinese)}
-          showIcon
-          title={isChinese ? '预检失败' : 'Preflight failed'}
-          type="error"
-        />
       ) : null}
 
       {preflightMutation.data ? (

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkloadRelationships } from '@/features/platform/shared/resource-insights/workload-relationships'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -19,7 +20,7 @@ import {
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Spin, Typography } from 'antd'
+import { Button, Card, Spin, Typography } from 'antd'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -287,7 +288,9 @@ export function IngressDetailPage() {
         </>
       }
     >
-      {configuration.error && <Alert showIcon type="warning" title={configuration.error} />}
+      {configuration.error && (
+        <ContextFeedback showIcon type="warning" title={configuration.error} />
+      )}
       <Card
         className="soha-detail-card"
         title={zh ? '入口规则' : 'Ingress rules'}
@@ -419,7 +422,7 @@ export function IngressDetailPage() {
                           events={readableQueryData(events) || []}
                           observedAt={events.dataUpdatedAt}
                           loading={events.isLoading}
-                          onRefresh={() => void events.refetch()}
+                          onRefresh={() => events.refetch()}
                           allowEstimatedTime={false}
                           scopeHint={
                             zh
@@ -431,7 +434,7 @@ export function IngressDetailPage() {
                     )}
                   </>
                 ) : (
-                  <Alert
+                  <ContextFeedback
                     showIcon
                     type="info"
                     title={zh ? '无事件查看权限' : 'Event access unavailable'}

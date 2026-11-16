@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, Button, Form, Input, Select, Space, Typography } from 'antd'
+import { Button, Form, Input, Select, Space, Typography } from 'antd'
 import type {
   DLPDataLevel,
   DLPShadowInput,
@@ -105,7 +106,7 @@ export function DecisionEvidence({
         </Typography.Text>
       ) : null}
       {decision.stepUpRequired && !decision.allowed ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           title={
             shadow
@@ -182,7 +183,7 @@ export function DLPShadowPanel({
       <Typography.Text strong>
         {text('发布前影子评估', 'Shadow evaluation before publication')}
       </Typography.Text>
-      <Alert
+      <ContextFeedback
         type="info"
         title={text(
           '仅试算已保存版本；样本不会传到目的地。',

@@ -10,6 +10,7 @@ import { ApiError } from '@/services/api-error'
 
 const captured = vi.hoisted(() => ({
   tableProps: null as any,
+  warning: vi.fn(),
 }))
 const i18n = vi.hoisted(() => ({
   localeCode: 'zh_CN' as 'zh_CN' | 'en_US',
@@ -24,6 +25,7 @@ vi.mock('@/i18n', () => ({
 }))
 
 vi.mock('antd', () => ({
+  App: { useApp: () => ({ notification: { warning: captured.warning } }) },
   Alert: ({
     description,
     message,
@@ -167,6 +169,20 @@ describe('AdminTable', () => {
     expect(container.textContent).not.toContain('上次读取结果')
     expect(container.querySelector('[data-testid="table-proxy"]')).toBeNull()
     expect(container.querySelector('[aria-label="刷新列表"]')).not.toBeNull()
+  })
+
+  it('shows one floating failure for an explicit list refresh', async () => {
+    captured.warning.mockClear()
+    const refresh = vi.fn(async () => ({ isError: true, error: new ApiError(503, 'unavailable') }))
+    const container = await renderNode(
+      <AdminTable columns={[]} dataSource={[]} rowKey="id" onRefresh={refresh} />,
+    )
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="刷新列表"]')!.click(),
+    )
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(captured.warning).toHaveBeenCalledTimes(1)
+    expect(captured.warning).toHaveBeenCalledWith(expect.objectContaining({ title: '刷新未完成' }))
   })
 
   it('keeps authorized cached rows and offers a local retry after a temporary failure', async () => {

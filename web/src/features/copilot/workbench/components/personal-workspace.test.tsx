@@ -14,7 +14,7 @@ import { PersonalWorkspace } from './personal-workspace'
 const state = vi.hoisted(() => ({
   value: undefined as PersonalWorkspaceRuntime | undefined,
   failed: false,
-  denied: false,
+  denied: 0,
   invoke: vi.fn(),
 }))
 vi.mock('../queries', () => ({
@@ -24,7 +24,7 @@ vi.mock('../queries', () => ({
       enabled,
       retry: false,
       queryFn: async () => {
-        if (state.denied) throw new ApiError(403, 'workspace denied', { method: 'GET' })
+        if (state.denied) throw new ApiError(state.denied, 'workspace denied', { method: 'GET' })
         if (state.failed) throw new Error('unavailable')
         return { data: state.value }
       },
@@ -49,7 +49,7 @@ const environment: PersonalEnvironment = {
   expiresAt: '2099-01-01T00:00:00Z',
 }
 beforeEach(() => {
-  state.denied = false
+  state.denied = 0
   state.failed = false
   state.value = { assistantId: environment.assistantId, environmentVersion: 7 }
   state.invoke.mockReset()
@@ -96,7 +96,8 @@ async function open() {
 it('pauses commands after a failed workspace read and never dispatches automatically', async () => {
   state.failed = true
   await open()
-  expect(document.body.textContent).toContain('工作空间读取失败，操作已暂停')
+  expect(document.body.textContent).toContain('个人工作空间读取失败')
+  expect(document.body.textContent).toContain('操作已暂停')
   expect(button('执行命令').disabled).toBe(true)
   expect(button('接通执行能力').disabled).toBe(true)
   expect(state.invoke).not.toHaveBeenCalled()
@@ -143,27 +144,34 @@ it('keeps an old browser frame visible but rejects pointer input after a generat
   expect(state.invoke).not.toHaveBeenCalled()
 })
 
-it('hides cached runtime output immediately after access is denied', async () => {
-  state.value = {
-    assistantId: environment.assistantId,
-    environmentVersion: 7,
-    latest: {
-      id: 'private-runtime',
+it.each([401, 403])(
+  'hides cached runtime output after access is denied with %s',
+  async (status) => {
+    state.value = {
       assistantId: environment.assistantId,
       environmentVersion: 7,
-      kind: 'execute',
-      status: 'succeeded',
-      output: 'PRIVATE-RUNTIME-OUTPUT',
-    },
-  }
-  await open()
-  expect(document.body.textContent).toContain('PRIVATE-RUNTIME-OUTPUT')
-  state.denied = true
-  await act(async () => {
-    await client.invalidateQueries({ queryKey: ['workspace', 'user-one', environment.assistantId] })
-  })
-  await vi.waitFor(() => expect(document.body.textContent).not.toContain('PRIVATE-RUNTIME-OUTPUT'))
-  expect(button('打开个人工作空间').disabled).toBe(true)
-  expect(document.body.textContent).toContain('无访问权限')
-  expect(state.invoke).not.toHaveBeenCalled()
-})
+      latest: {
+        id: 'private-runtime',
+        assistantId: environment.assistantId,
+        environmentVersion: 7,
+        kind: 'execute',
+        status: 'succeeded',
+        output: 'PRIVATE-RUNTIME-OUTPUT',
+      },
+    }
+    await open()
+    expect(document.body.textContent).toContain('PRIVATE-RUNTIME-OUTPUT')
+    state.denied = status
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: ['workspace', 'user-one', environment.assistantId],
+      })
+    })
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toContain('PRIVATE-RUNTIME-OUTPUT'),
+    )
+    expect(button('打开个人工作空间').disabled).toBe(true)
+    expect(document.body.textContent).toContain(status === 401 ? '登录状态失效' : '无访问权限')
+    expect(state.invoke).not.toHaveBeenCalled()
+  },
+)

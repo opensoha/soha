@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { PlayCircleOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Form, Input, Modal, Select } from 'antd'
+import { Button, Form, Input, Modal, Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -47,7 +48,7 @@ function AIProductionOperationsPageContent() {
     <ProductionOperationsPage
       feedback={<> {!open ? start.feedback : null} </>}
       notice={
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title="生产操作需要审计证据"
@@ -55,7 +56,7 @@ function AIProductionOperationsPageContent() {
         />
       }
       refreshing={snapshots.isFetching || evidence.isFetching}
-      onRefresh={() => void Promise.all([snapshots.refetch(), evidence.refetch()])}
+      onRefresh={() => Promise.all([snapshots.refetch(), evidence.refetch()])}
       actions={
         <Button
           disabled={blocked}

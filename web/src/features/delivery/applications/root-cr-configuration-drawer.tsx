@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { lazy, Suspense, useState } from 'react'
-import { Alert, Button, Drawer, Select, Space, Typography } from 'antd'
+import { Button, Drawer, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { ManagementState } from '@/components/management-list'
@@ -222,9 +223,9 @@ function RootCREditor({
   return (
     <Space orientation="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
       {baseline.blocked ? (
-        <Alert type="warning" title={baseline.blocked} />
+        <ContextFeedback type="warning" title={baseline.blocked} />
       ) : (
-        <Alert
+        <ContextFeedback
           type="info"
           title={
             managed
@@ -264,7 +265,7 @@ function RootCREditor({
           editable={canEdit && !busy}
         />
       </Suspense>
-      {inputError ? <Alert type="error" title={inputError} /> : null}
+      {inputError ? <ContextFeedback type="error" title={inputError} /> : null}
       {create.feedback}
       {update.feedback}
       {revision.feedback}

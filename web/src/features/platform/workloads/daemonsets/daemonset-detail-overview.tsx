@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Card, Typography } from 'antd'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
@@ -100,7 +101,7 @@ export function DaemonSetDetailOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={
           state === 'healthy'

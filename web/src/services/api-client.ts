@@ -26,11 +26,27 @@ async function refreshToken(): Promise<AuthRefreshStatus> {
   return restoreAuthSession()
 }
 
-function throwRefreshUnavailableError(): never {
-  const error = createNetworkApiError(
-    '/auth/refresh',
-    'POST',
-    new Error('Authentication refresh is temporarily unavailable'),
+async function throwRefreshUnavailableError(
+  response: Response,
+  path: string,
+  method: string,
+  prefetched?: { body: ErrorEnvelope | undefined },
+): Promise<never> {
+  const body = prefetched ? prefetched.body : await parseJsonSafely<ErrorEnvelope>(response)
+  const rejected = createApiErrorFromResponse(response, body, { method, path })
+  const error = new ApiError(
+    503,
+    usePreferencesStore.getState().localeCode === 'zh_CN'
+      ? '登录状态暂时无法恢复，请稍后重试。'
+      : 'Your sign-in session could not be restored right now. Please try again later.',
+    {
+      code: 'auth_refresh_unavailable',
+      method,
+      path,
+      requestId: rejected.requestId,
+      requestOutcome: 'rejected',
+      cause: rejected,
+    },
   )
   emitApiError(error)
   throw error
@@ -142,7 +158,7 @@ async function requestResponse(path: string, options: RequestInit): Promise<Resp
       res = await fetchApi(path, options, newToken)
       rejected = undefined
     } else if (refreshStatus === 'unavailable') {
-      throwRefreshUnavailableError()
+      await throwRefreshUnavailableError(res, path, method, rejected)
     }
   }
 
@@ -286,7 +302,7 @@ export const api = {
         const { accessToken: newToken } = useAuthStore.getState()
         res = await fetchApi(path, options, newToken)
       } else if (refreshStatus === 'unavailable') {
-        throwRefreshUnavailableError()
+        await throwRefreshUnavailableError(res, path, 'POST')
       }
     }
 

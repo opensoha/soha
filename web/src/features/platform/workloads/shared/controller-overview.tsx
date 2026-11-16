@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import type { TableColumnsType } from 'antd'
@@ -7,7 +8,7 @@ import { AdminTable } from '@/components/admin-table'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
-import { Alert, Button, Card, Input } from 'antd'
+import { Button, Card, Input } from 'antd'
 import { Link } from 'react-router-dom'
 import { buildWorkloadDetailPath } from '@/features/platform/workloads-model'
 import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
@@ -527,7 +528,7 @@ export function ControllerOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={summary.type}
         title={summary.title}

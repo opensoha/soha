@@ -1,8 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
 import {
-  Alert,
   App,
   Button,
   Drawer,
@@ -134,7 +134,7 @@ function PolicyForm({
           <InputNumber disabled={!canUpdate || !memoryEnabled} min={100} max={150} precision={0} />
         </Form.Item>
       </Space>
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title="超分只放宽配置预算"
@@ -238,7 +238,7 @@ export function CapacityPolicyDrawer({
           </Button>
         </Form>
         {preview.data ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type={preview.data.status === 'available' ? 'success' : 'warning'}
             title={

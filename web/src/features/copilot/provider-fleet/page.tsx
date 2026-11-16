@@ -65,7 +65,7 @@ function ProviderFleetPageContent() {
         </>
       }
       refreshing={rollouts.isFetching || runs.isFetching}
-      onRefresh={() => void Promise.all([rollouts.refetch(), runs.refetch()])}
+      onRefresh={() => Promise.all([rollouts.refetch(), runs.refetch()])}
       actions={
         <Button
           disabled={blocked}

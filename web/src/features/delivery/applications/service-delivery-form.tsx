@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useRef, useState } from 'react'
-import { Alert, App, Button, Card, Descriptions, Space } from 'antd'
+import { App, Button, Card, Descriptions, Space } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ManagementState } from '@/components/management-list'
@@ -152,7 +153,7 @@ export function ServiceDeliveryForm({
         </Card>
       ) : null}
       {current.data ? (
-        <Alert
+        <ContextFeedback
           type={current.data.status === 'failed' ? 'error' : 'info'}
           showIcon
           title={

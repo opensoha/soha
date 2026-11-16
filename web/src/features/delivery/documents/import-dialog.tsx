@@ -1,5 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { MutationFeedback } from '@/components/request-feedback'
 import { useState } from 'react'
-import { Alert, App, Button, Card, Input, InputNumber, Modal, Space, Typography } from 'antd'
+import { App, Button, Card, Input, InputNumber, Modal, Space, Typography } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deliveryApi } from '../api'
 import { deliveryKeys } from '../keys'
@@ -70,8 +72,8 @@ export function DeliveryDocumentImportDialog({
       const result = await previewMutation.mutateAsync({ files })
       setPreview(result)
       setKey(crypto.randomUUID())
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '预览失败')
+    } catch {
+      return
     }
   }
   const apply = async () => {
@@ -82,8 +84,8 @@ export function DeliveryDocumentImportDialog({
       message.success(`已导入 ${result.objects.length} 个对象`)
       onImported?.(result)
       onClose()
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '导入失败')
+    } catch {
+      return
     }
   }
   return (
@@ -115,6 +117,12 @@ export function DeliveryDocumentImportDialog({
       }
     >
       <Space orientation="vertical" style={{ width: '100%' }}>
+        <MutationFeedback
+          operations={[
+            { mutation: previewMutation, label: '校验并预览交付文档' },
+            { mutation: applyMutation, label: '导入交付文档' },
+          ]}
+        />
         <Typography.Paragraph type="secondary">
           支持构建模板、部署模板、流程模板和工作流。全部文件校验通过后一起导入；模板保存为草稿，工作流仅保存配置。
         </Typography.Paragraph>
@@ -150,7 +158,7 @@ export function DeliveryDocumentImportDialog({
             粘贴文档
           </Button>
         </Space>
-        {error ? <Alert type="error" showIcon title={error} /> : null}
+        {error ? <ContextFeedback type="error" showIcon title={error} /> : null}
         {files.map((file, index) => (
           <Card
             key={index}
@@ -226,7 +234,7 @@ export function DeliveryDocumentPreviewView({
     <>
       <DocumentDiagnostics items={preview.diagnostics} />
       {preview.valid ? (
-        <Alert
+        <ContextFeedback
           type="success"
           showIcon
           title="全部文档校验通过"

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StepFormModal } from '@/components/step-form-modal'
@@ -11,7 +12,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Col, Form, Input, InputNumber, Row, Select, Spin } from 'antd'
+import { App, Button, Col, Form, Input, InputNumber, Row, Select, Spin } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { parse, stringify } from 'yaml'
 import {
@@ -113,12 +114,13 @@ export function ConfigurationQuickEditModal({
         title={title}
         width={680}
       >
+        <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
         {yamlQuery.isLoading ? (
           <div className="soha-resource-create-loading">
             <Spin size="large" />
           </div>
-        ) : (
-          <Alert
+        ) : yamlQuery.isError ? null : (
+          <ContextFeedback
             description={error || 'Resource manifest is unavailable'}
             showIcon
             title={localeCode === 'zh_CN' ? '配置加载失败' : 'Failed to load configuration'}
@@ -148,13 +150,15 @@ export function ConfigurationQuickEditModal({
 
   return (
     <>
-      <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
-
       <StepFormModal
         disabled={platformWriteBlocked || Boolean(yamlQuery.error)}
         feedback={
           <>
-            <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
+            <ReadFeedback
+              canRead={yamlQuery.isEnabled && !planMutation.data}
+              query={yamlQuery}
+              label="YAML"
+            />
             {updateMutation.feedback}
             {planMutation.feedback}
           </>

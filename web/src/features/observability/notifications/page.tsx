@@ -810,7 +810,7 @@ export function NotificationsPage() {
                 error={policiesQuery.error}
                 hasReadData={policiesQuery.data !== undefined}
                 refreshing={policiesQuery.isFetching}
-                onRefresh={() => void policiesQuery.refetch()}
+                onRefresh={() => policiesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -842,7 +842,7 @@ export function NotificationsPage() {
                 error={templatesQuery.error}
                 hasReadData={templatesQuery.data !== undefined}
                 refreshing={templatesQuery.isFetching}
-                onRefresh={() => void templatesQuery.refetch()}
+                onRefresh={() => templatesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -874,7 +874,7 @@ export function NotificationsPage() {
                 error={channelsQuery.error}
                 hasReadData={channelsQuery.data !== undefined}
                 refreshing={channelsQuery.isFetching}
-                onRefresh={() => void channelsQuery.refetch()}
+                onRefresh={() => channelsQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -906,7 +906,7 @@ export function NotificationsPage() {
                 error={routesQuery.error}
                 hasReadData={routesQuery.data !== undefined}
                 refreshing={routesQuery.isFetching}
-                onRefresh={() => void routesQuery.refetch()}
+                onRefresh={() => routesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -943,7 +943,7 @@ export function NotificationsPage() {
                 error={silencesQuery.error}
                 hasReadData={silencesQuery.data !== undefined}
                 refreshing={silencesQuery.isFetching}
-                onRefresh={() => void silencesQuery.refetch()}
+                onRefresh={() => silencesQuery.refetch()}
                 columnSettingPlacement="header"
                 columnSettingIconOnly
                 shellClassName="soha-management-table-shell"
@@ -1358,7 +1358,7 @@ export function NotificationsPage() {
             hasReadData={previewQuery.data !== undefined}
             loading={previewQuery.isLoading}
             refreshing={previewQuery.isFetching}
-            onRefresh={() => void previewQuery.refetch()}
+            onRefresh={() => previewQuery.refetch()}
             dataSource={
               !queryAccessDenied(policiesQuery) && !queryAccessDenied(alertEventsQuery)
                 ? (readableQueryData(previewQuery) ?? [])

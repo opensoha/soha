@@ -1,17 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Spin,
-  Typography,
-} from 'antd'
+import { ReadFeedback } from '@/components/request-feedback'
+import { App, Button, Card, Form, Input, InputNumber, Select, Space, Spin, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   VirtualMachineAccessBinding,
@@ -187,21 +177,15 @@ export function VMAccessPanel({ vm }: { vm: VirtualMachine }) {
             'Configure the account, managed credentials and execution agent. Saving updates connection information without changing the VM account, public keys or disks.',
           )}
         </p>
+        {!absent ? <ReadFeedback query={binding} label="登录绑定" /> : null}
         {binding.isPending ? (
           <Spin />
-        ) : binding.error && !absent ? (
-          <Alert
-            type="error"
-            title="登录绑定加载失败"
-            description={binding.error.message}
-            action={<Button onClick={() => void binding.refetch()}>重试</Button>}
-          />
-        ) : (
+        ) : binding.error && !absent && !readableBinding ? null : (
           <AccessForm
             key={readableBinding?.revision ?? 0}
             vm={vm}
             binding={readableBinding}
-            canManage={canManageVMAccess}
+            canManage={canManageVMAccess && (!binding.error || absent)}
           />
         )}
       </Card>
@@ -212,7 +196,7 @@ export function VMAccessPanel({ vm }: { vm: VirtualMachine }) {
           enabled={canConnectVMs && vm.status === 'running'}
         />
       ) : (
-        <Alert type="info" title="尚未配置 VM 登录绑定" />
+        <ContextFeedback type="info" title="尚未配置 VM 登录绑定" />
       )}
     </div>
   )

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -14,7 +15,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Card, Tag, Tooltip } from 'antd'
+import { Button, Card, Tag, Tooltip } from 'antd'
 import {
   accessDecisionState,
   serviceAccountAccessReviewOptions,
@@ -165,7 +166,7 @@ export function ServiceAccountEffectiveAccessPanel({
           </Button>
         }
       >
-        <Alert
+        <ContextFeedback
           showIcon
           style={{ marginBottom: 16 }}
           icon={<SafetyCertificateOutlined />}

@@ -83,7 +83,7 @@ export function AgentProvidersPage() {
         loading: catalogQuery.isLoading,
         error: catalogQuery.error,
         hasReadData: catalogQuery.data !== undefined,
-        onRetry: () => void catalogQuery.refetch(),
+        onRetry: () => catalogQuery.refetch(),
         rowKey: 'id',
         empty: catalogQuery.isError ? (
           <ManagementState kind="error" title="Provider Catalog 加载失败" />

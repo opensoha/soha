@@ -1108,7 +1108,7 @@ export function BuildTemplatesPage() {
         </>
       }
       onItemSelect={handleSelectListItem}
-      onRetry={() => void templatesQuery.refetch()}
+      onRetry={() => templatesQuery.refetch()}
       onSearchChange={setSearchText}
       renderItemActions={(item) => (
         <span className="soha-build-template-list__item-actions">

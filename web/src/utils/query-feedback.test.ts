@@ -36,4 +36,18 @@ describe('shared query feedback evidence', () => {
     expect(writeOutcomeUnknown(new ApiError(503, 'read failed', { method: 'GET' }))).toBe(false)
     expect(writeOutcomeUnknown(null)).toBe(false)
   })
+  it('uses explicit rejection evidence rather than refresh paths, messages or codes', () => {
+    const options = { code: 'auth_refresh_unavailable', method: 'POST', path: '/auth/refresh' }
+    expect(writeOutcomeUnknown(new ApiError(503, 'refresh unavailable', options))).toBe(true)
+    expect(writeOutcomeUnknown(new ApiError(0, 'refresh unavailable', options))).toBe(true)
+    expect(
+      writeOutcomeUnknown(
+        new ApiError(503, 'refresh unavailable', {
+          ...options,
+          path: '/resources',
+          requestOutcome: 'rejected',
+        }),
+      ),
+    ).toBe(false)
+  })
 })

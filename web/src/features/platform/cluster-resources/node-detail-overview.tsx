@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Typography, Tooltip } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Card, Typography, Tooltip } from 'antd'
 import { useI18n } from '@/i18n'
 import { formatCpu, formatBytesAsG } from '../node-resource-utils'
 import type { Pod } from '@/types'
@@ -165,7 +166,7 @@ export function NodeDetailOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={ready ? 'success' : 'warning'}
         title={

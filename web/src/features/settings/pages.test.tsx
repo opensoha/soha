@@ -285,7 +285,7 @@ function setDefaultResponses() {
     '/settings/branding': {
       appTitle: 'Soha',
       sidebarTitle: 'Soha',
-      slogan: 'Soha 是一种能力！',
+      slogan: '让人手有限的团队，更轻松地管理、维护和保障业务运行。',
       loginLogoUrl: 'https://cdn.example.com/legacy-login.svg',
       expandedLogoUrl: 'https://cdn.example.com/logo.svg',
       darkExpandedLogoUrl: 'https://cdn.example.com/dark-logo.svg',
@@ -749,16 +749,18 @@ describe('settings ai page rendering', () => {
     const container = await renderWithProviders(<BrandingSettingsPage />, '/settings/branding')
 
     expect(container.querySelector('img[src="https://cdn.example.com/logo.svg"]')).not.toBeNull()
-    expect((container.querySelector('#slogan') as HTMLInputElement).value).toBe('Soha 是一种能力！')
+    expect((container.querySelector('textarea#slogan') as HTMLTextAreaElement).value).toBe(
+      '让人手有限的团队，更轻松地管理、维护和保障业务运行。',
+    )
     expect(
       Array.from(container.querySelectorAll('.soha-branding-upload-hint')).map(
         (element) => element.textContent,
       ),
     ).toEqual([
-      '用于登录页左侧主视觉和展开侧边栏；支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 200 × 60 px；单个文件不超过 2 MB',
+      '用于展开侧边栏；支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 200 × 60 px；单个文件不超过 2 MB',
       '用于登录卡片和收起侧边栏；支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 60 × 60 px；单个文件不超过 2 MB',
       '支持 JPG、PNG、SVG、ICO、WebP；建议尺寸 16 × 16、32 × 32 或 64 × 64 px；单个文件不超过 2 MB',
-      '用于暗色侧边栏和登录页主视觉；未上传时沿用原图。建议使用透明底 PNG、SVG 或 WebP，200 × 60 px，不超过 2 MB',
+      '用于暗色展开侧边栏；未上传时沿用原图。建议使用透明底 PNG、SVG 或 WebP，200 × 60 px，不超过 2 MB',
       '用于暗色收起侧边栏和登录卡片；未上传时沿用原图。建议使用透明底 PNG、SVG 或 WebP，60 × 60 px，不超过 2 MB',
     ])
     expect(
@@ -766,7 +768,7 @@ describe('settings ai page rendering', () => {
         button.getAttribute('aria-label'),
       ),
     ).toEqual([
-      '替换登录页主视觉与展开侧边栏 Logo',
+      '替换展开侧边栏 Logo',
       '上传登录卡片与收起侧边栏图标',
       '上传Favicon 图标',
       '替换暗色展开 Logo',
@@ -787,7 +789,7 @@ describe('settings ai page rendering', () => {
       expect.objectContaining({
         appTitle: 'Soha',
         sidebarTitle: 'Soha',
-        slogan: 'Soha 是一种能力！',
+        slogan: '让人手有限的团队，更轻松地管理、维护和保障业务运行。',
         loginLogoUrl: 'https://cdn.example.com/legacy-login.svg',
         darkExpandedLogoUrl: 'https://cdn.example.com/dark-logo.svg',
         darkCollapsedLogoUrl: '',
@@ -1133,13 +1135,26 @@ describe('settings ai page rendering', () => {
       defaultPublicModel: 'gpt-public',
       modelOptions: [{ publicModel: 'gpt-public', reasoningEfforts: ['low'] }],
     }
-    testState.responses['/settings/ai/workbench-runtime-profiles/chat-default'] = [{
-      id: 'chat-default', name: '排障配置', scope: 'chat', revision: 2, enabled: true, assets: [],
-      modelPreferences: { reasoningEffort: 'high' },
-    }]
+    testState.responses['/settings/ai/workbench-runtime-profiles/chat-default'] = [
+      {
+        id: 'chat-default',
+        name: '排障配置',
+        scope: 'chat',
+        revision: 2,
+        enabled: true,
+        assets: [],
+        modelPreferences: { reasoningEffort: 'high' },
+      },
+    ]
     const previous = useAuthStore.getState().user
     useAuthStore.getState().setUser({
-      userId: 'profile-editor', userName: 'Profile editor', email: '', roles: [], teams: [], projects: [], tags: [],
+      userId: 'profile-editor',
+      userName: 'Profile editor',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
     })
     try {
       const container = await renderWithProviders(
@@ -1162,9 +1177,11 @@ describe('settings ai page rendering', () => {
         effort.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
       })
       await settle()
-      const choices = Array.from(document.querySelectorAll(
-        '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
-      )).map((item) => item.textContent)
+      const choices = Array.from(
+        document.querySelectorAll(
+          '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+        ),
+      ).map((item) => item.textContent)
       expect(choices).toEqual(['自动', '轻度'])
       await act(async () => button(dialog, '发布新版本')?.click())
       await settle()
@@ -1294,8 +1311,9 @@ describe('settings ai page rendering', () => {
     const disable = page.querySelector<HTMLButtonElement>('[aria-label="停用旧 AI 数据源"]')!
     await act(async () => disable.click())
     expect(apiPutMock).not.toHaveBeenCalled()
-    const confirmation = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent?.replace(/\s/g, '') === '停用')!
+    const confirmation = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.replace(/\s/g, '') === '停用')!
     await act(async () => confirmation.click())
     expect(apiPutMock).toHaveBeenCalledWith('/copilot/data-sources/old-traces', {
       name: 'Old traces',
@@ -1315,9 +1333,11 @@ describe('settings ai page rendering', () => {
       sourceKind.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
       sourceKind.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     })
-    const choices = Array.from(document.querySelectorAll(
-      '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
-    )).map((item) => item.textContent)
+    const choices = Array.from(
+      document.querySelectorAll(
+        '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+      ),
+    ).map((item) => item.textContent)
     expect(choices).toEqual(['logs', 'metrics', 'platform-native'])
   })
 })

@@ -1,5 +1,5 @@
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, type ReadRefreshTarget } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { useAIGlobalAssistant } from '@/features/copilot'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
@@ -10,7 +10,7 @@ import { formatDateTime } from '@/utils/time'
 import { ArrowRightOutlined, RobotOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Collapse, Progress, Space, Spin, Typography } from 'antd'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, type MutableRefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { nodeQueries } from '../cluster-resources/queries'
 import { clusterQueries } from '../clusters/queries'
@@ -49,7 +49,7 @@ interface PlatformOperationsPanelProps {
   localeCode: 'zh_CN' | 'en_US'
   permissions: OperationsPermissions
   refresh?: ReturnType<typeof useWorkloadRefresh>
-  refreshToken?: number
+  refreshTargetsRef?: MutableRefObject<readonly ReadRefreshTarget[]>
   onRefreshStateChange?: (state: { isFetching: boolean; isError: boolean }) => void
 }
 
@@ -87,7 +87,7 @@ export function PlatformOperationsPanel({
   localeCode,
   permissions,
   refresh,
-  refreshToken,
+  refreshTargetsRef,
   onRefreshStateChange,
 }: PlatformOperationsPanelProps) {
   const navigate = useNavigate()
@@ -193,45 +193,25 @@ export function PlatformOperationsPanel({
     onRefreshStateChange?.({ isFetching, isError })
   }, [isFetching, isError, onRefreshStateChange])
 
-  const previousRefreshToken = useRef(refreshToken)
   useEffect(() => {
-    if (previousRefreshToken.current === refreshToken) return
-    previousRefreshToken.current = refreshToken
-    void Promise.allSettled([
-      nodesQuery.isEnabled ? nodesQuery.refetch() : Promise.resolve(),
-      eventsQuery.isEnabled ? eventsQuery.refetch() : Promise.resolve(),
-      auditQuery.isEnabled ? auditQuery.refetch() : Promise.resolve(),
-      operationQuery.isEnabled ? operationQuery.refetch() : Promise.resolve(),
-      capabilitiesQuery.isEnabled ? capabilitiesQuery.refetch() : Promise.resolve(),
-      networkPoliciesQuery.isEnabled ? networkPoliciesQuery.refetch() : Promise.resolve(),
-      hpasQuery.isEnabled ? hpasQuery.refetch() : Promise.resolve(),
-      pdbsQuery.isEnabled ? pdbsQuery.refetch() : Promise.resolve(),
-      mutatingWebhooksQuery.isEnabled ? mutatingWebhooksQuery.refetch() : Promise.resolve(),
-      validatingWebhooksQuery.isEnabled ? validatingWebhooksQuery.refetch() : Promise.resolve(),
-    ])
-  }, [
-    refreshToken,
-    nodesQuery.isEnabled,
-    nodesQuery.refetch,
-    eventsQuery.isEnabled,
-    eventsQuery.refetch,
-    auditQuery.isEnabled,
-    auditQuery.refetch,
-    operationQuery.isEnabled,
-    operationQuery.refetch,
-    capabilitiesQuery.isEnabled,
-    capabilitiesQuery.refetch,
-    networkPoliciesQuery.isEnabled,
-    networkPoliciesQuery.refetch,
-    hpasQuery.isEnabled,
-    hpasQuery.refetch,
-    pdbsQuery.isEnabled,
-    pdbsQuery.refetch,
-    mutatingWebhooksQuery.isEnabled,
-    mutatingWebhooksQuery.refetch,
-    validatingWebhooksQuery.isEnabled,
-    validatingWebhooksQuery.refetch,
-  ])
+    if (!refreshTargetsRef) return
+    refreshTargetsRef.current = [
+      { label: '资源事件', query: eventsQuery },
+      { label: '审计记录', query: auditQuery },
+      { label: '操作记录', query: operationQuery },
+      { label: '集群能力', query: capabilitiesQuery },
+      { label: '网络策略', query: networkPoliciesQuery },
+      { label: 'HPA', query: hpasQuery },
+      { label: 'PodDisruptionBudget', query: pdbsQuery },
+      { label: '变更准入 Webhook', query: mutatingWebhooksQuery },
+      { label: '验证准入 Webhook', query: validatingWebhooksQuery },
+    ]
+      .filter(({ query }) => query.isEnabled)
+      .map(({ label, query }) => ({ label, refetch: () => query.refetch() }))
+    return () => {
+      refreshTargetsRef.current = []
+    }
+  })
   const streamKinds = useMemo(
     () => [permissions.nodes ? 'Node' : '', permissions.events ? 'Event' : ''].filter(Boolean),
     [permissions.events, permissions.nodes],

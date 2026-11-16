@@ -1,11 +1,14 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef, useState } from 'react'
 import { FolderOpenOutlined } from '@ant-design/icons'
-import { Alert, Button, Input, Popover, Select, Space, Tag, Typography } from 'antd'
+import { Button, Input, Popover, Select, Space, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type {
   WorkbenchContextReference,
   WorkbenchContextSelection,
 } from '@opensoha/contracts/gen/ts/sohaapi'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { clusterQueries, platformOverviewQueries } from '@/features/platform'
 import { knowledgeQueries } from '../../knowledge/queries'
@@ -104,19 +107,19 @@ export function ChatContextSelection({
               value={knowledgeBaseIds}
               onChange={onKnowledgeChange}
               loading={bases.isFetching}
-              options={(bases.data?.data ?? []).map((base) => ({
+              options={(readableQueryData(bases)?.data ?? []).map((base) => ({
                 label: base.name,
                 value: base.id,
               }))}
             />
-            {bases.isError ? <Alert type="error" title="知识库加载失败" /> : null}
+            <ReadFeedback query={bases} label="知识库" canRead={open && can('ai.knowledge.view')} />
             <Select
               aria-label="引用资源集群"
               style={{ width: '100%' }}
               placeholder="选择资源所在集群"
               value={clusterId || undefined}
               onChange={setClusterId}
-              options={(clusters.data ?? []).map((cluster) => ({
+              options={(readableQueryData(clusters) ?? []).map((cluster) => ({
                 label: cluster.name,
                 value: cluster.id,
               }))}
@@ -142,7 +145,7 @@ export function ChatContextSelection({
               disabled={!clusterId || !can(chosenKind.permission)}
               loading={resources.isFetching}
             />
-            {resources.data?.items.map((item) => (
+            {readableQueryData(resources)?.items.map((item) => (
               <Button
                 key={item.key}
                 type="text"
@@ -160,12 +163,22 @@ export function ChatContextSelection({
                 {item.name}
               </Button>
             ))}
-            {query && !resources.isFetching && !resources.data?.items.length ? (
+            {query &&
+            !resources.isFetching &&
+            !resources.isError &&
+            !readableQueryData(resources)?.items.length ? (
               <Typography.Text type="secondary">没有可访问的匹配资源。</Typography.Text>
             ) : null}
-            {resources.isError || clusters.isError ? (
-              <Alert type="error" title="资源读取失败，请重试" />
-            ) : null}
+            <ReadFeedback
+              query={clusters}
+              label="集群"
+              canRead={open && can('platform.clusters.view')}
+            />
+            <ReadFeedback
+              query={resources}
+              label="资源"
+              canRead={open && can(chosenKind.permission)}
+            />
             <Button onClick={onSession} disabled={disabled}>
               引用其他会话
             </Button>
@@ -229,12 +242,12 @@ export function ChatContextSelection({
           knowledgeBaseIds={knowledgeBaseIds}
           onKnowledgeChange={onKnowledgeChange}
           disabled={disabled}
-          bases={bases.data?.data}
+          bases={readableQueryData(bases)?.data}
         />
       )}
       {parsing ? <Typography.Text role="status">正在解析文件…</Typography.Text> : null}
       {error ? (
-        <Alert
+        <ContextFeedback
           className="soha-ai-workbench__context-alert"
           type="error"
           title={error}
@@ -262,7 +275,7 @@ export function ChatContextTags({
   bases?: { id: string; name: string }[]
 }) {
   const cachedBases = useQuery(knowledgeQueries.bases(false))
-  const knownBases = bases ?? cachedBases.data?.data
+  const knownBases = bases ?? readableQueryData(cachedBases)?.data
   const references = selection.references ?? []
   const attachments = selection.attachments ?? []
   return (
@@ -302,7 +315,7 @@ export function ChatContextTags({
         </Tag>
       ))}
       {attachments.reduce((size, file) => size + Array.from(file.content).length, 0) > 24_000 ? (
-        <Alert
+        <ContextFeedback
           className="soha-ai-workbench__context-alert"
           type="warning"
           title="附件超过背景预算，发送时将裁剪；实际使用范围会记录在快照中。"

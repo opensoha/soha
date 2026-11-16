@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import {
   ResourceDetailHeader,
@@ -36,7 +37,7 @@ import { formatDateTime } from '@/utils/time'
 import { DiffOutlined, HistoryOutlined, RollbackOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { Alert, Button, Card, Input, Modal, Space, Spin } from 'antd'
+import { Button, Card, Input, Modal, Space, Spin } from 'antd'
 import { lazy, Suspense, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useParams, useSearchParams, type SetURLSearchParams } from 'react-router-dom'
 import { SubmittedValues } from './submitted-values'
@@ -469,7 +470,9 @@ function HelmReleaseContent({
         {uninstall.confirmation}
         {!uninstall.isConfirming && removeMutation.feedback}
         {!rollbackPlan && <ReadFeedback canRead={canRead} query={detailQuery} label="资源详情" />}
-        <ReadFeedback canRead={valuesQuery.isEnabled} query={valuesQuery} label="Helm Values" />
+        {!editorOpen && (
+          <ReadFeedback canRead={valuesQuery.isEnabled} query={valuesQuery} label="Helm Values" />
+        )}
         {!rollbackPlan && (
           <ReadFeedback canRead={historyQuery.isEnabled} query={historyQuery} label="Helm 历史" />
         )}
@@ -567,9 +570,17 @@ function HelmReleaseContent({
           destroyOnHidden
           onCancel={() => setSelectedRevision(null)}
         >
+          <ReadFeedback
+            canRead={currentManifestQuery.isEnabled}
+            query={currentManifestQuery}
+            label={localeCode === 'zh_CN' ? '当前清单' : 'Current manifest'}
+          />
+          <ReadFeedback
+            canRead={selectedManifestQuery.isEnabled}
+            query={selectedManifestQuery}
+            label={localeCode === 'zh_CN' ? '所选清单' : 'Selected manifest'}
+          />
           {selectedRevision &&
-          !currentManifestQuery.isLoading &&
-          !selectedManifestQuery.isLoading &&
           visibleCurrentManifestQueryData &&
           visibleSelectedManifestQueryData ? (
             <YamlDraftDiffEditor
@@ -581,24 +592,8 @@ function HelmReleaseContent({
               leftLabel={`${localeCode === 'zh_CN' ? '当前' : 'Current'} · Revision ${visibleCurrentManifestQueryData.revision}`}
               rightLabel={`Revision ${visibleSelectedManifestQueryData.revision}`}
             />
-          ) : selectedRevision && (currentManifestQuery.error || selectedManifestQuery.error) ? (
-            <Alert
-              showIcon
-              type="error"
-              title={localeCode === 'zh_CN' ? '清单加载失败' : 'Failed to load manifests'}
-              description={(currentManifestQuery.error || selectedManifestQuery.error)?.message}
-              action={
-                <Button
-                  onClick={() => {
-                    void currentManifestQuery.refetch()
-                    void selectedManifestQuery.refetch()
-                  }}
-                >
-                  {localeCode === 'zh_CN' ? '重试' : 'Retry'}
-                </Button>
-              }
-            />
-          ) : selectedRevision ? (
+          ) : selectedRevision &&
+            (currentManifestQuery.isLoading || selectedManifestQuery.isLoading) ? (
             <Spin />
           ) : null}
         </Modal>
@@ -620,10 +615,10 @@ function HelmReleaseContent({
           styles={{ body: { maxHeight: 'calc(100vh - 180px)', overflow: 'auto' } }}
         >
           {updateMutation.feedback}
-          <ReadFeedback canRead={canViewValues} query={valuesQuery} label="Helm Values" />
-          {editorOpen && !values ? (
+          {editorOpen && !values && !valuesQuery.isError ? (
             <ManagementState kind={valuesQuery.isPending ? 'loading' : 'empty'} />
           ) : null}
+          <ReadFeedback canRead={valuesQuery.isEnabled} query={valuesQuery} label="Helm Values" />
           {(editorOpen || visitedEditor) && values && canViewValues ? (
             <Suspense fallback={<Spin />}>
               <HelmReleaseValuesPanel
@@ -656,7 +651,7 @@ function HelmReleaseContent({
                     },
                   )
                 }}
-                error={valuesQuery.error}
+                readFailed={valuesQuery.isError}
                 canEdit={canEdit}
                 applying={updateMutation.isPending}
                 applyDisabled={applyValuesDisabled}
@@ -680,7 +675,7 @@ function HelmReleaseContent({
                 label="Helm 历史"
               />
               {rollbackPlan && rollbackReadsReady && !rollbackTargetValid ? (
-                <Alert
+                <ContextFeedback
                   showIcon
                   type="warning"
                   title={

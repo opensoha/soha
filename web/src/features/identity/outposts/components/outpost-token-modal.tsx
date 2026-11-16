@@ -1,4 +1,5 @@
-import { Alert, Button, Modal, Space, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Modal, Space, Typography } from 'antd'
 
 const { Text } = Typography
 
@@ -27,7 +28,7 @@ export function IdentityOutpostTokenModal({ onClose, value }: IdentityOutpostTok
       width={720}
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title="Token is shown once"

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -19,7 +20,6 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Alert,
   App,
   Button,
   Flex,
@@ -569,7 +569,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
           loading={tasksQuery.isLoading}
           error={tasksQuery.error}
           hasReadData={readableQueryData(tasksQuery) !== undefined}
-          onRetry={() => void tasksQuery.refetch()}
+          onRetry={() => tasksQuery.refetch()}
           tableSize="small"
           pageSize={10}
           columns={[
@@ -747,7 +747,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
           ) : null}
           {watchedInspectionMode === 'capability' ? (
             <>
-              <Alert
+              <ContextFeedback
                 type="info"
                 title="启用后按注册触发；每轮使用独立幂等键，写入仍遵守当前权限和审批。停用只停止后续触发。"
               />
@@ -802,7 +802,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
                 校验计划
               </Button>
               {planValidation.data && (
-                <Alert
+                <ContextFeedback
                   type={planValidation.data.data.valid ? 'success' : 'error'}
                   title={
                     planValidation.data.data.valid
@@ -861,7 +861,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
       {activeView === 'runs' ? (
         <>
           {requestedInspectionRunId ? (
-            <Alert
+            <ContextFeedback
               type={runs.some((item) => item.id === requestedInspectionRunId) ? 'info' : 'warning'}
               showIcon
               title={
@@ -896,7 +896,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
             loading={runsQuery.isLoading}
             error={runsQuery.error}
             hasReadData={readableQueryData(runsQuery) !== undefined}
-            onRetry={() => void runsQuery.refetch()}
+            onRetry={() => runsQuery.refetch()}
             tableSize="small"
             pageSize={10}
             columns={[
@@ -979,7 +979,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
       {activeView === 'policies' ? (
         <>
           {!canUpdateAISettings ? (
-            <Alert
+            <ContextFeedback
               type="warning"
               showIcon
               title="缺少 settings.ai.update 权限"
@@ -1009,7 +1009,7 @@ function AIOperationsContent({ userId }: { userId: string }) {
             loading={policiesQuery.isLoading}
             error={policiesQuery.error}
             hasReadData={readableQueryData(policiesQuery) !== undefined}
-            onRetry={() => void policiesQuery.refetch()}
+            onRetry={() => policiesQuery.refetch()}
             tableSize="small"
             pageSize={10}
             columns={[

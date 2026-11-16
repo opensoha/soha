@@ -243,7 +243,7 @@ export function CronJobDetailPage() {
                   observedAt={events.dataUpdatedAt || Date.now()}
                   loading={events.isLoading}
                   error={events.error?.message}
-                  onRefresh={() => void events.refetch()}
+                  onRefresh={() => events.refetch()}
                 />
               ) : null,
           },

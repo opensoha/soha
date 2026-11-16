@@ -339,7 +339,7 @@ export function DeploymentDetailPage() {
                   canRollback={actions.canRollback}
                   blocked={actions.blocked}
                   onRollback={actions.openRollback}
-                  onRefresh={() => void historyQuery.refetch()}
+                  onRefresh={() => historyQuery.refetch()}
                 />
               ) : null,
           },
@@ -355,7 +355,7 @@ export function DeploymentDetailPage() {
                   observedAt={eventsQuery.dataUpdatedAt || Date.now()}
                   loading={eventsQuery.isLoading}
                   error={errorText(eventsQuery.error)}
-                  onRefresh={() => void eventsQuery.refetch()}
+                  onRefresh={() => eventsQuery.refetch()}
                 />
               ) : null,
           },
@@ -384,7 +384,7 @@ export function DeploymentDetailPage() {
                           : 'No Pods; metrics unavailable'
                         : undefined
                     }
-                    onRefresh={() => void metricsQuery.refetch()}
+                    onRefresh={() => metricsQuery.refetch()}
                   />
                 </Suspense>
               ) : null,

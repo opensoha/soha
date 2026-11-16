@@ -195,8 +195,14 @@ it('keeps an uncertain native control visible and prevents repeat writes after a
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
-  expect(container.textContent).toContain('请求结果不明')
-  expect(container.textContent).toContain('req-control-unknown')
+  await vi.waitFor(() =>
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      '请求结果不明',
+    ),
+  )
+  expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+    'req-control-unknown',
+  )
   await act(async () => button('刷新').click())
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20))

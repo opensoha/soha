@@ -17,6 +17,7 @@ describe('normalizeBrandingSettings', () => {
       branding.collapsedLogoUrl,
       branding.faviconUrl,
     ]).toEqual(['/logo.svg', '/logo.svg', '/logo.svg', '/logo.svg'])
+    expect(branding.slogan).toBe('让人手有限的团队，更轻松地管理、维护和保障业务运行。')
   })
 })
 

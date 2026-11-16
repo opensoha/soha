@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { podQueries } from '@/features/platform/workloads/pods/queries'
@@ -5,7 +6,7 @@ import { useI18n } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, AutoComplete, Form, Input, InputNumber, Modal, Select } from 'antd'
+import { AutoComplete, Form, Input, InputNumber, Modal, Select } from 'antd'
 import { useState, type ReactNode } from 'react'
 import { serviceQueries } from '../services/queries'
 import { hasKnownPortConflict, validForwardPort } from './model'
@@ -91,7 +92,7 @@ export function CreateForwardForm({
       onOk={() => form.submit()}
     >
       <div className="soha-forward-form-content">
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title={zh ? '监听在 Core 所在机器' : 'Listens on the Core host'}
@@ -102,7 +103,7 @@ export function CreateForwardForm({
           }
         />
         {scopeChanged && (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={
@@ -113,7 +114,7 @@ export function CreateForwardForm({
           />
         )}
         {conflict && (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={

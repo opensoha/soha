@@ -1161,9 +1161,9 @@ async function renderWithProviders(node: ReactNode, route = '/applications') {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <AntApp>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </AntApp>
+        <MemoryRouter initialEntries={[route]}>
+          <AntApp>{node}</AntApp>
+        </MemoryRouter>
       </QueryClientProvider>,
     )
   })
@@ -2369,9 +2369,11 @@ describe('ApplicationsPage workspace layout', () => {
     await clickButton(
       document.querySelector<HTMLButtonElement>('.ant-popconfirm-buttons .ant-btn-primary')!,
     )
-    await waitForText(view, '请求结果不明')
-    expect(view.querySelector('.soha-operation-feedback')?.textContent).toContain('workflow-1')
-    expect(view.textContent).toContain('req-history-approval')
+    await waitForText(document.body, '请求结果不明')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain('workflow-1')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'req-history-approval',
+    )
     await clickButton(findButton(view, '刷新执行记录'))
     expect(
       view.querySelector<HTMLButtonElement>('[aria-label="批准工作流 deploy-prod"]')?.disabled,
@@ -2567,8 +2569,8 @@ describe('ApplicationsPage workspace layout', () => {
         '/delivery/execution-tasks',
       )
       await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="重试执行任务"]')!)
-      await waitForText(container, error.message)
-      const feedback = container.querySelector('.soha-operation-feedback')
+      await waitForText(document.body, error.message)
+      const feedback = document.querySelector('.soha-operation-feedback')
       expect(feedback?.textContent).toContain('task-failed')
       expect(feedback?.textContent).not.toContain('task-running')
       expect(feedback?.textContent).toContain(unknown ? '请求结果不明' : '操作请求失败')
@@ -2614,12 +2616,12 @@ describe('ApplicationsPage workspace layout', () => {
           document.querySelector<HTMLButtonElement>('.ant-popconfirm-buttons .ant-btn-primary')!,
         )
       }
-      await waitForText(container, receipt)
+      await waitForText(document.body, receipt)
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
-      expect(container.querySelector('.soha-operation-feedback')?.textContent).toContain(receipt)
-      expect(container.querySelector('.soha-operation-feedback')?.textContent).toContain(target)
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(receipt)
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(target)
       expect(document.querySelector('.ant-message-notice')).toBeNull()
       expect(testState.apiPost).toHaveBeenCalledTimes(1)
       expect(

@@ -1,16 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import type { FormInstance } from 'antd'
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Divider,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-} from 'antd'
+import { Button, Checkbox, Divider, Drawer, Form, Input, InputNumber, Select, Space } from 'antd'
 import { useEffect, type ReactNode } from 'react'
 import type {
   AIClient,
@@ -492,7 +482,7 @@ function renderDrawerFields(
     case 'service-token':
       return (
         <>
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title={`服务账号：${(drawer.record as ServiceAccount).name}`}

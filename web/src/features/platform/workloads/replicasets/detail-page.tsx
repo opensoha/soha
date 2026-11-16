@@ -306,7 +306,7 @@ export function ReplicaSetDetailPage() {
                   observedAt={events.dataUpdatedAt || Date.now()}
                   loading={events.isLoading}
                   error={events.error?.message}
-                  onRefresh={() => void events.refetch()}
+                  onRefresh={() => events.refetch()}
                 />
               ) : null,
           },
@@ -333,7 +333,7 @@ export function ReplicaSetDetailPage() {
                         { replace: true },
                       )
                     }
-                    onRefresh={() => void metrics.refetch()}
+                    onRefresh={() => metrics.refetch()}
                   />
                 </Suspense>
               ) : null,

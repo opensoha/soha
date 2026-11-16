@@ -418,7 +418,7 @@ export function OnCallBoardPage() {
                 <AdminTable
                   enableDensity
                   refreshing={rotationsQuery.isFetching}
-                  onRefresh={() => void rotationsQuery.refetch()}
+                  onRefresh={() => rotationsQuery.refetch()}
                   columnSettingPlacement="header"
                   columnSettingIconOnly
                   shellClassName="soha-management-table-shell"
@@ -462,7 +462,7 @@ export function OnCallBoardPage() {
             error={tasksQuery.error}
             hasReadData={tasksQuery.data !== undefined}
             refreshing={tasksQuery.isFetching}
-            onRefresh={() => void tasksQuery.refetch()}
+            onRefresh={() => tasksQuery.refetch()}
             columnSettingPlacement="header"
             columnSettingIconOnly
             shellClassName="soha-management-table-shell"

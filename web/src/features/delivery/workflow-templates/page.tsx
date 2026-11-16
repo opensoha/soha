@@ -1,16 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { lazy, Suspense, useRef, useState } from 'react'
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Descriptions,
-  Popconfirm,
-  Space,
-  Steps,
-  Tabs,
-  Typography,
-} from 'antd'
+import { App, Button, Card, Descriptions, Popconfirm, Space, Steps, Tabs, Typography } from 'antd'
 import { CopyOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -228,9 +218,13 @@ export function WorkflowTemplatesPage() {
       }
     >
       {!selectedVersion ? (
-        <Alert type="info" showIcon title="尚未发布，当前显示草稿内容" />
+        <ContextFeedback type="info" showIcon title="尚未发布，当前显示草稿内容" />
       ) : selected.publicationState === 'draft' ? (
-        <Alert type="info" showIcon title={`正在浏览已发布 v${selectedVersion}，另有未发布草稿`} />
+        <ContextFeedback
+          type="info"
+          showIcon
+          title={`正在浏览已发布 v${selectedVersion}，另有未发布草稿`}
+        />
       ) : null}
       <Typography.Paragraph type="secondary">{shown?.description}</Typography.Paragraph>
       <Tabs
@@ -420,7 +414,7 @@ export function WorkflowTemplatesPage() {
             )}
             isLoading={templates.isLoading}
             isError={templates.isError && !readableQueryData(templates)}
-            onRetry={() => void templates.refetch()}
+            onRetry={() => templates.refetch()}
             emptyDescription="暂无模板"
             searchPlaceholder="搜索模板"
             searchValue={text}

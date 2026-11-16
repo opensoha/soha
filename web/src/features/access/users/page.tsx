@@ -509,7 +509,7 @@ export function AccessUsersPage() {
           <AdminTable
             error={usersQuery.error}
             hasReadData={usersQuery.data !== undefined}
-            onRetry={() => void usersQuery.refetch()}
+            onRetry={() => usersQuery.refetch()}
             columnSettingIconOnly
             columnSettingPlacement="header"
             shellClassName="soha-management-table-shell"

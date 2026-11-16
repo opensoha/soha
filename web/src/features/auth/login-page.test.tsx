@@ -16,6 +16,7 @@ import { authKeys } from '@/features/auth/keys'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import type { User } from '@/types'
+import { defaultBrandingSettings } from '@/utils/branding'
 
 vi.mock('@/features/auth/auth-api', async () => {
   const actual = await vi.importActual<typeof import('@/features/auth/auth-api')>(
@@ -219,29 +220,37 @@ describe('login page', () => {
     )
   })
 
-  it('presents the current product capabilities', async () => {
+  it('presents the brand story and keeps the locally configured slogan', async () => {
     const container = await renderLoginPage()
 
-    expect(container.querySelector('.soha-auth-flow-title')?.textContent).toBe('让平台协作更简单')
-    expect(container.querySelector('.soha-auth-flow-subtitle')).toBeNull()
-    expect(container.textContent).not.toContain('统一到一个可协同、可治理的工作平台')
+    expect(container.querySelector('h1')?.textContent).toBe('Soha')
+    expect(container.querySelectorAll('h1')).toHaveLength(1)
+    expect(container.querySelector('.soha-auth-flow-subtitle')?.textContent).toBe(
+      '让平台协作更简单',
+    )
     expect(
-      Array.from(container.querySelectorAll('.soha-auth-flow-node__question')).map(
-        (node) => node.textContent,
-      ),
-    ).toEqual([
-      '门户',
-      'k8s工作台',
-      '持续交付工作台',
-      '可观测性工作台',
-      '计算资源工作台',
-      'AI工作台',
-      '内网工作台',
-      '设置中心',
-    ])
-    expect(container.textContent).toContain('对话、知识库、Agent、模型网关与评测')
-    expect(container.textContent).not.toContain('AI Gateway')
-    expect(container.textContent).not.toContain('虚拟化资源')
+      Array.from(container.querySelectorAll('.soha-auth-value dt'), (node) => node.textContent),
+    ).toEqual(['统一管理', '协同处理', '持续扩展'])
+    expect(container.querySelector('.soha-auth-flow img')).toBeNull()
+    expect(container.querySelector('figure')).toBeNull()
+    expect(container.querySelector('canvas')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('uses the default positioning when the server slogan is empty', async () => {
+    vi.mocked(fetchLoginOptions).mockResolvedValue({
+      branding: {
+        ...defaultBrandingSettings,
+        slogan: '',
+      },
+      verification: { sliderEnabled: false },
+    })
+
+    const container = await renderLoginPage({ prefetchLoginOptions: true })
+
+    expect(container.querySelector('h1')?.textContent).toBe('Soha')
+    expect(container.querySelector('.soha-auth-flow-subtitle')?.textContent).toBe(
+      '让人手有限的团队，更轻松地管理、维护和保障业务运行。',
+    )
   })
 
   it.each(['light', 'dark'] as const)(
@@ -250,7 +259,7 @@ describe('login page', () => {
       usePreferencesStore.getState().themeMode = mode
       vi.mocked(fetchLoginOptions).mockResolvedValue({
         branding: {
-          appTitle: 'shanchui',
+          appTitle: 'shanchui console',
           collapsedLogoUrl: 'https://cdn.example.com/icon.svg',
           expandedLogoUrl: 'https://cdn.example.com/sidebar-logo.svg',
           darkExpandedLogoUrl: 'https://cdn.example.com/sidebar-dark.svg',
@@ -266,14 +275,11 @@ describe('login page', () => {
       const container = await renderLoginPage({ prefetchLoginOptions: true })
 
       expect(fetchLoginOptions).toHaveBeenCalledOnce()
-      expect(container.querySelector('.soha-auth-flow-title')).toBeNull()
-      expect(container.querySelector<HTMLImageElement>('.soha-auth-hero-logo-img')).toMatchObject({
-        alt: 'shanchui',
-        src:
-          mode === 'dark'
-            ? 'https://cdn.example.com/sidebar-dark.svg'
-            : 'https://cdn.example.com/sidebar-logo.svg',
-      })
+      expect(container.querySelector('h1')?.textContent).toBe('shanchui')
+      expect(container.querySelector('.soha-auth-brand-name')?.textContent).toBe('shanchui')
+      expect(container.querySelector('.soha-auth-flow-subtitle')?.textContent).toBe('shanshui')
+      expect(container.textContent).not.toContain('shanchui console')
+      expect(container.querySelectorAll('h1')).toHaveLength(1)
       expect(container.querySelector<HTMLImageElement>('.soha-auth-brand-logo-img')).toMatchObject({
         alt: '',
         src:
@@ -281,11 +287,63 @@ describe('login page', () => {
             ? 'https://cdn.example.com/icon-dark.svg'
             : 'https://cdn.example.com/icon.svg',
       })
+      expect(container.querySelectorAll('img')).toHaveLength(1)
       expect(
         container.querySelector('img[src="https://cdn.example.com/login-logo.svg"]'),
       ).toBeNull()
     },
   )
+
+  it('keeps long custom branding and labelled password-manager inputs available together', async () => {
+    const name = '企业研发与业务支持团队运维协作平台'
+    const slogan = '从日常维护到跨团队协作\n让有限的人手从容应对不断发展的业务需要。'
+    vi.mocked(fetchLoginOptions).mockResolvedValue({
+      branding: { ...defaultBrandingSettings, sidebarTitle: name, slogan },
+      verification: { sliderEnabled: false },
+    })
+
+    const container = await renderLoginPage({ prefetchLoginOptions: true })
+    const username = container.querySelector<HTMLInputElement>('input[autocomplete="username"]')
+    const password = container.querySelector<HTMLInputElement>(
+      'input[autocomplete="current-password"]',
+    )
+
+    expect(container.querySelector('h1')?.textContent).toBe(name)
+    expect(container.querySelector('.soha-auth-flow-subtitle')?.textContent).toBe(slogan)
+    expect(container.querySelector('h1 span')).toBeNull()
+    expect(container.querySelector('.soha-auth-brand-name')?.textContent).toBe(name)
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(username).not.toBeNull()
+    expect(password?.type).toBe('password')
+    expect(container.querySelector(`label[for="${username?.id}"]`)?.textContent).toBe('用户名')
+    expect(container.querySelector(`label[for="${password?.id}"]`)?.textContent).toBe('密码')
+  })
+
+  it('retains required slider verification before submitting a password', async () => {
+    vi.mocked(fetchLoginOptions).mockResolvedValue({ verification: { sliderEnabled: true } })
+
+    const container = await renderLoginPage({ prefetchLoginOptions: true })
+
+    expect(container.textContent).toContain('拖动滑块完成验证')
+    expect(container.querySelector('[role="slider"]')).not.toBeNull()
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
+
+  it('disables submission when login options fail before any successful read', async () => {
+    vi.mocked(fetchLoginOptions).mockRejectedValue(new Error('登录选项暂时不可用'))
+
+    const container = await renderLoginPage({ prefetchLoginOptions: true })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10)
+    })
+
+    expect(container.textContent).toContain('重试')
+    expect(
+      container.querySelector<HTMLInputElement>('input[autocomplete="username"]')?.disabled,
+    ).toBe(true)
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
 
   it('restores an existing browser session from the login page', async () => {
     vi.mocked(restoreAuthSession)

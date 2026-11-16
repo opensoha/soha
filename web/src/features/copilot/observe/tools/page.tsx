@@ -1,21 +1,11 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Alert,
-  Button,
-  Card,
-  Drawer,
-  Flex,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Typography,
-} from 'antd'
+import { Button, Card, Drawer, Flex, Input, InputNumber, Select, Space, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import '../../copilot-pages.css'
@@ -358,7 +348,7 @@ export function AIToolsPage() {
               </Space>
 
               {unavailableSelectedAdapterIds.length > 0 ? (
-                <Alert
+                <ContextFeedback
                   type="warning"
                   showIcon
                   title="部分已选 adapter 当前没有启用数据源"
@@ -462,7 +452,7 @@ export function AIToolsPage() {
               <section>
                 <Title level={5}>Scope Overrides</Title>
                 <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                  <Alert
+                  <ContextFeedback
                     type="info"
                     showIcon
                     title="Scope override 会叠加到当前会话范围"

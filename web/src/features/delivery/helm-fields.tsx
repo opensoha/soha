@@ -1,4 +1,6 @@
-import { Alert, Button, Collapse, Form, Input, InputNumber, Select, Space, Typography } from 'antd'
+import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
+import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { Button, Collapse, Form, Input, InputNumber, Select, Space, Typography } from 'antd'
 import type {
   DeploymentTemplateHelmSource,
   HelmDeliveryConfiguration,
@@ -309,7 +311,9 @@ function HelmChartPicker({
         : null,
     ),
   )
-  const error = query.error || detail.error
+  const catalog = readableQueryData(query)
+  const chartDetail = readableQueryData(detail)
+  const visibleChart = queryAccessDenied(query) || queryAccessDenied(detail) ? null : chart
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
       <Input
@@ -319,25 +323,26 @@ function HelmChartPicker({
         onChange={(event) => setKeyword(event.target.value)}
         allowClear
       />
-      {error ? <Alert type="error" title={error.message} showIcon /> : null}
+      <ReadFeedback query={query} label="公共 Chart" />
+      <ReadFeedback query={detail} label="Chart 详情" />
       <Select
         aria-label="公共 Chart"
         style={{ width: '100%' }}
         loading={query.isLoading}
-        value={chart ? `${chart.repositoryName}/${chart.name}` : undefined}
-        options={(query.data?.charts ?? []).map((item) => ({
+        value={visibleChart ? `${visibleChart.repositoryName}/${visibleChart.name}` : undefined}
+        options={(catalog?.charts ?? []).map((item) => ({
           value: `${item.repositoryName}/${item.name}`,
           label: `${item.repositoryDisplay || item.repositoryName} / ${item.name}`,
         }))}
         onChange={(key) => {
-          const item = query.data?.charts.find(
+          const item = catalog?.charts.find(
             (candidate) => `${candidate.repositoryName}/${candidate.name}` === key,
           )
           setChart(item ?? null)
           setVersion(item?.latestVersion || '')
         }}
       />
-      {chart ? (
+      {visibleChart ? (
         <>
           <Select
             aria-label="公共 Chart 版本"
@@ -345,14 +350,19 @@ function HelmChartPicker({
             loading={detail.isLoading}
             value={version}
             onChange={setVersion}
-            options={getHelmChartVersionOptions(detail.data, chart)}
+            options={getHelmChartVersionOptions(chartDetail, visibleChart)}
           />
           <Button
-            disabled={!version || !(detail.data?.repositoryUrl || chart.repositoryUrl)}
+            disabled={
+              query.isError ||
+              detail.isError ||
+              !version ||
+              !(chartDetail?.repositoryUrl || visibleChart.repositoryUrl)
+            }
             onClick={() =>
               onSelect({
-                repositoryUrl: detail.data?.repositoryUrl || chart.repositoryUrl || '',
-                chart: chart.name,
+                repositoryUrl: chartDetail?.repositoryUrl || visibleChart.repositoryUrl || '',
+                chart: visibleChart.name,
                 version,
                 values: {},
               })
@@ -361,9 +371,9 @@ function HelmChartPicker({
             采用所选 Chart
           </Button>
           <Typography.Paragraph>
-            {detail.data?.description || chart.description}
+            {chartDetail?.description || visibleChart.description}
           </Typography.Paragraph>
-          {detail.data?.readme ? (
+          {chartDetail?.readme ? (
             <Collapse
               items={[
                 {
@@ -373,7 +383,7 @@ function HelmChartPicker({
                     <Typography.Paragraph
                       style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflow: 'auto' }}
                     >
-                      {detail.data.readme}
+                      {chartDetail.readme}
                     </Typography.Paragraph>
                   ),
                 },
@@ -480,7 +490,9 @@ export function HelmEnvironmentFields({
       <Button loading={inspect.isPending} onClick={() => inspect.mutate()}>
         读取 Chart 默认值与 Schema
       </Button>
-      {inspect.error ? <Alert type="error" showIcon title={inspect.error.message} /> : null}
+      <MutationFeedback
+        operations={[{ mutation: inspect, label: '读取 Chart 默认值与 Schema', readOnly: true }]}
+      />
       {inspection ? (
         <Collapse
           items={[

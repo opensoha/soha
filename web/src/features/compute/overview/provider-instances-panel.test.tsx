@@ -35,9 +35,9 @@ function render(node: ReactNode) {
   roots.push(root)
   act(() =>
     root.render(
-      <App>
-        <MemoryRouter>{node}</MemoryRouter>
-      </App>,
+      <MemoryRouter>
+        <App>{node}</App>
+      </MemoryRouter>,
     ),
   )
   return container
@@ -74,7 +74,7 @@ afterEach(() => {
 describe('provider instances panel', () => {
   it.each(['health', 'discover'])(
     'shows a persistent %s failure beside its original instance',
-    (action) => {
+    async (action) => {
       vi.mocked(useQuery).mockReturnValue(providerQuery() as never)
       vi.mocked(useMutation).mockImplementation((options) => {
         const active = options.mutationKey?.includes(action)
@@ -87,10 +87,11 @@ describe('provider instances panel', () => {
           mutate: vi.fn(),
         } as never
       })
-      const container = render(
-        <ProviderInstancesPanel canViewTask canDiscover canTest enabled localeCode="zh_CN" />,
+      render(<ProviderInstancesPanel canViewTask canDiscover canTest enabled localeCode="zh_CN" />)
+      await vi.waitFor(() =>
+        expect(document.querySelector('.soha-operation-feedback')).not.toBeNull(),
       )
-      const feedback = container.querySelector('.soha-operation-feedback')
+      const feedback = document.querySelector('.soha-operation-feedback')
       expect(feedback?.textContent).toContain('provider request failed')
       expect(feedback?.textContent).toContain('connection-1')
       expect(feedback?.textContent).toContain(action === 'health' ? '操作请求失败' : '请求结果不明')

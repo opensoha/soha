@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, Collapse, Descriptions, Form, Input, Segmented, Select, Switch } from 'antd'
+import { App, Collapse, Descriptions, Form, Input, Segmented, Select, Switch } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { StepFormModal } from '@/components/step-form-modal'
 import type { StepFormStep } from '@/components/step-form'
@@ -208,7 +209,7 @@ export function VirtualizationConnectionStepModal({
           </Form.Item>
           {provider === 'kubevirt' ? (
             <>
-              <Alert
+              <ContextFeedback
                 showIcon
                 type={selectedPlatformCluster?.connectionMode === 'agent' ? 'warning' : 'info'}
                 title={

@@ -176,7 +176,7 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
               resourceLabel={label}
               disabled={!clusterId}
               label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onRefresh={() => void listQuery.refetch()}
+              onRefresh={() => listQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

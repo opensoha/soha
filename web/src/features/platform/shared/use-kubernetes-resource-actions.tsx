@@ -1,9 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
-import { requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
+import { OperationFeedback } from '@/components/request-feedback'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { LoadingOutlined } from '@ant-design/icons'
-import { Alert, Modal, type MenuProps, type TableColumnsType } from 'antd'
+import { Modal, type MenuProps, type TableColumnsType } from 'antd'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { KubernetesResourceActionsMenu } from './kubernetes-resource-actions-menu'
 
@@ -79,7 +80,6 @@ export function useKubernetesResourceActions<T>({
   const submitting = useRef<number | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  useInlineApiError(error)
   useEffect(() => {
     setTarget(null)
     setError(null)
@@ -207,7 +207,7 @@ export function useKubernetesResourceActions<T>({
     >
       {displayAction?.confirm?.description}
       {target && !liveAction ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title={
@@ -218,11 +218,15 @@ export function useKubernetesResourceActions<T>({
         />
       ) : null}
       {liveAction?.disabled && liveAction.reason ? (
-        <Alert showIcon type="warning" title={liveAction.reason} />
+        <ContextFeedback showIcon type="warning" title={liveAction.reason} />
       ) : null}
       {displayAction?.feedback}
       {!displayAction?.feedback && error ? (
-        <Alert showIcon type="error" title={requestErrorMessage(error, localeCode)} />
+        <OperationFeedback
+          error={error}
+          label={displayAction?.label ?? resourceLabel}
+          target={target ? getName(target.record) : undefined}
+        />
       ) : null}
     </Modal>
   )

@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Card, Select, Space, Typography, theme } from 'antd'
+import { Card, Select, Space, Typography, theme } from 'antd'
 import { LineChart } from '@visactor/react-vchart'
 import {
   buildCompactChartSpec,
@@ -11,7 +12,7 @@ import {
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
 import { localeText, useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
-import { ApiError } from '@/services/api-error'
+import { ReadFeedback, useReadRefreshFeedback } from '@/components/request-feedback'
 
 import { virtualizationQueries } from '../queries'
 import type { VirtualizationVMMetrics } from '../virtualization-types'
@@ -33,7 +34,7 @@ function VMMetricsChart({ data }: { data: VirtualizationVMMetrics }) {
   const { localeCode } = useI18n()
   const { token } = theme.useToken()
   if (!data.ready) {
-    return <Alert type="info" title={data.message || '当前暂无可用指标数据'} />
+    return <ContextFeedback type="info" title={data.message || '当前暂无可用指标数据'} />
   }
 
   const series = data.series ?? []
@@ -144,8 +145,7 @@ export function VMMetricsPanel({ range, vmId, onRangeChange }: VMMetricsPanelPro
     retry: false,
     refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
   })
-  const forbidden =
-    metricsQuery.error instanceof ApiError && [401, 403].includes(metricsQuery.error.status)
+  const refresh = useReadRefreshFeedback()
   const readableMetrics = readableQueryData(metricsQuery)
 
   return (
@@ -178,7 +178,14 @@ export function VMMetricsPanel({ range, vmId, onRangeChange }: VMMetricsPanelPro
             tooltip={localeText(localeCode, '刷新指标', 'Refresh metrics')}
             size="small"
             loading={metricsQuery.isFetching}
-            onClick={() => void metricsQuery.refetch()}
+            onClick={() =>
+              void refresh([
+                {
+                  label: localeText(localeCode, '运行指标', 'Runtime metrics'),
+                  refetch: metricsQuery.refetch,
+                },
+              ])
+            }
           />
         </Space>
       }
@@ -197,32 +204,12 @@ export function VMMetricsPanel({ range, vmId, onRangeChange }: VMMetricsPanelPro
           `Last ${range} minutes, refreshes every 30 seconds`,
         )}
       </p>
-      {metricsQuery.isError ? (
-        <Alert
-          type="warning"
-          showIcon
-          title={localeText(
-            localeCode,
-            forbidden
-              ? metricsQuery.error instanceof ApiError && metricsQuery.error.status === 401
-                ? '登录已失效，请重新登录'
-                : '无指标访问权限'
-              : metricsQuery.data
-                ? '指标未更新，正在展示上次读取结果'
-                : '指标读取失败',
-            forbidden
-              ? metricsQuery.error instanceof ApiError && metricsQuery.error.status === 401
-                ? 'Session expired, please sign in again'
-                : 'Metric access denied'
-              : metricsQuery.data
-                ? 'Metrics not updated, showing last result'
-                : 'Failed to read metrics',
-          )}
-          description={metricsQuery.error.message}
-        />
-      ) : null}
+      <ReadFeedback
+        query={metricsQuery}
+        label={localeText(localeCode, '运行指标', 'Runtime metrics')}
+      />
       {readableMetrics?.message && readableMetrics.ready ? (
-        <Alert type="info" title={readableMetrics.message} />
+        <ContextFeedback type="info" title={readableMetrics.message} />
       ) : null}
       {readableMetrics ? (
         <VMMetricsChart data={readableMetrics} />

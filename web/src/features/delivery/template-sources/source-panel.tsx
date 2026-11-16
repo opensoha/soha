@@ -1,7 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useState } from 'react'
-import { Alert, Button, Descriptions, Modal, Space, Typography } from 'antd'
+import { Button, Descriptions, Modal, Space, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { MetadataTag } from '@/components/status-tag'
 import { deliveryQueries } from '../queries'
 import type { DeliveryDocumentKind } from '../types'
@@ -20,22 +23,12 @@ export function DocumentSourcePanel({
   const query = useQuery(deliveryQueries.documents.source(kind, id, version))
   if (!id) return null
   if (query.isLoading) return <ManagementState compact kind="loading" />
-  if (query.isError)
-    return (
-      <Alert
-        type="error"
-        showIcon
-        title="来源读取失败"
-        action={
-          <Button disabled={false} onClick={() => void query.refetch()}>
-            重试
-          </Button>
-        }
-      />
-    )
-  const { association, provenance, repository } = query.data ?? {}
+  const data = readableQueryData(query)
+  if (!data && query.isError) return <ReadFeedback query={query} label="来源" />
+  const { association, provenance, repository } = data ?? {}
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
+      <ReadFeedback query={query} label="来源" />
       <Space wrap>
         <MetadataTag label={association ? 'Git 管理' : 'Soha 管理'} />
         {repository ? (
@@ -60,7 +53,7 @@ export function DocumentSourcePanel({
         </Modal>
       ) : null}
       {association ? (
-        <Alert
+        <ContextFeedback
           type={association.removed ? 'warning' : 'info'}
           showIcon
           title={

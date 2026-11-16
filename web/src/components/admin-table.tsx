@@ -1,4 +1,4 @@
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, useReadRefreshFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import {
   createContext,
@@ -164,8 +164,8 @@ export interface AdminTableProps {
   onChange?: TableProps<any>['onChange']
   onRow?: any
   onScroll?: TableProps['onScroll']
-  onRefresh?: () => void
-  onRetry?: () => void
+  onRefresh?: () => unknown
+  onRetry?: () => unknown
   refreshing?: boolean
   pageSize?: number
   pagination?: any
@@ -413,6 +413,7 @@ export function AdminTable({
   })
   const dataSource = error ? (cachedRecords ?? EMPTY_TABLE_RECORDS) : sourceRecords
   const { localeCode, t } = useI18n()
+  const refreshWithFeedback = useReadRefreshFeedback()
   const [density, setDensity] = useState<AdminTableProps['tableSize']>()
   const resolvedTableSize = enableDensity ? (density ?? tableSize) : tableSize
   const [iconActionWidths, setIconActionWidths] = useState<Record<string, number>>({})
@@ -934,7 +935,11 @@ export function AdminTable({
             size="small"
             tooltip={t('table.refresh', '刷新列表')}
             loading={refreshing}
-            onClick={onRefresh}
+            onClick={() =>
+              void refreshWithFeedback([
+                { label: localeText(localeCode, '列表', 'List'), refetch: onRefresh },
+              ])
+            }
           />
         ) : null}
       </>

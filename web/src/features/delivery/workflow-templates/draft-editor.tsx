@@ -1,21 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { isApiError } from '@/services/api-error'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { lazy, Suspense, useCallback, useRef, useState } from 'react'
-import {
-  Alert,
-  App,
-  Button,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Select,
-  Space,
-  Switch,
-  Tabs,
-} from 'antd'
+import { App, Button, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
 import {
@@ -192,7 +181,7 @@ export function WorkflowTemplateDraftEditor({
       {template?.id &&
       (writeOutcomeUnknown(update.error) ||
         (isApiError(update.error) && update.error.status === 409)) ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title="草稿已保留，请核对当前模板"
@@ -232,7 +221,7 @@ export function WorkflowTemplateDraftEditor({
       {checkingLegacy && compatibility.isPending ? <ManagementState kind="loading" /> : null}
       {checkingLegacy && !compatible && !compatibility.isPending ? (
         <Space orientation="vertical" style={{ width: '100%' }}>
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title="此模板暂以只读方式保留"
@@ -263,7 +252,11 @@ export function WorkflowTemplateDraftEditor({
         ]}
       />
       {sourceDirty ? (
-        <Alert type="info" showIcon title="请校验并同步源码，或还原源码后继续编辑表单。" />
+        <ContextFeedback
+          type="info"
+          showIcon
+          title="请校验并同步源码，或还原源码后继续编辑表单。"
+        />
       ) : null}
       <div style={{ display: tab === 'form' ? undefined : 'none' }}>
         <Form

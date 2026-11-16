@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Card, Typography } from 'antd'
 import { useI18n } from '@/i18n'
 import type { ScopeKey } from '@/types'
 import { formatDateTime } from '@/utils/time'
@@ -92,7 +93,7 @@ export function CronJobDetailOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={detail.suspend ? 'warning' : 'info'}
         title={

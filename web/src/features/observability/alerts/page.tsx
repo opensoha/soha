@@ -224,7 +224,7 @@ export function AlertsPage() {
         error={alertsQuery.error}
         hasReadData={alertsQuery.data !== undefined}
         refreshing={alertsQuery.isFetching}
-        onRefresh={() => void alertsQuery.refetch()}
+        onRefresh={() => alertsQuery.refetch()}
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"

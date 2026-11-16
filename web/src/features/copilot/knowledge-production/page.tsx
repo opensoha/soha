@@ -106,7 +106,7 @@ function KnowledgeProductionPageContent() {
         </>
       }
       refreshing={connectors.isFetching || jobs.isFetching}
-      onRefresh={() => void Promise.all([connectors.refetch(), jobs.refetch()])}
+      onRefresh={() => Promise.all([connectors.refetch(), jobs.refetch()])}
       actions={
         <>
           <Button

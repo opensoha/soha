@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import '../observability-pages.css'
 import type { ObservabilityProviderDefinition } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Flex, Typography } from 'antd'
+import { Flex, Typography } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
@@ -122,7 +123,7 @@ export function ObservabilityProvidersPage() {
     <div className="soha-page">
       <h1 className="soha-observability-page-heading">Provider</h1>
       <Flex vertical gap={12}>
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title="OTel 管线细分状态暂不可用"
@@ -133,7 +134,7 @@ export function ObservabilityProvidersPage() {
           error={providersQuery.error}
           hasReadData={providersQuery.data !== undefined}
           refreshing={providersQuery.isFetching}
-          onRefresh={() => void providersQuery.refetch()}
+          onRefresh={() => providersQuery.refetch()}
           columnSettingIconOnly
           columnSettingPlacement="header"
           columns={columns}

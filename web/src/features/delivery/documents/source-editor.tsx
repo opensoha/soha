@@ -1,5 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
+import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { useState } from 'react'
-import { Alert, Button, Input, Segmented, Space, Typography } from 'antd'
+import { Button, Input, Segmented, Space, Typography } from 'antd'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { stringify } from 'yaml'
 import { useI18n } from '@/i18n'
@@ -18,7 +21,7 @@ export function DocumentDiagnostics({ items }: { items: DeliveryDocumentDiagnost
     delivery_target_bundle_mismatch: '所选版本包不属于该应用或服务，请重新选择版本包。',
   }
   return items.length ? (
-    <Alert
+    <ContextFeedback
       type="error"
       showIcon
       title={english ? 'Document validation failed' : '文档校验失败'}
@@ -72,11 +75,13 @@ export function DeliveryDocumentSourceEditor({
   const validate = async () => {
     setError('')
     setDiagnostics([])
+    let validated = false
     try {
       const result = await preview.mutateAsync({
         validateOnly: true,
         files: [{ path: `document.${format}`, content, targetId, expectedRevision }],
       })
+      validated = true
       setDiagnostics(result.diagnostics)
       const candidate = result.candidates[0]
       if (!result.valid || !candidate) return
@@ -89,7 +94,7 @@ export function DeliveryDocumentSourceEditor({
       onDirtyChange(false)
       setSynced(true)
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '文档校验失败')
+      if (validated) setError(failure instanceof Error ? failure.message : '文档校验失败')
     }
   }
   return (
@@ -115,7 +120,8 @@ export function DeliveryDocumentSourceEditor({
               : 'YAML / JSON 表示同一份定义'}
         </Typography.Text>
       </Space>
-      {error ? <Alert type="error" showIcon title={error} /> : null}
+      <MutationFeedback operations={[{ mutation: preview, label: '校验文档', readOnly: true }]} />
+      {error ? <ContextFeedback type="error" showIcon title={error} /> : null}
       <DocumentDiagnostics items={diagnostics} />
       <Input.TextArea
         aria-label="Soha Delivery 文档源码"
@@ -170,6 +176,7 @@ export function DeliveryDocumentExportView({
     queryKey: deliveryKeys.documents.export(kind, id, version, format),
     queryFn: () => deliveryApi.documents.export(kind, id, format, version),
   })
+  const data = readableQueryData(query)
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
       <Space wrap>
@@ -179,30 +186,18 @@ export function DeliveryDocumentExportView({
           onChange={(next) => setFormat(next as 'yaml' | 'json')}
         />
         <Button
-          disabled={!query.data}
+          disabled={!data}
           onClick={() => {
-            if (query.data)
-              downloadText(
-                `${query.data.document.metadata.name}.soha.${format}`,
-                query.data.content,
-              )
+            if (data) downloadText(`${data.document.metadata.name}.soha.${format}`, data.content)
           }}
         >
           导出文件
         </Button>
       </Space>
-      {query.isError ? (
-        <Alert
-          type="warning"
-          showIcon
-          title="暂时无法导出文档"
-          description={query.error.message}
-          action={<Button onClick={() => void query.refetch()}>重试</Button>}
-        />
-      ) : null}
+      <ReadFeedback query={query} label="导出文档" />
       {query.isPending ? <Typography.Text>正在读取定义…</Typography.Text> : null}
-      {query.data ? <pre className="soha-json-block">{query.data.content}</pre> : null}
-      {query.isError && legacy !== undefined ? (
+      {data ? <pre className="soha-json-block">{data.content}</pre> : null}
+      {query.isError && !queryAccessDenied(query) && legacy !== undefined ? (
         <>
           <Typography.Text type="secondary">
             以下为只读的原模板定义，保留旧格式中的全部字段。

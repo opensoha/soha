@@ -214,7 +214,7 @@ export function PodInspection({
           events={readableEvents ?? []}
           observedAt={eventsQuery.dataUpdatedAt}
           loading={eventsQuery.isPending}
-          onRefresh={() => void eventsQuery.refetch()}
+          onRefresh={() => eventsQuery.refetch()}
           scopeHint={text(
             '仅展示最近 100 条命名空间事件中属于此 Pod 的记录。历史告警不代表当前健康状态，请结合 Pod 详情判断。',
             'Shows this Pod’s records from the latest 100 namespace events. Historical warnings do not indicate current health; check Pod details for current state.',

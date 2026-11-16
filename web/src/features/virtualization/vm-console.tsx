@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Badge, Button, Card, Space, Spin } from 'antd'
+import { App, Badge, Button, Card, Space, Spin } from 'antd'
 import {
   CopyOutlined,
   FullscreenOutlined,
@@ -243,7 +244,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
       }
     >
       {status === 'disconnected' && (
-        <Alert
+        <ContextFeedback
           type="warning"
           title="控制台已断开"
           description={errorMessage || '连接已关闭，请重新进入控制台后重试。'}
@@ -251,7 +252,12 @@ export function VMConsole({ vmId }: { vmId: string }) {
         />
       )}
       {status === 'error' && (
-        <Alert type="error" title="连接失败" description={errorMessage} className="mb-2" />
+        <ContextFeedback
+          type="error"
+          title="连接失败"
+          description={errorMessage}
+          className="mb-2"
+        />
       )}
       <div
         ref={containerRef}

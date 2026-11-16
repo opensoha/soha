@@ -221,7 +221,7 @@ export function AccessTeamsPage() {
       rowKey="id"
       loading={crud.isLoading}
       refreshing={crud.isFetching}
-      onRefresh={() => void crud.refetch()}
+      onRefresh={() => crud.refetch()}
       placeholder="搜索组织、路径或来源"
       searchKeyword={searchKeyword}
       setSearchKeyword={setSearchKeyword}

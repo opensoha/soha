@@ -1,6 +1,5 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -17,6 +16,8 @@ import {
 } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
+import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
+import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryApi } from '../api'
 import { deliveryKeys } from '../keys'
@@ -51,9 +52,11 @@ export function TemplateSourceManager({
   const [id, setId] = useState(initialId ?? '')
   const [editing, setEditing] = useState<{ source?: DeliveryTemplateSource }>()
   const sources = useQuery(deliveryQueries.templateSources.list(offset, allowed('view')))
-  const selectedId = id || sources.data?.[0]?.id || ''
+  const sourceList = readableQueryData(sources)
+  const selectedId = id || sourceList?.[0]?.id || ''
   const detail = useQuery(deliveryQueries.templateSources.detail(selectedId, allowed('view')))
-  const source = detail.data
+  const source = queryAccessDenied(sources) ? undefined : readableQueryData(detail)
+  const sourceReadFailed = sources.isError || detail.isError
   return (
     <Modal open title="Git 来源" width={1060} footer={null} onCancel={onClose}>
       <Space orientation="vertical" style={{ width: '100%' }}>
@@ -65,14 +68,17 @@ export function TemplateSourceManager({
             value={selectedId || undefined}
             onChange={setId}
             options={[
-              ...(sources.data ?? []),
-              ...(source && !sources.data?.some((item) => item.id === source.id) ? [source] : []),
+              ...(sourceList ?? []),
+              ...(source && !sourceList?.some((item) => item.id === source.id) ? [source] : []),
             ].map((item) => ({ value: item.id, label: item.name }))}
           />
           <Button type="primary" disabled={!allowed('create')} onClick={() => setEditing({})}>
             添加来源
           </Button>
-          <Button disabled={!source || !allowed('update')} onClick={() => setEditing({ source })}>
+          <Button
+            disabled={!source || sourceReadFailed || !allowed('update')}
+            onClick={() => setEditing({ source })}
+          >
             编辑配置
           </Button>
           <Button
@@ -84,7 +90,7 @@ export function TemplateSourceManager({
             刷新
           </Button>
         </Space>
-        {offset > 0 || sources.data?.length === 50 ? (
+        {offset > 0 || sourceList?.length === 50 ? (
           <Space>
             <Button
               disabled={offset === 0 || sources.isFetching}
@@ -93,21 +99,16 @@ export function TemplateSourceManager({
               上一页
             </Button>
             <Button
-              disabled={(sources.data?.length ?? 0) < 50 || sources.isFetching}
+              disabled={(sourceList?.length ?? 0) < 50 || sources.isFetching}
               onClick={() => setOffset(offset + 50)}
             >
               下一页
             </Button>
           </Space>
         ) : null}
-        {sources.isError || detail.isError ? (
-          <Alert
-            type="error"
-            showIcon
-            title="来源读取失败"
-            description={(sources.error || detail.error)?.message}
-          />
-        ) : sources.isLoading || detail.isLoading ? (
+        <ReadFeedback query={sources} label="来源列表" canRead={allowed('view')} />
+        <ReadFeedback query={detail} label="来源详情" canRead={allowed('view')} />
+        {sourceReadFailed && !source ? null : sources.isLoading || detail.isLoading ? (
           <ManagementState compact kind="loading" />
         ) : source ? (
           <Tabs
@@ -116,7 +117,12 @@ export function TemplateSourceManager({
               {
                 key: 'sync',
                 label: '同步与差异',
-                children: <TemplateSourceSync source={source} canSync={allowed('sync')} />,
+                children: (
+                  <TemplateSourceSync
+                    source={source}
+                    canSync={!sourceReadFailed && allowed('sync')}
+                  />
+                ),
               },
               {
                 key: 'triggers',
@@ -124,6 +130,7 @@ export function TemplateSourceManager({
                 children: (
                   <Suspense fallback={<ManagementState compact kind="loading" />}>
                     <TriggerManager
+                      readOnly={sourceReadFailed}
                       targetKind="template_source"
                       targetId={source.id}
                       webhookRefs={
@@ -184,8 +191,8 @@ export function TemplateSourceManager({
                 children: (
                   <SourceObjects
                     source={source}
-                    canUpdate={allowed('update')}
-                    canRemove={allowed('delete')}
+                    canUpdate={!sourceReadFailed && allowed('update')}
+                    canRemove={!sourceReadFailed && allowed('delete')}
                     onRemoved={() => {
                       setId('')
                       void sources.refetch()
@@ -207,6 +214,7 @@ export function TemplateSourceManager({
       {editing ? (
         <SourceEditor
           source={editing.source}
+          readOnly={sourceReadFailed || !allowed(editing.source ? 'update' : 'create')}
           onClose={() => setEditing(undefined)}
           onSaved={(saved) => {
             setId(saved.id)
@@ -220,16 +228,21 @@ export function TemplateSourceManager({
 
 function SourceEditor({
   source,
+  readOnly,
   onClose,
   onSaved,
 }: {
   source?: DeliveryTemplateSource
+  readOnly: boolean
   onClose: () => void
   onSaved: (source: DeliveryTemplateSource) => void
 }) {
   const [form] = Form.useForm<DeliveryTemplateSourceInput>()
   const [search, setSearch] = useState('')
   const [dirty, setDirty] = useState(false)
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+  const { message } = App.useApp()
   useUnsavedDocument(dirty)
   const client = useQueryClient()
   const repositories = useQuery(deliveryQueries.repositories.list({ search, limit: 200 }))
@@ -240,6 +253,7 @@ function SourceEditor({
         : deliveryApi.templateSources.create(input),
     onSuccess: async (saved) => {
       await client.invalidateQueries({ queryKey: deliveryKeys.all })
+      message.success('Git 来源配置已保存')
       onSaved(saved)
     },
   })
@@ -250,30 +264,29 @@ function SourceEditor({
       width={700}
       okText="保存配置"
       confirmLoading={save.isPending}
+      okButtonProps={{ disabled: readOnly || save.isPending }}
       onOk={() => {
+        if (readOnlyRef.current || save.isPending) return
         void form
           .validateFields()
-          .then((values) => save.mutate({ ...values, expectedGeneration: source?.generation ?? 0 }))
+          .then((values) => {
+            if (!readOnlyRef.current)
+              save.mutate({ ...values, expectedGeneration: source?.generation ?? 0 })
+          })
           .catch(() => {})
       }}
       onCancel={() => {
         if (!save.isPending && (!dirty || window.confirm('放弃未保存的来源配置？'))) onClose()
       }}
     >
-      {save.error ? (
-        <Alert type="error" title="配置保存失败" description={save.error.message} />
-      ) : null}
-      {repositories.isError ? (
-        <Alert
-          type="error"
-          title="仓库读取失败"
-          action={<Button onClick={() => void repositories.refetch()}>重试</Button>}
-        />
-      ) : null}
+      <MutationFeedback
+        operations={[{ mutation: save, label: '保存 Git 来源配置', target: source?.name }]}
+      />
+      <ReadFeedback query={repositories} label="仓库" />
       <Form
         form={form}
         layout="vertical"
-        disabled={save.isPending}
+        disabled={readOnly || save.isPending}
         onValuesChange={() => setDirty(true)}
         initialValues={
           source ?? {
@@ -303,7 +316,7 @@ function SourceEditor({
           <Select
             showSearch={{ onSearch: setSearch, filterOption: false }}
             loading={repositories.isFetching}
-            options={(repositories.data ?? [])
+            options={(readableQueryData(repositories) ?? [])
               .filter((item) => item.sourceConnectionId && item.providerRepositoryId)
               .map((item) => ({ value: item.id, label: item.name }))}
           />
@@ -403,25 +416,23 @@ function SourceObjects({
     setDisposition('keep')
     setRemoval({ object, generation: source.generation })
   }
+  const removeBlocked =
+    remove.isPending || objects.isError || !removal || (removal.object ? !canUpdate : !canRemove)
+  const readableObjects = readableQueryData(objects)
   return (
     <Space orientation="vertical" style={{ width: '100%' }}>
-      {objects.isError ? (
-        <Alert
-          type="error"
-          title="关联对象读取失败"
-          action={<Button onClick={() => void objects.refetch()}>重试</Button>}
-        />
-      ) : objects.isLoading ? (
+      <ReadFeedback query={objects} label="关联对象" />
+      {objects.isError && !readableObjects ? null : objects.isLoading ? (
         <ManagementState compact kind="loading" />
       ) : (
         <>
-          {objects.data?.map((item) => (
+          {readableObjects?.map((item) => (
             <Card
               size="small"
               key={`${item.kind}:${item.objectId}`}
               title={`${documentKindLabels[item.kind]} · ${item.key}`}
               extra={
-                <Button disabled={!canUpdate} onClick={() => review(item)}>
+                <Button disabled={!canUpdate || objects.isError} onClick={() => review(item)}>
                   解除关联
                 </Button>
               }
@@ -433,7 +444,7 @@ function SourceObjects({
               <Typography.Paragraph type="secondary">{item.resolvedCommit}</Typography.Paragraph>
             </Card>
           ))}
-          {!objects.data?.length ? (
+          {!readableObjects?.length ? (
             <ManagementState compact kind="empty" title="暂无关联对象" />
           ) : null}
           <Space wrap>
@@ -444,12 +455,16 @@ function SourceObjects({
               上一页
             </Button>
             <Button
-              disabled={(objects.data?.length ?? 0) < 50 || objects.isFetching}
+              disabled={(readableObjects?.length ?? 0) < 50 || objects.isFetching}
               onClick={() => setOffset(offset + 50)}
             >
               下一页
             </Button>
-            <Button danger disabled={!canRemove || objects.isFetching} onClick={() => review()}>
+            <Button
+              danger
+              disabled={!canRemove || objects.isFetching || objects.isError}
+              onClick={() => review()}
+            >
               移除整个来源
             </Button>
           </Space>
@@ -460,7 +475,10 @@ function SourceObjects({
         title={removal?.object ? `解除 ${removal.object.key} 的 Git 关联` : '移除整个 Git 来源'}
         okText="确认解除"
         confirmLoading={remove.isPending}
-        onOk={() => remove.mutate()}
+        okButtonProps={{ disabled: removeBlocked }}
+        onOk={() => {
+          if (!removeBlocked) remove.mutate()
+        }}
         onCancel={() => {
           if (!remove.isPending) setRemoval(undefined)
         }}
@@ -475,6 +493,7 @@ function SourceObjects({
           aria-label="关联解除后的处理"
           style={{ width: '100%' }}
           value={disposition}
+          disabled={removeBlocked}
           onChange={setDisposition}
           options={[
             { value: 'keep', label: '保留定义，转为 Soha 管理' },
@@ -484,14 +503,15 @@ function SourceObjects({
               : [{ value: 'deprecate', label: '同时废弃关联模板，停止新的选择' }]),
           ]}
         />
-        {remove.error ? (
-          <Alert
-            type="error"
-            showIcon
-            title="解除失败，请检查权限或刷新后重新查看关联"
-            description={remove.error.message}
-          />
-        ) : null}
+        <MutationFeedback
+          operations={[
+            {
+              mutation: remove,
+              label: '解除 Git 管理',
+              target: removal?.object?.key || source.name,
+            },
+          ]}
+        />
       </Modal>
     </Space>
   )

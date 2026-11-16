@@ -307,11 +307,11 @@ async function renderWithProviders(node: ReactNode, route = '/workloads/pods') {
 
   await act(async () => {
     root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[route]}>
+          <AntdApp>{node}</AntdApp>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
   })
 
@@ -326,11 +326,11 @@ async function rerenderWithProviders(node: ReactNode, route = '/workloads/pods')
   if (!root || !queryClient) throw new Error('renderWithProviders must run first')
   await act(async () => {
     root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[route]}>
+          <AntdApp>{node}</AntdApp>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
   })
   await flushAsyncWork()
@@ -954,7 +954,11 @@ describe('workloads pods page refresh controls', () => {
       rejectDelete(new ApiError(500, 'Synthetic uncertain delete', { method: 'DELETE' })),
     )
     await flushQueryNotifications()
-    expect(dialog.textContent).toContain('请求结果不明')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        '请求结果不明',
+      ),
+    )
     expect(confirm.disabled).toBe(true)
     await act(async () => confirm.click())
     expect(apiDeleteMock).toHaveBeenCalledTimes(1)
@@ -1452,7 +1456,10 @@ describe('workloads pods page refresh controls', () => {
       container.querySelector<HTMLInputElement>('input[aria-label="select-monitoring/api"]')
         ?.checked,
     ).toBe(false)
-    const feedback = container.querySelector('.soha-operation-feedback')!
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')).not.toBeNull(),
+    )
+    const feedback = document.querySelector('.soha-operation-feedback')!
     expect(feedback.textContent).toContain('cluster-a / monitoring / api')
     expect(feedback.textContent).not.toContain('cluster-b / monitoring / api')
   })

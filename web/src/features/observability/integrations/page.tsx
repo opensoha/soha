@@ -405,7 +405,7 @@ export function AlertIntegrationsPage() {
         error={integrationsQuery.error}
         hasReadData={integrationsQuery.data !== undefined}
         refreshing={integrationsQuery.isFetching}
-        onRefresh={() => void integrationsQuery.refetch()}
+        onRefresh={() => integrationsQuery.refetch()}
         headerExtra={
           canCreateIntegration || canTestIntegration ? (
             <ManagementTableToolbar>

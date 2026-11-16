@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import {
   platformResourceTarget,
@@ -8,7 +9,7 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Descriptions, Form, Input, Modal, Space, Spin } from 'antd'
+import { Button, Descriptions, Form, Input, Modal, Space, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { clusterKeys } from './keys'
 import { clusterMutations } from './mutations'
@@ -104,7 +105,7 @@ export function AgentUpgradeModal({ cluster, onClose }: { cluster: Cluster; onCl
       {mutation.feedback}
 
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={
@@ -144,7 +145,7 @@ export function AgentUpgradeModal({ cluster, onClose }: { cluster: Cluster; onCl
           />
         ) : null}
         {status?.upgradeDisabledReason ? (
-          <Alert type="warning" showIcon title={status.upgradeDisabledReason} />
+          <ContextFeedback type="warning" showIcon title={status.upgradeDisabledReason} />
         ) : null}
         <Form layout="vertical">
           <Form.Item
@@ -169,7 +170,7 @@ export function AgentUpgradeModal({ cluster, onClose }: { cluster: Cluster; onCl
           </Form.Item>
         </Form>
         {completed ? (
-          <Alert
+          <ContextFeedback
             type="success"
             showIcon
             title={
@@ -180,14 +181,14 @@ export function AgentUpgradeModal({ cluster, onClose }: { cluster: Cluster; onCl
           />
         ) : null}
         {alreadyCurrent && !completed ? (
-          <Alert
+          <ContextFeedback
             type="success"
             showIcon
             title={zh ? 'Agent 已是目标版本。' : 'Agent is already at the target version.'}
           />
         ) : null}
         {waiting ? (
-          <Alert
+          <ContextFeedback
             type="info"
             showIcon
             title={
@@ -198,38 +199,13 @@ export function AgentUpgradeModal({ cluster, onClose }: { cluster: Cluster; onCl
           />
         ) : null}
         {timedOut && !completed ? (
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title={
               zh
                 ? '尚未确认更新完成。可刷新状态；关闭窗口不会取消 Kubernetes 更新。'
                 : 'Completion is not confirmed. Refresh the status; closing does not cancel the Kubernetes rollout.'
-            }
-          />
-        ) : null}
-        {statusQuery.error ? (
-          <Alert
-            type={waiting ? 'info' : 'error'}
-            showIcon
-            title={
-              waiting
-                ? zh
-                  ? 'Agent 暂未连接，正在继续检查…'
-                  : 'Agent is reconnecting. Checking again…'
-                : statusQuery.error.message
-            }
-          />
-        ) : null}
-        {mutation.error ? (
-          <Alert
-            type="error"
-            showIcon
-            title={mutation.error.message}
-            description={
-              zh
-                ? '若连接在提交时中断，请先刷新状态确认是否已生效，再重试。'
-                : 'If the connection dropped while submitting, refresh to check whether the update was accepted before retrying.'
             }
           />
         ) : null}

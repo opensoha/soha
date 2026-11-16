@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { AdminTable } from '@/components/admin-table'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
@@ -23,7 +24,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Space, Spin, Tooltip, Typography } from 'antd'
+import { Button, Space, Spin, Tooltip, Typography } from 'antd'
 import { lazy, Suspense, useDeferredValue, useEffect, useState } from 'react'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
 import { normalizeSearchKeyword } from '../../shared/search'
@@ -307,7 +308,7 @@ export function HelmChartsPage() {
         }}
       />
       {capabilityReason ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           style={{ marginBottom: 12 }}

@@ -167,7 +167,7 @@ export function AccessRolesPage() {
       rowKey="id"
       loading={crud.isLoading}
       refreshing={crud.isFetching}
-      onRefresh={() => void crud.refetch()}
+      onRefresh={() => crud.refetch()}
       placeholder={t('access.roles.search', '搜索角色、范围或权限键')}
       searchKeyword={searchKeyword}
       setSearchKeyword={setSearchKeyword}
@@ -297,10 +297,10 @@ export function AccessRolesPage() {
                 return (
                   <RolePermissionBrowser
                     definitions={permissionDefinitions}
-                    error={permissionCatalogQuery.isError}
+                    error={permissionCatalogQuery.error}
                     loading={permissionCatalogQuery.isLoading}
                     permissionKeys={permissionKeys}
-                    onRetry={() => void permissionCatalogQuery.refetch()}
+                    onRetry={() => permissionCatalogQuery.refetch()}
                     onChange={(nextPermissionKeys) =>
                       setFieldsValue({
                         permissionKeys: normalizeRolePermissionKeys(nextPermissionKeys),

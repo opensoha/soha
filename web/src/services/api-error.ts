@@ -22,6 +22,7 @@ export interface ApiErrorOptions {
   method?: string
   path?: string
   requestId?: string
+  requestOutcome?: 'rejected'
   cause?: unknown
 }
 
@@ -31,6 +32,7 @@ export class ApiError extends Error {
   readonly method?: string
   readonly path?: string
   readonly requestId?: string
+  readonly requestOutcome?: 'rejected'
   readonly originalCause?: unknown
 
   constructor(status: number, message: string, options: ApiErrorOptions = {}) {
@@ -42,6 +44,7 @@ export class ApiError extends Error {
     this.method = options.method
     this.path = options.path
     this.requestId = options.requestId
+    this.requestOutcome = options.requestOutcome
     this.originalCause = options.cause
   }
 

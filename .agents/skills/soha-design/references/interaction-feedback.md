@@ -13,6 +13,13 @@ its uncertain-write fence lasts only while the owner stays mounted and is not du
 Keep one visible feedback owner per request, inside its active overlay when necessary.
 Compute's feedback module only adapts Compute task receipts, not global UI policy.
 
+Use `components/context-feedback` for compact persistent explanations, permission blockers,
+validation/preflight evidence and resource/task states. It preserves the Antd Alert contract;
+features do not import Alert directly. Request pending/success/failure belongs to the floating
+OperationFeedback/MutationFeedback owner, not ContextFeedback. Reads use ReadFeedback with
+collapsed diagnostics; explicit failed refreshes use useReadRefreshFeedback. Do not turn a
+background read, persistent task state or risk explanation into a new notification on every render.
+
 Persistent error feedback claims its API presentation through the shared helper so the global
 handler remains a fallback rather than a second notification. Authentication expiry keeps its
 notification and redirect. Keep modal-visible errors, validation and partial-batch results;

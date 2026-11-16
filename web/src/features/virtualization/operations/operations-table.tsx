@@ -1,18 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { WorkerReadiness } from '../clusters/worker-pools'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  App,
-  Alert,
-  Button,
-  Descriptions,
-  Drawer,
-  Popconfirm,
-  Segmented,
-  Space,
-  Typography,
-} from 'antd'
+import { App, Button, Descriptions, Drawer, Popconfirm, Segmented, Space, Typography } from 'antd'
 import type { DrawerProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Key } from 'react'
@@ -512,7 +503,7 @@ export function OperationsTable({
         }}
         loading={operationsQuery.isLoading}
         refreshing={operationsQuery.isFetching}
-        onRefresh={() => void operationsQuery.refetch()}
+        onRefresh={() => operationsQuery.refetch()}
         dataSource={filteredOperations}
         columns={columns}
         paginationSummary={localeText(
@@ -562,7 +553,7 @@ export function OperationsTable({
           </div>
         )}
         {selectedOperation?.message ? (
-          <Alert
+          <ContextFeedback
             className="mt-4"
             type={isAbnormalOperation(selectedOperation.status) ? 'error' : 'info'}
             title={selectedOperation.message}

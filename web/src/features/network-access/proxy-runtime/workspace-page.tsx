@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Tabs, Typography } from 'antd'
+import { Button, Tabs, Typography } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -59,7 +60,9 @@ export default function ProxyWorkspacePage() {
         </div>
         <Link to="/network-access/proxy-instances">返回代理实例</Link>
       </div>
-      {!canUpdate && <Alert type="info" title="当前仅可查看，配置与发布操作需要修改权限" />}
+      {!canUpdate && (
+        <ContextFeedback type="info" title="当前仅可查看，配置与发布操作需要修改权限" />
+      )}
       <Workspace key={`${instanceID}:${canUpdate}`} instance={selected} canUpdate={canUpdate} />
     </main>
   )

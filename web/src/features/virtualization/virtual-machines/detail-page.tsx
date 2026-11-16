@@ -1,10 +1,16 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import {
+  OperationFeedback,
+  ReadFeedback,
+  useReadRefreshFeedback,
+} from '@/components/request-feedback'
+import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useDocumentHidden } from '@/utils/use-document-hidden'
 import { lazy, Suspense, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
-  Alert,
   Button,
   Card,
   Collapse,
@@ -160,6 +166,7 @@ export function VirtualizationVmDetailPage() {
     vmId: string
     action: string
     message: string
+    error?: Error
     uncertain: boolean
     recordedAt: string
   }>()
@@ -205,7 +212,8 @@ export function VirtualizationVmDetailPage() {
         : false
     },
   })
-  const detail = detailQuery.data
+  const refresh = useReadRefreshFeedback()
+  const detail = readableQueryData(detailQuery)
   const vm = detail?.vm
   const observation = virtualMachineObservation(vm)
   const providerRaw = stringifyRaw(detail?.providerRaw)
@@ -263,10 +271,9 @@ export function VirtualizationVmDetailPage() {
         vmId: variables.id,
         action: variables.action,
         message: error.message,
+        error,
         recordedAt: new Date().toISOString(),
-        uncertain: !(
-          error instanceof ApiError && [400, 401, 403, 404, 409, 422, 429].includes(error.status)
-        ),
+        uncertain: writeOutcomeUnknown(error),
       }),
   })
   const canRunAction = (action: string) =>
@@ -287,6 +294,15 @@ export function VirtualizationVmDetailPage() {
         setPowerError({
           vmId,
           action,
+          error:
+            fresh.error ??
+            new Error(
+              localeText(
+                localeCode,
+                '资源状态或允许操作已变化，请核对最新记录。',
+                'The resource state or allowed actions changed. Check the latest record.',
+              ),
+            ),
           recordedAt: new Date().toISOString(),
           message:
             fresh.error?.message ||
@@ -333,49 +349,19 @@ export function VirtualizationVmDetailPage() {
   })
 
   const forbidden = detailQuery.error instanceof ApiError && detailQuery.error.status === 403
-  const notFound = detailQuery.error instanceof ApiError && detailQuery.error.status === 404
   if (!vm || forbidden) {
     return (
       <div className="soha-page">
         <Card size="small" loading={detailQuery.isLoading}>
-          {!detailQuery.isLoading ? (
+          <ReadFeedback
+            query={detailQuery}
+            label={localeText(localeCode, '虚拟机详情', 'VM details')}
+          />
+          {!detailQuery.isLoading && !detailQuery.isError ? (
             <ManagementState
               compact
-              kind={
-                forbidden
-                  ? 'no-permission'
-                  : detailQuery.isError && !notFound
-                    ? 'error'
-                    : 'not-found'
-              }
-              title={localeText(
-                localeCode,
-                forbidden
-                  ? '无访问权限'
-                  : detailQuery.isError && !notFound
-                    ? '虚拟机详情读取失败'
-                    : '未找到虚拟机详情',
-                forbidden
-                  ? 'Access denied'
-                  : detailQuery.isError && !notFound
-                    ? 'Failed to read VM details'
-                    : 'Virtual machine not found',
-              )}
-              description={
-                detailQuery.error?.message ||
-                localeText(
-                  localeCode,
-                  '目标虚拟机不存在，或当前账号无法访问该资源。',
-                  'The virtual machine does not exist or your account cannot access it.',
-                )
-              }
-              actions={
-                detailQuery.isError && !forbidden ? (
-                  <Button onClick={() => void detailQuery.refetch()}>
-                    {localeText(localeCode, '重试读取虚拟机', 'Retry VM details')}
-                  </Button>
-                ) : undefined
-              }
+              kind="not-found"
+              title={localeText(localeCode, '未找到虚拟机详情', 'Virtual machine not found')}
             />
           ) : null}
         </Card>
@@ -482,7 +468,14 @@ export function VirtualizationVmDetailPage() {
                   'Read VM details and task records again',
                 )}
                 loading={detailQuery.isFetching}
-                onClick={() => void detailQuery.refetch()}
+                onClick={() =>
+                  void refresh([
+                    {
+                      label: localeText(localeCode, '虚拟机详情', 'VM details'),
+                      refetch: detailQuery.refetch,
+                    },
+                  ])
+                }
               >
                 {localeText(localeCode, '刷新', 'Refresh')}
               </Button>
@@ -577,7 +570,7 @@ export function VirtualizationVmDetailPage() {
         </dl>
       </Card>
       {isStaleVirtualMachine(vm) ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={localeText(localeCode, '资源记录已过期', 'Resource record is stale')}
@@ -588,25 +581,27 @@ export function VirtualizationVmDetailPage() {
           )}
         />
       ) : null}
-      {detailQuery.isError ? (
-        <Alert
-          type="warning"
-          showIcon
-          title={localeText(
-            localeCode,
-            '记录未更新，正在展示上次读取结果',
-            'Record not updated, showing the last result',
-          )}
-          description={detailQuery.error.message}
-          action={
-            <Button size="small" onClick={() => void detailQuery.refetch()}>
-              {localeText(localeCode, '重试读取', 'Retry reading')}
+      <ReadFeedback
+        query={detailQuery}
+        label={localeText(localeCode, '虚拟机详情', 'VM details')}
+      />
+      <OperationFeedback
+        pending={checkingPower || powerMutation.isPending}
+        error={
+          currentPowerError && !currentPowerError.uncertain ? currentPowerError.error : undefined
+        }
+        label={localeText(localeCode, '虚拟机操作', 'VM operation')}
+        target={`${vm.name} · ${currentPowerError?.action ?? powerMutation.variables?.action ?? ''}`}
+        actions={
+          currentPowerError && !currentPowerError.uncertain ? (
+            <Button size="small" onClick={() => setActiveTab('operations')}>
+              {localeText(localeCode, '核对任务历史', 'Check task history')}
             </Button>
-          }
-        />
-      ) : null}
-      {currentPowerError ? (
-        <Alert
+          ) : undefined
+        }
+      />
+      {currentPowerError?.uncertain ? (
+        <ContextFeedback
           type={currentPowerError.uncertain ? 'warning' : 'error'}
           showIcon
           title={localeText(
@@ -711,7 +706,7 @@ export function VirtualizationVmDetailPage() {
                   ) : null}
                 </div>
                 {latestAbnormalOperation ? (
-                  <Alert
+                  <ContextFeedback
                     type="error"
                     showIcon
                     title={localeText(
@@ -836,7 +831,7 @@ export function VirtualizationVmDetailPage() {
                       </Descriptions.Item>
                     </Descriptions>
                     {!vm?.ipAddresses?.length && vm?.provider === 'pve' ? (
-                      <Alert
+                      <ContextFeedback
                         className="soha-vrt-vm-address-alert"
                         type="warning"
                         showIcon

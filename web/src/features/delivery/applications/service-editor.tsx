@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { MutationFeedback } from '@/components/request-feedback'
 import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -433,21 +434,25 @@ export function ServiceEditor({
   const visibleStepIndices = sourceMode === 'build' ? [0, 1, 2, 3] : [0, 2, 3]
   return (
     <div className="soha-application-service-editor">
+      <MutationFeedback
+        operations={[
+          {
+            mutation: saveMutation,
+            label: '保存服务配置',
+            target: submitted ? String(submitted.service.name) : undefined,
+          },
+        ]}
+      />
       {submitted ? (
         <Space orientation="vertical" className="soha-application-service-editor__receipt">
-          <Alert
-            type={saveMutation.isError ? 'error' : 'info'}
-            showIcon
-            title={
-              saveMutation.isError
-                ? Object.keys(checkpoint.current.repositories).length ||
-                  checkpoint.current.buildSourceSaved
-                  ? '部分配置已保存'
-                  : '保存尚未完成'
-                : '正在保存服务'
-            }
-            description={saveMutation.error?.message || '正在保存仓库、构建定义、服务与部署配置。'}
-          />
+          {saveMutation.isError ? (
+            <ContextFeedback
+              type="warning"
+              showIcon
+              title="服务配置检查点已保留"
+              description="请核对下方已保存内容，再从当前检查点继续；待核对的资源仍保留防重复创建保护。"
+            />
+          ) : null}
           <Text>
             服务：{String(submitted.service.name)}。已接入仓库：
             {Object.keys(checkpoint.current.repositories).length}；构建定义：
@@ -733,7 +738,7 @@ export function ServiceEditor({
                       ) : (
                         <>
                           {buildMode === 'shared' ? (
-                            <Alert
+                            <ContextFeedback
                               type="warning"
                               showIcon
                               title={`保存将修改共享构建，另有 ${references.length} 个服务引用${references.length ? `：${references.map((item) => item.name).join('、')}` : ''}。`}

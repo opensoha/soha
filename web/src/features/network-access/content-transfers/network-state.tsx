@@ -1,4 +1,5 @@
-import { Alert, Modal, Space, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Modal, Space, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type {
   ManagedContentRecord,
@@ -48,7 +49,7 @@ export function NetworkStateDialog({
       width={880}
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="info"
           title={text(
             '执行回执与网络流量事实分别判断。',
@@ -88,7 +89,7 @@ export function NetworkStateDialog({
               }
               dataSource={data.targets}
               loading={query.isFetching}
-              onRefresh={() => void query.refetch()}
+              onRefresh={() => query.refetch()}
               pagination={{ pageSize: 10, showSizeChanger: false }}
               columns={[
                 {

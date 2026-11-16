@@ -290,7 +290,7 @@ export function WorkloadsStatefulSetsPage() {
               resourceLabel="StatefulSets"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              onRefresh={() => void statefulSetsQuery.refetch()}
+              onRefresh={() => statefulSetsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   kubernetesDeleteConfirmation,
   useKubernetesResourceActions,
@@ -27,7 +28,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined, EditOutlined, EyeOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert } from 'antd'
+
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
@@ -251,7 +252,7 @@ export function HelmReleasesPage() {
         setSearchKeyword={setSearchKeyword}
       />
       {capabilityReason ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           style={{ marginBottom: 12 }}

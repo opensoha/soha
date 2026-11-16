@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
@@ -13,7 +14,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Drawer, Input, Select, Space } from 'antd'
+import { App, Button, Drawer, Input, Select, Space } from 'antd'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CapabilityTask, CapabilityTaskInput, CapabilityTaskRevisionInput } from './api'
@@ -83,7 +84,7 @@ export function CapabilityTasksPage() {
           loading: list.isLoading,
           error: list.error,
           hasReadData: readableQueryData(list) !== undefined,
-          onRetry: () => void list.refetch(),
+          onRetry: () => list.refetch(),
           headerExtra: (
             <ManagementTableToolbar>
               <ManagementIconButton
@@ -192,7 +193,7 @@ export function CapabilityTasksPage() {
                 ),
               ]}
             />
-            <Alert
+            <ContextFeedback
               showIcon
               type={
                 task.assessment?.verdict === 'satisfied'
@@ -373,7 +374,7 @@ function CapabilityPlanEditor({
         {resume.feedback}
         {validation.feedback}
         {initial.task ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type="info"
             title="保留原目标与未结束步骤；重新验证时使用新的步骤 ID。历史计划及已完成操作会保留。"
@@ -393,7 +394,7 @@ function CapabilityPlanEditor({
           }}
         />
         {validation.data ? (
-          <Alert
+          <ContextFeedback
             showIcon
             type={validated === value ? 'success' : 'error'}
             title={validated === value ? '计划校验通过' : '计划需要调整'}

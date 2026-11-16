@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ConfigProvider } from 'antd'
+import { App, ConfigProvider } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -226,9 +226,11 @@ async function render(content: ReactNode, path = '/delivery/batches/batch') {
       <ConfigProvider theme={{ token: { motion: false } }}>
         <QueryClientProvider client={client}>
           <MemoryRouter initialEntries={[path]}>
-            <Routes>
-              <Route path="/delivery/batches/:batchId" element={content} />
-            </Routes>
+            <App>
+              <Routes>
+                <Route path="/delivery/batches/:batchId" element={content} />
+              </Routes>
+            </App>
           </MemoryRouter>
         </QueryClientProvider>
       </ConfigProvider>,

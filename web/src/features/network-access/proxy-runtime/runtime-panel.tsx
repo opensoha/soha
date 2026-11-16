@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Form, Input, Select, Space, Typography } from 'antd'
+import { Button, Form, Input, Select, Space, Typography } from 'antd'
 import type {
   NetworkProxyInstance,
   NetworkProxyRuntimeCommandInput,
@@ -152,7 +153,9 @@ export function RuntimePanel({
         {instance.engineVersion ?? '版本未知'}
         。能力以运行时回执为准；未知不自动启用。不支持与暂不可用分别保留原因。
       </Typography.Paragraph>
-      {!instance.processEpoch && <Alert type="warning" title="尚未取得运行时状态，不能提交操作" />}
+      {!instance.processEpoch && (
+        <ContextFeedback type="warning" title="尚未取得运行时状态，不能提交操作" />
+      )}
       <Typography.Paragraph type="secondary">
         {instance.capabilities.length
           ? `已声明能力：${instance.capabilities.join('、')}`
@@ -242,7 +245,7 @@ export function RuntimePanel({
       {requestId && (
         <>
           <ReadFeedback canRead query={receipt} label="运行回执" />
-          <Alert
+          <ContextFeedback
             type={
               data?.status === 'succeeded'
                 ? 'success'

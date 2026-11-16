@@ -1,7 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useMemo, useState } from 'react'
 import {
   App,
-  Alert,
   Button,
   Descriptions,
   Drawer,
@@ -509,7 +509,7 @@ export function ManifestLibraryWorkspace({
                     {(fields, { add, remove }) => (
                       <div className="soha-manifest-files">
                         {gitFilesReadOnly ? (
-                          <Alert showIcon type="info" title="Git 是当前内容来源" />
+                          <ContextFeedback showIcon type="info" title="Git 是当前内容来源" />
                         ) : null}
                         <div className="soha-manifest-section-head">
                           <Text strong>清单文件</Text>

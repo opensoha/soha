@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
-import { Alert, Button, Form, Input, Popconfirm, Select, Space, Switch, Typography } from 'antd'
+import { Button, Form, Input, Popconfirm, Select, Space, Switch, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   DLPDataLevel,
@@ -194,7 +195,7 @@ export function Destinations() {
         query={query}
         label={text('目的连接草稿与发布版本', 'Destination drafts and published versions')}
       />
-      <Alert
+      <ContextFeedback
         type="info"
         title={text(
           '编辑与发布分权；连接和策略一起版本化。',
@@ -209,7 +210,7 @@ export function Destinations() {
         rowKey="id"
         dataSource={data ?? []}
         loading={query.isFetching}
-        onRefresh={() => void query.refetch()}
+        onRefresh={() => query.refetch()}
         pagination={{ pageSize: 10, showSizeChanger: false }}
         columns={[
           {
@@ -267,7 +268,7 @@ export function Destinations() {
             {text('目的连接ID（用于密钥绑定）', 'Destination ID (for secret binding)')}: {id}
           </Typography.Text>
           {conflict ? (
-            <Alert
+            <ContextFeedback
               type="warning"
               title={text('服务端版本已变化', 'The server version changed')}
               description={text(

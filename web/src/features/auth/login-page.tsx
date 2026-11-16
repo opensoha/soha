@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import {
   API_BASE_URL,
@@ -21,6 +22,7 @@ import { usePreferencesStore } from '@/stores/preferences-store'
 import { getThemePalette, readThemeCssVariable, resolveThemeMode } from '@/theme/app-theme'
 import {
   applyBrandingSettings,
+  defaultBrandingSettings,
   persistBrandingSettings,
   readStoredBrandingSettings,
   resolveBrandingLogos,
@@ -36,7 +38,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Card, Divider, Form, Input, Slider, Spin, Typography } from 'antd'
+import { App, Button, Card, Divider, Form, Input, Slider, Spin, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import './login-page.css'
@@ -70,39 +72,10 @@ const STAR_TONES = [
 
 type StarToneVariable = (typeof STAR_TONES)[number]
 
-const CAPABILITY_QUESTIONS = [
-  {
-    question: '门户',
-    answer: '统一入口、常用工作台与待办导航',
-  },
-  {
-    question: 'k8s工作台',
-    answer: '多集群、工作负载、网络、存储和 YAML 管理',
-  },
-  {
-    question: '持续交付工作台',
-    answer: '应用、服务、环境、工作流、测试与发布',
-  },
-  {
-    question: '可观测性工作台',
-    answer: '指标、链路、日志、告警、值班与自愈',
-  },
-  {
-    question: '计算资源工作台',
-    answer: '虚拟机、容器运行时、镜像模板与任务中心',
-  },
-  {
-    question: 'AI工作台',
-    answer: '对话、知识库、Agent、模型网关与评测',
-  },
-  {
-    question: '内网工作台',
-    answer: '应用目录、身份 Provider、Outpost 与访问策略',
-  },
-  {
-    question: '设置中心',
-    answer: '用户、角色、组织、系统集成、品牌与运行配置',
-  },
+const LOGIN_VALUES = [
+  { title: '统一管理', description: '减少入口切换，让日常运维更有条理。' },
+  { title: '协同处理', description: '汇聚信息与上下文，让团队更容易一起解决问题。' },
+  { title: '持续扩展', description: '从当前需要出发，随业务发展逐步拓展。' },
 ]
 
 function createStarNode(width: number, height: number): StarNode {
@@ -325,66 +298,24 @@ function LoginConstellationBackground() {
   return <canvas ref={canvasRef} className="soha-auth-background" aria-hidden="true" />
 }
 
-function LoginCapabilityFlow({
-  brandName,
-  loginLogoUrl,
-  slogan,
-}: {
-  brandName: string
-  loginLogoUrl: string
-  slogan: string
-}) {
+function LoginBrandStory({ brandName, slogan }: { brandName: string; slogan?: string }) {
   return (
-    <section className="soha-auth-flow" aria-label="Soha 支持的能力">
+    <section className="soha-auth-flow" aria-label={`${brandName} 品牌介绍`}>
       <div className="soha-auth-flow-copy">
-        {loginLogoUrl ? (
-          <div className="soha-auth-hero-logo">
-            <img src={loginLogoUrl} alt={brandName} className="soha-auth-hero-logo-img" />
+        <Title level={1} className="soha-auth-flow-title">
+          {brandName}
+        </Title>
+        <p className="soha-auth-flow-subtitle">{slogan}</p>
+      </div>
+
+      <dl className="soha-auth-values">
+        {LOGIN_VALUES.map((item) => (
+          <div key={item.title} className="soha-auth-value">
+            <dt>{item.title}</dt>
+            <dd>{item.description}</dd>
           </div>
-        ) : (
-          <Title level={1} className="soha-auth-flow-title">
-            {slogan}
-          </Title>
-        )}
-      </div>
-
-      <div className="soha-auth-flow-map">
-        <svg
-          className="soha-auth-flow-lines"
-          viewBox="0 0 640 360"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <defs>
-            <linearGradient id="soha-auth-flow-gradient" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0%" stopColor="var(--soha-graph-muted)" stopOpacity="0.18" />
-              <stop offset="46%" stopColor="var(--soha-accent-cyan)" stopOpacity="0.72" />
-              <stop offset="68%" stopColor="var(--soha-accent-teal)" stopOpacity="0.78" />
-              <stop offset="100%" stopColor="var(--soha-graph-muted)" stopOpacity="0.18" />
-            </linearGradient>
-          </defs>
-          <path className="soha-auth-flow-line" d="M80 72 C210 24 250 118 332 116" />
-          <path className="soha-auth-flow-line is-delay-1" d="M332 116 C444 114 472 58 562 90" />
-          <path className="soha-auth-flow-line is-delay-2" d="M332 116 C278 152 178 142 118 206" />
-          <path className="soha-auth-flow-line is-delay-3" d="M118 206 C238 248 332 214 452 254" />
-          <path className="soha-auth-flow-line is-delay-1" d="M562 90 C590 156 548 212 452 254" />
-          <path className="soha-auth-flow-line is-delay-2" d="M452 254 C384 330 296 338 210 330" />
-          <path className="soha-auth-flow-line is-muted" d="M80 72 C120 150 86 190 118 206" />
-        </svg>
-
-        {CAPABILITY_QUESTIONS.map((item, index) => (
-          <article
-            key={item.question}
-            className={`soha-auth-flow-node soha-auth-flow-node--${index}`}
-          >
-            <span className="soha-auth-flow-node__dot" />
-            <div>
-              <div className="soha-auth-flow-node__question">{item.question}</div>
-              <div className="soha-auth-flow-node__answer">{item.answer}</div>
-            </div>
-          </article>
         ))}
-      </div>
+      </dl>
     </section>
   )
 }
@@ -506,7 +437,7 @@ export function LoginPage() {
   const thirdPartyProviders = (readableQueryData(providersQuery) ?? []).filter(
     (item) => item.enabled !== false && item.type !== 'password',
   )
-  const appTitle = branding.sidebarTitle || branding.appTitle || 'Soha'
+  const brandName = branding.sidebarTitle || defaultBrandingSettings.sidebarTitle
   const resolvedThemeMode = resolveThemeMode(themeMode)
   const logos = resolveBrandingLogos(branding, resolvedThemeMode)
   const sliderVerificationEnabled =
@@ -688,14 +619,13 @@ export function LoginPage() {
         onClick={toggleThemeMode}
       />
 
-      <div className="soha-auth-layout soha-auth-layout--floating">
-        <LoginCapabilityFlow
-          brandName={appTitle}
-          loginLogoUrl={logos.expandedLogoUrl}
-          slogan={branding.slogan || 'Soha 是一种能力！'}
+      <div className="soha-auth-layout">
+        <LoginBrandStory
+          brandName={brandName}
+          slogan={branding.slogan || defaultBrandingSettings.slogan}
         />
 
-        <Card className="soha-auth-panel soha-auth-panel--floating" variant="borderless">
+        <Card className="soha-auth-panel" variant="borderless" aria-label="登录">
           <div className="soha-auth-panel-inner">
             <div className="soha-auth-brand">
               <img
@@ -704,10 +634,10 @@ export function LoginPage() {
                 className="soha-auth-brand-logo-img"
               />
               <div className="soha-auth-brand-copy">
-                <Title level={4} style={{ margin: 0 }}>
-                  {appTitle}
+                <Title level={4} className="soha-auth-brand-name" style={{ margin: 0 }}>
+                  {brandName}
                 </Title>
-                <Text type="secondary">多工作台统一控制台</Text>
+                <Text type="secondary">运维管理与协作</Text>
               </div>
             </div>
 
@@ -733,7 +663,12 @@ export function LoginPage() {
                 <ReadFeedback query={loginOptionsQuery} label="登录选项" />
                 <ReadFeedback query={providersQuery} label="第三方登录" />
                 {loginError ? (
-                  <Alert showIcon type="error" title="登录失败" description={loginError.message} />
+                  <ContextFeedback
+                    showIcon
+                    type="error"
+                    title="登录失败"
+                    description={loginError.message}
+                  />
                 ) : null}
                 {localPasswordLoginEnabled ? (
                   <Form<LoginFormValues>
@@ -755,6 +690,7 @@ export function LoginPage() {
                         prefix={<UserOutlined />}
                         placeholder="请输入用户名"
                         allowClear
+                        autoComplete="username"
                         size="middle"
                       />
                     </Form.Item>
@@ -766,6 +702,7 @@ export function LoginPage() {
                       <Input.Password
                         prefix={<LockOutlined />}
                         placeholder="请输入密码"
+                        autoComplete="current-password"
                         size="middle"
                       />
                     </Form.Item>
@@ -813,7 +750,11 @@ export function LoginPage() {
                       htmlType="submit"
                       loading={loading}
                       block
-                      disabled={sliderVerificationEnabled && !sliderVerified}
+                      disabled={
+                        (sliderVerificationEnabled && !sliderVerified) ||
+                        (!readableQueryData(loginOptionsQuery) &&
+                          (loginOptionsQuery.isLoading || loginOptionsQuery.isError))
+                      }
                       className="soha-auth-submit"
                     >
                       登录控制台

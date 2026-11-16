@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -31,7 +32,6 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DescriptionsProps, TableColumnsType, TabsProps } from 'antd'
 import {
-  Alert,
   App,
   Avatar,
   Button,
@@ -1134,7 +1134,7 @@ export function UserProfilePage() {
             </div>
 
             {gatewayKeysUnavailable ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="当前账号没有个人访问凭据查看权限"
@@ -1146,7 +1146,7 @@ export function UserProfilePage() {
                 columns={gatewayTokenColumns}
                 error={gatewayTokensQuery.error}
                 hasReadData={gatewayTokensQuery.data !== undefined}
-                onRefresh={() => void gatewayTokensQuery.refetch()}
+                onRefresh={() => gatewayTokensQuery.refetch()}
                 refreshing={gatewayTokensQuery.isFetching}
                 dataSource={gatewayTokens}
                 loading={gatewayTokensQuery.isLoading || permissionSnapshotQuery.isLoading}
@@ -1449,7 +1449,7 @@ export function UserProfilePage() {
           <Form.Item name="purpose" hidden>
             <Input />
           </Form.Item>
-          <Alert
+          <ContextFeedback
             showIcon
             type="info"
             title={
@@ -1528,7 +1528,7 @@ export function UserProfilePage() {
         onOk={() => setOneTimeToken(null)}
       >
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title="明文只展示一次"

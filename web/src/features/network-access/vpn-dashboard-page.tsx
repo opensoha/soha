@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementIconButton,
@@ -23,7 +24,6 @@ import type {
 import { useQuery } from '@tanstack/react-query'
 import { LineChart } from '@visactor/react-vchart'
 import {
-  Alert,
   Button,
   Card,
   Drawer,
@@ -124,7 +124,7 @@ export default function VPNDashboardPage() {
   const summary = (
     <>
       {data?.partial ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           description={text(
@@ -134,7 +134,7 @@ export default function VPNDashboardPage() {
         />
       ) : null}
       {data && !data.telemetryAvailable ? (
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           description={text(

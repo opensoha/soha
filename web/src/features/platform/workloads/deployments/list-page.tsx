@@ -792,7 +792,7 @@ export function WorkloadsDeploymentsPage() {
         disabled={!clusterId || deploymentsQuery.isFetching}
         loading={deploymentsQuery.isFetching}
         label={t('common.refresh', 'Refresh')}
-        onRefresh={() => void deploymentsQuery.refetch()}
+        onRefresh={() => deploymentsQuery.refetch()}
       />
     </ManagementTableToolbar>
   )

@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
 import {
   buildCompactChartSpec,
   compactMetricColors,
@@ -27,7 +28,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery } from '@tanstack/react-query'
 import { LineChart } from '@visactor/react-vchart'
-import { Alert, Card, Flex, Select, Space, Table, Typography } from 'antd'
+import { Card, Flex, Select, Space, Table, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -153,10 +154,10 @@ export function ObservabilityDashboardDetailPage() {
       beforeQuery={
         <>
           {imported?.id === dashboardId ? (
-            <Alert
-              showIcon
-              type={imported.warnings.length ? 'warning' : 'success'}
-              title={`已导入 ${imported.panelCount} 个面板`}
+            <OperationFeedback
+              label="导入仪表盘"
+              target={dashboard.name}
+              receipt={{ message: `已导入 ${imported.panelCount} 个面板` }}
               description={
                 imported.warnings.join('；') || '仪表盘记录已保存，面板数据仍以实际查询结果为准。'
               }
@@ -246,7 +247,7 @@ export function ObservabilityDashboardDetailPage() {
       tableNode={
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           {(dashboard.importWarnings ?? []).length > 0 ? (
-            <Alert
+            <ContextFeedback
               showIcon
               type="warning"
               title="导入兼容提示"

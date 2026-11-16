@@ -1,3 +1,5 @@
+import { ContextFeedback } from '@/components/context-feedback'
+import { OperationFeedback } from '@/components/request-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import type { StepFormStep } from '@/components/step-form'
@@ -7,7 +9,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { LinkOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Form, Input, InputNumber, Segmented, Select, Space, Switch } from 'antd'
+import { Button, Form, Input, InputNumber, Segmented, Select, Space, Switch } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -158,22 +160,20 @@ export function SourceConnectionDetailPage() {
       title: '连接配置',
       children: (
         <>
-          {searchParams.get('oauth') === 'success' ? (
-            <Alert
-              className="soha-system-integration-oauth-alert"
-              showIcon
-              type="success"
-              title="GitLab OAuth 授权成功"
-            />
-          ) : null}
-          {searchParams.get('oauth') === 'error' ? (
-            <Alert
-              className="soha-system-integration-oauth-alert"
-              showIcon
-              type="error"
-              title="GitLab OAuth 授权失败，请重新授权"
-            />
-          ) : null}
+          <OperationFeedback
+            readOnly
+            label="GitLab OAuth 授权"
+            receipt={
+              searchParams.get('oauth') === 'success'
+                ? { message: 'GitLab OAuth 授权成功' }
+                : undefined
+            }
+            error={
+              searchParams.get('oauth') === 'error'
+                ? new Error('GitLab OAuth 授权失败，请重新授权')
+                : undefined
+            }
+          />
           {!isNew && detail ? (
             <div className="soha-system-integration-tools">
               <Space wrap>
@@ -303,7 +303,7 @@ export function SourceConnectionDetailPage() {
                   >
                     <Input />
                   </Form.Item>
-                  <Alert
+                  <ContextFeedback
                     className="soha-system-integration-oauth-alert"
                     showIcon
                     type={connectionReady ? 'success' : 'info'}
@@ -407,7 +407,7 @@ export function SourceConnectionDetailPage() {
             {testMutation.feedback}
             {authorizeOAuthMutation.feedback}
             {baseIntegration && detail && baseIntegration.version !== detail.version ? (
-              <Alert
+              <ContextFeedback
                 type="warning"
                 showIcon
                 title="连接记录已更新，保留当前草稿及原始版本；保存时由服务端检查冲突。"

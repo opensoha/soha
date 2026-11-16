@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -22,7 +23,6 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -377,7 +377,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
                 ]}
               />
             ) : snapshot.isError || snapshot.isPending ? null : (
-              <Alert
+              <ContextFeedback
                 showIcon
                 type="warning"
                 title={t('networkAccess.policy.notPublished', '尚未发布策略快照')}
@@ -390,7 +390,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
             loading={policies.isLoading}
             error={policies.isEnabled === false ? null : policies.error}
             refreshing={policies.isFetching}
-            onRefresh={() => void (policies.isEnabled === false ? undefined : policies.refetch())}
+            onRefresh={() => (policies.isEnabled === false ? undefined : policies.refetch())}
             searchPlaceholder={t('networkAccess.policy.search', '搜索策略、主体或资源')}
             getSearchValues={(policy) => [
               policy.name,
@@ -481,7 +481,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
           </Form>
           {previewPolicy.data ? (
             <>
-              <Alert
+              <ContextFeedback
                 showIcon
                 type={previewPolicy.data.decision === 'allow' ? 'success' : 'error'}
                 title={
@@ -583,7 +583,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
           </Form>
           {analyzeConflicts.data ? (
             <Space orientation="vertical" size="small" style={{ width: '100%', marginTop: 16 }}>
-              <Alert
+              <ContextFeedback
                 showIcon
                 type={analyzeConflicts.data.valid ? 'success' : 'error'}
                 title={
@@ -598,7 +598,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
                 }
               />
               {analyzeConflicts.data.conflicts.map((conflict, index) => (
-                <Alert
+                <ContextFeedback
                   key={
                     conflict.left.sourceType +
                     conflict.left.cidr +

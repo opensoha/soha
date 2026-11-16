@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useI18n } from '@/i18n'
 import type { DeploymentDetail, DeploymentRolloutStatus, ScopeKey } from '@/types'
 import { formatDateTime } from '@/utils/time'
-import { Alert, Button, Card, Typography } from 'antd'
+import { Button, Card, Typography } from 'antd'
 import {
   WorkloadOverview,
   WorkloadOverviewFacts,
@@ -100,7 +101,7 @@ export function DeploymentDetailOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={zero || unknown ? 'info' : healthy ? 'success' : 'warning'}
         title={

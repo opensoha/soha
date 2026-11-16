@@ -1,4 +1,5 @@
-import { Alert, Spin } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Spin } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAuthStore } from '@/stores/auth-store'
@@ -96,7 +97,7 @@ export function PrometheusCheckResult({
   const zh = localeCode === 'zh_CN'
   if (!check.canCheck)
     return (
-      <Alert
+      <ContextFeedback
         showIcon
         type="info"
         title={
@@ -132,7 +133,7 @@ export function PrometheusCheckResult({
           reasonLabels[result.reason] || result.reason,
         )
   return (
-    <Alert
+    <ContextFeedback
       showIcon
       type={result.complete ? 'success' : 'warning'}
       title={

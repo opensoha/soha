@@ -895,7 +895,7 @@ export function NetworkAccessPage() {
               loading={devices.isLoading}
               refreshing={devices.isFetching}
               error={devices.isEnabled === false ? null : devices.error}
-              onRefresh={() => void (devices.isEnabled === false ? undefined : devices.refetch())}
+              onRefresh={() => (devices.isEnabled === false ? undefined : devices.refetch())}
               searchPlaceholder={t(
                 'networkAccess.search.devices',
                 '搜索终端、用户、系统或网络地址',
@@ -935,7 +935,7 @@ export function NetworkAccessPage() {
               loading={sites.isLoading}
               refreshing={sites.isFetching}
               error={sites.isEnabled === false ? null : sites.error}
-              onRefresh={() => void (sites.isEnabled === false ? undefined : sites.refetch())}
+              onRefresh={() => (sites.isEnabled === false ? undefined : sites.refetch())}
               searchPlaceholder={t('networkAccess.search.sites', '搜索站点、位置或说明')}
               getSearchValues={(item) => [item.name, item.location, item.description, item.status]}
               createAction={
@@ -1000,7 +1000,7 @@ export function NetworkAccessPage() {
               loading={spaces.isLoading}
               refreshing={spaces.isFetching}
               error={spaces.isEnabled === false ? null : spaces.error}
-              onRefresh={() => void (spaces.isEnabled === false ? undefined : spaces.refetch())}
+              onRefresh={() => (spaces.isEnabled === false ? undefined : spaces.refetch())}
               searchPlaceholder={t('networkAccess.search.spaces', '搜索网络空间、站点或 CIDR')}
               getSearchValues={(item) => [item.name, item.siteId, ...item.cidrs, item.status]}
               createAction={
@@ -1030,9 +1030,7 @@ export function NetworkAccessPage() {
               loading={resources.isLoading}
               refreshing={resources.isFetching}
               error={resources.isEnabled === false ? null : resources.error}
-              onRefresh={() =>
-                void (resources.isEnabled === false ? undefined : resources.refetch())
-              }
+              onRefresh={() => (resources.isEnabled === false ? undefined : resources.refetch())}
               searchPlaceholder={t('networkAccess.search.resources', '搜索资源、目标或路径')}
               getSearchValues={(item) => [
                 item.name,
@@ -1068,7 +1066,7 @@ export function NetworkAccessPage() {
               loading={gateways.isLoading}
               refreshing={gateways.isFetching}
               error={gateways.isEnabled === false ? null : gateways.error}
-              onRefresh={() => void (gateways.isEnabled === false ? undefined : gateways.refetch())}
+              onRefresh={() => (gateways.isEnabled === false ? undefined : gateways.refetch())}
               searchPlaceholder={t('networkAccess.search.gateways', '搜索网关、站点或能力')}
               getSearchValues={(item) => [
                 item.name,

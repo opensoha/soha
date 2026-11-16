@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapabilityForCluster } from '@/features/platform/cluster-capabilities'
 import {
@@ -8,7 +9,7 @@ import { useI18n } from '@/i18n'
 import type { ScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Modal, Tooltip } from 'antd'
+import { Button, Modal, Tooltip } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { podMutations } from './mutations'
@@ -115,7 +116,7 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
             : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.'}
         </p>
         {(!allowed || capabilityBlocked) && (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={

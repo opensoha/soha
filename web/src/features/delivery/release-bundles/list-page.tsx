@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useMemo } from 'react'
-import { Alert, Space, Tag, Typography } from 'antd'
+import { Space, Tag, Typography } from 'antd'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -63,7 +64,7 @@ export function ReleaseBundlesPage() {
   return (
     <div className="soha-page">
       {focusedReleaseBundleId ? (
-        <Alert
+        <ContextFeedback
           showIcon
           title={focusedBundle ? `已定位版本包 ${focusedBundle.id}` : '版本包定位'}
           description={`releaseBundleId=${focusedReleaseBundleId}`}
@@ -78,12 +79,12 @@ export function ReleaseBundlesPage() {
       <DeliveryTable
         rowKey="id"
         refreshing={bundlesQuery.isFetching}
-        onRefresh={() => void bundlesQuery.refetch()}
+        onRefresh={() => bundlesQuery.refetch()}
         isError={bundlesQuery.isError}
         error={bundlesQuery.error}
         hasReadData={bundlesQuery.data !== undefined}
         errorDescription="暂时无法读取版本包记录。"
-        onRetry={() => void bundlesQuery.refetch()}
+        onRetry={() => bundlesQuery.refetch()}
         localSorting
         loading={bundlesQuery.isLoading}
         dataSource={bundles}

@@ -1,9 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
 import { useEffect, useState } from 'react'
 import {
-  Alert,
   App,
   Button,
   Descriptions,
@@ -304,7 +304,7 @@ export function RuntimeHostModal({ editing, onClose, onSuccess, open }: RuntimeH
               <Input placeholder="http://10.0.0.10:18080" />
             </Form.Item>
           ) : (
-            <Alert
+            <ContextFeedback
               style={{ marginBottom: 16 }}
               showIcon
               type="info"
@@ -411,7 +411,7 @@ export function RuntimeHostModal({ editing, onClose, onSuccess, open }: RuntimeH
         onCancel={() => setInstallation(null)}
       >
         <div className="space-y-4">
-          <Alert
+          <ContextFeedback
             showIcon
             type={agentReported ? 'success' : 'info'}
             title={

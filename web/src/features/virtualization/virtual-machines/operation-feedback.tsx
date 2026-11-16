@@ -1,6 +1,8 @@
+import { ReadFeedback } from '@/components/request-feedback'
+import { readableQueryData } from '@/utils/query-feedback'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, Collapse, Space, Typography } from 'antd'
+import { Button, Collapse, Space, Typography } from 'antd'
 import { CheckOutlined, ClockCircleOutlined, CloseOutlined } from '@ant-design/icons'
 import { localeText, useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
@@ -31,6 +33,7 @@ export function VMOperationFeedback({
       active && logsOpen && query.state.status !== 'error' ? 4_000 : false,
     retry: false,
   })
+  const logs = readableQueryData(logsQuery)
   const label = !canViewProgress
     ? localeText(
         localeCode,
@@ -178,25 +181,17 @@ export function VMOperationFeedback({
               label: localeText(localeCode, '任务日志与证据', 'Task logs and evidence'),
               children: (
                 <>
-                  {logsQuery.isError ? (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      title={localeText(localeCode, '日志未更新', 'Logs not updated')}
-                      description={logsQuery.error.message}
-                      action={
-                        <Button size="small" onClick={() => void logsQuery.refetch()}>
-                          {localeText(localeCode, '重试读取', 'Retry reading')}
-                        </Button>
-                      }
-                    />
-                  ) : null}
+                  <ReadFeedback
+                    query={logsQuery}
+                    label={localeText(localeCode, '任务日志', 'Task logs')}
+                    canRead={canViewProgress}
+                  />
                   {logsQuery.isLoading ? (
                     <p>{localeText(localeCode, '正在读取日志…', 'Reading logs…')}</p>
                   ) : null}
-                  {logsQuery.data ? (
+                  {logs ? (
                     <pre className="soha-vm-task-log">
-                      {logsQuery.data
+                      {logs
                         .map(
                           (item) =>
                             `[${formatDateTime(item.createdAt)}] ${item.logLevel || 'info'} ${item.message}`,

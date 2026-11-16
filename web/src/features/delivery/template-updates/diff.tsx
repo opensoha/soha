@@ -1,6 +1,7 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { MigrationAssessment } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
-import { Alert, Empty, Select, Space, Tabs, Typography } from 'antd'
+import { Empty, Select, Space, Tabs, Typography } from 'antd'
 import type {
   TemplateUpdateCandidate,
   TemplateUpdateDiff,
@@ -63,7 +64,7 @@ function DiffChanges({ diff }: { diff: TemplateUpdateDiff }) {
     <Space orientation="vertical" className="soha-template-adoption__full" size={12}>
       <MigrationAssessment value={diff.migration} />
       {diff.historyGap ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title="中间版本历史存在缺口"
@@ -71,7 +72,7 @@ function DiffChanges({ diff }: { diff: TemplateUpdateDiff }) {
         />
       ) : null}
       {diff.renderStatus !== 'available' ? (
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title={diff.renderStatus === 'invalid' ? '此段配置无法完整渲染' : '资源差异尚未完整渲染'}

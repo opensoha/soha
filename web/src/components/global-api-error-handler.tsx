@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { App } from 'antd'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { usePreferencesStore } from '@/stores/preferences-store'
 import type { ApiErrorEventDetail } from '@/services/api-error'
 import {
   API_ERROR_EVENT,
@@ -52,10 +53,24 @@ export function GlobalApiErrorHandler() {
         return
       }
 
+      if (error.code === 'auth_refresh_unavailable') {
+        notification.warning({
+          key,
+          title:
+            usePreferencesStore.getState().localeCode === 'en_US'
+              ? 'Sign-in recovery is temporarily unavailable'
+              : '登录状态暂时无法恢复',
+          description: requestDescription(error, error.message),
+          duration: 0,
+        })
+        return
+      }
+
       if (error.kind === 'forbidden') {
         notification.warning({
           key,
           title: '没有权限访问该资源',
+          duration: 0,
           description: requestDescription(error, `${requestLabel(error)} 被服务端拒绝。`),
         })
         return
@@ -65,6 +80,7 @@ export function GlobalApiErrorHandler() {
         notification.error({
           key,
           title: '服务端处理失败',
+          duration: 0,
           description: requestDescription(
             error,
             `${requestLabel(error)} 返回 ${error.status}: ${error.message}`,
@@ -77,7 +93,11 @@ export function GlobalApiErrorHandler() {
         notification.error({
           key,
           title: '无法连接 API 服务',
-          description: `${requestLabel(error)} 请求未到达服务端: ${error.message}`,
+          duration: 0,
+          description: requestDescription(
+            error,
+            `${requestLabel(error)} 未能获取服务响应: ${error.message}`,
+          ),
         })
       }
     }

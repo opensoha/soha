@@ -1,8 +1,9 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { PlusOutlined, RocketOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Form, Input, Modal, Segmented } from 'antd'
+import { Button, Form, Input, Modal, Segmented } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -98,7 +99,7 @@ function EvaluationLifecyclePageContent() {
         </>
       }
       notice={
-        <Alert
+        <ContextFeedback
           showIcon
           type="warning"
           title="Gate error 永不等价于 pass"
@@ -106,9 +107,7 @@ function EvaluationLifecyclePageContent() {
         />
       }
       refreshing={replays.isFetching || policies.isFetching || feedback.isFetching}
-      onRefresh={() =>
-        void Promise.all([replays.refetch(), policies.refetch(), feedback.refetch()])
-      }
+      onRefresh={() => Promise.all([replays.refetch(), policies.refetch(), feedback.refetch()])}
       actions={
         <Button
           disabled={blocked}

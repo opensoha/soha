@@ -1,7 +1,8 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Alert, AutoComplete, Button, Card, Descriptions, Form, Space, Typography } from 'antd'
+import { AutoComplete, Button, Card, Descriptions, Form, Space, Typography } from 'antd'
 import type { NetworkAdmissionPreviewRequest } from '@opensoha/contracts/gen/ts/sohaapi'
-import { ReadFeedback, requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
+import { OperationFeedback, ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -32,7 +33,7 @@ export function NetworkAdmissionPreview() {
   return (
     <Card>
       <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Alert
+        <ContextFeedback
           type="info"
           showIcon
           title={text('预览终端在指定网络上的接入等级', 'Preview endpoint admission on a network')}
@@ -96,17 +97,16 @@ export function NetworkAdmissionPreview() {
         </Form>
         <ReadFeedback query={devices} label={text('终端选项', 'Endpoint choices')} />
         <ReadFeedback query={bindings} label={text('接入网络选项', 'Admission network choices')} />
-        {preview.isError && (
-          <Alert
-            type="error"
-            showIcon
-            title={text('准入预览失败', 'Admission preview failed')}
-            description={requestErrorMessage(preview.error, localeCode)}
-          />
-        )}
+        <OperationFeedback
+          readOnly
+          pending={preview.isPending}
+          error={preview.error}
+          label={text('准入预览', 'Admission preview')}
+          submittedAt={preview.submittedAt}
+        />
         {result && (
           <>
-            <Alert
+            <ContextFeedback
               type={result.decision === 'allow' ? 'success' : 'error'}
               showIcon
               title={

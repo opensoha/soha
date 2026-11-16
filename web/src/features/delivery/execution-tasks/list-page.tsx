@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useMemo } from 'react'
-import { Alert, Button, Popconfirm, Space, Tag, Typography } from 'antd'
+import { Button, Popconfirm, Space, Tag, Typography } from 'antd'
 import { ArrowRightOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -111,7 +112,7 @@ export function ExecutionTasksPage() {
         ]}
       />
       {focusedExecutionTaskId || focusedReleaseBundleId ? (
-        <Alert
+        <ContextFeedback
           showIcon
           title={focusedTask ? `已定位执行任务 ${focusedTask.id}` : '执行任务定位'}
           description={[
@@ -131,12 +132,12 @@ export function ExecutionTasksPage() {
       <DeliveryTable
         rowKey="id"
         refreshing={tasksQuery.isFetching}
-        onRefresh={() => void tasksQuery.refetch()}
+        onRefresh={() => tasksQuery.refetch()}
         isError={tasksQuery.isError}
         error={tasksQuery.error}
         hasReadData={tasksQuery.data !== undefined}
         errorDescription="暂时无法读取执行任务。"
-        onRetry={() => void tasksQuery.refetch()}
+        onRetry={() => tasksQuery.refetch()}
         localSorting
         loading={tasksQuery.isLoading}
         dataSource={executionTasks}

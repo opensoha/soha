@@ -296,7 +296,7 @@ export function JobDetailPage() {
                   observedAt={events.dataUpdatedAt || Date.now()}
                   loading={events.isLoading}
                   error={errorText(events.error)}
-                  onRefresh={() => void events.refetch()}
+                  onRefresh={() => events.refetch()}
                 />
               ) : null,
           },
@@ -323,7 +323,7 @@ export function JobDetailPage() {
                         { replace: true },
                       )
                     }
-                    onRefresh={() => void metrics.refetch()}
+                    onRefresh={() => metrics.refetch()}
                   />
                 </Suspense>
               ) : null,

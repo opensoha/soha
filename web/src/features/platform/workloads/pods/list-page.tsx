@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import {
@@ -36,18 +37,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
-import {
-  Alert,
-  Button,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd'
+import { Button, Modal, Popconfirm, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
@@ -837,7 +827,7 @@ export function WorkloadsPodsPage() {
         label={t('common.refresh', 'Refresh')}
         loading={manualRefreshPending}
         disabled={!clusterId || manualRefreshPending}
-        onRefresh={() => void handleRefresh()}
+        onRefresh={() => handleRefresh()}
       />
     </ManagementTableToolbar>
   )
@@ -954,7 +944,7 @@ export function WorkloadsPodsPage() {
             : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.'}
         </p>
         {rowDeleteOpen && !rowDeleteAllowed && (
-          <Alert
+          <ContextFeedback
             showIcon
             type="warning"
             title={

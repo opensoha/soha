@@ -1,4 +1,5 @@
-import { Alert, App, Button, Input, Modal, Space, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { App, Button, Input, Modal, Space, Typography } from 'antd'
 import { CopyOutlined } from '@ant-design/icons'
 import type { IdentityOIDCClientSecretReveal } from '../types'
 
@@ -26,7 +27,7 @@ export function SecretRevealModal({ onClose, value }: SecretRevealModalProps) {
       title="OIDC Client Secret"
     >
       <Space className="soha-identity-secret-reveal" orientation="vertical" size={12}>
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title="Client Secret 已加密保存，稍后仍可再次查看；每次查看都会记录审计日志。"

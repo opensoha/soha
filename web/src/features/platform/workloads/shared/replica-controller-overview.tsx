@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Card, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import type { ScopeKey } from '@/types'
 import { useI18n } from '@/i18n'
@@ -91,7 +92,7 @@ export function ReplicaControllerOverview({
         </>
       }
     >
-      <Alert
+      <ContextFeedback
         showIcon
         type={
           health === 'healthy'

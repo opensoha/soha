@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useState } from 'react'
-import { Alert, Button, Modal, Typography } from 'antd'
+import { Button, Modal, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   NetworkProxyInstance,
@@ -91,7 +92,7 @@ export function ProxyConfigurationHistory({
           refreshing={history.isFetching}
           error={history.error ?? undefined}
           hasReadData={readableQueryData(history) !== undefined}
-          onRefresh={() => void history.refetch()}
+          onRefresh={() => history.refetch()}
           pagination={{ pageSize: 10, showSizeChanger: false }}
           columns={[
             { title: text('版本', 'Revision'), dataIndex: 'revision', width: 80 },
@@ -129,7 +130,7 @@ export function ProxyConfigurationHistory({
           cancelButtonProps={{ disabled: restore.isPending }}
           okButtonProps={{ disabled: restore.isPending }}
         >
-          <Alert
+          <ContextFeedback
             type="warning"
             showIcon
             title={text(

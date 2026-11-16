@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -12,7 +13,6 @@ import { EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined } from '
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableProps } from 'antd'
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -276,7 +276,7 @@ export function AlertRulesPage() {
         error={rulesQuery.error}
         hasReadData={rulesQuery.data !== undefined}
         refreshing={rulesQuery.isFetching}
-        onRefresh={() => void rulesQuery.refetch()}
+        onRefresh={() => rulesQuery.refetch()}
         columnSettingPlacement="header"
         columnSettingIconOnly
         headerExtra={
@@ -447,7 +447,7 @@ export function AlertRulesPage() {
                       </div>
                       <Form.Item noStyle shouldUpdate>
                         {({ getFieldsValue }) => (
-                          <Alert
+                          <ContextFeedback
                             description={alertRuleConditionSummary(getFieldsValue(true))}
                             showIcon
                             title="条件说明"
@@ -594,7 +594,7 @@ export function AlertRulesPage() {
         ) : null}
         {testResult ? (
           <Space orientation="vertical" style={{ width: '100%' }} size={16}>
-            <Alert
+            <ContextFeedback
               type={
                 testResult?.state === 'error'
                   ? 'error'
@@ -648,7 +648,7 @@ export function AlertRulesPage() {
           error={ruleRunsQuery.error}
           hasReadData={ruleRunsQuery.data !== undefined}
           refreshing={ruleRunsQuery.isFetching}
-          onRefresh={() => void ruleRunsQuery.refetch()}
+          onRefresh={() => ruleRunsQuery.refetch()}
           columnSettingPlacement="header"
           columnSettingIconOnly
           columns={[

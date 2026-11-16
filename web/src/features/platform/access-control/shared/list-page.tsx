@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   kubernetesDeleteConfirmation,
   useKubernetesResourceActions,
@@ -27,7 +28,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert } from 'antd'
+
 import { useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { accessControlMutations } from './mutations'
@@ -188,7 +189,7 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
         beforeQuery={
           <>
             {yamlCapability.reason ? (
-              <Alert
+              <ContextFeedback
                 description={yamlCapability.reason}
                 showIcon
                 style={{ marginBottom: 12 }}

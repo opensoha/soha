@@ -269,7 +269,7 @@ export function WorkloadsJobsPage() {
               resourceLabel="Jobs"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              onRefresh={() => void jobsQuery.refetch()}
+              onRefresh={() => jobsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

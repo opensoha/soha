@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { workloadQueries } from '@/features/platform/workloads/shared/queries'
@@ -5,7 +6,7 @@ import type { WorkloadKind } from '@/features/platform/workloads/shared/types'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Checkbox, Col, Form, Input, Row, Segmented, Select } from 'antd'
+import { Checkbox, Col, Form, Input, Row, Segmented, Select } from 'antd'
 import { useEffect, useMemo, useRef } from 'react'
 import { resourceCreationQueries } from '../queries'
 import type {
@@ -178,7 +179,7 @@ export function WorkloadSnapshotFields({
       ) : (
         <>
           {!permissionQuery.isLoading && !canUseWorkload ? (
-            <Alert
+            <ContextFeedback
               showIcon
               title={
                 isChinese
@@ -269,14 +270,8 @@ export function WorkloadSnapshotFields({
               }))}
             />
           </Form.Item>
-          {sourceListQuery.isError ? (
-            <Alert showIcon title={sourceListQuery.error.message} type="error" />
-          ) : null}
-          {previewQuery.isError ? (
-            <Alert showIcon title={previewQuery.error.message} type="error" />
-          ) : null}
           {visiblePreviewQueryData ? (
-            <Alert
+            <ContextFeedback
               description={
                 visiblePreviewQueryData.warnings.length
                   ? visiblePreviewQueryData.warnings.join('\n')

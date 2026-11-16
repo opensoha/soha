@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from 'antd'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ConfigMapDataTab } from './data-tab'
+import { ApiError } from '@/services/api-error'
 
 vi.mock('@/i18n', () => ({
   useI18n: () => ({ localeCode: 'en_US' }),
@@ -205,4 +206,15 @@ it('adds the first key to an empty ConfigMap and can remove every text key', asy
   await click('Delete data key')
   await click('Apply changes')
   expect(props.onApply).toHaveBeenLastCalledWith({})
+})
+
+it('keeps API failure feedback with the mutation owner while retaining the draft', async () => {
+  await render({ onApply: vi.fn().mockRejectedValue(new ApiError(503, 'Request unavailable')) })
+  await click('Edit Data')
+  await input('textarea', 'draft')
+  await click('Apply changes')
+  expect(props.onApply).toHaveBeenCalledOnce()
+  expect(content().value).toBe('draft')
+  expect(container.textContent).not.toContain('Request unavailable')
+  expect(button('Apply changes').disabled).toBe(false)
 })

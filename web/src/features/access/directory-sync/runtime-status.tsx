@@ -1,4 +1,5 @@
-import { Alert, Button, Descriptions, Space, Typography } from 'antd'
+import { ContextFeedback } from '@/components/context-feedback'
+import { Button, Descriptions, Space, Typography } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import type { TableColumnsType } from 'antd'
 import { RedoOutlined } from '@ant-design/icons'
@@ -22,7 +23,6 @@ export function DirectoryRuntimePanel({
   onRetry,
   retryingEventId,
   status,
-  statusError,
   statusLoading,
   statusUnavailable = false,
 }: {
@@ -34,7 +34,6 @@ export function DirectoryRuntimePanel({
   onRetry: (eventId: string) => void
   retryingEventId?: string
   status?: DirectoryRuntimeStatus
-  statusError?: string
   statusLoading: boolean
   statusUnavailable?: boolean
 }) {
@@ -92,9 +91,6 @@ export function DirectoryRuntimePanel({
     },
   ]
 
-  if (statusError)
-    return <Alert showIcon type="error" title="目录事件状态加载失败" description={statusError} />
-
   return (
     <Space
       orientation="vertical"
@@ -103,7 +99,7 @@ export function DirectoryRuntimePanel({
       styles={{ item: { minWidth: 0, width: '100%' } }}
     >
       {connection.policy.mode !== 'scheduled_and_realtime' ? (
-        <Alert
+        <ContextFeedback
           showIcon
           type="info"
           title="实时事件未启用"

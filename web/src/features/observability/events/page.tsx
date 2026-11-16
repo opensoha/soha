@@ -71,7 +71,7 @@ export function EventsPage() {
         error={eventsQuery.error}
         hasReadData={eventsQuery.data !== undefined}
         refreshing={eventsQuery.isFetching}
-        onRefresh={() => void eventsQuery.refetch()}
+        onRefresh={() => eventsQuery.refetch()}
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"

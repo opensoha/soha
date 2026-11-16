@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementIconButton,
   ManagementState,
@@ -23,17 +24,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Typography,
-} from 'antd'
+import { Button, Descriptions, Form, Input, Modal, Popconfirm, Space, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { gatewayKeys } from './keys'
@@ -2629,7 +2620,7 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
             toolColumns={toolColumns}
             canInvoke={canInvoke}
             onFiltersChange={setManifestFilters}
-            onRefresh={() => void manifestQuery.refetch()}
+            onRefresh={() => manifestQuery.refetch()}
           />
         ) : section === 'clients' ? (
           <GatewayClientsSection
@@ -2744,7 +2735,7 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
               />
             )}
             onFiltersChange={setAuditFilters}
-            onRefresh={() => void auditQuery.refetch()}
+            onRefresh={() => auditQuery.refetch()}
             expandedRowRender={(record) => (
               <JsonBlock
                 value={{
@@ -2805,7 +2796,7 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
           </Button>
         }
       >
-        <Alert
+        <ContextFeedback
           type="warning"
           showIcon
           title="token 只展示一次；关闭后无法再次查看明文。"

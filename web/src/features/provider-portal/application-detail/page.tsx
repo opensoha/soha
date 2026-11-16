@@ -1,3 +1,4 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import type { IdentityApplication } from '@/features/identity'
@@ -14,7 +15,7 @@ import {
   StarOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Descriptions, Result, Space, Spin, Tag, Tooltip, Typography } from 'antd'
+import { Button, Descriptions, Result, Space, Spin, Tag, Tooltip, Typography } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { providerPortalMutations } from '../mutations'
 import '../provider-portal-pages.css'
@@ -252,7 +253,7 @@ export function PortalApplicationDetailPage() {
                   {application.launchUrl}
                 </Text>
               ) : (
-                <Alert
+                <ContextFeedback
                   showIcon
                   type="warning"
                   title={t(

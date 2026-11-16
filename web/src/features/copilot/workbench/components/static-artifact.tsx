@@ -1,5 +1,6 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { lazy, Suspense } from 'react'
-import { Alert, App, Button, Space, Tabs, Typography } from 'antd'
+import { App, Button, Space, Tabs, Typography } from 'antd'
 import type { WorkbenchSource } from '@opensoha/contracts/gen/ts/sohaapi'
 import type { WorkbenchArtifact } from '../types'
 import { staticArtifactLabel } from '../artifacts'
@@ -34,7 +35,7 @@ export function StaticArtifactView({
       style={{ width: '100%' }}
     >
       {config ? (
-        <Alert
+        <ContextFeedback
           type="info"
           title="静态配置草稿，尚未应用"
           description={

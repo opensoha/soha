@@ -170,22 +170,27 @@ export function useRunRequestRecovery(
     })
     if (changed) refresh()
   }, [recoveries, batch, scope, enabled, refresh, applyRun, cancellation])
+  const requestError =
+    !journal.error &&
+    !(storageError && storageError.scope === scope && storageError.sessionId === sessionId) &&
+    journal.cancelling &&
+    cancellation.isError &&
+    cancellation.variables?.scope === scope &&
+    cancellation.variables.sessionId === sessionId
+      ? cancellation.error
+      : undefined
   return {
     pending: journal.ids.length > 0,
     canRetry: (_id: string | undefined) =>
       !journal.cancelling && !journal.error && journal.ids.length === 0,
     cancelling: journal.cancelling,
+    requestError,
     error:
       journal.error ||
       (storageError && storageError.scope === scope && storageError.sessionId === sessionId
         ? '停止意图保存失败，请保持页面打开并重试停止；离开后无法保证自动恢复取消。'
         : undefined) ||
-      (journal.cancelling &&
-      cancellation.isError &&
-      cancellation.variables?.scope === scope &&
-      cancellation.variables.sessionId === sessionId
-        ? `停止任务未确认：${cancellation.error.message}`
-        : undefined),
+      (requestError ? `停止任务未确认：${requestError.message}` : undefined),
     recheck: () => {
       cancellation.reset()
       recoveries.forEach((query) => void query.refetch())

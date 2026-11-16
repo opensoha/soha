@@ -1,5 +1,5 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import {
-  Alert,
   Button,
   Card,
   Collapse,
@@ -148,7 +148,7 @@ function renderExternalPipeline(value?: Record<string, unknown>) {
         ]}
       />
       {typeof value?.externalPipelineError === 'string' ? (
-        <Alert type="warning" showIcon title={value.externalPipelineError} />
+        <ContextFeedback type="warning" showIcon title={value.externalPipelineError} />
       ) : null}
     </Space>
   )
