@@ -159,8 +159,8 @@ make -C agent deploy-hermes-image IMAGE_TAG=v0.2.0 VERSION=v0.2.0
 
 Root active CI retains all six independent image gates (default, Hermes, volume
 reader, Buildpacks, daemonless and DSH); `make -C agent verify-images` exercises
-them without publishing. Nested workflows are historical release definitions,
-not a second active publisher. The Root `agent-release.yml` candidate uses
+them without publishing. Original component workflow definitions remain in Git
+history. The Root `agent-release.yml` candidate uses
 `agent/v0.2.0` Git tags and the protected `release-agent` environment. All six
 image repositories remain unchanged; image tags use `v0.2.0` (daemonless uses
 `daemonless-v0.2.0`) and never contain the Git tag slash. Five native targets

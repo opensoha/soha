@@ -177,8 +177,8 @@ The component is under `skills/` in `opensoha/soha`. Run the commands above from
 that directory, or use `python3 skills/tools/validate_assets.py` from the source
 root. Core drift checks read `../internal/application/aigateway/catalog.go` and
 `../internal/domain/cluster/capabilities.go`; they are mandatory source checks.
-The active workflow is [skills-ci](../.github/workflows/skills-ci.yml). Nested
-workflows are historical and inactive; no new publisher is enabled here.
+The active workflow is [skills-ci](../.github/workflows/skills-ci.yml). Original
+component workflow definitions remain in Git history.
 
 Asset IDs, versions, the generated index and the archive's `soha-skills/` prefix
 remain unchanged. Published download URLs still describe the existing stable

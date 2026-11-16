@@ -10,9 +10,8 @@ const capabilityMatrix = await readJson("connectors/capability-matrix.json");
 const envExample = await readText(".env.example");
 const rootReadme = await readText("README.md");
 const changelog = await readText("CHANGELOG.md");
-const releaseWorkflow = exists(".github/workflows/release.yml")
-  ? await readText(".github/workflows/release.yml")
-  : "";
+const releaseWorkflowPath = "../.github/workflows/connectors-release.yml";
+const releaseWorkflow = await readText(releaseWorkflowPath);
 
 if (!Array.isArray(connectorIndex.connectors) || connectorIndex.connectors.length === 0) {
   errors.push("connectors/index.json must contain at least one connector entry");
@@ -125,14 +124,14 @@ if (!rootReadme.includes("connectors/capability-matrix.json")) {
 if (!rootReadme.includes("schemas/connector-event-envelope.schema.json")) {
   errors.push("README.md must mention schemas/connector-event-envelope.schema.json");
 }
-for (const required of ["GitHub build provenance attestation", ".github/workflows/release.yml"]) {
+for (const required of ["GitHub build provenance attestation", releaseWorkflowPath]) {
   if (!rootReadme.includes(required)) {
     errors.push(`README.md must mention ${required}`);
   }
 }
 for (const required of ["actions/attest-build-provenance@v2", "id-token: write", "attestations: write"]) {
   if (!releaseWorkflow.includes(required)) {
-    errors.push(`.github/workflows/release.yml must mention ${required}`);
+    errors.push(`${releaseWorkflowPath} must mention ${required}`);
   }
 }
 if (!coreIntegrationDoc.includes("schemas/connector-event-envelope.schema.json")) {

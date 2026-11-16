@@ -3,8 +3,8 @@
 ## 所有权与规则入口
 
 - 本目录是主仓 `contracts/` workspace，也是公开 OpenAPI、JSON Schema、生成 SDK 和兼容性基线的真实源；源契约先于生成物，不手改 `gen/` 下生成 DTO。手维护例外以本组件 skill 为准，不扩大例外范围。
-- 先读取主仓 `../AGENTS.md`；已确认外层 OpenSoha 工作区时按实际位置读取其协作入口，不假定隔离 worktree 的父目录就是工作区。技能链接只负责发现，未自动加载时读取本目录真实源，不初始化额外源码仓库或规划工具。
-- 实现或实质审查前读取 [soha-contracts](.agents/skills/soha-contracts/SKILL.md)，再按任务读取 README、COMPATIBILITY、相关源契约、fixtures 和实际生成/兼容性入口。只读查询按需定位；已读且未变化的内容可复用，交接缺少关键约束时补读。
+- 先读取主仓 `../AGENTS.md`；已确认外层 OpenSoha 工作区时按实际位置读取其协作入口，不假定隔离 worktree 的父目录就是工作区。开发技能真实源位于主仓 `.agents/skills/`；发现链接不代表已加载，按需读取对应技能，不初始化额外源码仓库或规划工具。
+- 实现或实质审查前读取 [soha-contracts](../.agents/skills/soha-contracts/SKILL.md)，再按任务读取 README、COMPATIBILITY、相关源契约、fixtures 和实际生成/兼容性入口。只读查询按需定位；已读且未变化的内容可复用，交接缺少关键约束时补读。
 
 ## 变更边界
 
@@ -22,7 +22,7 @@
 - 协作说明修改仅检查元数据、引用、内容一致性和差异，不无故重新生成 SDK 或运行 consumer。工作流/脚本修改执行相关正反例与适用 CI；相关代码、依赖和环境不变时复用成功证据。
 - 保留用户未提交改动，仅提交任务所属变更；不自动合并 PR、发布包或移动公开标签。
 
-- 测试与审查的证据边界见 [testing reference](.agents/skills/soha-contracts/references/testing.md)；安全/OCR专项按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)；组件共用主仓源码，外部消费者的原有门禁仍独立保留。
+- 测试与审查的证据边界见 [testing reference](../.agents/skills/soha-contracts/references/testing.md)；安全/OCR专项按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)；组件共用主仓源码，外部消费者的原有门禁仍独立保留。
 
 ## Graphify
 

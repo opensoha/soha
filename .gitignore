@@ -7,7 +7,6 @@ internal/staticassets/web/dist/
 bin/
 /server
 tmp/
-dist/
 .dev/
 deploy/network-runtime-tls/
 .soha/
@@ -16,6 +15,9 @@ deploy/network-runtime-tls/
 graphify-out/
 .graphify_detect.json
 .graphify_python
+/data/
+/.tmp_verify_migration/
+*.log
 
 # IDE / OS
 .DS_Store
@@ -50,8 +52,8 @@ coverage/
 test-results/
 .tmp/quality/
 .tmp/quality-lab/
-scripts/__pycache__/
-.agents/skills/soha-security/scripts/__pycache__/
+__pycache__/
+*.py[cod]
 
 # Air (Go hot reload)
 .air.toml

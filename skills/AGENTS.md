@@ -1,8 +1,8 @@
 # Soha Skills 组件入口
 
-- 本组件负责官方 runtime skills、agent-facing skills、MCP presets、profiles 与发布目录。`skills/`、`agent-skills/` 是产品资产，`.agents/skills/` 是开发协作规则；开发协作技能按各组件所有权维护，不能混入本组件产品资产。
-- 先读取主仓根 `../AGENTS.md`；在已确认的外层 OpenSoha 工作区另读取工作区 AGENTS 一次，不按固定父级猜测内部 docs 位置。根技能链接只提供发现入口，未自动加载时读取本组件真实源。
-- 产品资产实现或实质审查前读取 [soha-skills](.agents/skills/soha-skills/SKILL.md)、受影响资产、schema 和能力/兼容性依据。开发协作说明修改只核对对应说明及引用，不因此触发资产构建。只读查询按需定位，未变化内容不重复读取。
+- 本组件负责官方 runtime skills、agent-facing skills、MCP presets、profiles 与发布目录。`skills/`、`agent-skills/` 是产品资产，`.agents/skills/` 是开发协作规则；开发协作技能统一存放在主仓 `.agents/skills/`，不能混入本组件产品资产。
+- 先读取主仓根 `../AGENTS.md`；在已确认的外层 OpenSoha 工作区另读取工作区 AGENTS 一次，不按固定父级猜测内部 docs 位置。开发技能真实源位于主仓 `.agents/skills/`；发现链接不代表已加载，按需读取对应技能。
+- 产品资产实现或实质审查前读取 [soha-skills](../.agents/skills/soha-skills/SKILL.md)、受影响资产、schema 和能力/兼容性依据。开发协作说明修改只核对对应说明及引用，不因此触发资产构建。只读查询按需定位，未变化内容不重复读取。
 - 变更前区分 runtime 资产、可安装 agent skill、目录/兼容性信息与开发规则，明确真实所有者和消费者。共享 catalog 修改需检查引用它的真实资产，不复制 Core 业务逻辑。
 - 公开 manifest/schema 先改 contracts 真实源；本组件约束可以更严格，但不能分叉公开协议。能力声明来自真实实现与证据，目录快照不替代运行时能力发现。
 - 保留示例、权限、禁止动作、敏感信息处理与安装完整性要求；发现或安装技能不等于用户授权执行外部操作。不得把尚未实现的工具、试验或 Cloud-only 能力描述为普遍可用。
@@ -19,4 +19,4 @@
 ## 源码布局与历史入口
 
 从源码根运行 `python3 skills/tools/validate_assets.py`，同提交 `contracts/` 与 Core `internal/` 为必需输入；缺失或重定向必须失败。普通技能安装仍使用经校验的稳定 release，不默认安装源码目录。
-本目录 `.github/workflows/` 是保留的历史入口，在主仓不活动；活动发布入口以主仓 `.github/release-components.json` 为准，保留组件标签和产物身份。
+组件工作流只保留在 Git 历史中；当前活动工作流位于主仓 `.github/workflows/`；活动发布入口以主仓 `.github/release-components.json` 为准，保留组件标签和产物身份。

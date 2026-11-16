@@ -141,7 +141,7 @@ See the published docs for current public architecture and API behavior.
 ├── migrations/          # PostgreSQL bootstrap and schema migrations
 ├── deploy/              # Docker, Compose, and raw Kubernetes assets
 ├── Makefile             # minimal local dev/build commands
-└── .agents/skills/      # repository engineering and deployment rules
+└── .agents/skills/      # shared development skills for Core and all source components
 ```
 
 ## Quick Start

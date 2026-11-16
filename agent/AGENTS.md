@@ -3,8 +3,8 @@
 ## 入口与所有权
 
 - 本目录 `agent/` 负责独立 Agent、runner 和集群执行产物；不得 import `soha/internal/**`，通过公开 API 和 contracts 与控制面交互。
-- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖额外源码 checkout。module/import/ldflags 身份为 `github.com/opensoha/soha/agent`，SDK 为 `github.com/opensoha/soha/contracts`；外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。技能链接仅提供发现，不能代替读取真实源。
-- Agent 实现或实质审查前读取 [soha-agent](.agents/skills/soha-agent/SKILL.md) 及其指定的相关参考；只读查询按需定位。已读且未变化的规则可复用，交接后缺少关键约束时补读必要部分。
+- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖额外源码 checkout。module/import/ldflags 身份为 `github.com/opensoha/soha/agent`，SDK 为 `github.com/opensoha/soha/contracts`；外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。开发技能位于主仓 `.agents/skills/`；技能链接提供发现入口，规则按需读取。
+- Agent 实现或实质审查前读取 [soha-agent](../.agents/skills/soha-agent/SKILL.md) 及其指定的相关参考；只读查询按需定位。已读且未变化的规则可复用，交接后缺少关键约束时补读必要部分。
 - 技能与历史计划不是安装、执行远程任务、修改生产环境或发布的授权。
 
 ## 修改前确认
@@ -16,13 +16,13 @@
 
 ## 验证与交付
 
-- 普通 Go 修复执行受影响包回归；主入口为在本目录设置 `GOWORK="$(git rev-parse --show-toplevel)/go.work"` 后运行 `go test ./...`；Root 的 `go test ./...` 不自动包含本 module。架构、契约、依赖、安全、并发/runner、打包或发布变化执行技能及 [Root 活动 CI](../.github/workflows/)（本目录 nested workflows 仅保留原门禁/发布定义，不启用） 的适用完整门禁，保留各 runtime 镜像和 Hermes 检查。
+- 普通 Go 修复执行受影响包回归；主入口为在本目录设置 `GOWORK="$(git rev-parse --show-toplevel)/go.work"` 后运行 `go test ./...`；Root 的 `go test ./...` 不自动包含本 module。架构、契约、依赖、安全、并发/runner、打包或发布变化执行技能及 [Root 活动 CI](../.github/workflows/)（历史组件工作流保留在 Git 历史中；当前门禁以主仓活动工作流为准） 的适用完整门禁，保留各 runtime 镜像和 Hermes 检查。
 - mock API、包测试、真实 runner/集群、镜像构建属于不同证据。记录实际 Agent/Core/Contracts 版本，外部环境缺失或测试 skip 不能表述为运行链路通过。
 - 区分本次失败、既有失败、未运行及环境缺失；成功结果只在相关代码、依赖和环境未变化时复用。保留原 CI 要求，不更新基线掩盖新问题。
 - 文档/技能改动只检查内容、链接和差异，不机械构建运行时。保留用户工作树，仅提交任务所属文件；未请求时不合并 PR、不发布。
 - 共享 runner/lifecycle 修改验证重试、租约及资源清理，新增外部操作保持有界超时和现有审计路径；验证记录包括实际执行模式。
 
-- 测试/安全验收按需读取 [testing reference](.agents/skills/soha-agent/references/testing.md)；专项安全审查按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)，不为加载规则额外 clone 或安装工具。
+- 测试/安全验收按需读取 [testing reference](../.agents/skills/soha-agent/references/testing.md)；专项安全审查按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)，不为加载规则额外 clone 或安装工具。
 
 ## Graphify
 

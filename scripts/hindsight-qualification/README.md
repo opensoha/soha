@@ -2,6 +2,10 @@
 
 This directory has no Core imports, bootstrap wiring, production defaults, or Go dependencies. It is a disposable qualification harness, not a memory adapter.
 
+Historical run summaries and logs are retained in Git history and the internal
+qualification archive. New execution evidence belongs in the assigned temporary
+or internal task directory, rather than this source directory.
+
 ## Fixed candidate
 
 `versions.json` pins Hindsight **1.2.0**, source commit, published image index and platform digests, upstream API schema hash and PyPI wheel hash. `requirements.lock` records the complete macOS arm64 / Python 3.13.13 qualification environment. The local candidate database is PostgreSQL **18.6**, pgvector **0.8.7**, and bundled pg_trgm. This is a selected compatibility candidate, not a claim about all supported versions. The Docker image itself is not executed by the Python qualification.

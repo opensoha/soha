@@ -348,8 +348,8 @@ The expected SDK publisher is Root `.github/workflows/contracts-release.yml`,
 with the `contracts/v*` tag route and protected `release-contracts` environment.
 It uses OIDC trusted publishing and retains human npm 2FA stage approval. Enable
 the publisher only after the legacy publishers are disabled and drained;
-the historical `contracts/.github/workflows/release.yml` is retained but inactive,
-and Root `.github/workflows/release.yml` belongs to Core. A local provenance
+original component workflow definitions remain in Git history, while Root
+`.github/workflows/release.yml` belongs to Core. A local provenance
 policy neither attests the package nor proves that this publisher exists.
 Actual registry provenance, source revision, npm availability and Go proxy/tag
 availability remain separate B5 release qualifications.

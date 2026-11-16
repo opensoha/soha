@@ -11,7 +11,7 @@ The root build stages it into `internal/staticassets/web/dist` before building t
 - `src/`: application shell, routes, feature pages, shared components, stores,
   services, theme, and i18n.
 - `public/`: static browser assets copied by Vite, including `/logo.svg`.
-- `../.github/workflows/`: executable root CI and artifact workflows; nested historical workflows are not GitHub entry points.
+- `../.github/workflows/`: executable root CI and artifact workflows; original component definitions remain in Git history.
 - `@opensoha/contracts`: same-checkout `../contracts` source workspace; the root lockfile owns installation.
 
 ## Development

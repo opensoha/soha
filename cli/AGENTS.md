@@ -5,16 +5,15 @@
 These rules own `cli/` in the shared Root source repository. Read Root
 `../AGENTS.md` once. The product remains an independent Go client and native artifact;
 its Go module identity is `github.com/opensoha/soha/cli`.
-Before implementation or substantive review, read [.agents/skills/soha-cli/SKILL.md](.agents/skills/soha-cli/SKILL.md)
+Before implementation or substantive review, read [.agents/skills/soha-cli/SKILL.md](../.agents/skills/soha-cli/SKILL.md)
 and its references relevant to the task. Skill symlinks provide discovery, not proof of loading.
 Read README for unfamiliar command behavior and the active workflow under
 Root `../.github/workflows/` for build, dependency, or release work.
 
 The executable sources of truth are:
 
-- Root `../.github/workflows/` for active source gates. The nested workflow files
-  preserve the original complete CI and release contracts as historical references;
-  They are inactive in the main repository.
+- Root `../.github/workflows/` for active source gates. Historical component workflows remain in Git history; active gates are defined
+  by the Root workflows.
 - `internal/sohacli/command_metadata.go` for command discovery, help, generated
   docs, and completion metadata.
 - Same-commit Root `contracts/` types for internal source builds; declared external

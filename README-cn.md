@@ -134,7 +134,7 @@ PostgreSQL + Kubernetes 集群
 ├── migrations/          # PostgreSQL 初始化与迁移
 ├── deploy/              # Docker、Compose 与原生 Kubernetes 部署资产
 ├── Makefile             # 最小本地开发、构建命令
-└── .agents/skills/      # 仓库工程与部署规则
+└── .agents/skills/      # Core 与各源码组件共用的开发协作技能
 ```
 
 ## 快速开始

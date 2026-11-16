@@ -207,7 +207,7 @@ repository root using its single lockfile; component scripts run with the
 connector directory as cwd (`npm run <script> --workspace connectors`). The
 nested `connectors/` registry directory and package exports retain their layout.
 The active check workflow is [connectors-ci](../.github/workflows/connectors-ci.yml);
-this component's nested workflows are retained history and do not run here.
+original component workflow definitions are retained in Git history.
 
 Local release artifact provenance records the actual source repository, commit,
 component directory, source digest and modification state. Packaging is not a

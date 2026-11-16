@@ -83,7 +83,7 @@ The module/import/ldflags identity is `github.com/opensoha/soha/cli`.
 The `0.2.1` launcher downloads Root `cli/v<version>` assets with the tag slash
 URL-encoded, while published older launchers retain their original download
 source. Root Node22 installs the dependency-free workspace without install hooks.
-Nested `.github/workflows` preserve historical definitions; the active Root
+Original component workflow definitions remain in Git history; the active Root
 `cli-release.yml` uses `release-cli` protection and OIDC trusted npm publishing.
 GitHub Release, npm and GHCR writes require the release-control guard, including
 recovery; candidate images use `ghcr.io/opensoha/soha-cli:v0.2.1` independently of the Git tag.

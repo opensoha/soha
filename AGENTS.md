@@ -11,14 +11,16 @@
 
 | 组件 | 规则 | 开发技能真实源 |
 | --- | --- | --- |
-| Contracts | [contracts/AGENTS.md](contracts/AGENTS.md) | [soha-contracts](contracts/.agents/skills/soha-contracts/SKILL.md) |
-| Web | [web/AGENTS.md](web/AGENTS.md) | [frontend](web/.agents/skills/soha-frontend/SKILL.md)、[design](web/.agents/skills/soha-design/SKILL.md)、[testing](web/.agents/skills/soha-web-testing/SKILL.md) |
-| CLI | [cli/AGENTS.md](cli/AGENTS.md) | [soha-cli](cli/.agents/skills/soha-cli/SKILL.md) |
-| Agent | [agent/AGENTS.md](agent/AGENTS.md) | [soha-agent](agent/.agents/skills/soha-agent/SKILL.md) |
-| Skills 产品资产 | [skills/AGENTS.md](skills/AGENTS.md) | [soha-skills](skills/.agents/skills/soha-skills/SKILL.md) |
-| Connectors | [connectors/AGENTS.md](connectors/AGENTS.md) | [soha-connectors](connectors/.agents/skills/soha-connectors/SKILL.md) |
+| Contracts | [contracts/AGENTS.md](contracts/AGENTS.md) | [soha-contracts](.agents/skills/soha-contracts/SKILL.md) |
+| Web | [web/AGENTS.md](web/AGENTS.md) | [frontend](.agents/skills/soha-frontend/SKILL.md)、[design](.agents/skills/soha-design/SKILL.md)、[testing](.agents/skills/soha-web-testing/SKILL.md) |
+| CLI | [cli/AGENTS.md](cli/AGENTS.md) | [soha-cli](.agents/skills/soha-cli/SKILL.md) |
+| Agent | [agent/AGENTS.md](agent/AGENTS.md) | [soha-agent](.agents/skills/soha-agent/SKILL.md) |
+| Skills 产品资产 | [skills/AGENTS.md](skills/AGENTS.md) | [soha-skills](.agents/skills/soha-skills/SKILL.md) |
+| Connectors | [connectors/AGENTS.md](connectors/AGENTS.md) | [soha-connectors](.agents/skills/soha-connectors/SKILL.md) |
 
-开发技能保留在组件的 `.agents/skills/`，不复制到产品资产 `skills/skills/` 或 `skills/agent-skills/`。App、Operator、Cloud、Helm、公开文档站及内部 docs 仍是外部仓库，按公开契约、产物或明确的工作区协作入口集成。
+全部开发协作技能统一维护在根 `.agents/skills/`；组件保留自己的 AGENTS 和模块边界，不维护技能副本，也不将开发技能混入产品资产 `skills/skills/` 或 `skills/agent-skills/`。App、Operator、Cloud、Helm、公开文档站及内部 docs 仍是外部仓库，按公开契约、产物或明确的工作区协作入口集成。
+
+活动工作流只在根 `.github/workflows/`，审查和图谱共享配置分别在根 `.opencodereview/`、`.graphifyignore`。组件原工作流及重复配置保留在 Git 历史，不作为当前入口。
 
 ## 变更契约
 

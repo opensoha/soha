@@ -1,8 +1,8 @@
 # Soha Connectors 组件入口
 
 - 本组件负责独立连接器、provider runtime、manifest 和发布包；不依赖 `soha/internal/**`，保留签名校验和 secret 引用边界。托管运营、计费和 fleet 生命周期归属 Cloud。
-- 先读取主仓根 `../AGENTS.md`；在已确认的外层 OpenSoha 工作区另读取工作区 AGENTS 一次，不按固定父级猜测内部 docs 位置。根技能链接仅提供发现，未自动加载时读取本组件真实源。
-- 连接器实现或实质审查前读取 [soha-connectors](.agents/skills/soha-connectors/SKILL.md) 和本次涉及的 manifest、能力矩阵、SDK 调用者及测试；只读查询按需定位。已读且未变化的内容可复用，交接缺少关键约束时补读。
+- 先读取主仓根 `../AGENTS.md`；在已确认的外层 OpenSoha 工作区另读取工作区 AGENTS 一次，不按固定父级猜测内部 docs 位置。开发技能真实源位于主仓 `.agents/skills/`；发现链接不代表已加载，按需读取对应技能。
+- 连接器实现或实质审查前读取 [soha-connectors](../.agents/skills/soha-connectors/SKILL.md) 和本次涉及的 manifest、能力矩阵、SDK 调用者及测试；只读查询按需定位。已读且未变化的内容可复用，交接缺少关键约束时补读。
 - 修改前明确 provider 与 `src/sdk` 的所有权、公开事件/动作语义和下游消费者。共享重试、限流、生命周期和错误处理变更需要覆盖实际调用者，不把单个 provider 特例变成全局默认值。
 - 公开格式先在 contracts 真实源调整，再同步适用消费者与本组件兼容材料；不得复制 Core 业务规则或把未实现能力登记为已支持。manifest、索引与能力矩阵只在其含义实际变化时同步。
 - 验证签名、重放/幂等性、错误归一化、超时、重试边界和脱敏；记录哪些通过替身验证、哪些连到真实 provider。SDK 单测通过不等于外部服务集成完成。
@@ -20,4 +20,4 @@
 ## 源码布局与历史入口
 
 仅从源码根 `npm ci` 安装，使用 `npm run check --workspace connectors`；唯一锁文件在根。`connectors/` 下的 manifest 子目录与 npm 包 exports 保持独立产品布局。
-本目录 `.github/workflows/` 是保留的历史入口，在主仓不活动；活动发布入口以主仓 `.github/release-components.json` 为准，保留组件标签和产物身份。
+组件工作流只保留在 Git 历史中；当前活动工作流位于主仓 `.github/workflows/`；活动发布入口以主仓 `.github/release-components.json` 为准，保留组件标签和产物身份。
