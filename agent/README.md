@@ -172,11 +172,13 @@ Release or GHCR write, the shared release-control guard must confirm the exact
 main SHA, its complete Agent CI result (including DSH authentication/health and
 all runtime images), legacy publisher retirement and environment authorization.
 The declared public SDK must pass checksum/no-replacement qualification with
-`GOWORK=off`; the current C1 source pin is not public release qualification.
+`GOWORK=off`; a source pin alone is not public release qualification.
 After actual publication, Go installation uses
 `go install github.com/opensoha/soha/agent/cmd/agent@v0.2.0` and binary assets use
 [Root agent/v0.2.0](https://github.com/opensoha/soha/releases/tag/agent%2Fv0.2.0).
-Published legacy `opensoha/soha-agent` tags and assets retain their old URLs.
+Historical `opensoha/soha-agent` tag/asset identities are preserved in Root archives;
+old repository URLs may stop working after retirement. Current source and distribution
+use Root `agent/` and its component release entry.
 
 The packaged Outpost uses the same generic `soha-agent` image. Its protocol-matched Kubernetes install path and NGINX/Traefik ForwardAuth examples are documented in [`deploy/kubernetes/outpost`](./deploy/kubernetes/outpost/README.md). Helm packaging remains in `opensoha/soha-helm`; use the `soha-agent` chart with `mode=outpost`.
 
@@ -253,7 +255,7 @@ This repository is licensed under the Apache License 2.0. See
 
 ### Combined Task115 and Task117 development
 
-Internal source integration uses same-Root `contracts/` through the committed four-module workspace. Its only replacements are version-scoped aliases for the exact SDK versions required by Core, CLI and Agent, all targeting `./contracts`; module manifests keep their pins and contain no replacements. B4 declares `github.com/opensoha/soha/contracts` at the actual SDK checkpoint for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA, workspace hash and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema or any alias-policy mismatch fails instead of selecting a registry or sibling fallback.
+Internal source integration uses same-Root `contracts/` through the committed four-module workspace. Its only replacements are version-scoped aliases for the exact SDK versions required by Core, CLI and Agent, all targeting `./contracts`; module manifests keep their pins and contain no replacements. Module manifests declare `github.com/opensoha/soha/contracts` at a fixed SDK version for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA, workspace hash and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema or any alias-policy mismatch fails instead of selecting a registry or sibling fallback.
 
 ### Pod session identity
 

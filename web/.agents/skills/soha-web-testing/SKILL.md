@@ -5,6 +5,10 @@ description: Implement and run Soha Web UI, HTTP black-box, geometry and optiona
 
 # Soha Web Testing
 
+Read [Root rules](../../../../AGENTS.md) and [Web rules](../../../AGENTS.md).
+Paths and npm test commands below are relative to `web/`; dependency installation
+uses Root `npm ci` and its single lockfile. Active CI is [Root Web CI](../../../../.github/workflows/web-ci.yml).
+
 Read [testing entry points](../../../docs/testing.md), actual feature API/auth code and current
 `package.json` before selecting cases. Vitest owns components; Playwright owns browser/HTTP;
 Go owns database and internal behavior. Ordinary tests must work without model configuration.

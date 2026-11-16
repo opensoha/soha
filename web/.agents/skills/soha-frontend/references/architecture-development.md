@@ -5,8 +5,10 @@ types or state, CSS ownership, lazy loading, architecture checks, and Graphify b
 
 ## 1. Ownership Model
 
-The active frontend is `soha-web`, built with Vite, React, React Router, Ant Design 6, TanStack
-Query, and Zustand.
+The active frontend is Root `web/`, built with Vite, React, React Router, Ant Design 6,
+TanStack Query, and Zustand. Code paths and component commands here are relative to `web/`.
+Install from Root `soha/` with its single lockfile; use `npm run <script> --workspace web`
+from Root or run that component script from `web/`.
 
 ```text
 src/
@@ -206,7 +208,8 @@ Do not weaken the checker or rewrite its baseline to conceal new debt.
 
 ## 10. Graphify
 
-The Soha Web graph lives in `graphify-out/` relative to the `soha-web` repository.
+Web shares Root `graphify-out/` with the other source components; it has no
+component-local graph. Follow [Root Graphify guidance](../../../../../AGENTS.md#graphify).
 
 - Use the existing graph when it helps cross-module analysis; ordinary lookup does not require it.
 - Refresh the graph only for broad structural or dependency changes after source edits are
@@ -223,6 +226,9 @@ The Soha Web graph lives in `graphify-out/` relative to the `soha-web` repositor
 ## 11. Completion Checklist
 
 For broad architecture work, verify all of the following:
+
+From `web/`, with dependencies installed at Root and active gates defined by
+[Root Web CI](../../../../../.github/workflows/web-ci.yml):
 
 ```bash
 npm run format:check

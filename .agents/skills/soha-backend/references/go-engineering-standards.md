@@ -4,7 +4,7 @@ Apply this reference to production Go changes in the `soha` repository. Reposito
 
 ## Dependency Direction
 
-- Keep the modular monolith and one Go module. Do not split modules or add a generic framework to improve a directory metric.
+- Keep Core's modular monolith in its single root `go.mod`; the Root workspace also contains separate Contracts, CLI, and Agent Go modules. Do not split Core or add a generic framework to improve a directory metric.
 - Organize functional packages by business ownership, not workbench menus. A feature need not create an empty directory in every layer. Existing ingest/control/gateway runtimes retain their explicit process and privilege boundaries.
 - Keep `cmd/server` thin: parse startup commands, invoke bootstrap, and own process exit only.
 - Keep Gin transport in `internal/api`, orchestration and policy in `internal/application`, business types in `internal/domain`, external technology in `internal/infrastructure`, persistence adapters in `internal/repository`, and dependency/lifecycle wiring in `internal/bootstrap`.
@@ -54,9 +54,11 @@ Apply this reference to production Go changes in the `soha` repository. Reposito
 
 ## Test and Build Gate
 
-Run focused package tests during development. Documentation-only edits need metadata, link, and consistency checks rather than Go builds. Before completing an architecture, dependency, security, concurrency, configuration, module, or release code change, run the applicable full gate from the repository root. Versions and exact CI commands are owned by [CI](../../../../.github/workflows/ci.yml) and [release](../../../../.github/workflows/release.yml); local execution follows the workspace verification wrapper and output isolation rules.
+Run focused package tests during development. Documentation-only edits need metadata, link, and consistency checks rather than Go builds. Before completing an architecture, dependency, security, concurrency, configuration, module, or release code change, run the applicable Core gate from the `soha/` repository root. Versions and exact CI commands are owned by [active Core CI](../../../../.github/workflows/ci.yml) and [Core release](../../../../.github/workflows/release.yml); local execution follows the workspace verification wrapper and output isolation rules.
 
 For incremental lint, set `SOHA_LINT_BASE_REF` to the verified PR target or actual configured upstream; an arbitrary feature-branch tracking ref is not a substitute for the integration target.
+
+From the `soha/` repository root:
 
 ```bash
 export GOWORK="$PWD/go.work"

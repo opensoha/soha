@@ -1,14 +1,16 @@
 ---
 name: soha-connectors
-description: Change or review the standalone connector SDK, provider runtimes, webhooks, manifests, and releases in soha-connectors.
+description: Change or review the connector SDK, provider runtimes, webhooks, manifests, and releases in Root connectors/.
 ---
 
 # Soha Connectors
 
 ## Purpose
 
-Keep connectors standalone, contract-driven, and safe at webhook and outbound
-provider boundaries.
+Use Root `connectors/` with [Root rules](../../../../AGENTS.md) and
+[component rules](../../../AGENTS.md). Paths below are relative to this component.
+Keep its independently packaged runtimes contract-driven and safe at webhook
+and outbound provider boundaries.
 
 ## Workflow
 
@@ -39,11 +41,16 @@ provider boundaries.
 
 ## Verification
 
+From Root `soha/`, after Root `npm ci`:
+
 ```bash
-npm run check
+npm run check --workspace connectors
 ```
 
 Run package and release artifact checks only when exports, manifests, or
 release contents change.
 
-In the source monorepo, follow the root AGENTS and active root workflow; nested `.github/workflows` are historical and inactive. Public package identities and release installation remain independent from source checks.
+Use [active Connectors CI](../../../../.github/workflows/connectors-ci.yml) and
+[Connectors release](../../../../.github/workflows/connectors-release.yml). Component-local
+workflows are inactive history; package exports, provider lifecycle and release
+installation remain independent from Core implementation and source checks.

@@ -10,11 +10,12 @@ description: Change or review the standalone soha CLI, authentication/profile ha
 Use this skill for Root `cli/`. The CLI remains an independent Go module and
 native client, using same-Root `contracts/` in internal source mode. Explicit
 external verification uses its declared SDK with `GOWORK=off`; source success
-is not public distribution qualification. It remains testable without a real server.
+is not public distribution qualification. It remains testable without a real server. Code paths and Go commands below are relative
+to `cli/`; npm installation and shared source inputs belong to Root.
 
 ## Workflow
 
-1. Read `AGENTS.md` before implementation or substantive review. Use `internal/sohacli/command_metadata.go` for command-surface changes. Read CI workflows for build or release changes; command help, docs, completion, and dispatch flow from metadata.
+1. Read `AGENTS.md` before implementation or substantive review. Use `internal/sohacli/command_metadata.go` for command-surface changes. Read Root `.github/workflows/cli-ci.yml` or `cli-release.yml` for build or release changes; command help, docs, completion, and dispatch flow from metadata.
 2. Inspect the working tree and preserve unrelated edits. Add behavior in the smallest existing owner: profiles/context, MCP, skills, plugins, governance, AI platform/knowledge/evaluation, cloud diagnostics, tokens, service accounts, or Gateway calls.
 3. Keep the `Run(ctx, args, Runtime)` boundary. Use `Runtime.In`, `Runtime.Out`, `Runtime.Err`, `Runtime.ConfigPath`, and injectable HTTP clients in tests; do not write directly to `os.Stdout` or `os.Stderr` outside `cmd/soha/main.go`.
 4. Use stdlib `flag` plus `newRuntimeFlagSet`. Return errors from handlers and let `Run` map them to exit codes.
@@ -22,7 +23,7 @@ is not public distribution qualification. It remains testable without a real ser
 6. Use module/import/ldflags identity `github.com/opensoha/soha/cli` and SDK `github.com/opensoha/soha/contracts`. Use the committed four-module Root `go.work` for source builds, without sibling checkouts; run declared external checks separately with `GOWORK=off` and no local replacements.
 7. For command-surface changes, update metadata, dispatch, completion words where relevant, tests, and regenerate `docs/commands.md` with `go run ./cmd/soha docs --format markdown > docs/commands.md`.
 8. Keep `soha mcp` as the canonical direct stdio entry. Official SaaS is the endpoint default; self-hosted client configurations must carry an explicit `--base-url`. Keep `soha mcp start` compatible.
-9. Source the agent-facing `$soha` skill from the verified `soha-skills/agent-skills/soha` release asset. Do not embed or generate a second copy in the CLI. Resolve normal installs and updates to the latest stable release; reserve explicit source pins for rollback and reproducibility rather than adding a routine `--skills-version` flow.
+9. The skill source is Root `skills/agent-skills/soha/`; install the verified `soha-skills/agent-skills/soha` release asset, whose archive path is preserved for compatibility. Do not embed or generate a second copy in the CLI. Resolve normal installs and updates to the latest stable release; reserve explicit source pins for rollback and reproducibility rather than adding a routine `--skills-version` flow.
 
 ## Change Contract And Evidence
 
@@ -82,7 +83,7 @@ is not public distribution qualification. It remains testable without a real ser
 
 ## CI Gate
 
-Use Go `1.27.4` and Node22 for internal source gates. Root active workflows own execution; nested workflows retain historical release requirements and do not publish from this prefix. From `cli/`:
+Use Go `1.27.4` and Node22 for internal source gates. Root [CLI CI](../../../../.github/workflows/cli-ci.yml) and [CLI release](../../../../.github/workflows/cli-release.yml) workflows own execution; nested workflows retain historical release requirements and do not publish from this prefix. Run the Go commands from `cli/`; the npm commands explicitly change to the Root repository directory:
 
 ```bash
 export GOWORK="$(git rev-parse --show-toplevel)/go.work"

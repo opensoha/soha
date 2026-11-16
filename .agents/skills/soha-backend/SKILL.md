@@ -1,6 +1,6 @@
 ---
 name: soha-backend
-description: Implement or review Soha core Go backend behavior, authorization, durable operations, and module boundaries. Client, agent, Cloud, and public contract changes belong to their owning repositories.
+description: Implement or review Soha Core Go backend behavior, authorization, durable operations, and module boundaries. Client and Agent changes belong to their owning components; Cloud changes belong to its external repository, and public contract changes start in contracts/.
 ---
 
 # Soha Backend
@@ -33,7 +33,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## Modularity Ground Rules
 
-- Keep the backend a single-repository, single-`go.mod` modular monolith. `cmd/server` is the management control-plane server. Remote agent and frontend runtime work belongs in sibling repos unless the task explicitly changes this repository boundary.
+- Keep Core a single-`go.mod` modular monolith within the Root repository's four-module Go workspace. `cmd/server` is the management control-plane server. Agent and frontend runtime code has separate component ownership in `agent/` and `web/`; do not move it into Core's module.
 - Keep `internal/api/routes/router.go` thin. It should assemble the Gin engine, global middleware, compatibility paths, static assets, and top-level groups only. Add or change business routes in same-package route files such as `routes_platform.go`, `routes_delivery.go`, `routes_monitoring.go`, `routes_runtime.go`, or `routes_governance.go`.
 - Public, runner, and callback routes belong in `routes_public.go` unless they require user-session authentication. Authenticated routes should be connected from `registerProtectedRoutes`; module-gated domains should keep their `cfg.Modules.*.Enabled` checks inside their domain registration function.
 - Keep `internal/bootstrap/app.go` focused on dependency graph assembly. Put lifecycle methods in `lifecycle.go`, narrow cross-module adapters in dedicated files, and seed concerns in focused files such as `database_menus.go` instead of growing `database.go`.
@@ -98,7 +98,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Internal source checks use this checkout's root workspace; distributed-dependency and publication checks separately use `GOWORK=off` without local replacements. Local execution uses the workspace verification wrapper and its temporary output paths:
+Use the toolchain and tool versions declared by [Core go.mod](../../../go.mod), [active Core CI](../../../.github/workflows/ci.yml), and [Core release workflow](../../../.github/workflows/release.yml). From the `soha/` repository root, internal source checks use the committed four-module workspace; distributed-dependency and publication checks separately use `GOWORK=off` without local replacements. Local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
 export GOWORK="$PWD/go.work"

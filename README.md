@@ -403,7 +403,7 @@ docker build \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
 
-Standard image builds resolve the immutable contracts dependency from `go.mod` with `GOWORK=off`; they do not need a sibling contracts checkout. Release builds use the public `github.com/opensoha/soha/contracts@v0.2.0`; daily source development uses the root `go.work`. Record these two validation modes separately.
+Source image builds use the root `go.work` and same-commit `contracts/`, and build/embed `web/` from the same source context. Separate public dependency qualification uses the declared, checksummed SDK with `GOWORK=off` and no local replacements. A source image build does not by itself prove registry availability; record the two validation modes separately.
 
 
 For local builds, load these images into every target cluster node and set both

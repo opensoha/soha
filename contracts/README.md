@@ -211,14 +211,12 @@ SDK's original `.zip`, `.mod` and `.info` are preserved in Root
 through a file proxy. Its module path, version, `go.sum`/sumdb identity and
 `GOWORK=off` remain unchanged; no `replace` or candidate source is used. Missing,
 changed or unarchived versions fail before Go can fall back to a deleted source.
-The external candidate gate is:
-
-```sh
-npm run check:consumers
-```
-
-By default, the script discovers sibling checkouts under the parent directory
-and skips any missing consumer. CI uses the strict form:
+External candidate checks require an explicitly prepared, isolated checkout group.
+The checker's default lookup is the parent of `contracts/` (the source Root), not an
+automatic checkout or a request to restore deleted repositories. Without `--require-all`,
+missing consumers may be skipped, so that invocation is not complete matrix evidence.
+The following component commands run from `contracts/`; CI sets `SOHA_CONSUMER_ROOT`
+to its isolated checkout group and uses the strict form:
 
 ```sh
 npm run check:consumers -- --consumer soha --require-all
@@ -238,7 +236,7 @@ Run against an exclusively owned staging checkout or reserve dependency installa
 and builds in the selected worktrees for the duration of the check. Installation
 changes `node_modules` and builds produce the consumer's normal output.
 
-`SOHA_CONSUMER_ROOT` selects an explicit sibling checkout group, including local
+`SOHA_CONSUMER_ROOT` selects an explicit isolated checkout group outside source Root, including local
 candidate worktrees with uncommitted source. For example:
 
 ```sh

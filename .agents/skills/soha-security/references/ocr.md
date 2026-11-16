@@ -1,6 +1,6 @@
 # OCR 与安全边界
 
-只维护这一个跨仓薄适配器，各仓 `.opencodereview/rule.json` 提炼所属规则。
+只维护这一个薄适配器，按目标 Git 根读取其 `.opencodereview/rule.json`。当前 Soha Core、Contracts、Web、CLI、Agent、Skills 与 Connectors 位于同一 Root 仓库，使用 Root 规则审查其选定文件；适配器仍可按相同精确 Git 根与规则流程审查其他外部仓库，不把跨仓能力扩展为隐式合并范围。
 固定官方 `@alibaba-group/open-code-review` 1.12.11/a758d9c，局部lockfile，
 Docker运行不读取用户认证、全局MCP或宿主个人模型配置。Skill不能授权外发或强制安全。
 
@@ -12,7 +12,7 @@ python3 -m unittest discover -s .agents/skills/soha-security/scripts -p 'test_oc
 
 `SOHA_OCR_TEST_IMAGE` 使用上一条的精确 sha256 image ID，再执行
 `python3 -m unittest discover -s .agents/skills/soha-security/scripts -p 'test_ocr_preview.py'`。
-实际 native preview/rules check 对 Web/Core/Agent/Contracts 规则逐一核验源代码、测试、fixtures、CI、
+实际 native preview/rules check 对 Root 仓库选定范围核验源代码、测试、fixtures、CI、
 生成物与删除文件；仅合成Git history，不是模型审查。本仓独立clone只核验可用所有者规则。
 
 ```sh

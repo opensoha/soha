@@ -3,7 +3,7 @@
 ## 入口与所有权
 
 - 本目录 `agent/` 负责独立 Agent、runner 和集群执行产物；不得 import `soha/internal/**`，通过公开 API 和 contracts 与控制面交互。
-- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖旧 sibling 仓库。module/import/ldflags 身份为 `github.com/opensoha/soha/agent`，SDK 为 `github.com/opensoha/soha/contracts`；外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。技能链接仅提供发现，不能代替读取真实源。
+- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖额外源码 checkout。module/import/ldflags 身份为 `github.com/opensoha/soha/agent`，SDK 为 `github.com/opensoha/soha/contracts`；外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。技能链接仅提供发现，不能代替读取真实源。
 - Agent 实现或实质审查前读取 [soha-agent](.agents/skills/soha-agent/SKILL.md) 及其指定的相关参考；只读查询按需定位。已读且未变化的规则可复用，交接后缺少关键约束时补读必要部分。
 - 技能与历史计划不是安装、执行远程任务、修改生产环境或发布的授权。
 
@@ -22,10 +22,9 @@
 - 文档/技能改动只检查内容、链接和差异，不机械构建运行时。保留用户工作树，仅提交任务所属文件；未请求时不合并 PR、不发布。
 - 共享 runner/lifecycle 修改验证重试、租约及资源清理，新增外部操作保持有界超时和现有审计路径；验证记录包括实际执行模式。
 
-- 测试/安全验收按需读取 [testing reference](.agents/skills/soha-agent/references/testing.md)；多仓专项审查可读取 Core 的 soha-security。独立 clone 的基础门禁不依赖该公共 Skill，不自动 clone 或安装工具。
+- 测试/安全验收按需读取 [testing reference](.agents/skills/soha-agent/references/testing.md)；专项安全审查按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)，不为加载规则额外 clone 或安装工具。
 
 ## Graphify
 
-- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../AGENTS.md#graphify)检查新鲜度、查询和刷新。
-- 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
-- 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。
+- 本组件使用[主仓图谱与工作区协作入口](../AGENTS.md#graphify)，图谱位于主仓 `graphify-out/`，不维护组件独立图。
+- 结构变化稳定后按主仓入口显式刷新；普通文案、局部样式不自动建图。缺少图谱或工具时查源码并说明缺口，不要求恢复旧仓目录；失败先诊断，不默认 `--force`。

@@ -95,7 +95,7 @@ python3 tools/validate_assets.py --package-dry-run --report-output dist/skills-v
 ```
 
 The report uses `schemas/skills-validation-report.schema.json` and records each
-validation check, sibling checkout alignment status, asset counts, Gateway
+validation check, same-Root Core/Contracts alignment status, asset counts, Gateway
 catalog version, compatibility matrix summary, and package checksum,
 manifest checksum, checksum-file checksum, file count, and member count when
 package flags are used. CI uploads it as an independent artifact, and tagged

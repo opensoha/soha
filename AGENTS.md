@@ -2,10 +2,23 @@
 
 ## 规则入口与所有权
 
-- 根目录负责 Go 核心控制平面、Server API 和原始 Docker/Kubernetes 部署；必须可脱离 `soha-cloud` 独立运行。Core 保持单 module 的模块化单体；`contracts/` 是独立 SDK module，`web/` 是控制台源码；`cli/`、`agent/`、`connectors/`、`skills/` 分别拥有独立客户端、运行时、连接器和技能产品。组件分别遵循其目录内的 AGENTS 与技能，不按菜单或代码行数拆服务。
-- 在已确认的 OpenSoha 多仓工作区显式读取工作区根 `AGENTS.md` 一次，不按固定父级猜测隔离 worktree 的位置；独立克隆使用本仓规则，不要求补齐相邻仓库。技能链接只是发现入口，未自动加载时读取本仓真实路径。
+- 根目录负责 Go 核心控制平面、Server API 和原始 Docker/Kubernetes 部署；必须可脱离 `soha-cloud` 独立运行。Core 本身保持单 module 的模块化单体；`contracts/` 是独立 SDK module，`web/` 是控制台源码；`cli/`、`agent/`、`connectors/`、`skills/` 分别拥有独立客户端、运行时、连接器和技能产品。组件分别遵循其目录内的 AGENTS 与技能，不按菜单或代码行数拆服务。主仓是本 Git 仓库的根目录；代码路径默认相对所属组件，安装、共享锁文件和活动 CI 以主仓为基准。
+- 在已确认的 OpenSoha 多仓工作区显式读取工作区根 `AGENTS.md` 一次，不按固定父级猜测隔离 worktree 的位置；独立克隆整个 soha 主仓即可读取全部组件规则，不要求补齐外部仓库。技能链接只是发现入口，未自动加载时读取本仓真实路径。
 - 后端实现或实质审查前读取 [soha-backend](.agents/skills/soha-backend/SKILL.md) 及本次相关参考；部署变更读取 [soha-deploy](.agents/skills/soha-deploy/SKILL.md)。只读查询按需定位，已读且未变化的内容可复用；交接后缺少关键约束时补读必要部分。
 - 公开协议唯一源为 `contracts/`，Web 源码唯一入口为 `web/`；同仓使用根 `go.work`、npm workspace 与唯一根锁文件，不等待 SDK 公开发布。根 go.work 仅允许 Core/CLI/Agent 声明的精确 SDK 版本映射到 ./contracts，以本地源码解析依赖图；禁止其他 replacement。Core 消费同提交 Web 构建产物，不手改嵌入生成物。Core module identity 保持 `github.com/opensoha/soha`，SDK/CLI/Agent 分别使用其 `contracts`/`cli`/`agent` 子 module identity；源码验证不等于已发布依赖或分发资格。
+
+## 组件规则入口
+
+| 组件 | 规则 | 开发技能真实源 |
+| --- | --- | --- |
+| Contracts | [contracts/AGENTS.md](contracts/AGENTS.md) | [soha-contracts](contracts/.agents/skills/soha-contracts/SKILL.md) |
+| Web | [web/AGENTS.md](web/AGENTS.md) | [frontend](web/.agents/skills/soha-frontend/SKILL.md)、[design](web/.agents/skills/soha-design/SKILL.md)、[testing](web/.agents/skills/soha-web-testing/SKILL.md) |
+| CLI | [cli/AGENTS.md](cli/AGENTS.md) | [soha-cli](cli/.agents/skills/soha-cli/SKILL.md) |
+| Agent | [agent/AGENTS.md](agent/AGENTS.md) | [soha-agent](agent/.agents/skills/soha-agent/SKILL.md) |
+| Skills 产品资产 | [skills/AGENTS.md](skills/AGENTS.md) | [soha-skills](skills/.agents/skills/soha-skills/SKILL.md) |
+| Connectors | [connectors/AGENTS.md](connectors/AGENTS.md) | [soha-connectors](connectors/.agents/skills/soha-connectors/SKILL.md) |
+
+开发技能保留在组件的 `.agents/skills/`，不复制到产品资产 `skills/skills/` 或 `skills/agent-skills/`。App、Operator、Cloud、Helm、公开文档站及内部 docs 仍是外部仓库，按公开契约、产物或明确的工作区协作入口集成。
 
 ## 变更契约
 
@@ -18,8 +31,8 @@
 
 - Go 变更先验证受影响包；源码主入口为 `python3 scripts/source-workspace.py check-go` 后使用根 `go.work` 运行 `go test ./...`，SDK、CLI、Agent modules 分别验证，根 `go test ./...` 不覆盖嵌套模块。整洁性使用 `python3 scripts/source-workspace.py tidy`，不把未发布 SDK 当作内部开发的前置。对外声明依赖/发布验证仍使用 `GOWORK=off` 且禁止本地替换。架构、契约、依赖、安全、并发、部署或发布变更执行 [CI](.github/workflows/ci.yml) 适用完整门禁，保留 race、vet、复杂度、漏洞与镜像检查。
 - npm 安装只从根 `npm ci` 开始；四个 workspace 为 `contracts`、`web`、`connectors`、`cli/npm/cli`，组件从根使用 `npm run <script> --workspace <组件>`。Agent DSH 独立 Node 24 runtime 保留自己的锁文件；不加入根 npm workspace。`npm run build:web` 生成并校验 SDK、构建 Web、核对字节后嵌入；不得新增子目录锁文件或用工作区链接冒充 registry 分发。
-- 发布所有者与标签入口以 [.github/release-components.json](.github/release-components.json) 为准；组件工作流只使用本仓精确 tag/SHA，公开依赖验证与同源码验证分开。写入前必须核实对应旧发布者已停用且无在途、该 SHA 的 main CI 成功及受限 environment/owner 开关；缺少真实回执不能视为已经交接。只有 Core 管理 GitHub latest。已发布版本、附件和镜像版本标签不得覆盖，SDK staged 恢复复用原产物，不能重新打包替换。
-- 跨仓构建记录实际 Core、Web、Contracts 提交或产物摘要；固定组合验证和最新分支集成检查分别报告。写入版本号不等于组合已经通过验收。
+- 发布所有者与标签入口以 [.github/release-components.json](.github/release-components.json) 为准；组件工作流只使用本仓精确 tag/SHA，公开依赖验证与同源码验证分开。写入前按发布守卫核对 `.github/legacy-retirement.json` 的封存回执及 `.github/release-components.json` 中的哈希、该精确 SHA 的 main CI 和受限 environment/owner 开关；不要求已退役旧仓的 API 继续可读，也不能将 404 当作交接证明。只有 Core 管理 GitHub latest。已发布版本、附件和镜像版本标签不得覆盖，SDK staged 恢复复用原产物，不能重新打包替换。
+- 主仓源码构建记录共同的 Root SHA 及各组件产物摘要；外部消费者另记其 SHA/产物。固定兼容组合和同提交源码检查分别报告。写入版本号不等于组合已经通过验收。
 - 应用/集群删除使用[独立 PostgreSQL 集成检查](.github/workflows/deletion-integration.yml)，要求目标测试实际运行、通过且无跳过子测试；本地仅连接可丢弃的隔离测试库，不使用开发或生产业务数据库。
 - 数据库、任务或外部运行时集成测试被跳过时明确报告。普通 `go test` 成功不证明条件性测试已经执行；要求验证该链路时必须准备隔离环境并确认目标测试实际运行，不使用生产数据库。
 - 按仓库报告变更、实际命令及对应代码版本，区分通过、失败、跳过、未运行和环境缺失。成功结果仅在相关代码、依赖与环境未变化时复用；不得重写基线或降低门禁来掩盖失败。

@@ -55,7 +55,7 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 - Use Root Go1.27.4 and the explicit committed four-module `go.work` for source builds; execute every module separately. Do not create another local workspace or fall back to a registry SDK when Root source is missing.
 - Review every direct dependency and `go mod tidy` change. Prefer the standard library or existing dependencies when they clearly satisfy the requirement.
 - Build generic/Hermes/runtime images from the same Root context and contracts source, with all four module manifests available. Do not bake runtime tokens, kubeconfigs, provider credentials, or test files into images.
-- Source binaries use Root `GOWORK`, `CGO_ENABLED=0`, `-trimpath`, the current module-qualified ldflags symbols, true Root commit metadata and independent component versions. External release qualification remains explicit `GOWORK=off`; B3 does not activate publishers.
+- Source binaries use Root `GOWORK`, `CGO_ENABLED=0`, `-trimpath`, the current module-qualified ldflags symbols, true Root commit metadata and independent component versions. External release qualification remains explicit `GOWORK=off`; activity and publisher ownership come from Root `.github/release-components.json`.
 
 ## Verification Gate
 
@@ -63,7 +63,9 @@ Use the [skill's Testing section](../SKILL.md#testing) to select checks by impac
 
 Before completing architecture, module/dependency, public-contract, security, concurrency/runner, image/packaging, or release changes, run the applicable full gate below and the affected artifact checks. CI requirements remain unchanged. Reuse successful results while the relevant code and environment are unchanged; expand or repeat checks only for new changes, failures, or a concrete unresolved risk.
 
-Tool versions and exact CI commands are owned by [Root active CI](../../../../../.github/workflows/) and [release](../../../../.github/workflows/release.yml). For local incremental lint, set `SOHA_AGENT_LINT_BASE_REF` to the verified PR target or configured integration upstream, then use the workspace verification wrapper for the selected checks.
+Tool versions and exact CI commands are owned by [Root active workflows](../../../../../.github/workflows/) and [Root Agent release](../../../../../.github/workflows/agent-release.yml). From `agent/`, for local incremental lint, set `SOHA_AGENT_LINT_BASE_REF` to the verified PR target or configured integration upstream, then use the workspace verification wrapper for the selected checks.
+
+From `agent/`:
 
 ```bash
 export GOWORK="$(git rev-parse --show-toplevel)/go.work"

@@ -47,7 +47,7 @@ These are ownership boundaries, not a requirement for every feature to create ev
 - `internal/api/routes/router.go` serves the embedded SPA from `internal/staticassets/web/dist` when the artifact is staged for embed builds.
 - `internal/bootstrap` is the composition root, entered through `app.go` with constructors/adapters in focused files. Complete construction, binding, and required-port validation before starting workers or accepting requests; do not place runtime business decisions in wiring callbacks.
 - `modules.*.enabled` controls module availability reporting, not authorization. Keep it aligned with module descriptors and frontend workbench defaults.
-- Agent runners live in sibling repos and call back into this control plane. Keep runner claim/status/callback behavior compatible when editing runner APIs.
+- Agent runners are implemented in the `agent/` component of this Root repository and call back into the Core control plane through public contracts. Keep runner claim/status/callback behavior compatible when editing those APIs; preserve the Agent module and security boundary.
 
 ## Verification
 

@@ -1,15 +1,17 @@
 ---
 name: soha-contracts
-description: Change or review shared OpenSoha API schemas, protocol contracts, generated SDKs, compatibility, and releases. Consumer-only UI changes do not require contract edits.
+description: Change or review public API schemas, generated SDKs, compatibility, and releases in Root contracts/. Consumer-only UI changes do not require contract edits.
 ---
 
 # Soha Contracts
 
 ## Purpose
 
-Keep `soha-contracts` the versioned source of truth for behavior shared by
-Soha repositories. Change contracts before consumers and preserve stable SDK
-import paths.
+Use Root `contracts/` as the versioned source of truth shared by Root components
+and external consumers. Read [Root rules](../../../../AGENTS.md) and
+[component rules](../../../AGENTS.md). Code paths below are relative to `contracts/`;
+commands explicitly identify Root or component cwd. Preserve the independent
+`github.com/opensoha/soha/contracts` Go module, generated SDKs and public package identity.
 
 ## Workflow
 
@@ -23,15 +25,15 @@ import paths.
    representative and free of secrets. Identify permission/scope, lifecycle,
    side effects, errors, pagination/count semantics and affected consumers;
    structural compatibility alone does not establish behavioral compatibility.
-4. Run `npm run generate` when OpenAPI source changes affect generated artifacts. Review generated diffs;
+4. Run Root `npm run generate --workspace contracts` when OpenAPI source changes affect generated artifacts. Review generated diffs;
    never patch generated DTOs to bypass the source schema.
 5. Stabilize the source contract and generated artifacts and pass the applicable contract checks
    before updating consumers. Independent consumers may then proceed in parallel with explicit
    file and test-resource ownership; dependent steps remain ordered. Verify the final candidate
    combination with the complete consumer matrix; parallel implementation does not waive it.
-6. For public contract changes, run focused compatibility checks, `npm test`, and
-   the complete consumer matrix defined by `.github/workflows/ci.yml` and the
-   consumer checker. Collaboration prose changes do not regenerate SDKs or run consumers.
+6. For public contract changes, run focused compatibility checks, Root `npm test --workspace contracts`, and
+   the complete consumer matrix defined by [active Contracts CI](../../../../.github/workflows/contracts-ci.yml)
+   and the consumer checker. Collaboration prose changes do not regenerate SDKs or run consumers.
 
 ## Ownership Rules
 
@@ -45,8 +47,9 @@ import paths.
   to silence a failure. A proposed revision pin is not evidence of a passing matrix.
 - Cloud-only tenancy, billing, quota, or SaaS operations stay in
   `soha-cloud` unless they are genuine public extension points.
-- Consumers use released artifacts, generated SDKs, HTTP, or schemas. They must
-  not copy contract definitions or import sibling internals.
+- Root components use the same-commit SDK through Root workspaces; external consumers
+  use their declared SDK, HTTP, schemas or released artifacts. Neither mode permits copying
+  contract definitions or importing another component's private internals.
 
 ## Consumer Revision Evidence
 
@@ -55,27 +58,36 @@ import paths.
 - `scripts/select-consumer-revision.mjs` requires a full commit for each selected
   consumer; missing entries never fall back to `main`. Test selector changes with
   `node --test scripts/select-consumer-revision.checks.mjs`.
-- Normal CI uses pinned revisions. Manual `consumer_mode=latest` exercises current
-  branches separately; it never rewrites the fixed manifest. Record actual contracts
-  and consumer SHAs from the run summary, not only a requested ref or package version.
+- Root CI uses pinned revisions fetched from the canonical Root repository; App
+  remains an external repository. Historical consumer IDs in the matrix are stable
+  compatibility labels. A latest-branch qualification needs explicit checkout/layout
+  selection and its own evidence; do not pass unsupported options to the current
+  workflow or rewrite the fixed manifest. Record actual source SHAs, not only ref names.
 - Adding a consumer requires the real checker support, workflow matrix entry and
   reviewed pin together. Do not reduce the matrix or hide missing consumers to pass.
 - Mock, compile, runtime, package and release evidence remain distinct; skipped or
-  unavailable checks must be reported. Cross-repository verification is not deployment.
+  unavailable checks must be reported. Compatibility verification is not deployment.
 
 ## Verification
 
+From Root `soha/`:
+
 ```bash
-npm test
-GOWORK=off go vet ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-npm run check:consumers -- --require-all
+npm test --workspace contracts
+(cd contracts && GOWORK=off go vet ./...)
+(cd contracts && GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...)
+npm run check:internal-consumers
 git diff --check
 ```
 
+The external matrix additionally uses the isolated checkouts and both declared/candidate
+modes from active Contracts CI. Go declared mode uses `--declared --archived-declared-sdk`
+for the preserved legacy SDK; original module paths, checksums and pins stay unchanged.
+Never substitute same-source success for that matrix.
+
 Use the current `scripts/check-consumers.mjs` and CI matrix for supported consumer
 names and options; a selected-consumer run does not replace the full required matrix.
-`npm test` includes generation, schema, fixture, compatibility, package, and Go checks;
+The Contracts `npm test` includes generation, schema, fixture, compatibility, package, and Go checks;
 CI also runs the existing lint/vet/vulnerability gates. Tool versions are owned by
 package scripts and workflows. Run release artifact checks when package or release
 behavior changes; do not report unavailable external tools as passed.

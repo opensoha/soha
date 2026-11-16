@@ -7,7 +7,8 @@ description: Change or review the standalone Soha agent APIs, runners, cluster a
 
 ## Overview
 
-Use this skill for Root `agent/`, preserving its independent Go module and artifacts. The agent is a standalone
+Use this skill for Root `agent/`, preserving its independent Go module and artifacts. Code paths and Go commands below
+are relative to `agent/`; shared source inputs and active workflows belong to Root. The agent is a standalone
 runtime that exposes local cluster and runtime APIs, claims work from the Soha
 control plane, and calls back with task, Docker, or Agent Runtime results.
 
@@ -18,7 +19,7 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 3. Use `SOHA_AGENT_CONFIG_FILE`, `SOHA_AGENT_*` env overrides, and `configs/agent.config.yaml` as the config path. Keep viper env keys aligned with config struct tags.
 4. When adding a runtime capability, decide whether it belongs to the local HTTP API, Kubernetes adapter, execution or Docker runner, Identity Outpost, environment runtime manager, Agent Runtime provider, or packaging. Put it in the existing owner.
 5. Keep diagnostics safe. `/api/v1/diagnostics` may summarize readiness and counts; it must not expose bearer tokens, kubeconfig contents, command secrets, or raw internal failures.
-6. For broad package or dependency changes, query `graphify-out/graph.json`. Refresh it only after source changes are stable and the worktree contents are understood; follow the Graphify workflow in the repository AGENTS.md and run diagnostics. Do not bypass shrink guards with `--force` by default.
+6. For broad package or dependency changes, query Root `graphify-out/graph.json`. Refresh it only after source changes are stable and the worktree contents are understood; follow the Graphify workflow in the repository AGENTS.md and run diagnostics. Do not bypass shrink guards with `--force` by default.
 
 ## Architecture Rules
 
@@ -49,7 +50,7 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 
 - `deploy/Dockerfile` builds the generic `soha-agent` image.
 - Its `buildpacks-runtime` target adds pinned pack and Docker CLI tooling for a dedicated CNB runner; never share the business-node Docker socket. `buildpacks-daemonless-runtime` adds pinned Podman for direct local lifecycle containers and requires its own Linux rootful runner and exclusive storage, with no daemon socket.
-- `deploy/Dockerfile.hermes-agent-runner` builds the Hermes-derived runner image.
+- `deploy/Dockerfile.hermes-agent-runner` remains a CI build target for the optional Hermes provider; retain existing images, but Root release does not publish new Hermes images.
 - `deploy/kubernetes/**` is a starter manifest; Helm charts live in `opensoha/soha-helm`.
 - Dockerfiles consume the complete Root context, all four module manifests and Root `contracts/` source. No sibling context or registry fallback is used for source builds. Use `github.com/opensoha/soha/agent` module/import/ldflags identity and `github.com/opensoha/soha/contracts` SDK; preserve existing public download routes.
 - DSH keeps its own Node>=24.9 lock and Node24 image; it is not part of the Root Node22 npm workspace. Runtime skills/MCP assets remain supplied by their explicit Core-owned definitions or same-Root `skills/` packages, never an implicit sibling checkout.
@@ -67,7 +68,7 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 
 ## CI Gate
 
-Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [Root active CI](../../../../.github/workflows/), and the [release workflow](../../../.github/workflows/release.yml). Run the full gate for dependency, packaging, Dockerfile, workflow, or release changes; local execution uses the workspace verification wrapper and its temporary output paths:
+Use the toolchain and tool versions declared by [Agent go.mod](../../../go.mod), [Root Agent CI](../../../../.github/workflows/agent-ci.yml), and the [Root Agent release workflow](../../../../.github/workflows/agent-release.yml). Run the full gate for dependency, packaging, Dockerfile, workflow, or release changes; from `agent/`, local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
 export GOWORK="$(git rev-parse --show-toplevel)/go.work"

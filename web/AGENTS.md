@@ -1,11 +1,11 @@
-# Soha Web 仓库入口
+# Soha Web 组件入口
 
 ## 所有权与规则加载
 
 - 本目录是主仓 `web/` npm workspace，负责 React/Vite/Ant Design 控制台源码；公开协议以同提交 `../contracts/` 为源，API 调用遵循现有 api-client 和 feature 所有权边界。
-- 在已确认的 OpenSoha 多仓工作区中读取 `../AGENTS.md` 一次；独立克隆使用本仓规则，不要求相邻仓库或工作区规划工具。根技能符号链接只是发现入口，未自动加载时直接读取本仓真实源。
+- 先读取主仓 `../AGENTS.md`；已确认外层 OpenSoha 工作区时另按实际位置读取其协作入口。独立克隆整个 soha 即包含本组件规则；技能发现链接不能代替读取本组件真实源。
 - 实现或实质审查前读取 [soha-frontend](.agents/skills/soha-frontend/SKILL.md)；UI 工作读取 [产品体验规范](.agents/skills/soha-frontend/references/product-experience.md) 与 [主题规范](.agents/skills/soha-frontend/references/theme-system.md) 的相关部分；路由、数据、状态、CSS 所有权或共享边界变化读取 [架构规范](.agents/skills/soha-frontend/references/architecture-development.md)。只读查询按需定位，不遍历所有规范。
-- 同一任务中已读且未变化的内容可以复用；新任务、交接后缺少关键约束或文件变化时补读必要部分。读取技能不授权安装、发布、修改其他仓库或恢复历史任务。
+- 同一任务中已读且未变化的内容可以复用；新任务、交接后缺少关键约束或文件变化时补读必要部分。读取技能不授权安装、发布、修改其他组件/外部仓库或恢复历史任务。
 
 ## 产品与变更边界
 
@@ -23,13 +23,12 @@
 - 开发/UI 实现者负责最小有效自测；复杂权限、异步状态和跨模块流程在实现前或早期明确成功、失败及边界场景，按需由 `qa_designer` 协助。独立测试与只读审查在约定批次完成、准备正式提交/合入或用户明确要求时进行，不因每次局部调整或预览启动全套收尾。
 - 主入口为 `npm run lint`、`npm run typecheck`、`npm test`、`npm run build`，这是入口索引，不是每次小改的执行清单；定向命令和浏览器资源限制见 [测试入口](docs/testing.md)。全量回归按实际影响及必需门禁选择，提交本身不触发全量；路由、共享边界、依赖或发布修改执行适用完整门禁，不用定向测试替代 CI 必需检查。
 - 视觉完成需要实际页面与交互状态验证，构建和类型成功不能替代设计验收。共享组件通过也不代表页面接入通过；不自行代签用户认可。
-- 按仓库记录本次修改、验证命令与对应提交/差异，区分通过、失败、跳过和未运行。成功结果只在相关代码、依赖及环境未变化时复用；不得为了变绿放宽断言、更新违规基线或隐藏失败。
+- 按主仓、组件及外部消费者记录本次修改、验证命令与对应提交/差异，区分通过、失败、跳过和未运行。成功结果只在相关代码、依赖及环境未变化时复用；不得为了变绿放宽断言、更新违规基线或隐藏失败。
 - 文档和技能改动只检查元数据、链接、内容一致性及差异，不机械构建应用。保留用户未提交改动，不手改 `dist/` 等生成物；仅提交任务所属变更。
 
-- UI 设计读取 [soha-design](.agents/skills/soha-design/SKILL.md)；UI/HTTP/视觉/Midscene 验收读取 [soha-web-testing](.agents/skills/soha-web-testing/SKILL.md)。实施仍遵循 soha-frontend；权限、模型外发与 CI 边界在多仓环境按需读取 Core 的 soha-security，独立 clone 保留本仓门禁，不自动安装相邻仓库。
+- UI 设计读取 [soha-design](.agents/skills/soha-design/SKILL.md)；UI/HTTP/视觉/Midscene 验收读取 [soha-web-testing](.agents/skills/soha-web-testing/SKILL.md)。实施仍遵循 soha-frontend；权限、模型外发与 CI 边界按需读取[主仓 soha-security](../.agents/skills/soha-security/SKILL.md)，不为组件开发创建额外源码 checkout。
 
 ## Graphify
 
-- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 `工作区 docs/guides/graphify-development/runbook.md`（按实际外层工作区位置读取）检查新鲜度、查询和刷新。
-- 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
-- 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。
+- 本组件使用[主仓图谱与工作区协作入口](../AGENTS.md#graphify)，图谱位于主仓 `graphify-out/`，不维护组件独立图。
+- 结构变化稳定后按主仓入口显式刷新；普通文案、局部样式不自动建图。缺少图谱或工具时查源码并说明缺口，不要求恢复旧仓目录；失败先诊断，不默认 `--force`。

@@ -163,8 +163,8 @@ Reference docs used for the skeleton:
 
 ## Boundary
 
-- Keep connector implementations independent from the open-source core source
-  tree.
+- Keep connector implementations in Root `connectors/`, independent from Core
+  internals and lifecycle ownership.
 - Prefer contracts, generated SDKs, HTTP APIs, MCP manifests, event schemas, and
   published artifacts over source-level coupling.
 - Hosted or cloud-only connector operations belong in `soha-cloud`.
@@ -178,7 +178,8 @@ npm run build
 npm run validate
 ```
 
-CI runs `npm ci` followed by `npm run check`.
+CI installs with Root `npm ci` and runs `npm run check --workspace connectors`.
+The component commands above run from `connectors/`.
 
 Generate and verify local GitHub release artifacts with:
 
@@ -191,7 +192,7 @@ The package remains `private: true`; the generated tarball, checksum, and
 release manifest are intended for GitHub release assets, not npm publish. The
 release manifest records SHA-256 checksums for packaged connector manifests and
 declares GitHub build provenance attestation as a required signature/source
-proof. Tagged releases use `.github/workflows/release.yml` to attest the
+proof. Tagged releases use [Root Connectors release](../.github/workflows/connectors-release.yml) to attest the
 tarball, checksum, and release manifest before publishing.
 
 ## License

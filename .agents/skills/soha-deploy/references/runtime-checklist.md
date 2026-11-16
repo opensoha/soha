@@ -2,7 +2,7 @@
 
 ## Before Build
 
-- Confirm `../soha-web/dist/index.html` is staged into `internal/staticassets/web/dist/index.html` before image builds.
+- Confirm `web/dist/index.html` is staged into `internal/staticassets/web/dist/index.html` before image builds. Both paths are relative to the `soha/` repository root.
 - Confirm the repo has a valid backend config strategy for the target environment, whether that is `configs/config.yaml`, a mounted replacement, or environment overrides.
 - Decide whether OIDC stays disabled or needs production callback URLs.
 

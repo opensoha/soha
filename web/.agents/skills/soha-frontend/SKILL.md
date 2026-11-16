@@ -1,9 +1,13 @@
 ---
 name: soha-frontend
-description: Implement or review soha-web React and Ant Design UI, shared tables and tags, routing, data ownership, themes, and loading boundaries. Public API contracts belong to soha-contracts.
+description: Implement or review React and Ant Design UI, routing, data ownership, themes, and loading boundaries in Root web/. Public API contracts belong to Root contracts/.
 ---
 
 # Soha Frontend
+
+Read [Root rules](../../../../AGENTS.md) and [Web rules](../../../AGENTS.md).
+Source paths and component commands below are relative to `web/`; install only
+from Root with its shared lockfile, or invoke scripts with `--workspace web`.
 
 ## Workflow
 
@@ -28,7 +32,7 @@ description: Implement or review soha-web React and Ant Design UI, shared tables
    extract demonstrated reuse and roll out complete business chains, not controls in bulk.
 6. Verify behavior and visual outcome as well as applicable engineering gates. Keep actual
    progress and evidence in the selected initiative's single plan; no new planning system.
-7. For cross-module questions, use existing `graphify-out/graph.json` when helpful and verify
+7. For cross-module questions, use the Root `graphify-out/graph.json` when helpful and verify
    important findings against source. Ordinary lookup uses direct search; refresh only for
    requested graph maintenance or relevant structural changes, not styling or documentation.
 
@@ -117,7 +121,7 @@ AdminTable behavior. Do not copy the K8s control/viewport logic into each resour
   behavior needs success/failure/boundary scenarios before or early in implementation; use a
   suitable test-design role when helpful. Parallel developers need disjoint file ownership;
   parallel tests also need isolated runtime resources and stable acceptance inputs.
-- `package.json` and `.github/workflows/*.yml` remain the executable gate source. Select lint,
+- `web/package.json` and [Root Web CI](../../../../.github/workflows/web-ci.yml) remain the executable gate source. Select lint,
   tests and build by impact and the required stage; a commit does not itself require full regression.
   Route, shared-boundary, dependency, architecture and release changes retain their applicable full
   gates, including coverage, route, boundary and bundle checks. Reuse unchanged evidence and rerun

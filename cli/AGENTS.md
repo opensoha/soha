@@ -1,4 +1,4 @@
-# Soha CLI Repository Rules
+# Soha CLI Component Rules
 
 ## Scope
 
@@ -7,14 +7,14 @@ These rules own `cli/` in the shared Root source repository. Read Root
 its Go module identity is `github.com/opensoha/soha/cli`.
 Before implementation or substantive review, read [.agents/skills/soha-cli/SKILL.md](.agents/skills/soha-cli/SKILL.md)
 and its references relevant to the task. Skill symlinks provide discovery, not proof of loading.
-Read README for unfamiliar command behavior and the relevant workflow under
-`.github/workflows/` for build, dependency, or release work.
+Read README for unfamiliar command behavior and the active workflow under
+Root `../.github/workflows/` for build, dependency, or release work.
 
 The executable sources of truth are:
 
 - Root `../.github/workflows/` for active source gates. The nested workflow files
   preserve the original complete CI and release contracts as historical references;
-  B3 does not activate another publisher.
+  They are inactive in the main repository.
 - `internal/sohacli/command_metadata.go` for command discovery, help, generated
   docs, and completion metadata.
 - Same-commit Root `contracts/` types for internal source builds; declared external
@@ -47,13 +47,13 @@ the workflow or documentation is stale, then update both in the same change.
 ## Ownership And Boundaries
 
 - Keep the CLI independent from Core internals: never import `soha/internal/**`.
-  Internal builds use Root `go.work` and `contracts/`, with no sibling repository.
+  Internal builds use Root `go.work` and `contracts/`, without another source checkout.
 - Use `github.com/opensoha/soha/cli` for module/import/ldflags identity and
   `github.com/opensoha/soha/contracts` for the declared SDK. Root source success
   does not certify the declared SDK or the new public module path;
   test external distribution explicitly with `GOWORK=off` and no replacements.
-- Keep Cloud-only lifecycle, billing, quota, and operations logic outside this
-  repository. The CLI may call public Cloud APIs without owning their logic.
+- Keep Cloud-only lifecycle, billing, quota, and operations logic in the external
+  `soha-cloud` repository. The CLI may call public Cloud APIs without owning their logic.
 - Keep the npm package a checksum-verifying launcher for the native Go binary.
   Do not implement a second CLI or MCP server in JavaScript.
 - Official agent-facing skills belong to Root `opensoha/soha`, directory `skills/`. The CLI must
@@ -112,6 +112,8 @@ Use Root Go `1.27.4`, Node.js `22.x`, `govulncheck v1.8.0`, and
 `golangci-lint v2.14.0`. Run each module explicitly in the four-module Root
 workspace; Root `go test ./...` does not discover this nested module:
 
+Run this block from `cli/`; npm installation still starts at Root.
+
 ```bash
 export GOWORK="$(git rev-parse --show-toplevel)/go.work"
 python3 ../scripts/source-workspace.py check-go
@@ -137,7 +139,7 @@ external declared-SDK checks use `GOWORK=off` separately;
 - Treat a published semantic-version tag as immutable. Ship subsequent fixes
   under a new patch version rather than moving a public tag.
 - Tag only a commit already merged to `main` with a successful matching
-  `cli-ci` run. The packaging-focused Release workflow does not replace the
+  Root `ci.yml` run including its applicable CLI gate. The packaging-focused Release workflow does not replace the
   complete race, vet, vulnerability, lint, npm, and Docker gate.
 - Build six targets: Linux, macOS, and Windows on `amd64` and `arm64`.
 - Publish exactly 13 custom GitHub assets: `checksums.txt`, six bare binaries,
@@ -148,7 +150,7 @@ external declared-SDK checks use `GOWORK=off` separately;
   name set exactly. A green upload command without remote verification is not
   sufficient.
 - Publish `@opensoha/cli` only after the GitHub Release exists. The npm version
-  must equal the tag without the `v` prefix, use public provenance, and allow
+  must equal the semantic version after the `cli/v` tag prefix, use public provenance, and allow
   an idempotent retry when that exact version already exists.
 - The launcher must download the matching bare binary and `checksums.txt`,
   enforce download bounds and HTTPS, verify SHA-256 before execution, and
@@ -178,6 +180,5 @@ Before declaring a release complete, require all of the following:
 
 ## Graphify
 
-- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../AGENTS.md#graphify)检查新鲜度、查询和刷新。
-- 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
-- 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。
+- 本组件使用[主仓图谱与工作区协作入口](../AGENTS.md#graphify)，图谱位于主仓 `graphify-out/`，不维护组件独立图。
+- 结构变化稳定后按主仓入口显式刷新；普通文案、局部样式不自动建图。缺少图谱或工具时查源码并说明缺口，不要求恢复旧仓目录；失败先诊断，不默认 `--force`。

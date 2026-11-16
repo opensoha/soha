@@ -5,6 +5,8 @@ description: Design or review Soha Web page organization, hierarchy, density and
 
 # Soha Design
 
+Apply this skill to Root `web/`; source paths below are relative to that component.
+
 Read [product experience](references/product-experience.md) for the affected scene and
 [theme ownership](../soha-frontend/references/theme-system.md) for tokens. Actual values live
 in `src/theme/app-theme.ts`; existing pages and screenshots are evidence, not approved samples.
