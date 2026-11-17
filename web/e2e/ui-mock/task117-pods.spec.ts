@@ -734,7 +734,9 @@ for (const theme of ['light', 'dark']) {
         nodes.map((node) => {
           const button = node.getBoundingClientRect()
           const cell = node.closest('.ant-table-cell')!.getBoundingClientRect()
-          const rail = node.querySelector('.ant-progress-rail')!.getBoundingClientRect()
+          const rail = node
+            .querySelector('.soha-pod-resource-progress-wrap')!
+            .getBoundingClientRect()
           const range = document.createRange()
           range.selectNodeContents(node.querySelector('.soha-pod-resource-value')!)
           const value = range.getBoundingClientRect()

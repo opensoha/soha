@@ -129,7 +129,9 @@ for (const theme of ['light', 'dark']) {
       .evaluateAll((bars) => [
         ...new Set(
           bars.map(
-            (node) => getComputedStyle(node.querySelector('.ant-progress-track')!).backgroundColor,
+            (node) =>
+              getComputedStyle(node.querySelector('.soha-pod-resource-progress-fill')!)
+                .backgroundColor,
           ),
         ),
       ])
@@ -143,7 +145,9 @@ for (const theme of ['light', 'dark']) {
           const bar = node
             .querySelector('.soha-pod-resource-progress-wrap')!
             .getBoundingClientRect()
-          const rail = node.querySelector('.ant-progress-rail')!.getBoundingClientRect()
+          const rail = node
+            .querySelector('.soha-pod-resource-progress-wrap')!
+            .getBoundingClientRect()
           const range = document.createRange()
           range.selectNodeContents(node.querySelector('.soha-pod-resource-value')!)
           const label = range.getBoundingClientRect()

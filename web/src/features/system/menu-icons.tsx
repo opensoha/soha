@@ -1,85 +1,18 @@
-import type { ReactNode } from 'react'
-import {
-  AlertOutlined,
-  AppstoreOutlined,
-  BgColorsOutlined,
-  BellOutlined,
-  BookOutlined,
-  CodeOutlined,
-  CommentOutlined,
-  ControlOutlined,
-  DashboardOutlined,
-  DatabaseOutlined,
-  DeploymentUnitOutlined,
-  ApartmentOutlined,
-  DesktopOutlined,
-  DockerOutlined,
-  EyeOutlined,
-  FileOutlined,
-  GlobalOutlined,
-  HddOutlined,
-  HistoryOutlined,
-  HomeOutlined,
-  InfoCircleOutlined,
-  KeyOutlined,
-  LinkOutlined,
-  MenuOutlined,
-  OrderedListOutlined,
-  PictureOutlined,
-  RadarChartOutlined,
-  SafetyOutlined,
-  SendOutlined,
-  SettingOutlined,
-  SyncOutlined,
-  TeamOutlined,
-  ToolOutlined,
-  UserOutlined,
-} from '@ant-design/icons'
+import { AnimatedIcon, type AnimatedIconName } from '@/components/animated-icon'
 
-const ICONS: Record<string, ReactNode> = {
-  home: <HomeOutlined />,
-  gauge: <DashboardOutlined />,
-  server: <HddOutlined />,
-  desktop: <DesktopOutlined />,
-  cluster: <ApartmentOutlined />,
-  puzzle: <DeploymentUnitOutlined />,
-  shield: <SafetyOutlined />,
-  boxes: <AppstoreOutlined />,
-  cog: <SettingOutlined />,
-  network: <SendOutlined />,
-  waves: <HddOutlined />,
-  globe: <GlobalOutlined />,
-  bell: <BellOutlined />,
-  users: <TeamOutlined />,
-  bot: <CommentOutlined />,
-  image: <PictureOutlined />,
-  blocks: <AppstoreOutlined />,
-  flavor: <ControlOutlined />,
-  code: <CodeOutlined />,
-  activity: <SendOutlined />,
-  history: <HistoryOutlined />,
-  info: <InfoCircleOutlined />,
-  sync: <SyncOutlined />,
-  'panels-top-left': <SettingOutlined />,
-  megaphone: <BellOutlined />,
-  'menu-square': <MenuOutlined />,
-  'clipboard-list': <OrderedListOutlined />,
-  'file-clock': <FileOutlined />,
-  siren: <AlertOutlined />,
-  user: <UserOutlined />,
-  docker: <DockerOutlined />,
-  book: <BookOutlined />,
-  inspect: <EyeOutlined />,
-  key: <KeyOutlined />,
-  link: <LinkOutlined />,
-  palette: <BgColorsOutlined />,
-  'radio-tower': <RadarChartOutlined />,
-  settings: <SettingOutlined />,
-  storage: <DatabaseOutlined />,
-  wrench: <ToolOutlined />,
+const WORKBENCH_ICONS: Record<string, AnimatedIconName> = {
+  home: 'home',
+  platform: 'cluster',
+  delivery: 'activity',
+  monitoring: 'radio-tower',
+  compute: 'server',
+  ai: 'bot',
+  security: 'shield',
+  settings: 'settings',
+  account: 'user',
 }
 
-export const MENU_ICON_OPTIONS = [
+const MENU_ICONS = [
   { value: 'home', label: 'Home' },
   { value: 'gauge', label: 'Dashboard' },
   { value: 'server', label: 'Server' },
@@ -120,12 +53,22 @@ export const MENU_ICON_OPTIONS = [
   { value: 'settings', label: 'Settings' },
   { value: 'storage', label: 'Storage' },
   { value: 'wrench', label: 'Wrench' },
-].map((item) => ({ ...item, preview: ICONS[item.value] ?? <MenuOutlined /> }))
+] as const
+
+export const MENU_ICON_OPTIONS = MENU_ICONS.map((item) => ({
+  ...item,
+  preview: resolveMenuIcon(item.value),
+}))
 
 export function resolveMenuIcon(iconKey?: string) {
-  return ICONS[String(iconKey || '').trim()] ?? <MenuOutlined />
+  const key = String(iconKey || '').trim()
+  return <AnimatedIcon name={isKnownMenuIcon(key) ? (key as AnimatedIconName) : 'menu-square'} />
+}
+
+export function resolveWorkbenchIcon(workbenchId: string) {
+  return <AnimatedIcon name={WORKBENCH_ICONS[workbenchId] ?? 'workbench'} />
 }
 
 export function isKnownMenuIcon(iconKey?: string) {
-  return Object.prototype.hasOwnProperty.call(ICONS, String(iconKey || '').trim())
+  return MENU_ICONS.some((item) => item.value === String(iconKey || '').trim())
 }

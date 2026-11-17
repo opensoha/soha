@@ -17,7 +17,7 @@ import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Button, Space, Tag, Typography } from 'antd'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ResourceQueryPanel } from '../shared/resource-query-panel'
 import { includesSearch, normalizeSearchKeyword } from '../shared/search'
@@ -28,6 +28,8 @@ import type { CRDApiGroupSummary } from './types'
 import { groupCRDsByApi } from './utils'
 import { useCRDClusterScope } from './use-cluster-scope'
 const { Text } = Typography
+
+const groupKey = (record: CRDApiGroupSummary) => record.group
 
 export function CRDPage() {
   const { t, localeCode } = useI18n()
@@ -81,18 +83,18 @@ export function CRDPage() {
     [apiGroups, normalizedKeyword],
   )
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const groupPath = (group: string) =>
-    `${buildCRDApiGroupDetailPath(group)}?${new URLSearchParams({ ...(clusterId ? { clusterId } : {}), ...(searchKeyword ? { q: searchKeyword } : {}) })}`
-  const openGroup = (group: string) => navigate(groupPath(group))
+  const groupPath = useCallback(
+    (group: string) =>
+      `${buildCRDApiGroupDetailPath(group)}?${new URLSearchParams({ ...(clusterId ? { clusterId } : {}), ...(searchKeyword ? { q: searchKeyword } : {}) })}`,
+    [clusterId, searchKeyword],
+  )
+  const openGroup = useCallback(
+    (group: string) => navigate(groupPath(group)),
+    [navigate, groupPath],
+  )
 
-  const resourceActions = useKubernetesResourceActions<CRDApiGroupSummary>({
-    resourceKey: 'crds',
-    resourceLabel: 'API Group',
-    records: apiGroups,
-    scopeKey: clusterId ?? '',
-    getName: (record) => record.group,
-    getKey: (record) => record.group,
-    actions: (record) => {
+  const groupActions = useCallback(
+    (record: CRDApiGroupSummary) => {
       const hasDeletableDefinition = record.crds.some(
         (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
       )
@@ -116,88 +118,132 @@ export function CRDPage() {
           ]
         : []
     },
+    [canDelete, clusterId, localeCode],
+  )
+  const resourceActions = useKubernetesResourceActions<CRDApiGroupSummary>({
+    resourceKey: 'crds',
+    resourceLabel: 'API Group',
+    records: apiGroups,
+    scopeKey: clusterId ?? '',
+    getName: groupKey,
+    getKey: groupKey,
+    actions: groupActions,
   })
 
-  const columns: TableColumnsType<CRDApiGroupSummary> = [
-    {
-      title: t('page.extensions.crd.apiGroupColumn', 'API Group'),
-      dataIndex: 'group',
-      width: 220,
-      render: (_value, record) => (
-        <Button
-          type="link"
-          className="soha-crd-group-link"
-          onClick={(event) => {
-            event.stopPropagation()
-            openGroup(record.group)
-          }}
-        >
-          <span className="soha-crd-group-card">
-            <code className="soha-crd-group-card__value">{record.group}</code>
-          </span>
-        </Button>
-      ),
-    },
-    {
-      title: t('page.extensions.crd.crdNameColumn', 'CRD Names'),
-      key: 'crdNames',
-      width: 360,
-      render: (_value, record) => (
-        <div className="soha-crd-name-chip-list">
-          {record.crdNames.slice(0, 2).map((value) => (
-            <code key={value} className="soha-crd-name-chip">
-              {value}
-            </code>
-          ))}
-          {record.crdNames.length > 2 ? (
-            <code className="soha-crd-name-chip is-summary">
-              {`+${record.crdNames.length - 2} ${localeCode === 'zh_CN' ? '个 CRD' : 'more CRDs'}`}
-            </code>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      title: t('page.extensions.crd.kindCountColumn', 'Kind Count'),
-      key: 'kindCount',
-      width: 120,
-      render: (_value, record) => (
-        <Text>{localeCode === 'zh_CN' ? `${record.crdCount} 个` : record.crdCount}</Text>
-      ),
-    },
-    {
-      title: t('page.extensions.crd.kindPreviewColumn', 'Served kinds'),
-      key: 'kinds',
-      width: 360,
-      render: (_value, record) => (
-        <Space size={[4, 4]} wrap>
-          {record.kindNames.slice(0, 6).map((value) => (
-            <Tag key={value}>{value}</Tag>
-          ))}
-          {record.kindNames.length > 6 ? <Tag>{`+${record.kindNames.length - 6}`}</Tag> : null}
-        </Space>
-      ),
-    },
-    {
-      title: t('page.extensions.crd.versionsColumn', 'Versions'),
-      key: 'versions',
-      width: 240,
-      render: (_value, record) => record.versions.map((value) => <Tag key={value}>{value}</Tag>),
-    },
-    {
-      title: t('page.extensions.crd.scopeColumn', 'Scope mix'),
-      key: 'scope',
-      width: 220,
-      render: (_value, record) => (
-        <Space size={[4, 4]} wrap>
-          {record.namespacedCount ? (
-            <Tag color="gold">Namespaced {record.namespacedCount}</Tag>
-          ) : null}
-          {record.clusterCount ? <Tag color="blue">Cluster {record.clusterCount}</Tag> : null}
-        </Space>
-      ),
-    },
-  ]
+  const columns = useMemo<TableColumnsType<CRDApiGroupSummary>>(
+    () => [
+      {
+        title: t('page.extensions.crd.apiGroupColumn', 'API Group'),
+        dataIndex: 'group',
+        width: 220,
+        render: (_value, record) => (
+          <Button
+            type="link"
+            className="soha-crd-group-link"
+            onClick={(event) => {
+              event.stopPropagation()
+              openGroup(record.group)
+            }}
+          >
+            <span className="soha-crd-group-card">
+              <code className="soha-crd-group-card__value">{record.group}</code>
+            </span>
+          </Button>
+        ),
+      },
+      {
+        title: t('page.extensions.crd.crdNameColumn', 'CRD Names'),
+        key: 'crdNames',
+        width: 360,
+        render: (_value, record) => (
+          <div className="soha-crd-name-chip-list">
+            {record.crdNames.slice(0, 2).map((value) => (
+              <code key={value} className="soha-crd-name-chip">
+                {value}
+              </code>
+            ))}
+            {record.crdNames.length > 2 ? (
+              <code className="soha-crd-name-chip is-summary">
+                {`+${record.crdNames.length - 2} ${localeCode === 'zh_CN' ? '个 CRD' : 'more CRDs'}`}
+              </code>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        title: t('page.extensions.crd.kindCountColumn', 'Kind Count'),
+        key: 'kindCount',
+        width: 120,
+        render: (_value, record) => (
+          <Text>{localeCode === 'zh_CN' ? `${record.crdCount} 个` : record.crdCount}</Text>
+        ),
+      },
+      {
+        title: t('page.extensions.crd.kindPreviewColumn', 'Served kinds'),
+        key: 'kinds',
+        width: 360,
+        render: (_value, record) => (
+          <Space size={[4, 4]} wrap>
+            {record.kindNames.slice(0, 6).map((value) => (
+              <Tag key={value}>{value}</Tag>
+            ))}
+            {record.kindNames.length > 6 ? <Tag>{`+${record.kindNames.length - 6}`}</Tag> : null}
+          </Space>
+        ),
+      },
+      {
+        title: t('page.extensions.crd.versionsColumn', 'Versions'),
+        key: 'versions',
+        width: 240,
+        render: (_value, record) => record.versions.map((value) => <Tag key={value}>{value}</Tag>),
+      },
+      {
+        title: t('page.extensions.crd.scopeColumn', 'Scope mix'),
+        key: 'scope',
+        width: 220,
+        render: (_value, record) => (
+          <Space size={[4, 4]} wrap>
+            {record.namespacedCount ? (
+              <Tag color="gold">Namespaced {record.namespacedCount}</Tag>
+            ) : null}
+            {record.clusterCount ? <Tag color="blue">Cluster {record.clusterCount}</Tag> : null}
+          </Space>
+        ),
+      },
+    ],
+    [t, localeCode, openGroup],
+  )
+
+  const displayedColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
+  const onRow = useCallback(
+    (record: CRDApiGroupSummary) => ({
+      onClick: () => openGroup(record.group),
+      style: { cursor: 'pointer' },
+    }),
+    [openGroup],
+  )
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        kind={!clusterId ? 'select-scope' : catalogQuery.isError ? 'error' : 'empty'}
+        title={
+          !clusterId
+            ? t('platformScope.clusterPlaceholder', 'Select cluster')
+            : catalogQuery.isError
+              ? localeCode === 'zh_CN'
+                ? 'CRD 目录加载失败'
+                : 'Failed to load the CRD catalog'
+              : t('page.extensions.crd.empty', 'No CRDs in the current cluster.')
+        }
+      />
+    ),
+    [clusterId, catalogQuery.isError, localeCode, t],
+  )
 
   return (
     <div className="soha-page">
@@ -223,17 +269,14 @@ export function CRDPage() {
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+        columns={displayedColumns}
         dataSource={clusterId ? filteredApiGroups : []}
         rowKey="group"
         loading={catalogQuery.isLoading}
         localSorting
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        onRow={(record: CRDApiGroupSummary) => ({
-          onClick: () => openGroup(record.group),
-          style: { cursor: 'pointer' },
-        })}
+        onRow={onRow}
         headerExtra={
           <ManagementTableToolbar>
             <ManagementDensityButton
@@ -253,22 +296,7 @@ export function CRDPage() {
             />
           </ManagementTableToolbar>
         }
-        empty={
-          <ManagementState
-            bordered={false}
-            compact
-            kind={!clusterId ? 'select-scope' : catalogQuery.isError ? 'error' : 'empty'}
-            title={
-              !clusterId
-                ? t('platformScope.clusterPlaceholder', 'Select cluster')
-                : catalogQuery.isError
-                  ? localeCode === 'zh_CN'
-                    ? 'CRD 目录加载失败'
-                    : 'Failed to load the CRD catalog'
-                  : t('page.extensions.crd.empty', 'No CRDs in the current cluster.')
-            }
-          />
-        }
+        empty={empty}
       />
       {deleteTarget && deleteTarget.clusterId === clusterId ? (
         <DeleteCRDDefinitionModal

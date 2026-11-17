@@ -299,6 +299,8 @@ describe('Provider Portal catalog page', () => {
     expect(sidePanels).toHaveLength(2)
     expect(sidePanels[1]).toBe(workbenches)
     expect(observabilityLink?.getAttribute('href')).toBe('/monitoring-workbench/overview')
+    expect(observabilityLink?.querySelector('[data-icon="radio-tower"]')).not.toBeNull()
+    expect(observabilityLink?.classList.contains('soha-icon-trigger')).toBe(true)
     expect(container.textContent).not.toContain('Settings Center')
   })
 

@@ -1,9 +1,9 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { TableColumnsType } from 'antd'
 import { AccessControlResourceListPage } from '../shared/list-page'
-import { TableCellLink } from '@/components/table-cell-content'
 import { useNavigate } from 'react-router-dom'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { CLUSTER_ROLE_DEFAULT_TEMPLATE } from '../shared/templates'
@@ -22,7 +22,7 @@ export function PlatformAccessControlClusterRolesPage() {
       width: 280,
       sorter: (a, b) => a.name.localeCompare(b.name),
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
+        <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
       ),
     },
     {

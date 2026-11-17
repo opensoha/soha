@@ -15,7 +15,9 @@ interface KubernetesResourceStreamOptions {
   namespace?: string | null
   kinds: string[]
   enabled?: boolean
-  fallbackIntervalMs?: number
+  fallbackIntervalMs?: number | false
+  /** Opt in only when onEvent refreshes the complete collection. */
+  eventDebounceMs?: number
   onEvent: (event: KubernetesResourceStreamEvent) => void
   onFallback?: () => void
   onResyncRequired?: () => unknown
@@ -27,6 +29,7 @@ export function useKubernetesResourceStream({
   kinds,
   enabled = true,
   fallbackIntervalMs = 15_000,
+  eventDebounceMs = 0,
   onEvent,
   onFallback,
   onResyncRequired,
@@ -58,6 +61,21 @@ export function useKubernetesResourceStream({
     let socket: WebSocket | undefined
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let attempt = 0
+    let eventTimer: ReturnType<typeof setTimeout> | undefined
+    let queuedEvent: KubernetesResourceStreamEvent | undefined
+    const clearQueuedEvent = () => {
+      if (eventTimer) clearTimeout(eventTimer)
+      eventTimer = undefined
+      queuedEvent = undefined
+    }
+    const flushEvent = () => {
+      eventTimer = undefined
+      const event = queuedEvent
+      queuedEvent = undefined
+      if (stopped || !event) return
+      setLastEventAt(event.observedAt)
+      onEventRef.current(event)
+    }
 
     const connect = async () => {
       setStatus(attempt === 0 ? 'connecting' : 'reconnecting')
@@ -72,14 +90,16 @@ export function useKubernetesResourceStream({
         if (stopped) return
         socket = new WebSocket(ticketedURL)
         socket.onopen = () => {
+          if (stopped) return
           attempt = 0
           setStatus('connecting')
         }
         socket.onmessage = (message) => {
+          if (stopped) return
           try {
             const event = JSON.parse(String(message.data)) as KubernetesResourceStreamEvent
-            setLastEventAt(event.observedAt)
             if (event.type === 'status') {
+              setLastEventAt(event.observedAt)
               setStatus(
                 event.cacheStatus === 'live'
                   ? 'live'
@@ -90,6 +110,8 @@ export function useKubernetesResourceStream({
               return
             }
             if (event.type === 'reset' || event.type === 'error' || event.resyncRequired) {
+              clearQueuedEvent()
+              setLastEventAt(event.observedAt)
               setStatus('degraded')
               const resync = onResyncRequiredRef.current
               if (!resync) {
@@ -109,12 +131,17 @@ export function useKubernetesResourceStream({
               }
               return
             }
-            onEventRef.current(event)
+            queuedEvent = event
+            if (eventDebounceMs > 0) {
+              if (!eventTimer) eventTimer = setTimeout(flushEvent, eventDebounceMs)
+            } else flushEvent()
           } catch {
             setStatus('degraded')
           }
         }
-        socket.onerror = () => setStatus('degraded')
+        socket.onerror = () => {
+          if (!stopped) setStatus('degraded')
+        }
         socket.onclose = () => {
           if (stopped) return
           attempt += 1
@@ -129,17 +156,21 @@ export function useKubernetesResourceStream({
       }
     }
 
-    const fallbackTimer = setInterval(() => {
-      if (statusRef.current !== 'live') onFallbackRef.current?.()
-    }, fallbackIntervalMs)
+    const fallbackTimer =
+      typeof fallbackIntervalMs === 'number' && fallbackIntervalMs > 0
+        ? setInterval(() => {
+            if (!document.hidden && statusRef.current !== 'live') onFallbackRef.current?.()
+          }, fallbackIntervalMs)
+        : undefined
     void connect()
     return () => {
       stopped = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
-      clearInterval(fallbackTimer)
+      if (fallbackTimer) clearInterval(fallbackTimer)
+      clearQueuedEvent()
       socket?.close()
     }
-  }, [clusterId, enabled, fallbackIntervalMs, kindsKey, namespace])
+  }, [clusterId, enabled, eventDebounceMs, fallbackIntervalMs, kindsKey, namespace])
 
   return { status, lastEventAt, live: status === 'live' }
 }

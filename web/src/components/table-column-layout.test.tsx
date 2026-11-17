@@ -28,6 +28,35 @@ afterEach(async () => {
 })
 
 describe('opt-in table column preferences', () => {
+  it('keeps callbacks stable for a layout and replaces them when the user key changes', async () => {
+    await render('pods:user-a')
+    const original = layout
+    await render('pods:user-a')
+    expect(layout.setWidth).toBe(original.setWidth)
+    expect(layout.setVisible).toBe(original.setVisible)
+    expect(layout.fit).toBe(original.fit)
+    expect(layout.reset).toBe(original.reset)
+    await act(async () => layout.setWidth('name', 320))
+    expect(layout.setWidth).toBe(original.setWidth)
+    await render('pods:user-b')
+    expect(layout.setWidth).not.toBe(original.setWidth)
+    await act(async () => layout.setWidth('name', 400))
+    expect(JSON.parse(localStorage.getItem('soha-table-layout:pods:user-a')!).widths.name).toBe(320)
+    expect(JSON.parse(localStorage.getItem('soha-table-layout:pods:user-b')!).widths.name).toBe(400)
+  })
+  it('keeps same-value state while persisting the final unchanged drag position', async () => {
+    await render('pods:a')
+    await act(async () => layout.setWidth('name', 360, false))
+    const widths = layout.widths
+    expect(localStorage.getItem('soha-table-layout:pods:a')).toBeNull()
+    await act(async () => layout.setWidth('name', 360))
+    expect(layout.widths).toBe(widths)
+    expect(JSON.parse(localStorage.getItem('soha-table-layout:pods:a')!).widths.name).toBe(360)
+    await act(async () => layout.setVisible(['name']))
+    const visible = layout.visible
+    await act(async () => layout.setVisible(['name']))
+    expect(layout.visible).toBe(visible)
+  })
   it('restores widths and visibility, isolates users, and resets explicit choices', async () => {
     await render('pods:user-a')
     await act(async () => {

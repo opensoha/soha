@@ -16,6 +16,7 @@ describe('auth profile data boundary', () => {
 
   it('preserves profile and personal token query keys', () => {
     expect(authKeys.profile()).toEqual(['auth-profile'])
+    expect(authKeys.profileIdentityProviders()).toEqual(['auth-profile', 'identity-providers'])
     expect(authKeys.browserHandoff('handoff-1')).toEqual(['browser-handoff', 'handoff-1'])
     expect(authKeys.profileGatewayTokens()).toEqual(['ai-gateway', 'personal-access-tokens'])
   })

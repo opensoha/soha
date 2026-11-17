@@ -83,7 +83,7 @@ import {
   type WorkbenchArtifactEntry,
 } from './artifacts'
 import './assistant.css'
-import { AnimatedAssistantIcon } from './components/animated-icon'
+import { AnimatedIcon } from '@/components/animated-icon'
 import { AssistantAvatar } from './components/assistant-avatar'
 import { AssistantChatResult, UserMessageContent } from './components/assistant-chat-result'
 import { AssistantPanel, type AssistantTab } from './components/assistant-panel'
@@ -2248,9 +2248,9 @@ export function AIWorkbenchController() {
                 <Button
                   type="text"
                   aria-label="动态"
-                  className="soha-ai-rail-action soha-ai-icon-trigger"
+                  className="soha-ai-rail-action soha-icon-trigger"
                   aria-pressed={feedView}
-                  icon={<AnimatedAssistantIcon name="tasks" />}
+                  icon={<AnimatedIcon name="tasks" />}
                   onClick={() => {
                     setPanel(null)
                     updateSearchParams({ view: 'feed' })
@@ -2261,9 +2261,9 @@ export function AIWorkbenchController() {
                 <Button
                   type="text"
                   aria-label="成果"
-                  className="soha-ai-rail-action soha-ai-icon-trigger"
+                  className="soha-ai-rail-action soha-icon-trigger"
                   aria-pressed={panel === 'assistant' && assistantTab === 'results'}
-                  icon={<AnimatedAssistantIcon name="results" />}
+                  icon={<AnimatedIcon name="results" />}
                   onClick={() => {
                     setAssistantTab('results')
                     setPanel('assistant')
@@ -2274,9 +2274,9 @@ export function AIWorkbenchController() {
                 <Button
                   type="text"
                   aria-label="即将到来"
-                  className="soha-ai-rail-action soha-ai-icon-trigger"
+                  className="soha-ai-rail-action soha-icon-trigger"
                   aria-pressed={panel === 'assistant' && assistantTab === 'upcoming'}
-                  icon={<AnimatedAssistantIcon name="calendar" />}
+                  icon={<AnimatedIcon name="calendar" />}
                   onClick={() => {
                     setAssistantTab('upcoming')
                     setPanel('assistant')
@@ -2287,9 +2287,9 @@ export function AIWorkbenchController() {
                 <Button
                   type="text"
                   aria-label="助手身份"
-                  className="soha-ai-rail-action soha-ai-icon-trigger"
+                  className="soha-ai-rail-action soha-icon-trigger"
                   aria-pressed={panel === 'assistant' && assistantTab === 'identity'}
-                  icon={<AnimatedAssistantIcon name="identity" />}
+                  icon={<AnimatedIcon name="identity" />}
                   onClick={() => {
                     setAssistantTab('identity')
                     setPanel('assistant')
@@ -2305,16 +2305,16 @@ export function AIWorkbenchController() {
             <Button
               type="text"
               block
-              icon={<AnimatedAssistantIcon name="search" />}
+              icon={<AnimatedIcon name="search" />}
               onClick={() => setSearchOpen(true)}
             >
               搜索对话
             </Button>
             <Button
               aria-label="主要聊天"
-              className={`soha-ai-main-chat soha-ai-icon-trigger${isMainChat ? ' is-active' : ''}`}
+              className={`soha-ai-main-chat soha-icon-trigger${isMainChat ? ' is-active' : ''}`}
               type="text"
-              icon={<AnimatedAssistantIcon name="chat" />}
+              icon={<AnimatedIcon name="chat" />}
               disabled={!mainSession}
               onClick={() => mainSession && navigate(getAIWorkbenchPathForSession(mainSession))}
             >
@@ -2344,10 +2344,10 @@ export function AIWorkbenchController() {
           <Tooltip title="会话设置" placement="right">
             <Button
               type="text"
-              className="soha-ai-rail-action soha-ai-icon-trigger"
+              className="soha-ai-rail-action soha-icon-trigger"
               aria-label="会话设置"
               aria-pressed={panel === 'settings'}
-              icon={<AnimatedAssistantIcon name="settings" />}
+              icon={<AnimatedIcon name="settings" />}
               onClick={() => setPanel('settings')}
             />
           </Tooltip>

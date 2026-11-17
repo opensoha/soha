@@ -5,7 +5,7 @@ import { WorkloadOverviewConfiguration } from '../../workloads/shared/workload-o
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import { Button, Card, Select, Typography, type TableColumnsType } from 'antd'
-import { useState, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import {
   staleGatewayCondition,
   type GatewayCondition,
@@ -115,7 +115,7 @@ export function GatewayConditions({
   )
 }
 
-export function GatewayAddresses({
+export const GatewayAddresses = memo(function GatewayAddresses({
   addresses,
   empty,
 }: {
@@ -135,7 +135,7 @@ export function GatewayAddresses({
       )}
     </div>
   )
-}
+})
 
 export function GatewayListeners({
   listeners,

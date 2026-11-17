@@ -4,13 +4,13 @@ import { MetadataTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { Card, Typography } from 'antd'
-import { type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import type { ReferenceGrantDetail, ReferenceGrantTo } from './types'
 import { grantSummaryParts } from './reference-grant-model'
 import './gateway.css'
 import './reference-grant.css'
 
-export function GrantSummary({
+export const GrantSummary = memo(function GrantSummary({
   labels,
   direction,
 }: {
@@ -55,7 +55,7 @@ export function GrantSummary({
       )}
     </div>
   )
-}
+})
 
 export type GrantTargetRenderer = (target: ReferenceGrantTo) => ReactNode
 

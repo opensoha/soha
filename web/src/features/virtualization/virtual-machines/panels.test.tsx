@@ -120,10 +120,14 @@ describe('VM panel presentation and protected cache', () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
     })
     expect(container.querySelector('[data-testid="metric-chart"]')).not.toBeNull()
-    expect(container.querySelector('.soha-read-feedback')?.textContent).toContain('上次读取结果')
-    expect(document.querySelector('.ant-notification-notice')).toBeNull()
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector('.soha-read-feedback-notification')?.textContent,
+      ).toContain('上次读取结果'),
+    )
+    expect(container.querySelector('.soha-read-feedback')).toBeNull()
 
-    const retry = container.querySelector<HTMLButtonElement>(
+    const retry = document.body.querySelector<HTMLButtonElement>(
       'button[aria-label="重试读取运行指标"]',
     )
     expect(retry).not.toBeNull()

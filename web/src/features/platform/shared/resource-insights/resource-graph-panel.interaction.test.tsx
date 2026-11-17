@@ -17,7 +17,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }))
 vi.mock('@/i18n', () => ({ useI18n: () => ({ localeCode: 'zh_CN' }) }))
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQuery: () => ({ data: state.graph }),
   queryOptions: (options: unknown) => options,
 }))

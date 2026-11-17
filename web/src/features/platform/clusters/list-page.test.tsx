@@ -216,7 +216,10 @@ vi.mock('antd', async (importOriginal) => {
     },
   )
   const AppMock = Object.assign(({ children }: { children?: ReactNode }) => <>{children}</>, {
-    useApp: () => ({ message: { error: vi.fn(), success: vi.fn() } }),
+    useApp: () => ({
+      message: { error: vi.fn(), success: vi.fn() },
+      notification: { open: vi.fn(), destroy: vi.fn() },
+    }),
   })
   return {
     ...actual,

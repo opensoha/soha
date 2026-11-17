@@ -16,9 +16,14 @@ Compute's feedback module only adapts Compute task receipts, not global UI polic
 Use `components/context-feedback` for compact persistent explanations, permission blockers,
 validation/preflight evidence and resource/task states. It preserves the Antd Alert contract;
 features do not import Alert directly. Request pending/success/failure belongs to the floating
-OperationFeedback/MutationFeedback owner, not ContextFeedback. Reads use ReadFeedback with
-collapsed diagnostics; explicit failed refreshes use useReadRefreshFeedback. Do not turn a
-background read, persistent task state or risk explanation into a new notification on every render.
+OperationFeedback/MutationFeedback owner, not ContextFeedback. ReadFeedback merges read errors
+into one floating notice with collapsed diagnostics and immediate retry; it occupies no page or
+composer space. 401/403 keep a compact regional blocker. A live enabled read owner may retry after
+15/30/60 seconds (three attempts); hidden pages pause retries, closing dismisses the ongoing episode,
+and unmount/permission withdrawal stops its schedule. Known non-read requests never auto-replay.
+Explicit refreshes join the same notice; ownerless refresh receipts allow manual retry only.
+Background failures update an existing episode, including while dismissed, without reopening it.
+Persistent task states and risk explanations stay regional and do not create notifications.
 
 Persistent error feedback claims its API presentation through the shared helper so the global
 handler remains a fallback rather than a second notification. Authentication expiry keeps its

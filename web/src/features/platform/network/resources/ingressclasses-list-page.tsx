@@ -1,6 +1,7 @@
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag } from '@/components/status-tag'
-import { TableCellLink } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -35,52 +36,67 @@ export function NetworkIngressClassesPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (name: string, tab?: string) =>
-    `/network/ingressclasses/${encodeURIComponent(name)}?${new URLSearchParams({ clusterId: clusterId || '', ...(tab ? { tab } : {}) })}`
-  const columns: TableColumnsType<IngressClass> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 280,
-      ellipsis: { showTitle: false },
-      render: (value: string) => (
-        <TableCellLink label={value} onClick={() => navigate(path(value))} />
-      ),
-    },
-    {
-      title: 'Controller',
-      dataIndex: 'controller',
-      width: 320,
-      render: (value: string) => (
-        <Typography.Text className="soha-ingressclass-wrap" copyable={Boolean(value)}>
-          {value || '—'}
-        </Typography.Text>
-      ),
-    },
-    {
-      title: zh ? '默认类' : 'Default class',
-      dataIndex: 'isDefault',
-      width: 120,
-      render: (value: boolean) =>
-        value ? <MetadataTag tone="blue" label={zh ? '默认类' : 'Default'} /> : '—',
-    },
-    {
-      title: zh ? '参数引用' : 'Parameters',
-      dataIndex: 'parameters',
-      width: 240,
-      render: (value?: string) => (
-        <span className="soha-ingressclass-wrap">
-          {value || (zh ? '未配置' : 'Not configured')}
-        </span>
-      ),
-    },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+  const path = useCallback(
+    (name: string, tab?: string) =>
+      `/network/ingressclasses/${encodeURIComponent(name)}?${new URLSearchParams({ clusterId: clusterId || '', ...(tab ? { tab } : {}) })}`,
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<IngressClass>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 280,
+        ellipsis: { showTitle: false },
+        render: (value: string) => (
+          <ResourceNameLink name={value} to={path(value)} onNavigate={navigate} />
+        ),
+      },
+      {
+        title: 'Controller',
+        dataIndex: 'controller',
+        width: 320,
+        render: (value: string) => (
+          <Typography.Text className="soha-ingressclass-wrap" copyable={Boolean(value)}>
+            {value || '—'}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: zh ? '默认类' : 'Default class',
+        dataIndex: 'isDefault',
+        width: 120,
+        render: (value: boolean) =>
+          value ? <MetadataTag tone="blue" label={zh ? '默认类' : 'Default'} /> : '—',
+      },
+      {
+        title: zh ? '参数引用' : 'Parameters',
+        dataIndex: 'parameters',
+        width: 240,
+        render: (value?: string) => (
+          <span className="soha-ingressclass-wrap">
+            {value || (zh ? '未配置' : 'Not configured')}
+          </span>
+        ),
+      },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [zh, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: IngressClass) => [record.name, record.controller, record.parameters],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: IngressClass) => navigate(path(record.name, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="IngressClasses" />
@@ -101,7 +117,7 @@ export function NetworkIngressClassesPage() {
           query={query}
           rowKey="name"
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record.name, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           emptyDescription={{
             zh_CN: '当前集群没有 IngressClass',
             en_US: 'No IngressClasses in this cluster',
@@ -114,7 +130,7 @@ export function NetworkIngressClassesPage() {
             zh_CN: '搜索名称 / Controller / 参数',
             en_US: 'Search name / Controller / parameters',
           }}
-          searchValues={(record) => [record.name, record.controller, record.parameters]}
+          searchValues={searchValues}
           refreshControl={
             <WorkloadRefresh
               compact

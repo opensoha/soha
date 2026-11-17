@@ -1,5 +1,5 @@
+import { ResourceNamespaceCell } from '@/features/platform/shared/resource-table-cells'
 import { useState } from 'react'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds } from '@/utils/time'
@@ -35,7 +35,7 @@ export function ConfigurationPodDisruptionBudgetsPage() {
       dataIndex: 'namespace',
       width: 220,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       title: 'minAvailable',

@@ -1,7 +1,13 @@
+import {
+  ResourceNameLink,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementQueryField, ManagementTableToolbar } from '@/components/management-list'
@@ -17,7 +23,6 @@ import {
   normalizeSearchKeyword,
 } from '@/features/platform/workloads-model'
 import {
-  renderWorkloadNameLink,
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
@@ -35,7 +40,6 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Select, type TableColumnsType } from 'antd'
-import { StatusTag } from '@/components/status-tag'
 import {
   formatJobDuration,
   jobCompletionTarget,
@@ -43,7 +47,7 @@ import {
   jobState,
   jobStateLabel,
 } from './job-detail-model'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { jobMutations } from './mutations'
@@ -100,13 +104,15 @@ export function WorkloadsJobsPage() {
     searchKeyword,
   })
 
-  const resourceActions = useKubernetesResourceActions({
-    resourceKey: 'jobs',
-    resourceLabel: 'Job',
-    records: jobs,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) => {
+  const {
+    feedback: removeMutationFeedback,
+    isPending: removeMutationIsPending,
+    mutateAsync: removeMutationMutateAsync,
+    reset: removeMutationReset,
+    variables: removeMutationVariables,
+  } = removeMutation
+  const actions = useCallback(
+    (record: Job) => {
       const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
       return [
         ...(hasAllowedAction(record.allowedActions, 'delete')
@@ -119,87 +125,140 @@ export function WorkloadsJobsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === clusterId &&
-                  removeMutation.variables?.name === record.name &&
-                  removeMutation.variables.scope.namespace === record.namespace,
-                feedback: removeMutation.feedback,
-                prepare: () => removeMutation.reset(),
+                  removeMutationIsPending &&
+                  removeMutationVariables?.scope.clusterId === clusterId &&
+                  removeMutationVariables?.name === record.name &&
+                  removeMutationVariables.scope.namespace === record.namespace,
+                feedback: removeMutationFeedback,
+                prepare: () => removeMutationReset(),
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                run: () => removeMutation.mutateAsync(target),
+                run: () => removeMutationMutateAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      removeMutationFeedback,
+      removeMutationIsPending,
+      removeMutationMutateAsync,
+      removeMutationReset,
+      removeMutationVariables,
+      clusterId,
+      localeCode,
+      platformWriteBlocked,
+      workloadMutationCapability.disabled,
+      workloadMutationCapability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'jobs',
+    resourceLabel: 'Job',
+    records: jobs,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
 
-  const columns: TableColumnsType<Job> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      ellipsis: { showTitle: false },
-      render: (name: string, record: Job) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(buildWorkloadDetailPath('jobs', name, namespace, record.namespace, clusterId)),
-        ),
-    },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
-    {
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      key: 'status',
-      width: 130,
-      sorter: (a, b) => jobState(a).localeCompare(jobState(b)),
-      render: (_, job) => {
-        const state = jobState(job)
-        return (
-          <StatusTag
-            value={
-              state === 'running'
-                ? 'progressing'
-                : state === 'failures-recorded'
-                  ? 'warning'
-                  : state
-            }
-            label={jobStateLabel(state, localeCode === 'zh_CN')}
+  const columns = useMemo<TableColumnsType<Job>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        ellipsis: { showTitle: false },
+        render: (name: string, record: Job) => (
+          <ResourceNameLink
+            name={name}
+            to={buildWorkloadDetailPath('jobs', name, namespace, record.namespace, clusterId)}
+            onNavigate={navigate}
           />
-        )
+        ),
       },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '成功 / 目标' : 'Succeeded / target',
-      dataIndex: 'completions',
-      width: 120,
-      render: (_, job) => `${job.succeeded} / ${jobCompletionTarget(job) ?? '—'}`,
-    },
-    { title: localeCode === 'zh_CN' ? '活跃' : 'Active', dataIndex: 'active', width: 88 },
-    { title: localeCode === 'zh_CN' ? '失败 Pod' : 'Failed Pods', dataIndex: 'failed', width: 88 },
-    {
-      title: localeCode === 'zh_CN' ? '模式' : 'Mode',
-      dataIndex: 'completionMode',
-      width: 140,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '执行耗时' : 'Elapsed',
-      key: 'duration',
-      width: 112,
-      sorter: (a, b) => (jobDuration(a) ?? -1) - (jobDuration(b) ?? -1),
-      render: (_, job) => {
-        const seconds = jobDuration(job)
-        return seconds === undefined ? '—' : formatJobDuration(seconds)
+      { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
+      {
+        title: localeCode === 'zh_CN' ? '状态' : 'Status',
+        key: 'status',
+        width: 130,
+        sorter: (a, b) => jobState(a).localeCompare(jobState(b)),
+        render: (_, job) => {
+          const state = jobState(job)
+          return (
+            <ResourceStatusCell
+              value={
+                state === 'running'
+                  ? 'progressing'
+                  : state === 'failures-recorded'
+                    ? 'warning'
+                    : state
+              }
+              label={jobStateLabel(state, localeCode === 'zh_CN')}
+            />
+          )
+        },
       },
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '创建时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    resourceActions.column,
-  ]
+      {
+        title: localeCode === 'zh_CN' ? '成功 / 目标' : 'Succeeded / target',
+        dataIndex: 'completions',
+        width: 120,
+        render: (_, job) => `${job.succeeded} / ${jobCompletionTarget(job) ?? '—'}`,
+      },
+      { title: localeCode === 'zh_CN' ? '活跃' : 'Active', dataIndex: 'active', width: 88 },
+      {
+        title: localeCode === 'zh_CN' ? '失败 Pod' : 'Failed Pods',
+        dataIndex: 'failed',
+        width: 88,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '模式' : 'Mode',
+        dataIndex: 'completionMode',
+        width: 140,
+        render: (value: string) => value || '-',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '执行耗时' : 'Elapsed',
+        key: 'duration',
+        width: 112,
+        sorter: (a, b) => (jobDuration(a) ?? -1) - (jobDuration(b) ?? -1),
+        render: (_, job) => {
+          const seconds = jobDuration(job)
+          return seconds === undefined ? '—' : formatJobDuration(seconds)
+        },
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '创建时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      resourceActions.column,
+    ],
+    [localeCode, t, namespace, clusterId, navigate, resourceActions.column],
+  )
+
+  const rowProps = useCallback(
+    (record: Job) => workloadRowAIContext('jobs', record, clusterId),
+    [clusterId],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredJobs.length}
+        localeCode={localeCode}
+        resourceLabel="Jobs"
+        totalCount={jobs.length}
+      />
+    ),
+    [clusterId, filteredJobs.length, localeCode, jobs.length],
+  )
+
+  const visibleColumns = useMemo(
+    () =>
+      resourceActions.hasActions ? columns : columns.filter((column) => column.key !== 'actions'),
+    [columns, resourceActions.hasActions],
+  )
 
   return (
     <div className="soha-page">
@@ -273,25 +332,13 @@ export function WorkloadsJobsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={
-          resourceActions.hasActions
-            ? columns
-            : columns.filter((column) => column.key !== 'actions')
-        }
+        columns={visibleColumns}
         dataSource={filteredJobs}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: Job) => workloadRowAIContext('jobs', record, clusterId)}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={jobsQuery.isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredJobs.length}
-            localeCode={localeCode}
-            resourceLabel="Jobs"
-            totalCount={jobs.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
       />

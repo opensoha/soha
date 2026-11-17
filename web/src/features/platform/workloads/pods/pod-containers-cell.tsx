@@ -1,9 +1,10 @@
 import { Popover } from 'antd'
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef } from 'react'
+import { useDeferredOverlay } from '@/components/use-deferred-overlay'
 import type { PodContainerStatus } from './types'
 import { containerLabel, containerTone } from './container-status'
 
-export function PodContainersCell({
+export const PodContainersCell = memo(function PodContainersCell({
   statuses,
   readyContainers,
   zh,
@@ -12,11 +13,23 @@ export function PodContainersCell({
   readyContainers: string
   zh: boolean
 }) {
-  const [open, setOpen] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const {
+    triggerRef: buttonRef,
+    activated,
+    open,
+    setOpen,
+    activate,
+    activateOnHover,
+    cancelHover,
+  } = useDeferredOverlay<HTMLButtonElement>()
   const detailRef = useRef<HTMLDivElement>(null)
   const focusFrame = useRef(0)
-  useEffect(() => () => cancelAnimationFrame(focusFrame.current), [])
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(focusFrame.current)
+    },
+    [],
+  )
   const closeDetails = () => {
     cancelAnimationFrame(focusFrame.current)
     setOpen(false)
@@ -51,6 +64,52 @@ export function PodContainersCell({
       )}
     </div>
   )
+  const trigger = (
+    <button
+      ref={buttonRef}
+      type="button"
+      className="soha-pod-container-cell"
+      aria-label={`${label}：${summary}；${statuses?.length ? statuses.map((status) => containerLabel(status, zh)).join('；') : zh ? '逐容器状态未知' : 'Per-container states unknown'}`}
+      aria-expanded={open}
+      onMouseEnter={activated ? undefined : activateOnHover}
+      onMouseLeave={activated ? undefined : cancelHover}
+      onClick={activated ? undefined : activate}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          closeDetails()
+          return
+        }
+        if (!['Enter', ' '].includes(event.key)) return
+        event.preventDefault()
+        activate()
+        cancelAnimationFrame(focusFrame.current)
+        focusFrame.current = requestAnimationFrame(() => {
+          if (document.activeElement === buttonRef.current) detailRef.current?.focus()
+        })
+      }}
+    >
+      {statuses?.length ? (
+        statuses
+          .slice(0, 6)
+          .map((status) => (
+            <span
+              key={status.name}
+              className={`soha-pod-container-square is-${containerTone(status)}`}
+              aria-hidden
+            />
+          ))
+      ) : (
+        <span className="soha-pod-container-square is-unknown" aria-hidden />
+      )}
+      {(statuses?.length ?? 0) > 6 ? (
+        <span className="soha-pod-container-overflow" aria-hidden>
+          …
+        </span>
+      ) : null}
+    </button>
+  )
+  if (!activated) return trigger
   return (
     <Popover
       open={open}
@@ -61,46 +120,7 @@ export function PodContainersCell({
       trigger={['hover', 'click']}
       content={details}
     >
-      <button
-        ref={buttonRef}
-        type="button"
-        className="soha-pod-container-cell"
-        aria-label={`${label}：${summary}；${statuses?.length ? statuses.map((status) => containerLabel(status, zh)).join('；') : zh ? '逐容器状态未知' : 'Per-container states unknown'}`}
-        aria-expanded={open}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            closeDetails()
-            return
-          }
-          if (!['Enter', ' '].includes(event.key)) return
-          event.preventDefault()
-          setOpen(true)
-          cancelAnimationFrame(focusFrame.current)
-          focusFrame.current = requestAnimationFrame(() => {
-            if (document.activeElement === buttonRef.current) detailRef.current?.focus()
-          })
-        }}
-      >
-        {statuses?.length ? (
-          statuses
-            .slice(0, 6)
-            .map((status) => (
-              <span
-                key={status.name}
-                className={`soha-pod-container-square is-${containerTone(status)}`}
-                aria-hidden
-              />
-            ))
-        ) : (
-          <span className="soha-pod-container-square is-unknown" aria-hidden />
-        )}
-        {(statuses?.length ?? 0) > 6 ? (
-          <span className="soha-pod-container-overflow" aria-hidden>
-            …
-          </span>
-        ) : null}
-      </button>
+      {trigger}
     </Popover>
   )
-}
+})

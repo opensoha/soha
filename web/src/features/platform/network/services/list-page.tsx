@@ -1,5 +1,5 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement } from '@/features/copilot'
 import { useI18n } from '@/i18n'
@@ -9,7 +9,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { useNavigate } from 'react-router-dom'
 import { NetworkResourceListPage } from '../shared/list-page'
@@ -42,73 +42,113 @@ export function NetworkServicesPage() {
   useEffect(() => {
     if (!editAllowed) setEditing(undefined)
   }, [editAllowed])
-  const columns: TableColumnsType<Service> = [
-    {
-      title: t('common.name', '名称'),
-      dataIndex: 'name',
-      width: 300,
-      fixed: 'left',
-      render: (value: string, record) => (
-        <TableCellLink
-          label={value}
-          onClick={() =>
-            navigate(
-              buildNetworkRoutePath('services', value, record.namespace, {
-                clusterId: clusterId || undefined,
-              }),
-            )
-          }
-        />
-      ),
-    },
-    { title: t('common.namespace', '命名空间'), dataIndex: 'namespace', width: 180 },
-    {
-      title: t('common.type', '类型'),
-      dataIndex: 'type',
-      width: 140,
-      render: (value: string) => <ServiceTypeTag type={value} />,
-    },
-    {
-      title: t('common.clusterIp', '集群 IP'),
-      dataIndex: 'clusterIp',
-      width: 160,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: t('common.ports', '端口'),
-      key: 'ports',
-      width: 290,
-      render: (_, record) => (
-        <ServicePortDisplay portMappings={record.portMappings} ports={record.ports} />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '选择器' : 'Selector',
-      key: 'selector',
-      width: 260,
-      render: (_, record) => (
-        <ServiceSelectorDisplay
-          compact
-          selector={record.selector}
-          backendLabel={
-            localeCode === 'zh_CN'
-              ? `查看 ${record.name} 的后端`
-              : `View backends for ${record.name}`
-          }
-          backendPath={buildNetworkRoutePath('services', record.name, record.namespace, {
-            tab: 'backends',
-            clusterId: clusterId || undefined,
-          })}
-        />
-      ),
-    },
-    {
-      title: t('common.age', '时长'),
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+  const columns = useMemo<TableColumnsType<Service>>(
+    () => [
+      {
+        title: t('common.name', '名称'),
+        dataIndex: 'name',
+        width: 300,
+        fixed: 'left',
+        render: (value: string, record) => (
+          <ResourceNameLink
+            name={value}
+            to={buildNetworkRoutePath('services', value, record.namespace, {
+              clusterId: clusterId || undefined,
+            })}
+            onNavigate={navigate}
+          />
+        ),
+      },
+      { title: t('common.namespace', '命名空间'), dataIndex: 'namespace', width: 180 },
+      {
+        title: t('common.type', '类型'),
+        dataIndex: 'type',
+        width: 140,
+        render: (value: string) => <ServiceTypeTag type={value} />,
+      },
+      {
+        title: t('common.clusterIp', '集群 IP'),
+        dataIndex: 'clusterIp',
+        width: 160,
+        render: (value: string) => value || '-',
+      },
+      {
+        title: t('common.ports', '端口'),
+        key: 'ports',
+        width: 290,
+        render: (_, record) => (
+          <ServicePortDisplay portMappings={record.portMappings} ports={record.ports} />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '选择器' : 'Selector',
+        key: 'selector',
+        width: 260,
+        render: (_, record) => (
+          <ServiceSelectorDisplay
+            compact
+            selector={record.selector}
+            backendLabel={
+              localeCode === 'zh_CN'
+                ? `查看 ${record.name} 的后端`
+                : `View backends for ${record.name}`
+            }
+            backendPath={buildNetworkRoutePath('services', record.name, record.namespace, {
+              tab: 'backends',
+              clusterId: clusterId || undefined,
+            })}
+          />
+        ),
+      },
+      {
+        title: t('common.age', '时长'),
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [t, localeCode, navigate, clusterId],
+  )
+  const searchValues = useCallback(
+    (record: Service) => [
+      record.name,
+      record.namespace,
+      record.type,
+      record.clusterIp,
+      ...record.ports,
+      ...Object.entries(record.selector || {}).map(([key, value]) => `${key}=${value}`),
+      ...(record.portMappings?.flatMap((mapping) => [
+        mapping.name ?? '',
+        mapping.protocol,
+        mapping.targetPort,
+        String(mapping.port),
+        mapping.nodePort ? String(mapping.nodePort) : '',
+      ]) ?? []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: Service) => clusterId && setEditing({ record, clusterId, namespace }),
+    [clusterId, namespace],
+  )
+  const rowProps = useCallback(
+    (record: Service) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        sourceRoute: buildNetworkRoutePath('services', record.name, record.namespace, {
+          clusterId: clusterId || undefined,
+        }),
+        sourceTitle: `Service ${record.name}`,
+        entityKind: 'kubernetes.service',
+        entityName: record.name,
+        clusterId: clusterId ?? undefined,
+        namespace: record.namespace,
+        service: record.name,
+        timeRangeMinutes: 60,
+      }),
+    }),
+    [clusterId],
+  )
 
   return (
     <>
@@ -138,26 +178,8 @@ export function NetworkServicesPage() {
         }}
         kind="services"
         noMatchDescription={{ zh_CN: '没有匹配的 Service', en_US: 'No matching services' }}
-        onEdit={
-          canUpdate
-            ? (record) => clusterId && setEditing({ record, clusterId, namespace })
-            : undefined
-        }
-        onRow={(record) => ({
-          'data-ai-context': encodeAIContextForElement({
-            sourceWorkbench: 'platform',
-            sourceRoute: buildNetworkRoutePath('services', record.name, record.namespace, {
-              clusterId: clusterId || undefined,
-            }),
-            sourceTitle: `Service ${record.name}`,
-            entityKind: 'kubernetes.service',
-            entityName: record.name,
-            clusterId: clusterId ?? undefined,
-            namespace: record.namespace,
-            service: record.name,
-            timeRangeMinutes: 60,
-          }),
-        })}
+        onEdit={canUpdate ? editRecord : undefined}
+        onRow={rowProps}
         query={query}
         refreshControl={
           <WorkloadRefresh
@@ -173,21 +195,7 @@ export function NetworkServicesPage() {
           zh_CN: '搜索 Service / namespace / type / port / selector',
           en_US: 'Search service / namespace / type / port / selector',
         }}
-        searchValues={(record) => [
-          record.name,
-          record.namespace,
-          record.type,
-          record.clusterIp,
-          ...record.ports,
-          ...Object.entries(record.selector || {}).map(([key, value]) => `${key}=${value}`),
-          ...(record.portMappings?.flatMap((mapping) => [
-            mapping.name ?? '',
-            mapping.protocol,
-            mapping.targetPort,
-            String(mapping.port),
-            mapping.nodePort ? String(mapping.nodePort) : '',
-          ]) ?? []),
-        ]}
+        searchValues={searchValues}
       />
       {editAllowed &&
         editing &&

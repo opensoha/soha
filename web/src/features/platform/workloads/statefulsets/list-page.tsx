@@ -1,7 +1,10 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementTableToolbar } from '@/components/management-list'
@@ -18,7 +21,6 @@ import {
   normalizeSearchKeyword,
 } from '@/features/platform/workloads-model'
 import {
-  renderWorkloadNameLink,
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
@@ -38,7 +40,7 @@ import { DeleteOutlined, EditOutlined, FormOutlined, ReloadOutlined } from '@ant
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { InputNumber, Modal, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { statefulSetMutations } from './mutations'
@@ -95,10 +97,6 @@ export function WorkloadsStatefulSetsPage() {
   const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
 
   const statefulSets = visibleStatefulSetsQueryData ?? []
-  const targetFor = (name: string, targetNamespace: string): StatefulSetTarget => ({
-    name,
-    scope: toScopeKey(clusterId, targetNamespace),
-  })
   const filteredStatefulSets = useMemo(
     () =>
       statefulSets.filter((item) =>
@@ -123,14 +121,21 @@ export function WorkloadsStatefulSetsPage() {
     setEditTarget(null)
     setScaleTarget(null)
   }, [clusterId, namespace])
-  const resourceActions = useKubernetesResourceActions({
-    resourceKey: 'statefulsets',
-    resourceLabel: 'StatefulSet',
-    records: statefulSets,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) => {
-      const target = targetFor(record.name, record.namespace)
+  const {
+    feedback: deleteMutationFeedback,
+    mutateAsync: deleteMutationMutateAsync,
+    reset: deleteMutationReset,
+    isPending: deleteMutationIsPending,
+    variables: deleteMutationVariables,
+  } = deleteMutation
+  const {
+    mutateAsync: restartMutationMutateAsync,
+    isPending: restartMutationIsPending,
+    variables: restartMutationVariables,
+  } = restartMutation
+  const actions = useCallback(
+    (record: StatefulSet) => {
+      const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
       return [
         ...(hasAllowedAction(record.allowedActions, 'update')
           ? [
@@ -153,12 +158,12 @@ export function WorkloadsStatefulSetsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading: isTargetMutationPending(
-                  restartMutation,
+                  { isPending: restartMutationIsPending, variables: restartMutationVariables },
                   record.name,
                   record.namespace,
                   clusterId,
                 ),
-                run: () => restartMutation.mutateAsync(target),
+                run: () => restartMutationMutateAsync(target),
               },
             ]
           : []),
@@ -184,63 +189,121 @@ export function WorkloadsStatefulSetsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading: isTargetMutationPending(
-                  deleteMutation,
+                  { isPending: deleteMutationIsPending, variables: deleteMutationVariables },
                   record.name,
                   record.namespace,
                   clusterId,
                 ),
-                prepare: () => deleteMutation.reset(),
-                feedback: deleteMutation.feedback,
+                prepare: () => deleteMutationReset(),
+                feedback: deleteMutationFeedback,
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                run: () => deleteMutation.mutateAsync(target),
+                run: () => deleteMutationMutateAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      deleteMutationFeedback,
+      deleteMutationMutateAsync,
+      deleteMutationReset,
+      restartMutationMutateAsync,
+      restartMutationIsPending,
+      restartMutationVariables,
+      deleteMutationIsPending,
+      deleteMutationVariables,
+      clusterId,
+      localeCode,
+      platformWriteBlocked,
+      workloadMutationCapability.disabled,
+      workloadMutationCapability.reason,
+      yamlApplyCapability.disabled,
+      yamlApplyCapability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'statefulsets',
+    resourceLabel: 'StatefulSet',
+    records: statefulSets,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
 
-  const columns: TableColumnsType<StatefulSet> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      ellipsis: { showTitle: false },
-      render: (name: string, record) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(
-            buildWorkloadDetailPath('statefulsets', name, namespace, record.namespace, clusterId),
-          ),
+  const columns = useMemo<TableColumnsType<StatefulSet>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        ellipsis: { showTitle: false },
+        render: (name: string, record) => (
+          <ResourceNameLink
+            name={name}
+            to={buildWorkloadDetailPath(
+              'statefulsets',
+              name,
+              namespace,
+              record.namespace,
+              clusterId,
+            )}
+            onNavigate={navigate}
+          />
         ),
-    },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
-    {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
-      dataIndex: 'readyReplicas',
-      width: 96,
-      render: (_value: number, record) => `${record.readyReplicas}/${record.desiredReplicas}`,
-    },
-    {
-      title: 'Service',
-      dataIndex: 'serviceName',
-      width: 180,
-      ellipsis: { showTitle: false },
-      render: (value: string) => <TableCellText value={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '当前' : 'Current',
-      dataIndex: 'currentReplicas',
-      width: 96,
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    resourceActions.column,
-  ]
+      },
+      { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
+      {
+        title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
+        dataIndex: 'readyReplicas',
+        width: 96,
+        render: (_value: number, record) => `${record.readyReplicas}/${record.desiredReplicas}`,
+      },
+      {
+        title: 'Service',
+        dataIndex: 'serviceName',
+        width: 180,
+        ellipsis: { showTitle: false },
+        render: (value: string) => <TableCellText value={value} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '当前' : 'Current',
+        dataIndex: 'currentReplicas',
+        width: 96,
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      resourceActions.column,
+    ],
+    [localeCode, t, namespace, clusterId, navigate, resourceActions.column],
+  )
+
+  const rowProps = useCallback(
+    (record: StatefulSet) => workloadRowAIContext('statefulsets', record, clusterId),
+    [clusterId],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredStatefulSets.length}
+        localeCode={localeCode}
+        resourceLabel="StatefulSets"
+        totalCount={statefulSets.length}
+      />
+    ),
+    [clusterId, filteredStatefulSets.length, localeCode, statefulSets.length],
+  )
+
+  const visibleColumns = useMemo(
+    () =>
+      resourceActions.hasActions ? columns : columns.filter((column) => column.key !== 'actions'),
+    [columns, resourceActions.hasActions],
+  )
 
   return (
     <div className="soha-page">
@@ -294,25 +357,13 @@ export function WorkloadsStatefulSetsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={
-          resourceActions.hasActions
-            ? columns
-            : columns.filter((column) => column.key !== 'actions')
-        }
+        columns={visibleColumns}
         dataSource={filteredStatefulSets}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: StatefulSet) => workloadRowAIContext('statefulsets', record, clusterId)}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={statefulSetsQuery.isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredStatefulSets.length}
-            localeCode={localeCode}
-            resourceLabel="StatefulSets"
-            totalCount={statefulSets.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
       />

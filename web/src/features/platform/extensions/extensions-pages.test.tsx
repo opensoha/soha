@@ -13,9 +13,15 @@ import { CRDPage } from './crds/list-page'
 import { HelmChartsPage } from './helm/charts/page'
 import { HelmReleaseDetailPage } from './helm/releases/detail-page'
 import { HelmReleasesPage } from './helm/releases/list-page'
+import { helmQueries } from './helm/queries'
 
 const testState = vi.hoisted(() => ({
   editorLoaded: false,
+  client: null as QueryClient | null,
+  tableProps: null as {
+    columns: Array<Record<string, any>>
+    dataSource: Array<Record<string, any>>
+  } | null,
   permissionKeys: ['platform.helm.view', 'platform.helm.values.view'],
   normalizePath: (path: string) => {
     const [pathname, query] = path.split('?')
@@ -141,39 +147,42 @@ vi.mock('@/components/admin-table', () => ({
     paginationSummary?: ReactNode | ((total: number, range: [number, number]) => ReactNode)
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
-  }) => (
-    <div data-testid="admin-table">
-      {headerExtra}
-      {toolbar}
-      {toolbarExtra}
-      <div data-testid="pagination-summary">
-        {typeof paginationSummary === 'function'
-          ? paginationSummary(dataSource.length, [1, dataSource.length])
-          : paginationSummary}
-      </div>
-      <div data-testid="row-count">{dataSource.length}</div>
-      {dataSource.length ? null : empty}
-      {dataSource.map((record, rowIndex) => (
-        <div
-          key={`${record.group || record.name}-${rowIndex}`}
-          data-testid={`row-${rowIndex}`}
-          onClick={onRow?.(record, rowIndex)?.onClick}
-        >
-          {columns.map((column, columnIndex) => {
-            const value =
-              typeof column.dataIndex === 'string' ? record[column.dataIndex] : undefined
-            return (
-              <div key={`${rowIndex}-${columnIndex}`}>
-                {typeof column.render === 'function'
-                  ? column.render(value, record, rowIndex)
-                  : value}
-              </div>
-            )
-          })}
+  }) => {
+    testState.tableProps = { columns, dataSource }
+    return (
+      <div data-testid="admin-table">
+        {headerExtra}
+        {toolbar}
+        {toolbarExtra}
+        <div data-testid="pagination-summary">
+          {typeof paginationSummary === 'function'
+            ? paginationSummary(dataSource.length, [1, dataSource.length])
+            : paginationSummary}
         </div>
-      ))}
-    </div>
-  ),
+        <div data-testid="row-count">{dataSource.length}</div>
+        {dataSource.length ? null : empty}
+        {dataSource.map((record, rowIndex) => (
+          <div
+            key={`${record.group || record.name}-${rowIndex}`}
+            data-testid={`row-${rowIndex}`}
+            onClick={onRow?.(record, rowIndex)?.onClick}
+          >
+            {columns.map((column, columnIndex) => {
+              const value =
+                typeof column.dataIndex === 'string' ? record[column.dataIndex] : undefined
+              return (
+                <div key={`${rowIndex}-${columnIndex}`}>
+                  {typeof column.render === 'function'
+                    ? column.render(value, record, rowIndex)
+                    : value}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    )
+  },
 }))
 
 let containers: HTMLDivElement[] = []
@@ -238,6 +247,7 @@ async function renderPage(node: ReactNode, route: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  testState.client = queryClient
   await act(async () => {
     root.render(
       <AntdApp>
@@ -294,6 +304,69 @@ describe('extensions capability pages', () => {
     containers = []
     document.querySelectorAll('.ant-drawer-root, .ant-modal-root').forEach((node) => node.remove())
     vi.clearAllMocks()
+  })
+
+  it('keeps Helm list columns stable on refresh while data, permissions and scoped navigation update', async () => {
+    const rows = [
+      {
+        name: 'demo',
+        namespace: 'team-a',
+        chart: 'sample',
+        revision: '1',
+        status: 'deployed',
+        ageSeconds: 10,
+      },
+    ]
+    setResponses({ '/clusters/cluster-a/helm/releases?namespace=team-a': rows })
+    function LocationProbe() {
+      const location = useLocation()
+      return (
+        <output data-testid="list-location">
+          {location.pathname}
+          {location.search}
+        </output>
+      )
+    }
+    const container = await renderPage(
+      <>
+        <HelmReleasesPage />
+        <LocationProbe />
+      </>,
+      '/helm/releases',
+    )
+    await vi.waitFor(() => expect(testState.tableProps?.dataSource).toHaveLength(1))
+    const columns = testState.tableProps!.columns
+    await act(async () => {
+      testState.client!.setQueryData(helmQueries.releases('cluster-a', 'team-a').queryKey, [
+        { ...rows[0], revision: '2', ageSeconds: 25 },
+      ])
+      await flush()
+    })
+    await vi.waitFor(() => expect(testState.tableProps?.dataSource[0].revision).toBe('2'))
+    expect(testState.tableProps!.columns).toBe(columns)
+    expect(container.textContent).toContain('2')
+    testState.permissionKeys = ['platform.helm.view']
+    await act(async () => {
+      testState.client!.setQueryData(helmQueries.releases('cluster-a', 'team-a').queryKey, [
+        { ...rows[0], revision: '3', status: 'failed' },
+      ])
+      await flush()
+    })
+    await vi.waitFor(() =>
+      expect(testState.tableProps!.columns.some((column) => column.key === 'actions')).toBe(false),
+    )
+    expect(testState.tableProps!.dataSource[0].status).toBe('failed')
+    const name = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'demo',
+    )!
+    await act(async () => name.click())
+    const target = new URL(
+      container.querySelector('[data-testid="list-location"]')!.textContent!,
+      'http://test',
+    )
+    expect(target.pathname).toBe('/helm/releases/demo')
+    expect(target.searchParams.get('namespace')).toBe('team-a')
+    expect(target.searchParams.get('clusterId')).toBe('cluster-a')
   })
 
   it('exports five independent route pages and groups the CRD catalog', async () => {
@@ -391,7 +464,9 @@ describe('extensions capability pages', () => {
       confirmButton().click()
       await flush()
     })
-    expect(document.body.textContent).toContain('Kubernetes denied deletion')
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Kubernetes denied deletion'),
+    )
     expect(input.value).toBe(definition.name)
     expect(apiDeleteMock).toHaveBeenCalledWith(
       '/clusters/cluster-a/extensions/crds/widgets.example.io?expectedUid=observed-uid',

@@ -34,11 +34,11 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
-	{ID: "cluster-resources-namespaces", Path: "/cluster-resources/namespaces", LabelZH: "命名空间", LabelEN: "Namespaces", IconKey: "server", SortOrder: 21, Enabled: true},
+	{ID: "cluster-resources-namespaces", Path: "/cluster-resources/namespaces", LabelZH: "命名空间", LabelEN: "Namespaces", IconKey: "blocks", SortOrder: 21, Enabled: true},
 	{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", SortOrder: 90, Enabled: true},
-	{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "puzzle", SortOrder: 80, Enabled: true},
-	{ID: "helm-releases", ParentID: "helm", Path: "/helm/releases", LabelZH: "Releases", LabelEN: "Releases", IconKey: "puzzle", SortOrder: 20, Enabled: true},
-	{ID: "helm-charts", ParentID: "helm", Path: "/helm/charts", LabelZH: "Charts", LabelEN: "Charts", IconKey: "puzzle", SortOrder: 21, Enabled: true},
+	{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "boxes", SortOrder: 80, Enabled: true},
+	{ID: "helm-releases", ParentID: "helm", Path: "/helm/releases", LabelZH: "Releases", LabelEN: "Releases", IconKey: "boxes", SortOrder: 20, Enabled: true},
+	{ID: "helm-charts", ParentID: "helm", Path: "/helm/charts", LabelZH: "Charts", LabelEN: "Charts", IconKey: "boxes", SortOrder: 21, Enabled: true},
 	{ID: "platform-access-control", Path: "/platform-access-control", LabelZH: "RBAC", LabelEN: "RBAC", IconKey: "shield", SortOrder: 70, Enabled: true},
 	{ID: "platform-access-control-serviceaccounts", ParentID: "platform-access-control", Path: "/platform-access-control/serviceaccounts", LabelZH: "ServiceAccounts", LabelEN: "ServiceAccounts", IconKey: "shield", SortOrder: 23, Enabled: true},
 	{ID: "platform-access-control-clusterroles", ParentID: "platform-access-control", Path: "/platform-access-control/clusterroles", LabelZH: "ClusterRoles", LabelEN: "ClusterRoles", IconKey: "shield", SortOrder: 24, Enabled: true},
@@ -83,10 +83,10 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "network-endpointslices", ParentID: "network", Path: "/network/endpointslices", LabelZH: "EndpointSlices", LabelEN: "EndpointSlices", IconKey: "network", SortOrder: 53, Enabled: true},
 	{ID: "network-networkpolicies", ParentID: "network", Path: "/network/networkpolicies", LabelZH: "NetworkPolicies", LabelEN: "NetworkPolicies", IconKey: "network", SortOrder: 55, Enabled: true},
 	{ID: "network-port-forward", ParentID: "network", Path: "/network/port-forward", LabelZH: "端口转发", LabelEN: "Port Forward", IconKey: "network", SortOrder: 56, Enabled: true},
-	{ID: "storage", Path: "/storage", LabelZH: "存储", LabelEN: "Storage", IconKey: "waves", SortOrder: 60, Enabled: true},
-	{ID: "storage-pvc", ParentID: "storage", Path: "/storage/persistentvolumeclaims", LabelZH: "PVC", LabelEN: "PVC", IconKey: "waves", SortOrder: 51, Enabled: true},
-	{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", SortOrder: 52, Enabled: true},
-	{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", SortOrder: 53, Enabled: true},
+	{ID: "storage", Path: "/storage", LabelZH: "存储", LabelEN: "Storage", IconKey: "storage", SortOrder: 60, Enabled: true},
+	{ID: "storage-pvc", ParentID: "storage", Path: "/storage/persistentvolumeclaims", LabelZH: "PVC", LabelEN: "PVC", IconKey: "storage", SortOrder: 51, Enabled: true},
+	{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "storage", SortOrder: 52, Enabled: true},
+	{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "storage", SortOrder: 53, Enabled: true},
 	{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", SortOrder: 99, Enabled: true},
 	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 100, Enabled: true},
 	{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "可观测性工作台", LabelEN: "Observability Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
@@ -546,6 +546,23 @@ func syncNetworkClassMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time
 }
 
 func syncPlatformMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
+	for _, item := range []struct{ id, previous, current string }{
+		{"cluster-resources-namespaces", "server", "blocks"},
+		{"helm", "puzzle", "boxes"},
+		{"helm-releases", "puzzle", "boxes"},
+		{"helm-charts", "puzzle", "boxes"},
+		{"storage", "waves", "storage"},
+		{"storage-pvc", "waves", "storage"},
+		{"storage-pv", "waves", "storage"},
+		{"storage-classes", "waves", "storage"},
+	} {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus SET icon_key = ?, updated_at = ?
+			WHERE id = ? AND icon_key = ?
+		`, item.current, now, item.id, item.previous).Error; err != nil {
+			return err
+		}
+	}
 	return db.WithContext(ctx).Exec(`
 		UPDATE menus
 		SET sort_order = ?, updated_at = ?

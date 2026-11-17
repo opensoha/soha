@@ -3,14 +3,16 @@
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
+import { App } from 'antd'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { AdminTable } from './admin-table'
+import { AdminTable, type AdminTableProps } from './admin-table'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { ApiError } from '@/services/api-error'
 
 const captured = vi.hoisted(() => ({
   tableProps: null as any,
-  warning: vi.fn(),
+  tableRenders: 0,
 }))
 const i18n = vi.hoisted(() => ({
   localeCode: 'zh_CN' as 'zh_CN' | 'en_US',
@@ -24,8 +26,8 @@ vi.mock('@/i18n', () => ({
   }),
 }))
 
-vi.mock('antd', () => ({
-  App: { useApp: () => ({ notification: { warning: captured.warning } }) },
+vi.mock('antd', async (original) => ({
+  ...(await original<typeof import('antd')>()),
   Alert: ({
     description,
     message,
@@ -66,6 +68,7 @@ vi.mock('antd', () => ({
   Space: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Table: (props: any) => {
     captured.tableProps = props
+    captured.tableRenders++
     return (
       <div data-testid="table-proxy">
         <table>
@@ -104,13 +107,199 @@ async function renderNode(node: ReactNode) {
   roots.push(root)
 
   await act(async () => {
-    root.render(<>{node}</>)
+    root.render(
+      <MemoryRouter>
+        <App>{node}</App>
+      </MemoryRouter>,
+    )
   })
 
   return container
 }
 
 describe('AdminTable', () => {
+  it.each([false, true])(
+    'keeps explicit column configuration stable while refreshed rows update with localSorting=%s',
+    async (localSorting) => {
+      const sorter = (a: any, b: any) => a.ageSeconds - b.ageSeconds
+      const columns = [
+        { title: 'Identity', children: [{ title: 'Name', dataIndex: 'name', sorter: false }] },
+        { title: 'Age', dataIndex: 'ageSeconds', sorter, render: (age: number) => age },
+      ]
+      const props = { columns, localSorting, rowKey: 'id', pagination: false as const }
+      const container = await renderNode(
+        <AdminTable {...props} dataSource={[{ id: 'one', name: 'One', ageSeconds: 10 }]} />,
+      )
+      const previousColumns = captured.tableProps.columns
+      const nextRows = [{ id: 'one', name: 'One', ageSeconds: 25 }]
+      await act(async () =>
+        roots[0].render(
+          <MemoryRouter>
+            <App>
+              <AdminTable {...props} dataSource={nextRows} />
+            </App>
+          </MemoryRouter>,
+        ),
+      )
+      expect(captured.tableProps.dataSource).toBe(nextRows)
+      expect(container.textContent).toContain('25')
+      expect(captured.tableProps.columns).toBe(previousColumns)
+      expect(captured.tableProps.columns[0].children[0].sorter).toBe(false)
+      expect(captured.tableProps.columns[1].sorter).toBe(sorter)
+      expect(sorter(nextRows[0], { ageSeconds: 40 })).toBeLessThan(0)
+    },
+  )
+
+  it('resamples inferred sorters when refreshed data changes the first usable value', async () => {
+    const props = {
+      columns: [{ title: 'Value', dataIndex: 'value' }],
+      localSorting: true,
+      rowKey: 'id',
+    }
+    await renderNode(<AdminTable {...props} dataSource={[]} />)
+    expect(captured.tableProps.columns[0].sorter).toBeUndefined()
+    const update = async (value: unknown) =>
+      act(async () =>
+        roots[0].render(
+          <MemoryRouter>
+            <App>
+              <AdminTable {...props} dataSource={[{ id: 'one', value }]} />
+            </App>
+          </MemoryRouter>,
+        ),
+      )
+    await update(15)
+    expect(captured.tableProps.columns[0].sorter({ value: 2 }, { value: 15 })).toBeLessThan(0)
+    await update({ nested: 'unsupported' })
+    expect(captured.tableProps.columns[0].sorter).toBeUndefined()
+    await update('service-10')
+    expect(
+      captured.tableProps.columns[0].sorter({ value: 'service-2' }, { value: 'service-10' }),
+    ).toBeLessThan(0)
+  })
+
+  it.each([undefined, 'memo-refresh:session'])(
+    'does not render the table for header or refresh changes with layout %s',
+    async (columnLayoutKey) => {
+      const props: AdminTableProps = {
+        columns: [
+          { key: 'name', dataIndex: 'name', title: 'Name', render: (name: string) => name },
+        ],
+        dataSource: [{ id: 'one', name: 'One' }],
+        rowKey: 'id',
+        rowSelection: { selectedRowKeys: [] },
+        columnLayoutKey,
+        pagination: columnLayoutKey ? false : undefined,
+        virtual: Boolean(columnLayoutKey),
+        onRefresh: vi.fn(),
+      }
+      const container = await renderNode(<AdminTable {...props} title="Initial" />)
+      const initialRenders = captured.tableRenders
+      for (const refreshing of [true, false]) {
+        await act(async () =>
+          roots[0].render(
+            <MemoryRouter>
+              <App>
+                <AdminTable
+                  {...props}
+                  title={refreshing ? 'Refreshing' : 'Ready'}
+                  refreshing={refreshing}
+                />
+              </App>
+            </MemoryRouter>,
+          ),
+        )
+        expect(container.textContent).toContain(refreshing ? 'Refreshing' : 'Ready')
+        expect(captured.tableRenders).toBe(initialRenders)
+      }
+    },
+  )
+
+  it('updates memoized rows, permissions, sorting, selection, callbacks, loading and locale', async () => {
+    let props: AdminTableProps = {
+      columns: [{ key: 'name', dataIndex: 'name', title: 'Name', render: (name: string) => name }],
+      dataSource: [{ id: 'one', name: 'One' }],
+      rowKey: 'id',
+      pagination: false,
+    }
+    const container = await renderNode(<AdminTable {...props} />)
+    const update = async (patch: Partial<AdminTableProps>) => {
+      const renders = captured.tableRenders
+      props = { ...props, ...patch }
+      await act(async () =>
+        roots[0].render(
+          <MemoryRouter>
+            <App>
+              <AdminTable {...props} />
+            </App>
+          </MemoryRouter>,
+        ),
+      )
+      expect(captured.tableRenders).toBeGreaterThan(renders)
+    }
+    await update({ dataSource: [{ id: 'one', name: 'Updated' }] })
+    expect(container.textContent).toContain('Updated')
+    await update({
+      columns: [
+        {
+          ...props.columns[0],
+          render: (name: string) => `Allowed ${name}`,
+          sorter: (left: any, right: any) => left.name.localeCompare(right.name),
+          sortOrder: 'descend',
+        },
+      ],
+    })
+    expect(container.textContent).toContain('Allowed Updated')
+    expect(captured.tableProps.columns[0].sortOrder).toBe('descend')
+    await update({
+      rowSelection: { selectedRowKeys: ['one'], getCheckboxProps: () => ({ disabled: true }) },
+    })
+    expect(captured.tableProps.rowSelection.selectedRowKeys).toEqual(['one'])
+    expect(captured.tableProps.rowSelection.getCheckboxProps().disabled).toBe(true)
+    const onRow = vi.fn()
+    await update({ onRow })
+    expect(captured.tableProps.onRow).toBe(onRow)
+    await update({ loading: true })
+    expect(captured.tableProps.loading).toBe(true)
+    i18n.localeCode = 'en_US'
+    await update({})
+    expect(captured.tableProps.locale.emptyText.key).toBe('en_US')
+  })
+
+  it('binds memoized column resize callbacks to the current layout key', async () => {
+    const props: AdminTableProps = {
+      columns: [{ key: 'name', dataIndex: 'name', title: 'Name', width: 260 }],
+      dataSource: [{ id: 'one', name: 'One' }],
+      rowKey: 'id',
+      pagination: false,
+    }
+    await renderNode(<AdminTable {...props} columnLayoutKey="memo-resize:user-a" />)
+    await act(async () =>
+      captured.tableProps.columns[0].onHeaderCell().columnResizeHandle.props.onResize(320),
+    )
+    expect(captured.tableProps.columns[0].width).toBe(320)
+    await act(async () =>
+      roots[0].render(
+        <MemoryRouter>
+          <App>
+            <AdminTable {...props} columnLayoutKey="memo-resize:user-b" />
+          </App>
+        </MemoryRouter>,
+      ),
+    )
+    expect(captured.tableProps.columns[0].width).toBe(260)
+    await act(async () =>
+      captured.tableProps.columns[0].onHeaderCell().columnResizeHandle.props.onResize(400),
+    )
+    expect(captured.tableProps.columns[0].width).toBe(400)
+    expect(
+      JSON.parse(localStorage.getItem('soha-table-layout:memo-resize:user-a')!).widths.name,
+    ).toBe(320)
+    expect(
+      JSON.parse(localStorage.getItem('soha-table-layout:memo-resize:user-b')!).widths.name,
+    ).toBe(400)
+  })
+
   it.each([401, 403])('hides cached records when HTTP %s denies the read', async (status) => {
     const container = await renderNode(
       <AdminTable
@@ -165,14 +354,13 @@ describe('AdminTable', () => {
         columnSettingPlacement="header"
       />,
     )
-    expect(container.textContent).toContain('请求失败')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('请求失败'))
     expect(container.textContent).not.toContain('上次读取结果')
     expect(container.querySelector('[data-testid="table-proxy"]')).toBeNull()
     expect(container.querySelector('[aria-label="刷新列表"]')).not.toBeNull()
   })
 
   it('shows one floating failure for an explicit list refresh', async () => {
-    captured.warning.mockClear()
     const refresh = vi.fn(async () => ({ isError: true, error: new ApiError(503, 'unavailable') }))
     const container = await renderNode(
       <AdminTable columns={[]} dataSource={[]} rowKey="id" onRefresh={refresh} />,
@@ -181,8 +369,10 @@ describe('AdminTable', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="刷新列表"]')!.click(),
     )
     expect(refresh).toHaveBeenCalledTimes(1)
-    expect(captured.warning).toHaveBeenCalledTimes(1)
-    expect(captured.warning).toHaveBeenCalledWith(expect.objectContaining({ title: '刷新未完成' }))
+    await vi.waitFor(() =>
+      expect(document.body.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(1),
+    )
+    expect(document.body.textContent).toContain('列表读取失败')
   })
 
   it('keeps authorized cached rows and offers a local retry after a temporary failure', async () => {
@@ -199,8 +389,11 @@ describe('AdminTable', () => {
     )
     expect(container.textContent).toContain('previously read record')
     expect(container.querySelector('[data-testid="table-proxy"]')).not.toBeNull()
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="重试读取列表"]')).not.toBeNull(),
+    )
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="重试读取列表"]')!.click(),
+      document.body.querySelector<HTMLButtonElement>('[aria-label="重试读取列表"]')!.click(),
     )
     expect(retry).toHaveBeenCalledOnce()
   })
@@ -215,7 +408,7 @@ describe('AdminTable', () => {
         error={new ApiError(503, 'temporarily unavailable')}
       />,
     )
-    expect(container.textContent).toContain('上次读取结果')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('上次读取结果'))
     expect(container.querySelector('[data-testid="table-proxy"]')).not.toBeNull()
   })
 
@@ -240,6 +433,7 @@ describe('AdminTable', () => {
 
   afterEach(async () => {
     captured.tableProps = null
+    captured.tableRenders = 0
     i18n.localeCode = 'zh_CN'
     await act(async () => {
       for (const root of roots) {
@@ -457,6 +651,29 @@ describe('AdminTable', () => {
     expect(header?.tabIndex).toBe(0)
   })
 
+  it('stops local sorting type sampling after the first non-null value', async () => {
+    const readLater = vi.fn(() => 'later')
+    await renderNode(
+      <AdminTable
+        columns={[{ title: 'Name', dataIndex: 'name' }]}
+        dataSource={[
+          { id: '1', name: null },
+          { id: '2', name: 'first' },
+          {
+            id: '3',
+            get name() {
+              return readLater()
+            },
+          },
+        ]}
+        rowKey="id"
+        localSorting
+      />,
+    )
+    expect(readLater).not.toHaveBeenCalled()
+    expect(captured.tableProps.columns[0].sorter).toBeTypeOf('function')
+  })
+
   it('separates server page and page-size callbacks', async () => {
     const onPageChange = vi.fn()
     const onPageSizeChange = vi.fn()
@@ -567,6 +784,86 @@ describe('AdminTable', () => {
       expect(captured.tableProps.columns[0].width).toBe(40)
     } finally {
       bounds.mockRestore()
+    }
+  })
+
+  it('keeps action observers on same-DOM refreshes and follows visible group and size changes', async () => {
+    let measured = 0
+    let extraWidth = 0
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('soha-row-action-icons')) measured++
+        return {
+          width: this.classList.contains('soha-row-action-icons')
+            ? this.children.length * 24 + extraWidth
+            : 0,
+        } as DOMRect
+      })
+    const originalObserver = globalThis.ResizeObserver
+    const observers: Array<{
+      observe: ReturnType<typeof vi.fn>
+      unobserve: ReturnType<typeof vi.fn>
+      disconnect: ReturnType<typeof vi.fn>
+      resize: () => void
+    }> = []
+    globalThis.ResizeObserver = class {
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = vi.fn()
+      resize: () => void
+      constructor(callback: ResizeObserverCallback) {
+        this.resize = () => callback([], this)
+        observers.push(this)
+      }
+    }
+    const columns = [
+      {
+        ...tableColumnPresets.action,
+        render: (_: unknown, record: { actions: number }) => (
+          <span className="soha-row-action-icons">
+            {Array.from({ length: record.actions }, (_, index) => (
+              <button key={index}>Action</button>
+            ))}
+          </span>
+        ),
+      },
+    ]
+    const rerender = (dataSource: Array<{ id: string; actions: number }>) =>
+      act(async () =>
+        roots[0].render(
+          <MemoryRouter>
+            <App>
+              <AdminTable columns={[...columns]} dataSource={dataSource} rowKey="id" />
+            </App>
+          </MemoryRouter>,
+        ),
+      )
+    try {
+      const container = await renderNode(
+        <AdminTable columns={columns} dataSource={[{ id: '1', actions: 1 }]} rowKey="id" />,
+      )
+      const initialMeasurements = measured
+      await rerender([{ id: '1', actions: 1 }])
+      expect(measured).toBe(initialMeasurements)
+      expect(observers).toHaveLength(1)
+      expect(observers[0].disconnect).not.toHaveBeenCalled()
+      await rerender([
+        { id: '1', actions: 1 },
+        { id: '2', actions: 4 },
+      ])
+      expect(captured.tableProps.columns[0].width).toBe(97)
+      const removedGroup = container.querySelectorAll('.soha-row-action-icons')[1]
+      await rerender([{ id: '1', actions: 1 }])
+      expect(captured.tableProps.columns[0].width).toBe(40)
+      expect(observers[0].unobserve).toHaveBeenCalledWith(removedGroup)
+      extraWidth = 40
+      await act(async () => observers[0].resize())
+      expect(captured.tableProps.columns[0].width).toBe(65)
+      expect(observers).toHaveLength(1)
+    } finally {
+      bounds.mockRestore()
+      globalThis.ResizeObserver = originalObserver
     }
   })
 

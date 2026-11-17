@@ -2,6 +2,8 @@ import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementTableToolbar } from '@/components/management-list'
@@ -19,7 +21,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
@@ -84,13 +86,15 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
     namespace,
     searchKeyword,
   })
-  const resourceActions = useKubernetesResourceActions({
-    resourceKey: kind,
-    resourceLabel: label,
-    records,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) =>
+  const {
+    feedback: removeMutationFeedback,
+    isPending: removeMutationIsPending,
+    mutateAsync: removeMutationMutateAsync,
+    reset: removeMutationReset,
+    variables: removeMutationVariables,
+  } = removeMutation
+  const actions = useCallback(
+    (record: T) =>
       hasAllowedAction(record.allowedActions, 'delete')
         ? [
             {
@@ -101,22 +105,64 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
               disabled: platformWriteBlocked || capability.disabled,
               reason: capability.reason,
               loading:
-                removeMutation.isPending &&
-                removeMutation.variables?.scope.clusterId === clusterId &&
-                removeMutation.variables?.name === record.name &&
-                removeMutation.variables.scope.namespace === record.namespace,
-              prepare: () => removeMutation.reset(),
-              feedback: removeMutation.feedback,
+                removeMutationIsPending &&
+                removeMutationVariables?.scope.clusterId === clusterId &&
+                removeMutationVariables?.name === record.name &&
+                removeMutationVariables.scope.namespace === record.namespace,
+              prepare: () => removeMutationReset(),
+              feedback: removeMutationFeedback,
               confirm: kubernetesDeleteConfirmation(record, localeCode),
               run: () =>
-                removeMutation.mutateAsync({
+                removeMutationMutateAsync({
                   name: record.name,
                   scope: toScopeKey(clusterId, record.namespace),
                 }),
             },
           ]
         : [],
+    [
+      removeMutationFeedback,
+      removeMutationIsPending,
+      removeMutationMutateAsync,
+      removeMutationReset,
+      removeMutationVariables,
+      clusterId,
+      localeCode,
+      platformWriteBlocked,
+      capability.disabled,
+      capability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: kind,
+    resourceLabel: label,
+    records,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
+
+  const rowProps = useCallback(
+    (record: T) => workloadRowAIContext(kind, record, clusterId),
+    [clusterId, kind],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredRecords.length}
+        localeCode={localeCode}
+        resourceLabel={label}
+        totalCount={records.length}
+      />
+    ),
+    [clusterId, filteredRecords.length, localeCode, records.length, label],
+  )
+
+  const visibleColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.column, resourceActions.hasActions],
+  )
 
   return (
     <div className="soha-page">
@@ -149,21 +195,13 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+        columns={visibleColumns}
         dataSource={clusterId ? filteredRecords : []}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: T) => workloadRowAIContext(kind, record, clusterId)}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={listQuery.isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredRecords.length}
-            localeCode={localeCode}
-            resourceLabel={label}
-            totalCount={records.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
         headerExtra={

@@ -1,7 +1,10 @@
+import {
+  ResourceNameLink,
+  ResourceNamespaceCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { useI18n } from '@/i18n'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
@@ -32,7 +35,7 @@ export function PlatformAccessControlRoleBindingsPage() {
       width: 310,
       sorter: (a, b) => a.name.localeCompare(b.name),
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
+        <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
       ),
     },
     {
@@ -40,7 +43,7 @@ export function PlatformAccessControlRoleBindingsPage() {
       dataIndex: 'namespace',
       width: 200,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       title: 'RoleRef',
@@ -59,13 +62,10 @@ export function PlatformAccessControlRoleBindingsPage() {
           return <TableCellText value={value} />
         }
         return (
-          <TableCellLink
-            label={value}
-            onClick={() =>
-              navigate(
-                `/platform-access-control/${resourceKind}/${encodeURIComponent(ref.name)}?${new URLSearchParams({ clusterId: clusterId || '', ...(resourceKind === 'roles' ? { namespace: record.namespace } : {}) })}`,
-              )
-            }
+          <ResourceNameLink
+            name={value}
+            to={`/platform-access-control/${resourceKind}/${encodeURIComponent(ref.name)}?${new URLSearchParams({ clusterId: clusterId || '', ...(resourceKind === 'roles' ? { namespace: record.namespace } : {}) })}`}
+            onNavigate={navigate}
           />
         )
       },

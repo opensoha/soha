@@ -5,17 +5,26 @@ import { ApiError } from '@/services/api-error'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import type { Key, ReactNode } from 'react'
-import { act } from 'react'
+import { act, isValidElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { WorkloadsJobsPage } from './workloads/jobs/list-page'
+import { WorkloadsCronJobsPage } from './workloads/cronjobs/list-page'
+import { WorkloadsReplicaSetsPage } from './workloads/replicasets/list-page'
+import { WorkloadsReplicationControllersPage } from './workloads/replicationcontrollers/list-page'
+import { clusterKeys } from './clusters/keys'
+import { deploymentQueries } from './workloads/deployments/queries'
 import { WorkloadsDaemonSetsPage } from './workloads/daemonsets/list-page'
 import { WorkloadsDeploymentsPage } from './workloads/deployments/list-page'
 import { PodDetailPage } from './workloads/pods/detail-page'
 import { WorkloadsPodsPage } from './workloads/pods/list-page'
+import { podQueries } from './workloads/pods/queries'
+import { toScopeKey } from '@/types'
 import { WorkloadsStatefulSetsPage } from './workloads/statefulsets/list-page'
 
 const testState = vi.hoisted(() => ({
+  t: (_key: string, fallback?: string) => fallback ?? _key,
   permissionKeys: [
     'platform.pods.delete',
     'platform.pods.exec',
@@ -49,7 +58,7 @@ vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),
   useI18n: () => ({
     localeCode: 'zh_CN' as const,
-    t: (_key: string, fallback?: string) => fallback ?? _key,
+    t: testState.t,
   }),
 }))
 
@@ -149,6 +158,8 @@ vi.mock('@/components/admin-table', () => ({
     columns,
     dataSource,
     headerExtra,
+    empty,
+    onRow,
     loading,
     localSorting,
     rowKey,
@@ -160,6 +171,8 @@ vi.mock('@/components/admin-table', () => ({
     columns?: MockColumn[]
     dataSource?: MockRecord[]
     headerExtra?: ReactNode
+    empty?: ReactNode
+    onRow?: (record: MockRecord) => Record<string, string>
     loading?: boolean
     localSorting?: boolean
     rowKey?: string | ((record: MockRecord) => Key)
@@ -171,7 +184,7 @@ vi.mock('@/components/admin-table', () => ({
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
   }) => {
-    adminTablePropsMock({ columns, dataSource, localSorting })
+    adminTablePropsMock({ columns, dataSource, localSorting, onRow, rowSelection, empty })
     function mockCellValue(record: MockRecord, dataIndex?: string | string[]) {
       if (!dataIndex) return undefined
       if (Array.isArray(dataIndex)) {
@@ -492,6 +505,53 @@ describe('workloads pods page refresh controls', () => {
     expect(apiGetMock.mock.calls.filter(([path]) => path === podListPath)).toHaveLength(2)
   })
 
+  it('keeps table behavior references stable through refresh but updates data and permission changes', async () => {
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await flushQueryNotifications()
+    const before = adminTablePropsMock.mock.calls.at(-1)![0]
+    expect(before.dataSource).toHaveLength(1)
+    let complete!: (response: { data: MockRecord[] }) => void
+    apiGetMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!.click(),
+    )
+    await flushQueryNotifications()
+    const pending = adminTablePropsMock.mock.calls.at(-1)![0]
+    for (const key of ['columns', 'onRow', 'rowSelection', 'empty', 'dataSource'])
+      expect(pending[key], key).toBe(before[key])
+    const updated = { ...before.dataSource[0], ageSeconds: 120, nodeName: 'node-b' }
+    await act(async () => complete({ data: [updated] }))
+    await flushQueryNotifications()
+    const after = adminTablePropsMock.mock.calls.at(-1)![0]
+    expect(after.dataSource).not.toBe(before.dataSource)
+    expect(after.dataSource[0].ageSeconds).toBe(120)
+    for (const key of ['columns', 'onRow', 'rowSelection', 'empty'])
+      expect(after[key], key).toBe(before[key])
+    expect(after.onRow(updated)).not.toEqual(before.onRow(before.dataSource[0]))
+    await act(async () => {
+      currentQueryClient!.setQueryData(
+        podQueries.list(toScopeKey('cluster-a', 'monitoring')).queryKey,
+        [{ ...updated, cpu: '123456789m' }],
+      )
+    })
+    await flushQueryNotifications()
+    const widened = adminTablePropsMock.mock.calls.at(-1)![0]
+    expect(widened.columns).not.toBe(after.columns)
+    const cpu = (props: typeof after) =>
+      props.columns.find((column: MockColumn) => column.key === 'cpu-resource')
+    expect(cpu(widened).minWidth).toBeGreaterThan(cpu(after).minWidth)
+    testState.permissionKeys = []
+    await rerenderWithProviders(<WorkloadsPodsPage />)
+    const denied = adminTablePropsMock.mock.calls.at(-1)![0]
+    expect(denied.columns).not.toBe(widened.columns)
+    expect(denied.rowSelection).toBeUndefined()
+  })
+
   it('polls pod data automatically when auto refresh is enabled', async () => {
     await renderWithProviders(<WorkloadsPodsPage />)
     const podListPath = '/clusters/cluster-a/workloads/pods?namespace=monitoring'
@@ -602,8 +662,10 @@ describe('workloads pods page refresh controls', () => {
         index === 0 ? '50m' : '64Mi',
       )
       expect(cell.tagName).toBe('BUTTON')
-      expect(cell.querySelectorAll('.ant-progress')).toHaveLength(1)
-      expect(cell.querySelector('.ant-progress')?.getAttribute('aria-hidden')).toBe('true')
+      expect(cell.querySelectorAll('.soha-pod-resource-progress-wrap')).toHaveLength(1)
+      expect(
+        cell.querySelector('.soha-pod-resource-progress-wrap')?.getAttribute('aria-hidden'),
+      ).toBe('true')
       expect(cell.querySelectorAll('.soha-pod-resource-marker')).toHaveLength(0)
       expect(cell.getAttribute('aria-label')).toContain('使用')
       expect(cell.getAttribute('aria-label')).toContain(index === 0 ? '请求 100m' : '请求 128Mi')
@@ -647,7 +709,7 @@ describe('workloads pods page refresh controls', () => {
     expect(missingCPU.getAttribute('aria-label')).toContain('暂无指标')
     expect(zeroCPU.getAttribute('aria-label')).toContain('请求 100m')
     expect(zeroCPU.getAttribute('aria-label')).toContain('限制 未设置')
-    expect(cells.every((cell) => cell.querySelector('.ant-progress'))).toBe(true)
+    expect(cells.every((cell) => cell.querySelector('.soha-pod-resource-progress-wrap'))).toBe(true)
     expect(container.querySelectorAll('.soha-pod-resource-marker')).toHaveLength(0)
     expect(container.querySelector('[role="group"][aria-label="指标展示方案"]')).toBeNull()
   })
@@ -777,7 +839,9 @@ describe('workloads pods page refresh controls', () => {
       expect(cell.querySelector('.soha-pod-resource-value')?.textContent, item.name).toBe(
         item.usage,
       )
-      const renderedPercent = (cell.querySelector('.ant-progress-track') as HTMLElement).style.width
+      const renderedPercent = (
+        cell.querySelector('.soha-pod-resource-progress-fill') as HTMLElement
+      ).style.width
       expect(Number.parseFloat(renderedPercent), item.name).toBeCloseTo(item.percent)
       expect(cell.getAttribute('aria-label'), item.name).toContain(`限制 ${item.limit ?? '未设置'}`)
       expect(cell.getAttribute('aria-label'), item.name).toContain(
@@ -1199,6 +1263,148 @@ describe('workloads pods page refresh controls', () => {
       container.querySelectorAll('input[aria-label^="select-monitoring/"]:checked'),
     ).toHaveLength(1)
   }, 15_000)
+
+  it.each([
+    ['deployments', WorkloadsDeploymentsPage],
+    ['statefulsets', WorkloadsStatefulSetsPage],
+    ['daemonsets', WorkloadsDaemonSetsPage],
+    ['jobs', WorkloadsJobsPage],
+    ['cronjobs', WorkloadsCronJobsPage],
+    ['replicasets', WorkloadsReplicaSetsPage],
+    ['replicationcontrollers', WorkloadsReplicationControllersPage],
+  ])(
+    'keeps %s table body references stable on refresh and observes changed records',
+    async (kind, Page) => {
+      const path = `/clusters/cluster-a/workloads/${kind}?namespace=monitoring`
+      const record = {
+        name: 'controller',
+        namespace: 'monitoring',
+        uid: 'controller-uid',
+        desiredReplicas: 1,
+        readyReplicas: 1,
+        currentReplicas: 1,
+        availableReplicas: 1,
+        desiredNumber: 1,
+        readyNumber: 1,
+        currentNumber: 1,
+        availableNumber: 1,
+        available: 1,
+        updatedReplicas: 1,
+        ageSeconds: 60,
+        succeeded: 1,
+        active: 0,
+        failed: 0,
+        completions: 1,
+        parallelism: 1,
+        schedule: '* * * * *',
+        suspend: false,
+        allowedActions: ['delete', 'restart', 'scale', 'suspend', 'update'],
+      }
+      testState.responses[path] = [record]
+      await renderWithProviders(<Page />, `/workloads/${kind}`)
+      await flushQueryNotifications()
+      const before = adminTablePropsMock.mock.calls.at(-1)![0]
+      expect(before.dataSource).toHaveLength(1)
+      let complete!: (response: { data: MockRecord[] }) => void
+      apiGetMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve
+          }),
+      )
+      const key = ['platform', 'workloads', kind]
+      await act(async () => {
+        void currentQueryClient!.invalidateQueries({ queryKey: key })
+      })
+      await flushQueryNotifications()
+      const pending = adminTablePropsMock.mock.calls.at(-1)![0]
+      for (const prop of ['columns', 'onRow', 'empty', 'dataSource'])
+        expect(pending[prop], prop).toBe(before[prop])
+      await act(async () => complete({ data: [{ ...record }] }))
+      await flushQueryNotifications()
+      const same = adminTablePropsMock.mock.calls.at(-1)![0]
+      for (const prop of ['columns', 'onRow', 'empty', 'dataSource'])
+        expect(same[prop], prop).toBe(before[prop])
+      await act(async () => {
+        currentQueryClient!.setQueryData(
+          [...key, 'list', toScopeKey('cluster-a', 'monitoring')],
+          [{ ...record, ageSeconds: 120 }],
+        )
+      })
+      await flushQueryNotifications()
+      const updated = adminTablePropsMock.mock.calls.at(-1)![0]
+      expect(updated.dataSource[0].ageSeconds).toBe(120)
+      for (const prop of ['columns', 'onRow', 'empty'])
+        expect(updated[prop], prop).toBe(before[prop])
+      await act(async () => {
+        currentQueryClient!.setQueryData(clusterKeys.capabilities(), [
+          {
+            key: 'workload.mutations',
+            label: 'Workload mutations',
+            category: 'workloads',
+            direct: { status: 'unsupported', notes: ['changed capability'] },
+            agent: { status: 'unsupported' },
+          },
+        ])
+      })
+      await flushQueryNotifications()
+      const blocked = adminTablePropsMock.mock.calls.at(-1)![0]
+      expect(blocked.columns).not.toBe(updated.columns)
+      const actions = blocked.columns.find(
+        (column: MockColumn) => column.key === 'actions',
+      ) as MockColumn
+      const menu = actions.render!(undefined, blocked.dataSource[0], 0)
+      expect(isValidElement(menu)).toBe(true)
+      if (!isValidElement<{ items: Array<{ key: string; disabled?: boolean }> }>(menu))
+        throw new Error('actions menu missing')
+      expect(menu.props.items.find((item) => item.key === 'delete')?.disabled).toBe(true)
+      await act(async () => {
+        currentQueryClient!.setQueryData(
+          [...key, 'list', toScopeKey('cluster-a', 'monitoring')],
+          [{ ...record, allowedActions: [] }],
+        )
+      })
+      await flushQueryNotifications()
+      const denied = adminTablePropsMock.mock.calls.at(-1)![0]
+      expect(denied.columns.some((column: MockColumn) => column.key === 'actions')).toBe(false)
+    },
+  )
+
+  it('limits Deployment fallback to its scope and stops automatically retrying errors', async () => {
+    const path = '/clusters/cluster-a/workloads/deployments?namespace=monitoring'
+    testState.responses[path] = []
+    const container = await renderWithProviders(
+      <WorkloadsDeploymentsPage />,
+      '/workloads/deployments',
+    )
+    await flushQueryNotifications()
+    const invalidations = vi.spyOn(currentQueryClient!, 'invalidateQueries')
+    await act(async () => {
+      vi.advanceTimersByTime(15_000)
+    })
+    await flushQueryNotifications()
+    expect(invalidations).toHaveBeenCalledWith({
+      queryKey: deploymentQueries.list(toScopeKey('cluster-a', 'monitoring')).queryKey,
+    })
+    apiGetMock.mockImplementationOnce(() => Promise.reject(new Error('list unavailable')))
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!.click(),
+    )
+    await flushQueryNotifications()
+    const reads = apiGetMock.mock.calls.filter(([url]) => url === path).length
+    invalidations.mockClear()
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+    })
+    await flushQueryNotifications()
+    expect(apiGetMock.mock.calls.filter(([url]) => url === path)).toHaveLength(reads)
+    expect(invalidations).not.toHaveBeenCalled()
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!.click(),
+    )
+    await flushQueryNotifications()
+    expect(apiGetMock.mock.calls.filter(([url]) => url === path)).toHaveLength(reads + 1)
+  })
 
   it('sorts Deployment status using the displayed health for the full local list', async () => {
     const deployments = [

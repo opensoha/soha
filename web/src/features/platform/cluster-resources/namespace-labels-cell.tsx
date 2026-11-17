@@ -1,26 +1,57 @@
 import { Button, Popover, Typography } from 'antd'
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { memo, useMemo, type KeyboardEvent } from 'react'
+import { useDeferredOverlay } from '@/components/use-deferred-overlay'
 import { MetadataTag } from '@/components/status-tag'
 import { namespaceLabels } from './namespace-list-model'
 
-export function NamespaceLabelsCell({
+export const NamespaceLabelsCell = memo(function NamespaceLabelsCell({
   labels,
   zh,
 }: {
   labels: Record<string, string>
   zh: boolean
 }) {
-  const [open, setOpen] = useState(false)
-  const trigger = useRef<HTMLButtonElement>(null)
+  const {
+    activated,
+    open,
+    setOpen,
+    activate,
+    triggerRef: trigger,
+  } = useDeferredOverlay<HTMLButtonElement>()
   const closeOnEscape = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape') return
     event.stopPropagation()
     setOpen(false)
     trigger.current?.focus()
   }
-  const entries = namespaceLabels(labels)
+  const entries = useMemo(() => namespaceLabels(labels), [labels])
   if (!entries.length) return <span>—</span>
   const [key, value] = entries[0]
+  const button = (
+    <Button
+      ref={trigger}
+      type="text"
+      size="small"
+      className="soha-namespace-label-preview"
+      aria-label={zh ? `查看全部 ${entries.length} 个标签` : `View all ${entries.length} labels`}
+      aria-expanded={open}
+      onClick={activated ? undefined : activate}
+      onKeyDown={(event) => {
+        closeOnEscape(event)
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          if (activated) setOpen((current) => !current)
+          else activate()
+        }
+      }}
+    >
+      <MetadataTag label={`${key}=${value}`} />
+      {entries.length > 1 ? (
+        <span className="soha-namespace-label-more">+{entries.length - 1}</span>
+      ) : null}
+    </Button>
+  )
+  if (!activated) return button
   return (
     <Popover
       title={zh ? `标签 · ${entries.length}` : `Labels · ${entries.length}`}
@@ -42,20 +73,7 @@ export function NamespaceLabelsCell({
         </div>
       }
     >
-      <Button
-        ref={trigger}
-        type="text"
-        size="small"
-        className="soha-namespace-label-preview"
-        aria-label={zh ? `查看全部 ${entries.length} 个标签` : `View all ${entries.length} labels`}
-        aria-expanded={open}
-        onKeyDown={closeOnEscape}
-      >
-        <MetadataTag label={`${key}=${value}`} />
-        {entries.length > 1 ? (
-          <span className="soha-namespace-label-more">+{entries.length - 1}</span>
-        ) : null}
-      </Button>
+      {button}
     </Popover>
   )
-}
+})

@@ -3,6 +3,7 @@
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useQuery } from '@tanstack/react-query'
 import { I18nProvider } from '@/i18n'
@@ -76,7 +77,9 @@ function render(node: ReactNode) {
   act(() =>
     root.render(
       <I18nProvider>
-        <MemoryRouter>{node}</MemoryRouter>
+        <MemoryRouter>
+          <App>{node}</App>
+        </MemoryRouter>
       </I18nProvider>,
     ),
   )
@@ -181,7 +184,7 @@ describe('compute overview page', () => {
     ).toBe(expected)
   })
 
-  it('retries the overview query from its error state', () => {
+  it('retries the overview query from its error state', async () => {
     const refetch = vi.fn()
     vi.mocked(useQuery).mockReturnValue({
       data: undefined,
@@ -190,12 +193,15 @@ describe('compute overview page', () => {
       refetch,
     } as never)
 
-    const container = render(<ComputeOverviewPage />)
-    const retry = container.querySelector<HTMLButtonElement>(
+    render(<ComputeOverviewPage />)
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="重试读取计算资源总览"]')).not.toBeNull(),
+    )
+    const retry = document.body.querySelector<HTMLButtonElement>(
       'button[aria-label="重试读取计算资源总览"]',
     )
 
-    expect(retry).toBeDefined()
+    expect(retry).not.toBeNull()
     act(() => retry?.click())
     expect(refetch).toHaveBeenCalledTimes(1)
   })
@@ -535,19 +541,21 @@ describe('compute overview page', () => {
     )
   })
 
-  it('retains previous data after refresh failure and exposes a retry', () => {
+  it('retains previous data after refresh failure and exposes a retry', async () => {
     const refetch = vi.fn()
     mockOverview(
       { runtimes: { status: 'ok', summary: { total: 2, available: 0, error: 2 } } },
       { isError: true, refetch },
     )
     const container = render(<ComputeOverviewPage />)
-    expect(container.textContent).toContain('计算资源总览未更新，正在展示上次读取结果')
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('计算资源总览未更新，正在展示上次读取结果'),
+    )
     expect(
       container.querySelector('.soha-overview-metric-card.soha-compute-metric-hosts')?.textContent,
     ).toContain('运行时主机2')
     act(() =>
-      container
+      document.body
         .querySelector<HTMLButtonElement>('button[aria-label="重试读取计算资源总览"]')
         ?.click(),
     )

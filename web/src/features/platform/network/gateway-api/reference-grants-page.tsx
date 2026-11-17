@@ -1,3 +1,5 @@
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -6,7 +8,6 @@ import { formatAgeSeconds } from '@/utils/time'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { useNavigate } from 'react-router-dom'
-import { TableCellLink } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
@@ -34,46 +35,66 @@ export function NetworkReferenceGrantsPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (record: ReferenceGrant, tab?: string) =>
-    buildGatewayAPIRoutePath('referencegrants', record.name, record.namespace, {
-      clusterId: clusterId || '',
-      tab,
-    })
-  const columns: TableColumnsType<ReferenceGrant> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 160,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '允许来源 · From' : 'Allowed sources · From',
-      dataIndex: 'from',
-      width: 320,
-      minWidth: 240,
-      render: (value?: string[]) => <GrantSummary labels={value} direction="from" />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '允许目标 · To' : 'Allowed targets · To',
-      dataIndex: 'to',
-      width: 300,
-      minWidth: 240,
-      render: (value?: string[]) => <GrantSummary labels={value} direction="to" />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+  const path = useCallback(
+    (record: ReferenceGrant, tab?: string) =>
+      buildGatewayAPIRoutePath('referencegrants', record.name, record.namespace, {
+        clusterId: clusterId || '',
+        tab,
+      }),
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<ReferenceGrant>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        render: (value: string, record) => (
+          <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        width: 160,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '允许来源 · From' : 'Allowed sources · From',
+        dataIndex: 'from',
+        width: 320,
+        minWidth: 240,
+        render: (value?: string[]) => <GrantSummary labels={value} direction="from" />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '允许目标 · To' : 'Allowed targets · To',
+        dataIndex: 'to',
+        width: 300,
+        minWidth: 240,
+        render: (value?: string[]) => <GrantSummary labels={value} direction="to" />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [localeCode, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: ReferenceGrant) => [
+      record.name,
+      record.namespace,
+      ...(record.from ?? []),
+      ...(record.to ?? []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: ReferenceGrant) => navigate(path(record, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="ReferenceGrants" />
@@ -92,7 +113,7 @@ export function NetworkReferenceGrantsPage() {
           })}
           columns={columns}
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           refreshControl={
             <WorkloadRefresh
               compact
@@ -114,12 +135,7 @@ export function NetworkReferenceGrantsPage() {
             zh_CN: '搜索 ReferenceGrant / namespace / from / to',
             en_US: 'Search ReferenceGrant / namespace / from / to',
           }}
-          searchValues={(record) => [
-            record.name,
-            record.namespace,
-            ...(record.from ?? []),
-            ...(record.to ?? []),
-          ]}
+          searchValues={searchValues}
         />
       )}
     </>

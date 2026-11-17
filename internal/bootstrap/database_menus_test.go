@@ -72,7 +72,7 @@ func TestCleanupDeprecatedMenusDeletesMenuBindingsAndMenus(t *testing.T) {
 	}
 }
 
-func TestSyncPlatformMenuSeedUpgradesMovesUntouchedApplicationManifests(t *testing.T) {
+func TestSyncPlatformMenuSeedUpgradesPreservesCustomIconsAndMovesUntouchedManifests(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("new sqlmock: %v", err)
@@ -86,6 +86,32 @@ func TestSyncPlatformMenuSeedUpgradesMovesUntouchedApplicationManifests(t *testi
 	}
 
 	now := time.Now().UTC()
+	for _, item := range []struct{ id, previous, current string }{
+		{"cluster-resources-namespaces", "server", "blocks"},
+		{"helm", "puzzle", "boxes"},
+		{"helm-releases", "puzzle", "boxes"},
+		{"helm-charts", "puzzle", "boxes"},
+		{"storage", "waves", "storage"},
+		{"storage-pvc", "waves", "storage"},
+		{"storage-pv", "waves", "storage"},
+		{"storage-classes", "waves", "storage"},
+	} {
+		mock.ExpectExec(`UPDATE menus SET icon_key = \$1, updated_at = \$2 WHERE id = \$3 AND icon_key = \$4`).
+			WithArgs(item.current, now, item.id, item.previous).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		found := false
+		for _, seed := range defaultMenuSeeds() {
+			if seed.ID == item.id {
+				found = true
+				if seed.IconKey != item.current {
+					t.Errorf("menu %s icon = %q, want %q", item.id, seed.IconKey, item.current)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing menu seed %s", item.id)
+		}
+	}
 	mock.ExpectExec(`UPDATE menus`).
 		WithArgs(100, now, "platform-manifests", 15).
 		WillReturnResult(sqlmock.NewResult(0, 1))

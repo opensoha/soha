@@ -1,13 +1,13 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { networkResourcePath } from '../shared/resource-links'
 import { IngressEditModal } from './edit-modal'
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import './styles.css'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
@@ -50,85 +50,104 @@ export function NetworkIngressesPage() {
   useEffect(() => {
     if (!editAllowed) setEditing(undefined)
   }, [editAllowed])
-  const refLink = (kind: string, name: string, ns?: string) =>
-    networkResourcePath(permissions, { clusterId: clusterId || '', namespace: ns, kind, name })
-  const columns: TableColumnsType<Ingress> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      ellipsis: { showTitle: false },
-      width: 320,
-      render: (value: string, record) => (
-        <TableCellLink
-          label={value}
-          onClick={() =>
-            navigate(
-              `${buildNetworkRoutePath('ingresses', value, record.namespace)}&clusterId=${encodeURIComponent(clusterId || '')}`,
-            )
-          }
-        />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 160,
-    },
-    {
-      title: 'IngressClass',
-      dataIndex: 'className',
-      width: 160,
-      render: (value?: string) => {
-        const path = value ? refLink('IngressClass', value) : null
-        return path ? <Link to={path}>{value}</Link> : value || '—'
-      },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '域名' : 'Hosts',
-      width: 240,
-      dataIndex: 'hosts',
-      render: (value?: string[]) => renderNetworkTextList(value),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '地址' : 'Address',
-      dataIndex: 'address',
-      width: 210,
-      render: (value?: string) => (
-        <span className="soha-ingress-wrap">
-          {value || (localeCode === 'zh_CN' ? '未分配' : 'Not assigned')}
-        </span>
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '后端 Service' : 'Backend Services',
-      width: 240,
-      dataIndex: 'backendServices',
-      render: (value: string[] | undefined, record: Ingress) =>
-        value?.length ? (
-          <div className="soha-ingress-reference-list">
-            {value.map((name) => {
-              const path = refLink('Service', name, record.namespace)
-              return path ? (
-                <Link key={name} to={path}>
-                  {name}
-                </Link>
-              ) : (
-                <span key={name}>{name}</span>
-              )
-            })}
-          </div>
-        ) : (
-          '—'
+  const refLink = useCallback(
+    (kind: string, name: string, ns?: string) =>
+      networkResourcePath(permissions, { clusterId: clusterId || '', namespace: ns, kind, name }),
+    [clusterId, permissions],
+  )
+  const columns = useMemo<TableColumnsType<Ingress>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        ellipsis: { showTitle: false },
+        width: 320,
+        render: (value: string, record) => (
+          <ResourceNameLink
+            name={value}
+            to={`${buildNetworkRoutePath('ingresses', value, record.namespace)}&clusterId=${encodeURIComponent(clusterId || '')}`}
+            onNavigate={navigate}
+          />
         ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+      },
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        width: 160,
+      },
+      {
+        title: 'IngressClass',
+        dataIndex: 'className',
+        width: 160,
+        render: (value?: string) => {
+          const path = value ? refLink('IngressClass', value) : null
+          return path ? <Link to={path}>{value}</Link> : value || '—'
+        },
+      },
+      {
+        title: localeCode === 'zh_CN' ? '域名' : 'Hosts',
+        width: 240,
+        dataIndex: 'hosts',
+        render: (value?: string[]) => renderNetworkTextList(value),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '地址' : 'Address',
+        dataIndex: 'address',
+        width: 210,
+        render: (value?: string) => (
+          <span className="soha-ingress-wrap">
+            {value || (localeCode === 'zh_CN' ? '未分配' : 'Not assigned')}
+          </span>
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '后端 Service' : 'Backend Services',
+        width: 240,
+        dataIndex: 'backendServices',
+        render: (value: string[] | undefined, record: Ingress) =>
+          value?.length ? (
+            <div className="soha-ingress-reference-list">
+              {value.map((name) => {
+                const path = refLink('Service', name, record.namespace)
+                return path ? (
+                  <Link key={name} to={path}>
+                    {name}
+                  </Link>
+                ) : (
+                  <span key={name}>{name}</span>
+                )
+              })}
+            </div>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [localeCode, navigate, clusterId, refLink],
+  )
 
+  const searchValues = useCallback(
+    (record: Ingress) => [
+      record.name,
+      record.namespace,
+      record.className,
+      record.address,
+      ...(record.hosts ?? []),
+      ...(record.backendServices ?? []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: Ingress) =>
+      setEditing({ record, clusterId: clusterId || '', namespace: namespace || null }),
+    [clusterId, namespace],
+  )
   if (!canRead) return <ReadFeedback canRead={false} query={query} label="Ingresses" />
   return (
     <>
@@ -149,12 +168,7 @@ export function NetworkIngressesPage() {
         })}
         columns={columns}
         deletable={canDelete}
-        onEdit={
-          canUpdate
-            ? (record) =>
-                setEditing({ record, clusterId: clusterId || '', namespace: namespace || null })
-            : undefined
-        }
+        onEdit={canUpdate ? editRecord : undefined}
         refreshControl={
           <WorkloadRefresh
             settings={refresh}
@@ -174,14 +188,7 @@ export function NetworkIngressesPage() {
           zh_CN: '搜索 Ingress / namespace / host / service',
           en_US: 'Search ingress / namespace / host / service',
         }}
-        searchValues={(record) => [
-          record.name,
-          record.namespace,
-          record.className,
-          record.address,
-          ...(record.hosts ?? []),
-          ...(record.backendServices ?? []),
-        ]}
+        searchValues={searchValues}
       />
       {editAllowed &&
         editing &&

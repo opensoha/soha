@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AdminTable, type AdminTableProps } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth-store'
@@ -96,13 +96,19 @@ export function KubernetesResourceTable({
     localeCode,
   ])
   const rows = allRows ?? dataSource
-  const measured = useMemo(() => resourceColumnWidths(columns, rows), [columns, rows])
-  const [fitted, setFitted] = useState({
+  const [fitted, setFitted] = useState(() => ({
     scope,
     initialized: rows.length > 0,
-    widths: measured,
+    widths: resourceColumnWidths(columns, rows),
     contentFit: false,
-  })
+  }))
+  const measured = useMemo(
+    () =>
+      fitted.scope !== scope || (!fitted.initialized && rows.length)
+        ? resourceColumnWidths(columns, rows)
+        : fitted.widths,
+    [columns, rows, scope, fitted],
+  )
   useEffect(() => {
     if (fitted.scope !== scope || (!fitted.initialized && rows.length))
       setFitted({ scope, initialized: rows.length > 0, widths: measured, contentFit: false })
@@ -119,30 +125,32 @@ export function KubernetesResourceTable({
     observer?.observe(element)
     return () => observer?.disconnect()
   }, [])
-  const primary = columns.findIndex((column) => !isAction(column))
-  const activeColumns = columns.map((column, index) => ({
-    ...column,
-    render:
-      column.render ??
-      (column.dataIndex === 'namespace'
-        ? (value: string) => <NamespaceScopeTag namespace={value} />
-        : undefined),
-    key: columnId(column, index),
-    ellipsis: column.ellipsis ?? (index === primary ? true : undefined),
-    width:
-      index === primary && !(fitted.scope === scope && fitted.contentFit)
-        ? Math.max(260, Math.min(360, Math.round(available * 0.34)))
-        : widths[columnId(column, index)],
-    minWidth: column.minWidth ?? (index === primary ? 240 : 64),
-    fixed:
-      index === primary
-        ? available >= 640
-          ? 'left'
-          : undefined
-        : isAction(column) && available < 640 && widths[columnId(column, index)] > 64
-          ? false
-          : column.fixed,
-  }))
+  const activeColumns = useMemo(() => {
+    const primary = columns.findIndex((column) => !isAction(column))
+    return columns.map((column, index) => ({
+      ...column,
+      render:
+        column.render ??
+        (column.dataIndex === 'namespace'
+          ? (value: string) => <NamespaceScopeTag namespace={value} />
+          : undefined),
+      key: columnId(column, index),
+      ellipsis: column.ellipsis ?? (index === primary ? true : undefined),
+      width:
+        index === primary && !(fitted.scope === scope && fitted.contentFit)
+          ? Math.max(260, Math.min(360, Math.round(available * 0.34)))
+          : widths[columnId(column, index)],
+      minWidth: column.minWidth ?? (index === primary ? 240 : 64),
+      fixed:
+        index === primary
+          ? available >= 640
+            ? 'left'
+            : undefined
+          : isAction(column) && available < 640 && widths[columnId(column, index)] > 64
+            ? false
+            : column.fixed,
+    }))
+  }, [columns, available, widths, fitted.scope, fitted.contentFit, scope])
   const viewport = useResourceListViewport(dataSource, rowKey, `${scope}/${filterKey}`)
   const count = dataSource.length
   const scopeReady = scopeMode === 'global' || Boolean(clusterId)
@@ -168,6 +176,43 @@ export function KubernetesResourceTable({
   const selectionLabel = zh
     ? `选择全部匹配的 ${count} 个 ${resourceLabel}`
     : `Select all ${count} matching ${resourceLabel}`
+  const defaultHiddenColumns = useMemo(
+    () =>
+      hideNamespaceWhenScoped && scopeMode === 'namespace' && namespace
+        ? columns.flatMap((column, index) =>
+            column.dataIndex === 'namespace' ? [columnId(column, index)] : [],
+          )
+        : [],
+    [hideNamespaceWhenScoped, scopeMode, namespace, columns],
+  )
+  const tableSelection = useMemo(
+    () =>
+      rowSelection
+        ? {
+            ...rowSelection,
+            getTitleCheckboxProps: () => ({
+              ...rowSelection.getTitleCheckboxProps?.(),
+              'aria-label': selectionLabel,
+              title: selectionLabel,
+            }),
+          }
+        : undefined,
+    [rowSelection, selectionLabel],
+  )
+  const handleScroll = useCallback<NonNullable<AdminTableProps['onScroll']>>(
+    (event) => {
+      viewport.onScroll(event)
+      onScroll?.(event)
+    },
+    [viewport.onScroll, onScroll],
+  )
+  const handleChange = useCallback<NonNullable<AdminTableProps['onChange']>>(
+    (pagination, filters, sorter, extra) => {
+      if (extra.action === 'sort' || extra.action === 'filter') viewport.resetPosition()
+      onChange?.(pagination, filters, sorter, extra)
+    },
+    [viewport.resetPosition, onChange],
+  )
   return (
     <div ref={shellRef} className="soha-kubernetes-resource-list">
       <AdminTable
@@ -190,43 +235,30 @@ export function KubernetesResourceTable({
         virtual
         viewportScroll
         columnLayoutKey={`${resourceKey}:${userId || 'session'}:${localeCode}`}
-        defaultHiddenColumnKeys={
-          hideNamespaceWhenScoped && scopeMode === 'namespace' && namespace
-            ? columns.flatMap((column, index) =>
-                column.dataIndex === 'namespace' ? [columnId(column, index)] : [],
-              )
-            : []
-        }
+        defaultHiddenColumnKeys={defaultHiddenColumns}
         onFitColumns={() => {
           onFitColumns?.()
-          setFitted({ scope, initialized: rows.length > 0, widths: measured, contentFit: true })
+          setFitted({
+            scope,
+            initialized: rows.length > 0,
+            widths: resourceColumnWidths(columns, rows),
+            contentFit: true,
+          })
         }}
         onResetColumns={() => {
           onResetColumns?.()
-          setFitted({ scope, initialized: rows.length > 0, widths: measured, contentFit: false })
+          setFitted({
+            scope,
+            initialized: rows.length > 0,
+            widths: resourceColumnWidths(columns, rows),
+            contentFit: false,
+          })
         }}
         tableRef={viewport.tableRef}
         scroll={{ ...scroll, x: undefined, scrollToFirstRowOnChange: false }}
-        onScroll={(event) => {
-          viewport.onScroll(event)
-          onScroll?.(event)
-        }}
-        onChange={(pagination, filters, sorter, extra) => {
-          if (extra.action === 'sort' || extra.action === 'filter') viewport.resetPosition()
-          onChange?.(pagination, filters, sorter, extra)
-        }}
-        rowSelection={
-          rowSelection
-            ? {
-                ...rowSelection,
-                getTitleCheckboxProps: () => ({
-                  ...rowSelection.getTitleCheckboxProps?.(),
-                  'aria-label': selectionLabel,
-                  title: selectionLabel,
-                }),
-              }
-            : undefined
-        }
+        onScroll={handleScroll}
+        onChange={handleChange}
+        rowSelection={tableSelection}
       />
     </div>
   )

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { useQuery } from '@tanstack/react-query'
+import { App } from 'antd'
 import type { ReactNode } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -131,7 +132,9 @@ function renderPage() {
   act(() =>
     root.render(
       <MemoryRouter initialEntries={['/workloads/overview']}>
-        <WorkloadsOverviewPage />
+        <App>
+          <WorkloadsOverviewPage />
+        </App>
       </MemoryRouter>,
     ),
   )
@@ -139,7 +142,7 @@ function renderPage() {
 }
 
 describe('workloads overview permissions', () => {
-  it('reflects actual reads in its compact indicator and keeps partial failure visible', () => {
+  it('reflects actual reads in its compact indicator and keeps partial failure visible', async () => {
     testState.fetchingKey = 'pods'
     let view = renderPage()
     let indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
@@ -152,7 +155,11 @@ describe('workloads overview permissions', () => {
     indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
     expect(indicator.getAttribute('aria-label')).toContain('刷新失败')
     expect(indicator.querySelector('.ant-badge-status-error')).not.toBeNull()
-    expect(view.container.textContent).toContain('partial read unavailable')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+        'partial read unavailable',
+      ),
+    )
     act(() => view.root.unmount())
   })
   it('only enables resource queries covered by exact leaf permissions', () => {

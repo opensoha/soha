@@ -2,6 +2,8 @@ import { ContextFeedback } from '@/components/context-feedback'
 import {
   kubernetesDeleteConfirmation,
   useKubernetesResourceActions,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
@@ -9,10 +11,12 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TableCellLink } from '@/components/table-cell-content'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
+import {
+  ResourceNamespaceCell as NamespaceScopeTag,
+  ResourceStatusCell as StatusTag,
+  ResourceNameLink,
+} from '@/features/platform/shared/resource-table-cells'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../../workloads/shared/workload-refresh'
-import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
@@ -29,7 +33,7 @@ import { DeleteOutlined, EditOutlined, EyeOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
 import { includesSearch, normalizeSearchKeyword } from '../../shared/search'
@@ -87,13 +91,8 @@ export function HelmReleasesPage() {
         : 'No matching Helm releases'
       : t('page.extensions.helm.empty', 'No Helm releases in the current scope.')
 
-  const resourceActions = useKubernetesResourceActions<HelmRelease>({
-    resourceKey: 'helm-releases',
-    resourceLabel: 'Helm Release',
-    records: rawItems,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) => [
+  const releaseActions = useCallback(
+    (record: HelmRelease) => [
       ...(canViewValues
         ? [
             {
@@ -171,58 +170,101 @@ export function HelmReleasesPage() {
           ]
         : []),
     ],
+    [
+      canViewValues,
+      canUpdate,
+      canDelete,
+      localeCode,
+      navigate,
+      clusterId,
+      mutationsDisabled,
+      platformWriteBlocked,
+      capabilityReason,
+      deleteMutation.isPending,
+      deleteMutation.variables,
+      deleteMutation.reset,
+      deleteMutation.feedback,
+      deleteMutation.mutateAsync,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<HelmRelease>({
+    resourceKey: 'helm-releases',
+    resourceLabel: 'Helm Release',
+    records: rawItems,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions: releaseActions,
   })
 
-  const columns: TableColumnsType<HelmRelease> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      sorter: (a, b) => a.name.localeCompare(b.name),
-      render: (value: string, record) => (
-        <TableCellLink
-          label={value}
-          onClick={() =>
-            navigate(buildHelmReleaseRoutePath(value, record.namespace, { clusterId }))
-          }
-        />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
-    },
-    {
-      title: 'Chart',
-      dataIndex: 'chart',
-      sorter: (a, b) => (a.chart ?? '').localeCompare(b.chart ?? ''),
-    },
-    {
-      title: 'Revision',
-      dataIndex: 'revision',
-      sorter: (a, b) => Number(a.revision ?? 0) - Number(b.revision ?? 0),
-    },
-    {
-      ...tableColumnPresets.status,
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      dataIndex: 'status',
-      sorter: (a, b) => (a.status ?? '').localeCompare(b.status ?? ''),
-      render: (value?: string) => (value ? <StatusTag value={value} /> : '-'),
-    },
-    {
-      title: 'App Version',
-      dataIndex: 'appVersion',
-      sorter: (a, b) => (a.appVersion ?? '').localeCompare(b.appVersion ?? ''),
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: 'Age',
-      dataIndex: 'ageSeconds',
-      sorter: (a, b) => (a.ageSeconds ?? 0) - (b.ageSeconds ?? 0),
-      render: formatAgeSeconds,
-    },
-  ]
+  const columns = useMemo<TableColumnsType<HelmRelease>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        sorter: (a, b) => a.name.localeCompare(b.name),
+        render: (value: string, record) => (
+          <ResourceNameLink
+            name={value}
+            to={buildHelmReleaseRoutePath(value, record.namespace, { clusterId })}
+            onNavigate={navigate}
+          />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        sorter: (a, b) => a.namespace.localeCompare(b.namespace),
+        render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      },
+      {
+        title: 'Chart',
+        dataIndex: 'chart',
+        sorter: (a, b) => (a.chart ?? '').localeCompare(b.chart ?? ''),
+      },
+      {
+        title: 'Revision',
+        dataIndex: 'revision',
+        sorter: (a, b) => Number(a.revision ?? 0) - Number(b.revision ?? 0),
+      },
+      {
+        ...tableColumnPresets.status,
+        title: localeCode === 'zh_CN' ? '状态' : 'Status',
+        dataIndex: 'status',
+        sorter: (a, b) => (a.status ?? '').localeCompare(b.status ?? ''),
+        render: (value?: string) => (value ? <StatusTag value={value} /> : '-'),
+      },
+      {
+        title: 'App Version',
+        dataIndex: 'appVersion',
+        sorter: (a, b) => (a.appVersion ?? '').localeCompare(b.appVersion ?? ''),
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: 'Age',
+        dataIndex: 'ageSeconds',
+        sorter: (a, b) => (a.ageSeconds ?? 0) - (b.ageSeconds ?? 0),
+        render: formatAgeSeconds,
+      },
+    ],
+    [localeCode, navigate, clusterId],
+  )
+
+  const displayedColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        kind={!clusterId ? 'select-scope' : 'empty'}
+        title={emptyTitle}
+      />
+    ),
+    [clusterId, emptyTitle],
+  )
+  const rowKey = useCallback((record: HelmRelease) => `${record.namespace}:${record.name}`, [])
 
   if (!canView) {
     return (
@@ -272,9 +314,9 @@ export function HelmReleasesPage() {
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+        columns={displayedColumns}
         dataSource={clusterId ? filteredItems : []}
-        rowKey={(record) => `${record.namespace}:${record.name}`}
+        rowKey={rowKey}
         loading={releasesQuery.isLoading}
         localSorting
         tableSize={tableSize}
@@ -298,14 +340,7 @@ export function HelmReleasesPage() {
             />
           </ManagementTableToolbar>
         }
-        empty={
-          <ManagementState
-            bordered={false}
-            compact
-            kind={!clusterId ? 'select-scope' : 'empty'}
-            title={emptyTitle}
-          />
-        }
+        empty={empty}
       />
     </div>
   )

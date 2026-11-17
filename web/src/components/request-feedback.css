@@ -37,6 +37,12 @@
   margin-top: 8px;
   overflow-wrap: anywhere;
 }
+.soha-read-notice-content {
+  width: 100%;
+  max-height: min(50vh, 320px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
 .soha-operation-feedback-details summary {
   cursor: pointer;
   color: var(--soha-text-secondary);

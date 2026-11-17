@@ -5,25 +5,15 @@ import { Avatar, Breadcrumb, Button, Dropdown, Layout, Menu, Spin } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type { MenuProps } from 'antd'
 import {
-  AlertOutlined,
-  AppstoreOutlined,
-  CloudServerOutlined,
   DownOutlined,
   FileAddOutlined,
-  HomeOutlined,
-  InfoCircleOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
   QuestionCircleOutlined,
-  RobotOutlined,
-  SettingOutlined,
-  SlidersOutlined,
   SunOutlined,
   TranslationOutlined,
   LogoutOutlined,
-  LockOutlined,
-  UserOutlined,
 } from '@ant-design/icons'
 import { HeaderActionButton } from '@/components/header-action-button'
 import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
@@ -43,7 +33,7 @@ import {
   getWorkbenchModuleFeature,
   useModuleStatuses,
 } from '@/features/modules'
-import { resolveMenuIcon } from '@/features/system/menu-icons'
+import { resolveMenuIcon, resolveWorkbenchIcon } from '@/features/system/menu-icons'
 import { MENU_WORKBENCH_ORDER } from '@/features/system'
 import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import {
@@ -367,50 +357,50 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
         key: 'home',
         label: 'Portal',
         description: 'Application portal and unified workspace entry',
-        icon: <HomeOutlined />,
+        icon: resolveWorkbenchIcon('home'),
       },
       {
         key: 'platform',
         label: 'K8s Workbench',
         description:
           'Operations dashboard for clusters, workloads, network, storage, and runtime resources',
-        icon: <AppstoreOutlined />,
+        icon: resolveWorkbenchIcon('platform'),
       },
       {
         key: 'delivery',
         label: 'Continuous Delivery Workbench',
         description: 'Build, test, and release applications',
-        icon: <CloudServerOutlined />,
+        icon: resolveWorkbenchIcon('delivery'),
       },
       {
         key: 'monitoring',
         label: 'Observability Workbench',
         description: 'Logs, alerts, routes, notifications, and on-call flows',
-        icon: <AlertOutlined />,
+        icon: resolveWorkbenchIcon('monitoring'),
       },
       {
         key: 'compute',
         label: 'Compute Resources',
         description: 'Virtualization, runtime hosts, containers, and operation tasks',
-        icon: <SlidersOutlined />,
+        icon: resolveWorkbenchIcon('compute'),
       },
       {
         key: 'ai',
         label: 'AI Workbench',
         description: 'Investigation, automation, tools, and skills',
-        icon: <img src="/heya-avatar.svg" width={24} height={24} alt="" />,
+        icon: resolveWorkbenchIcon('ai'),
       },
       {
         key: 'security',
         label: 'Internal Workbench',
         description: 'Identity providers, applications, and access integrations',
-        icon: <LockOutlined />,
+        icon: resolveWorkbenchIcon('security'),
       },
       {
         key: 'settings',
         label: 'Settings Center',
         description: 'Login, branding, monitoring, and AI settings',
-        icon: <SettingOutlined />,
+        icon: resolveWorkbenchIcon('settings'),
       },
     ]
   }
@@ -419,49 +409,49 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
       key: 'home',
       label: '门户',
       description: '应用门户与统一工作台入口',
-      icon: <HomeOutlined />,
+      icon: resolveWorkbenchIcon('home'),
     },
     {
       key: 'platform',
       label: 'k8s工作台',
       description: '面向运维视角的集群、工作负载、网络、存储与运行资源',
-      icon: <AppstoreOutlined />,
+      icon: resolveWorkbenchIcon('platform'),
     },
     {
       key: 'delivery',
       label: '持续交付工作台',
       description: '应用构建、测试与发布',
-      icon: <CloudServerOutlined />,
+      icon: resolveWorkbenchIcon('delivery'),
     },
     {
       key: 'monitoring',
       label: '可观测性工作台',
       description: '日志、告警、路由、通知和值班协同',
-      icon: <AlertOutlined />,
+      icon: resolveWorkbenchIcon('monitoring'),
     },
     {
       key: 'compute',
       label: '计算资源工作台',
       description: '虚拟化、运行时主机、容器管理与任务追踪',
-      icon: <SlidersOutlined />,
+      icon: resolveWorkbenchIcon('compute'),
     },
     {
       key: 'ai',
       label: 'AI工作台',
       description: '调查、自动化、工具与技能',
-      icon: <RobotOutlined />,
+      icon: resolveWorkbenchIcon('ai'),
     },
     {
       key: 'security',
       label: '内网工作台',
       description: '身份提供商、应用目录与接入集成',
-      icon: <LockOutlined />,
+      icon: resolveWorkbenchIcon('security'),
     },
     {
       key: 'settings',
       label: '设置中心',
       description: '登录、品牌、监控与 AI 设置',
-      icon: <SettingOutlined />,
+      icon: resolveWorkbenchIcon('settings'),
     },
   ]
 }
@@ -483,6 +473,7 @@ function WorkbenchSwitcher({
 }) {
   const dropdownItems: MenuProps['items'] = options.map((option) => ({
     key: option.key,
+    className: 'soha-icon-trigger',
     label: (
       <div className="soha-workspace-option">
         <span className="soha-workspace-option__icon">{option.icon}</span>
@@ -495,10 +486,11 @@ function WorkbenchSwitcher({
   if (onAssistant)
     dropdownItems.splice(Math.max(0, options.findIndex((option) => option.key === 'home') + 1), 0, {
       key: 'ai-assistant',
+      className: 'soha-icon-trigger',
       label: (
         <div className="soha-workspace-option">
           <span className="soha-workspace-option__icon">
-            <RobotOutlined />
+            <img src="/heya-avatar.svg" width={24} height={24} alt="" />
           </span>
           <span className="soha-workspace-option__copy">
             <span className="soha-workspace-option__label">{assistantLabel}</span>
@@ -508,7 +500,11 @@ function WorkbenchSwitcher({
     })
 
   const trigger = (
-    <Button aria-label={current.label} className="soha-workbench-switcher" type="text">
+    <Button
+      aria-label={current.label}
+      className="soha-workbench-switcher soha-icon-trigger"
+      type="text"
+    >
       <span className="soha-workbench-switcher__icon">{current.icon}</span>
       {!collapsed ? (
         <span className="soha-workbench-switcher__copy">
@@ -626,7 +622,7 @@ export function AppLayout() {
       key: 'account',
       label: t('layout.accountSettings', '个人设置'),
       description: t('layout.accountCenterDescription', '个人中心与账号信息'),
-      icon: <SettingOutlined />,
+      icon: resolveWorkbenchIcon('account'),
     }),
     [t],
   )
@@ -634,10 +630,10 @@ export function AppLayout() {
     () => [
       {
         key: '/account/profile',
-        icon: <UserOutlined />,
+        icon: resolveMenuIcon('user'),
         label: t('layout.profile', '个人中心'),
       },
-      { key: '/about', icon: <InfoCircleOutlined />, label: t('layout.about', '关于') },
+      { key: '/about', icon: resolveMenuIcon('info'), label: t('layout.about', '关于') },
     ],
     [t],
   )
@@ -1337,19 +1333,19 @@ export function AppLayout() {
                             ? [
                                 {
                                   key: 'portal',
-                                  icon: <AppstoreOutlined />,
+                                  icon: resolveWorkbenchIcon('home'),
                                   label: t('layout.portal', '门户首页'),
                                 },
                               ]
                             : []),
                           {
                             key: 'accountSettings',
-                            icon: <SettingOutlined />,
+                            icon: resolveMenuIcon('settings'),
                             label: t('layout.accountSettings', '个人设置'),
                           },
                           {
                             key: 'changePassword',
-                            icon: <LockOutlined />,
+                            icon: resolveMenuIcon('shield'),
                             label: t('layout.changePassword', '修改密码'),
                           },
                           { type: 'divider' },

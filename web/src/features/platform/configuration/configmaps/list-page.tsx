@@ -1,6 +1,6 @@
+import { ResourceNamespaceCell } from '@/features/platform/shared/resource-table-cells'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { useI18n } from '@/i18n'
 import type { TableColumnsType } from 'antd'
@@ -33,7 +33,7 @@ export function ConfigurationConfigMapsPage() {
       dataIndex: 'namespace',
       width: 200,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       title: zh ? '文本键' : 'Text keys',

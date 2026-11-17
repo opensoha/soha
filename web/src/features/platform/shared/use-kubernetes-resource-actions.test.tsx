@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, type ReactNode } from 'react'
+import { act, useCallback, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from 'antd'
 import { beforeEach, afterEach, expect, it, vi, type Mock } from 'vitest'
@@ -17,14 +17,12 @@ type Row = { name: string; namespace: string; uid: string }
 let records: Row[], allowed: boolean, disabled: boolean, visible: boolean
 let run: Mock<(row: Row) => Promise<void>>
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>
+let currentResult: ReturnType<typeof useKubernetesResourceActions<Row>>
+const getName = (row: Row) => row.name
+const getKey = (row: Row) => row.uid
 function Harness() {
-  const result = useKubernetesResourceActions({
-    resourceKey: 'sample',
-    resourceLabel: 'Sample',
-    records,
-    getName: (row) => row.name,
-    getKey: (row) => row.uid,
-    actions: (row) =>
+  const actions = useCallback(
+    (row: Row) =>
       allowed
         ? [
             {
@@ -38,7 +36,17 @@ function Harness() {
             },
           ]
         : [],
+    [allowed, disabled, run],
+  )
+  const result = useKubernetesResourceActions({
+    resourceKey: 'sample',
+    resourceLabel: 'Sample',
+    records,
+    getName,
+    getKey,
+    actions,
   })
+  currentResult = result
   return (
     <>
       {visible
@@ -235,4 +243,29 @@ it('explicit action buttons use the same confirmation and current permission che
   expect(ok()?.disabled).toBe(true)
   await click(ok())
   expect(run).not.toHaveBeenCalled()
+})
+
+it('keeps the column stable for refreshed records while old selections revalidate current data and scope', async () => {
+  await render()
+  const previousRecord = records[0]
+  const column = currentResult.column
+  const select = currentResult.selectAction
+  records = [{ ...previousRecord, name: 'current' }]
+  await render()
+  expect(currentResult.column).toBe(column)
+  expect(currentResult.selectAction).toBe(select)
+  await act(async () => select(previousRecord, 'delete'))
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('team / current')
+  await click(ok())
+  expect(run).toHaveBeenCalledExactlyOnceWith(records[0])
+  allowed = false
+  await render()
+  await act(async () => select(previousRecord, 'delete'))
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  scope.clusterId = 'other'
+  allowed = true
+  await render()
+  await act(async () => select(previousRecord, 'delete'))
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(run).toHaveBeenCalledTimes(1)
 })

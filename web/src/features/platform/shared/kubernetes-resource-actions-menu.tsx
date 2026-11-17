@@ -25,6 +25,7 @@ export function KubernetesResourceActionsMenu({
   onSelect: (key: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [activated, setActivated] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuId = useId()
   useEffect(() => {
@@ -45,90 +46,102 @@ export function KubernetesResourceActionsMenu({
     if (!items?.length) setOpen(false)
   }, [items?.length])
   if (!items?.length) return null
+  const openMenu = () => {
+    if (disabled || loading) return
+    setActivated(true)
+    setOpen(true)
+  }
+  const trigger = triggerLabel ? (
+    <Button
+      ref={triggerRef}
+      autoInsertSpace={false}
+      size="small"
+      disabled={disabled}
+      loading={loading}
+      aria-label={triggerLabel}
+      aria-busy={loading || undefined}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onClick={!activated ? openMenu : undefined}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          openMenu()
+        }
+      }}
+    >
+      {triggerLabel} <DownOutlined aria-hidden />
+    </Button>
+  ) : (
+    <ManagementIconButton
+      ref={triggerRef}
+      className="soha-kubernetes-actions-trigger"
+      size="small"
+      color="default"
+      disabled={disabled}
+      aria-label={localeCode === 'zh_CN' ? `更多操作：${name}` : `More actions: ${name}`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      tooltip={localeCode === 'zh_CN' ? '更多操作' : 'More actions'}
+      icon={<MoreOutlined aria-hidden />}
+      onClick={!activated ? openMenu : undefined}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          openMenu()
+        }
+      }}
+    />
+  )
   // Keep the menu as one intrinsic control; the table's icon-group measurement
   // must not replace the resource column's explicit 64px interaction budget.
   return (
     <span className="soha-kubernetes-action-menu" onClick={(event) => event.stopPropagation()}>
-      <Dropdown
-        disabled={disabled}
-        destroyOnHidden
-        placement="bottomRight"
-        trigger={['click']}
-        open={open}
-        onOpenChange={setOpen}
-        menu={{
-          id: menuId,
-          onKeyDownCapture: (event) => {
-            if (
-              event.key === 'Enter' &&
-              event.target instanceof Element &&
-              event.target.closest('a[href]')
-            ) {
-              // Let the native link click close the menu without selecting twice.
+      {activated ? (
+        <Dropdown
+          disabled={disabled}
+          destroyOnHidden
+          placement="bottomRight"
+          trigger={['click']}
+          open={open}
+          onOpenChange={setOpen}
+          menu={{
+            id: menuId,
+            onKeyDownCapture: (event) => {
+              if (
+                event.key === 'Enter' &&
+                event.target instanceof Element &&
+                event.target.closest('a[href]')
+              ) {
+                // Let the native link click close the menu without selecting twice.
+                event.stopPropagation()
+                return
+              }
+              if (event.key !== 'Escape' && event.key !== 'Tab') return
+              if (event.key === 'Escape') event.preventDefault()
               event.stopPropagation()
-              return
-            }
-            if (event.key !== 'Escape' && event.key !== 'Tab') return
-            if (event.key === 'Escape') event.preventDefault()
-            event.stopPropagation()
-            setOpen(false)
-            triggerRef.current?.focus()
-          },
-          'aria-label':
-            localeCode === 'zh_CN'
-              ? `${resourceLabel} 操作：${name}`
-              : `${resourceLabel} actions: ${name}`,
-          items,
-          onClick: ({ key, domEvent }) => {
-            // Enter must not activate the trigger after focus returns to it.
-            if ('key' in domEvent && domEvent.key === 'Enter') domEvent.preventDefault()
-            setOpen(false)
-            triggerRef.current?.focus()
-            onSelect(key)
-          },
-        }}
-      >
-        {triggerLabel ? (
-          <Button
-            ref={triggerRef}
-            autoInsertSpace={false}
-            size="small"
-            disabled={disabled}
-            loading={loading}
-            aria-label={triggerLabel}
-            aria-busy={loading || undefined}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault()
-                setOpen(true)
-              }
-            }}
-          >
-            {triggerLabel} <DownOutlined aria-hidden />
-          </Button>
-        ) : (
-          <ManagementIconButton
-            ref={triggerRef}
-            className="soha-kubernetes-actions-trigger"
-            size="small"
-            color="default"
-            disabled={disabled}
-            aria-label={localeCode === 'zh_CN' ? `更多操作：${name}` : `More actions: ${name}`}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            tooltip={localeCode === 'zh_CN' ? '更多操作' : 'More actions'}
-            icon={<MoreOutlined aria-hidden />}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault()
-                setOpen(true)
-              }
-            }}
-          />
-        )}
-      </Dropdown>
+              setOpen(false)
+              triggerRef.current?.focus()
+            },
+            'aria-label':
+              localeCode === 'zh_CN'
+                ? `${resourceLabel} 操作：${name}`
+                : `${resourceLabel} actions: ${name}`,
+            items,
+            onClick: ({ key, domEvent }) => {
+              // Enter must not activate the trigger after focus returns to it.
+              if ('key' in domEvent && domEvent.key === 'Enter') domEvent.preventDefault()
+              setOpen(false)
+              triggerRef.current?.focus()
+              onSelect(key)
+            },
+          }}
+        >
+          {trigger}
+        </Dropdown>
+      ) : (
+        trigger
+      )}
     </span>
   )
 }

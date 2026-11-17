@@ -133,6 +133,7 @@ vi.mock('@/features/platform/resource-creation/components/global-create-modal', 
 
 vi.mock('@/features/system/menu-icons', () => ({
   resolveMenuIcon: () => null,
+  resolveWorkbenchIcon: () => null,
 }))
 
 vi.mock('@/features/system/menu-schema', async () => {

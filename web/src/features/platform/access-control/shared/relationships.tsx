@@ -1,12 +1,12 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Tag, Typography } from 'antd'
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { buildAccessControlDetailRoute } from './paths'
 import { accessControlQueries } from './queries'
@@ -53,7 +53,7 @@ function detailKindForRelationship(kind: string): AccessControlKind | null {
   }
 }
 
-export function AccessControlNameLink({
+export const AccessControlNameLink = memo(function AccessControlNameLink({
   kind,
   label,
   name,
@@ -66,14 +66,15 @@ export function AccessControlNameLink({
 }) {
   const navigate = useNavigate()
   return (
-    <TableCellLink
-      label={label ?? name}
-      onClick={() => navigate(buildAccessControlDetailRoute(kind, name, namespace))}
+    <ResourceNameLink
+      name={label ?? name}
+      to={buildAccessControlDetailRoute(kind, name, namespace)}
+      onNavigate={navigate}
     />
   )
-}
+})
 
-export function AccessControlRelationshipLink({
+export const AccessControlRelationshipLink = memo(function AccessControlRelationshipLink({
   kind,
   name,
   namespace,
@@ -94,7 +95,7 @@ export function AccessControlRelationshipLink({
       </Button>
     </Tag>
   )
-}
+})
 
 function RelationshipPanel({
   items,
@@ -114,7 +115,7 @@ function RelationshipPanel({
   )
 }
 
-export function AccessControlSubjectLinks({
+export const AccessControlSubjectLinks = memo(function AccessControlSubjectLinks({
   namespace,
   subjects,
 }: {
@@ -140,7 +141,7 @@ export function AccessControlSubjectLinks({
       })}
     </div>
   )
-}
+})
 
 export function AccessControlBindingRelationships({
   namespace,

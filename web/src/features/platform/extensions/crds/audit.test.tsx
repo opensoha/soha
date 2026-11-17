@@ -12,6 +12,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { ApiError } from '@/services/api-error'
 import { CRDApiGroupDetailPage } from './api-group-detail-page'
 import { deleteCustomResource } from './api'
+import { crdKeys } from './keys'
 import type {
   ApplyCustomResourceVariables,
   CRD,
@@ -28,7 +29,20 @@ type RelationshipProps = {
   resolveCustomDetailPath: (resource: KubernetesResourceRef) => string | null
 }
 
+type TableProbe = {
+  dataSource: CRDResourceInstance[]
+  columns: Array<{
+    key?: string
+    dataIndex?: keyof CRDResourceInstance
+    sortOrder?: string | null
+    render?: (value: unknown, record: CRDResourceInstance, index: number) => ReactNode
+  }>
+  headerExtra?: ReactNode
+  onChange?: import('antd').TableProps<CRDResourceInstance>['onChange']
+}
+
 const fixtures = vi.hoisted(() => ({
+  tables: [] as TableProbe[],
   reads: [] as Array<{ action: string; clusterId: string }>,
   writes: [] as ApplyCustomResourceVariables[],
   relationships: [] as RelationshipProps[],
@@ -156,38 +170,30 @@ vi.mock('@/components/k8s-yaml-editor', () => ({
   ),
 }))
 vi.mock('@/features/platform/shared/kubernetes-resource-table', () => ({
-  KubernetesResourceTable: ({
-    dataSource,
-    columns,
-    headerExtra,
-  }: {
-    dataSource: CRDResourceInstance[]
-    columns: Array<{
-      key?: string
-      dataIndex?: keyof CRDResourceInstance
-      render?: (value: unknown, record: CRDResourceInstance, index: number) => ReactNode
-    }>
-    headerExtra?: ReactNode
-  }) => (
-    <div>
-      {headerExtra}
-      {dataSource.map((record, index) => (
-        <div key={`${record.namespace}/${record.name}`}>
-          {columns.map((column, i) => (
-            <span key={column.key ?? i}>
-              {column.render
-                ? column.render(
-                    column.dataIndex ? record[column.dataIndex] : undefined,
-                    record,
-                    index,
-                  )
-                : null}
-            </span>
-          ))}
-        </div>
-      ))}
-    </div>
-  ),
+  KubernetesResourceTable: (props: TableProbe) => {
+    fixtures.tables.push(props)
+    const { dataSource, columns, headerExtra } = props
+    return (
+      <div>
+        {headerExtra}
+        {dataSource.map((record, index) => (
+          <div key={`${record.namespace}/${record.name}`}>
+            {columns.map((column, i) => (
+              <span key={column.key ?? i}>
+                {column.render
+                  ? column.render(
+                      column.dataIndex ? record[column.dataIndex] : undefined,
+                      record,
+                      index,
+                    )
+                  : null}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  },
 }))
 
 let root: Root | undefined
@@ -305,6 +311,7 @@ describe('CRD target and navigation audit', () => {
   })
   beforeEach(() => {
     localStorage.clear()
+    fixtures.tables = []
     fixtures.reads = []
     fixtures.writes = []
     fixtures.relationships = []
@@ -321,6 +328,77 @@ describe('CRD target and navigation audit', () => {
     container?.remove()
     document.querySelectorAll('.ant-modal-root').forEach((node) => node.remove())
     root = undefined
+  })
+
+  it('keeps instance table inputs stable on unchanged refresh and updates real records, permissions and sort', async () => {
+    await render('?clusterId=cluster-a&kind=widgets.quality.example&namespace=&tab=instances')
+    await vi.waitFor(async () => {
+      await settle()
+      expect(fixtures.tables.at(-1)?.dataSource).toHaveLength(1)
+    })
+    const initial = fixtures.tables.at(-1)!
+    const key = crdKeys.resources('cluster-a', fixtures.definition, null)
+    await act(async () => {
+      await client.refetchQueries({ queryKey: key })
+    })
+    await settle()
+    const refreshed = fixtures.tables.at(-1)!
+    expect(refreshed.dataSource).toBe(initial.dataSource)
+    expect(refreshed.columns).toBe(initial.columns)
+    expect(refreshed.onChange).toBe(initial.onChange)
+    const record = {
+      ...initial.dataSource[0],
+      uid: 'replacement-uid',
+      status: 'Pending',
+      allowedActions: ['view'],
+    }
+    await act(async () => {
+      client.setQueryData(key, [record])
+    })
+    await settle()
+    const updated = fixtures.tables.at(-1)!
+    expect(updated.dataSource[0]).toMatchObject(record)
+    expect(updated.columns.some((column) => column.key === 'actions')).toBe(false)
+    expect(container.textContent).toContain('等待中')
+    await act(async () => {
+      updated.onChange?.(
+        {},
+        {},
+        { columnKey: 'status', order: 'descend' },
+        { action: 'sort', currentDataSource: updated.dataSource },
+      )
+    })
+    expect(
+      fixtures.tables.at(-1)!.columns.find((column) => column.key === 'status')?.sortOrder,
+    ).toBe('descend')
+    await button('same-name')
+    expect(new URLSearchParams(router.state.location.search).get('resource')).toBe('same-name')
+    expect(container.querySelector('.soha-crd-resource-detail')?.textContent).toContain(
+      'replacement-uid',
+    )
+  })
+
+  it('keeps the custom namespace cell paired with the store and scoped URL', async () => {
+    await render(
+      '?clusterId=cluster-a&kind=widgets.quality.example&namespace=&tab=instances&q=keep',
+    )
+    await vi.waitFor(() =>
+      expect(container.querySelector('.soha-crd-namespace-filter')).not.toBeNull(),
+    )
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.soha-crd-namespace-filter')!.click()
+    })
+    await settle()
+    expect(usePlatformScopeStore.getState().namespace).toBe('monitoring')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(Object.fromEntries(params)).toMatchObject({
+      clusterId: 'cluster-a',
+      kind: 'widgets.quality.example',
+      namespace: 'monitoring',
+      tab: 'instances',
+      q: 'keep',
+    })
+    expect(params.has('resource')).toBe(false)
   })
 
   it('honors a copied cluster-a deep link even when the persisted selection is cluster-b', async () => {

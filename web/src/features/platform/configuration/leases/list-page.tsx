@@ -1,5 +1,7 @@
+import { ResourceNamespaceCell } from '@/features/platform/shared/resource-table-cells'
+import { useDeferredOverlay } from '@/components/use-deferred-overlay'
+import { memo } from 'react'
 import { TableCellText } from '@/components/table-cell-content'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
@@ -9,21 +11,39 @@ import { useNavigate } from 'react-router-dom'
 import { ConfigurationNameLink, ConfigurationResourceListPage } from '../shared/list-page'
 import { LEASE_TEMPLATE, type LeaseResource } from './types'
 
+const LeaseTimestamp = memo(function LeaseTimestamp({ value }: { value?: string }) {
+  const { triggerRef, activated, open, setOpen, activate, activateOnHover, cancelHover } =
+    useDeferredOverlay<HTMLSpanElement>()
+  if (!value) return '—'
+  const timestamp = (
+    <span
+      ref={triggerRef}
+      tabIndex={0}
+      onMouseEnter={activateOnHover}
+      onMouseLeave={cancelHover}
+      onFocus={activated ? undefined : activate}
+      onClick={activated ? undefined : activate}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setOpen(false)
+      }}
+    >
+      {Number.isFinite(Date.parse(value)) ? formatDateTime(value) : value}
+    </span>
+  )
+  return activated ? (
+    <Tooltip title={value} trigger={['hover', 'focus', 'click']} open={open} onOpenChange={setOpen}>
+      {timestamp}
+    </Tooltip>
+  ) : (
+    timestamp
+  )
+})
+
 export function ConfigurationLeasesPage() {
   const { localeCode } = useI18n(),
     zh = localeCode === 'zh_CN'
   const { clusterId } = usePlatformScopeStore(),
     navigate = useNavigate()
-  const timestamp = (value?: string) =>
-    value ? (
-      <Tooltip title={value} trigger={['hover', 'focus', 'click']}>
-        <span tabIndex={0}>
-          {Number.isFinite(Date.parse(value)) ? formatDateTime(value) : value}
-        </span>
-      </Tooltip>
-    ) : (
-      '—'
-    )
   const timeSort = (value?: string) =>
     value && Number.isFinite(Date.parse(value)) ? Date.parse(value) : -8640000000000000
   const columns: TableColumnsType<LeaseResource> = [
@@ -41,7 +61,7 @@ export function ConfigurationLeasesPage() {
       dataIndex: 'namespace',
       width: 220,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (namespace: string) => <NamespaceScopeTag namespace={namespace} />,
+      render: (namespace: string) => <ResourceNamespaceCell namespace={namespace} />,
     },
     {
       title: zh ? '持有者' : 'Holder',
@@ -65,7 +85,7 @@ export function ConfigurationLeasesPage() {
       dataIndex: 'renewTime',
       width: 190,
       sorter: (a, b) => timeSort(a.renewTime) - timeSort(b.renewTime),
-      render: timestamp,
+      render: (value?: string) => <LeaseTimestamp value={value} />,
     },
     {
       ...tableColumnPresets.datetime,
@@ -73,7 +93,7 @@ export function ConfigurationLeasesPage() {
       dataIndex: 'acquireTime',
       width: 190,
       sorter: (a, b) => timeSort(a.acquireTime) - timeSort(b.acquireTime),
-      render: timestamp,
+      render: (value?: string) => <LeaseTimestamp value={value} />,
     },
     {
       ...tableColumnPresets.datetime,

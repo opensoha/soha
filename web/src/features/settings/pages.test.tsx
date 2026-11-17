@@ -408,11 +408,11 @@ async function renderWithProviders(node: ReactNode, route: string) {
 
   await act(async () => {
     root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
+      <MemoryRouter initialEntries={[route]}>
+        <AntdApp>
+          <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+        </AntdApp>
+      </MemoryRouter>,
     )
   })
 
@@ -625,15 +625,18 @@ describe('settings ai page rendering', () => {
         : Promise.resolve({ data: testState.responses[path] ?? {} }),
     )
 
-    const overview = await renderWithProviders(<SettingsOverviewPage />, '/settings/overview')
-    const login = await renderWithProviders(<LoginSettingsPage />, '/settings/login')
-    const branding = await renderWithProviders(<BrandingSettingsPage />, '/settings/branding')
-    const ai = await renderWithProviders(<AISettingsPage />, '/ai-workbench/model-settings')
+    await renderWithProviders(<SettingsOverviewPage />, '/settings/overview')
+    await renderWithProviders(<LoginSettingsPage />, '/settings/login')
+    await renderWithProviders(<BrandingSettingsPage />, '/settings/branding')
+    await renderWithProviders(<AISettingsPage />, '/ai-workbench/model-settings')
 
-    for (const container of [overview, login, branding, ai]) {
-      expect(container.textContent).toMatch(/读取失败|加载失败/)
-      expect(container.textContent).toContain('重试')
-    }
+    await vi.waitFor(() => {
+      const feedback = document.body.querySelector('.soha-read-feedback-notification')
+      for (const label of ['用户', '登录设置', '品牌设置', 'AI 默认模型']) {
+        expect(feedback?.textContent).toContain(label)
+      }
+      expect(feedback?.querySelector('button[aria-label^="重试读取"]')).not.toBeNull()
+    })
   })
 
   it.each(['/auth/sessions', '/audit/summary', '/operations/summary'])(
@@ -649,14 +652,16 @@ describe('settings ai page rendering', () => {
 
       expect(overview.textContent).toContain('用户总数')
       expect(overview.textContent).toContain('角色数')
-      expect(overview.textContent).toContain(
-        ({
-          '/auth/sessions': '在线会话',
-          '/audit/summary': '审计汇总',
-          '/operations/summary': '操作汇总',
-        }[failingPath] ?? '') + '读取失败',
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          ({
+            '/auth/sessions': '在线会话',
+            '/audit/summary': '审计汇总',
+            '/operations/summary': '操作汇总',
+          }[failingPath] ?? '') + '读取失败',
+        ),
       )
-      expect(overview.querySelector('button[aria-label^="重试读取"]')).not.toBeNull()
+      expect(document.body.querySelector('button[aria-label^="重试读取"]')).not.toBeNull()
     },
   )
 
@@ -675,16 +680,18 @@ describe('settings ai page rendering', () => {
       expect(overview.textContent).toContain('角色数')
       expect(overview.textContent).toContain('组织数')
       expect(overview.textContent).toContain('访问策略')
-      expect(overview.textContent).toContain(
-        ({
-          '/access/users': '用户',
-          '/access/roles': '角色',
-          '/access/teams': '组织',
-          '/access/policies': '访问策略',
-        }[failingPath] ?? '') + '读取失败',
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          ({
+            '/access/users': '用户',
+            '/access/roles': '角色',
+            '/access/teams': '组织',
+            '/access/policies': '访问策略',
+          }[failingPath] ?? '') + '读取失败',
+        ),
       )
       expect(overview.textContent).toContain('加载失败')
-      expect(overview.querySelector('button[aria-label^="重试读取"]')).not.toBeNull()
+      expect(document.body.querySelector('button[aria-label^="重试读取"]')).not.toBeNull()
     },
   )
 

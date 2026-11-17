@@ -4,12 +4,12 @@ import { BooleanTag, MetadataTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { Card, Input, Select, Typography } from 'antd'
-import { useState, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import type { EndpointSliceDetail, EndpointSliceEndpoint } from './types'
 import '../gateway-api/gateway.css'
 import './endpointslice.css'
 
-export function SlicePorts({ ports }: { ports?: readonly string[] }) {
+export const SlicePorts = memo(function SlicePorts({ ports }: { ports?: readonly string[] }) {
   return (
     <div className="soha-slice-ports">
       {ports?.length ? (
@@ -25,7 +25,7 @@ export function SlicePorts({ ports }: { ports?: readonly string[] }) {
       )}
     </div>
   )
-}
+})
 export type SliceLink = (
   kind: 'Service' | 'Pod' | 'Node',
   name: string,

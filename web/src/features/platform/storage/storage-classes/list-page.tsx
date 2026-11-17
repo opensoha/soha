@@ -1,8 +1,9 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { BooleanTag } from '@/components/status-tag'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { StorageListPage } from '../shared/list-page'
@@ -32,7 +33,7 @@ export function StorageClassesPage() {
       ellipsis: { showTitle: false },
       width: 260,
       render: (value: string) => (
-        <TableCellLink label={value} onClick={() => navigate(detailPath(value))} />
+        <ResourceNameLink name={value} to={detailPath(value)} onNavigate={navigate} />
       ),
     },
     {

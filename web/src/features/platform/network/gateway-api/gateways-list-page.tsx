@@ -1,5 +1,7 @@
+import { getNamespacedResourceKey } from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -28,70 +30,92 @@ export function NetworkGatewaysPage() {
     hasPermission(permissions, `platform.network.gateways.${action}`)
   const canRead = permitted('view'),
     refresh = useWorkloadRefresh()
-  const detailPath = (record: Gateway, tab?: string) =>
-    buildGatewayAPIRoutePath('gateways', record.name, record.namespace, {
-      clusterId: clusterId || '',
-      tab,
-    })
+  const detailPath = useCallback(
+    (record: Gateway, tab?: string) =>
+      buildGatewayAPIRoutePath('gateways', record.name, record.namespace, {
+        clusterId: clusterId || '',
+        tab,
+      }),
+    [clusterId],
+  )
   const options = gatewayAPIQueries.list<Gateway>('gateways', toScopeKey(clusterId, namespace))
   const query = useQuery({
     ...options,
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const columns: TableColumnsType<Gateway> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 300,
-      ellipsis: { showTitle: false },
-      render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(detailPath(record))} />
-      ),
-    },
-    { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
-    {
-      title: 'GatewayClass',
-      dataIndex: 'gatewayClass',
-      width: 190,
-      render: (value?: string) => {
-        const path = value
-          ? networkResourcePath(permissions, {
-              kind: 'GatewayClass',
-              clusterId: clusterId || '',
-              name: value,
-            })
-          : null
-        return path ? (
-          <Link className="soha-gateway-wrap" to={path}>
-            {value}
-          </Link>
-        ) : (
-          <span className="soha-gateway-wrap">{value || '—'}</span>
-        )
+  const columns = useMemo<TableColumnsType<Gateway>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 300,
+        ellipsis: { showTitle: false },
+        render: (value: string, record) => (
+          <ResourceNameLink name={value} to={detailPath(record)} onNavigate={navigate} />
+        ),
       },
-    },
-    {
-      title: zh ? '已分配地址' : 'Assigned addresses',
-      dataIndex: 'addresses',
-      width: 260,
-      render: (value?: string[]) => (
-        <GatewayAddresses addresses={value} empty={zh ? '未返回地址' : 'No address returned'} />
-      ),
-    },
-    {
-      title: zh ? '监听器' : 'Listeners',
-      dataIndex: 'listenerCount',
-      width: 110,
-      render: (value: number, record) => <Link to={detailPath(record, 'listeners')}>{value}</Link>,
-    },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 110,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+      { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
+      {
+        title: 'GatewayClass',
+        dataIndex: 'gatewayClass',
+        width: 190,
+        render: (value?: string) => {
+          const path = value
+            ? networkResourcePath(permissions, {
+                kind: 'GatewayClass',
+                clusterId: clusterId || '',
+                name: value,
+              })
+            : null
+          return path ? (
+            <Link className="soha-gateway-wrap" to={path}>
+              {value}
+            </Link>
+          ) : (
+            <span className="soha-gateway-wrap">{value || '—'}</span>
+          )
+        },
+      },
+      {
+        title: zh ? '已分配地址' : 'Assigned addresses',
+        dataIndex: 'addresses',
+        width: 260,
+        render: (value?: string[]) => (
+          <GatewayAddresses addresses={value} empty={zh ? '未返回地址' : 'No address returned'} />
+        ),
+      },
+      {
+        title: zh ? '监听器' : 'Listeners',
+        dataIndex: 'listenerCount',
+        width: 110,
+        render: (value: number, record) => (
+          <Link to={detailPath(record, 'listeners')}>{value}</Link>
+        ),
+      },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 110,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [zh, navigate, detailPath, permissions, clusterId],
+  )
+  const searchValues = useCallback(
+    (record: Gateway) => [
+      record.name,
+      record.namespace,
+      record.gatewayClass,
+      ...(record.addresses || []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: Gateway) => navigate(detailPath(record, 'yaml')),
+    [navigate, detailPath],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="Gateways" />
@@ -100,11 +124,9 @@ export function NetworkGatewaysPage() {
           kind="gateways"
           query={query}
           columns={columns}
-          rowKey={(item: Gateway) => `${item.namespace}/${item.name}`}
+          rowKey={getNamespacedResourceKey}
           deletable={permitted('delete')}
-          onEdit={
-            permitted('update') ? (record) => navigate(detailPath(record, 'yaml')) : undefined
-          }
+          onEdit={permitted('update') ? editRecord : undefined}
           buildAIPageContext={(items, searchKeyword) => ({
             sourceWorkbench: 'platform',
             sourceRoute: '/network/gateway-api/gateways',
@@ -125,12 +147,7 @@ export function NetworkGatewaysPage() {
             zh_CN: '搜索网关 / 命名空间 / Class / 地址',
             en_US: 'Search gateway / namespace / Class / address',
           }}
-          searchValues={(record) => [
-            record.name,
-            record.namespace,
-            record.gatewayClass,
-            ...(record.addresses || []),
-          ]}
+          searchValues={searchValues}
           refreshControl={
             <WorkloadRefresh
               compact

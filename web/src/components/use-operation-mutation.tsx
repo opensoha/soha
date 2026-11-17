@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, type UseMutationOptions } from '@tanstack/react-query'
 import { OperationFeedback } from '@/components/request-feedback'
 import { localeText, useI18n } from '@/i18n'
@@ -45,15 +45,45 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
       }
     },
   })
+  const resetMutation = mutation.reset
+  const reset = useCallback(() => {
+    if (!fence.current && !uncertain.current) resetMutation()
+  }, [resetMutation])
   const resultError = mutation.isSuccess ? feedback.resultError?.(mutation.data) : undefined
   const outcomeUnknown = !feedback.readOnly && writeOutcomeUnknown(mutation.error ?? resultError)
-  const begin = (variables: TVariables) => {
+  const currentTarget = useRef(feedback.target)
+  currentTarget.current = feedback.target
+  const begin = useCallback((variables: TVariables) => {
     if (fence.current || uncertain.current) return false
-    const submittedTarget = feedback.target(variables)
+    const submittedTarget = currentTarget.current(variables)
     fence.current = true
     setTarget(submittedTarget)
     return true
-  }
+  }, [])
+  const submit = mutation.mutate
+  const submitAsync = mutation.mutateAsync
+  const mutate = useCallback<typeof mutation.mutate>(
+    (variables, callbacks) => {
+      if (begin(variables)) submit(variables, callbacks)
+    },
+    [begin, submit],
+  )
+  const mutateAsync = useCallback<typeof mutation.mutateAsync>(
+    (variables, callbacks) => {
+      if (!begin(variables))
+        return Promise.reject(
+          new Error(
+            localeText(
+              localeCode,
+              '原请求尚待核对，请勿重复提交。',
+              'Check the original request before submitting again.',
+            ),
+          ),
+        )
+      return submitAsync(variables, callbacks)
+    },
+    [begin, localeCode, submitAsync],
+  )
   const receipt = mutation.isSuccess
     ? (feedback.receipt?.(mutation.data, mutation.variables as TVariables) ?? {
         message: localeText(localeCode, `${label}：请求已返回`, `${label}: request returned`),
@@ -84,29 +114,39 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
       }
     : receipt
 
+  const renderedFeedback = useMemo(
+    () => (
+      <OperationFeedback
+        notificationKey={`soha-operation-${feedbackKey}`}
+        submittedAt={mutation.submittedAt}
+        label={label}
+        target={target}
+        pending={mutation.isPending}
+        error={mutation.error ?? resultError}
+        readOnly={feedback.readOnly}
+        receipt={visibleReceipt}
+      />
+    ),
+    [
+      feedbackKey,
+      mutation.submittedAt,
+      label,
+      target,
+      mutation.isPending,
+      mutation.error,
+      resultError,
+      feedback.readOnly,
+      visibleReceipt,
+    ],
+  )
+
   return {
     ...mutation,
     blocked: mutation.isPending || outcomeUnknown,
     outcomeUnknown,
-    mutate: ((variables, callbacks) => {
-      if (begin(variables)) mutation.mutate(variables, callbacks)
-    }) as typeof mutation.mutate,
-    mutateAsync: ((variables, callbacks) => {
-      if (!begin(variables))
-        return Promise.reject(
-          new Error(
-            localeText(
-              localeCode,
-              '原请求尚待核对，请勿重复提交。',
-              'Check the original request before submitting again.',
-            ),
-          ),
-        )
-      return mutation.mutateAsync(variables, callbacks)
-    }) as typeof mutation.mutateAsync,
-    reset: () => {
-      if (!fence.current && !uncertain.current) mutation.reset()
-    },
+    mutate,
+    mutateAsync,
+    reset,
     // The operation owner must verify an authoritative receipt before resolving uncertainty.
     resolveUnknown: (variables: TVariables) => {
       if (
@@ -120,17 +160,6 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
       uncertain.current = undefined
       mutation.reset()
     },
-    feedback: (
-      <OperationFeedback
-        notificationKey={`soha-operation-${feedbackKey}`}
-        submittedAt={mutation.submittedAt}
-        label={label}
-        target={target}
-        pending={mutation.isPending}
-        error={mutation.error ?? resultError}
-        readOnly={feedback.readOnly}
-        receipt={visibleReceipt}
-      />
-    ),
+    feedback: renderedFeedback,
   }
 }

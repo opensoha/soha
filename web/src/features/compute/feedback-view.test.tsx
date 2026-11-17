@@ -126,7 +126,7 @@ describe('compute visible feedback', () => {
     render(<ComputeOperationFeedback label="预检" error={error} readOnly />)
     await vi.waitFor(() => expect(document.body.textContent).toContain('操作请求失败'))
   })
-  it('provides regional retry for cached failures and distinguishes expired authentication', () => {
+  it('provides floating retry for cached failures and distinguishes expired authentication', async () => {
     const refetch = vi.fn()
     const failed = render(
       <ReadFeedback
@@ -140,9 +140,15 @@ describe('compute visible feedback', () => {
         }}
       />,
     )
-    expect(failed.textContent).toContain('上次读取结果')
-    expect(failed.textContent).toContain('req-regional')
-    act(() => failed.querySelector<HTMLButtonElement>('button')!.click())
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('.soha-read-feedback-notification')).not.toBeNull(),
+    )
+    expect(failed.textContent).not.toContain('上次读取结果')
+    expect(document.body.textContent).toContain('上次读取结果')
+    expect(document.body.textContent).toContain('req-regional')
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('[aria-label="重试读取主机"]')!.click(),
+    )
     expect(refetch).toHaveBeenCalledOnce()
     const auth = render(
       <ReadFeedback

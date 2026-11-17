@@ -1,5 +1,7 @@
 import {
+  getResourceName,
   kubernetesDeleteConfirmation,
+  type KubernetesResourceAction,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -32,10 +34,13 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { toClusterStorageScope, toStorageScope } from './scope'
 import type { StorageTarget } from './types'
+
+const EMPTY_ITEMS: never[] = []
+const TABLE_SCROLL = { x: 'max-content' } as const
 
 function includesSearch(values: Array<string | undefined | null>, keyword: string) {
   if (!keyword) return true
@@ -101,7 +106,7 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
   const [searchKeyword, setSearchKeyword] = useState('')
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const normalizedKeyword = useDeferredValue(searchKeyword).trim().toLowerCase()
-  const rawItems = canRead ? (visibleQueryData ?? []) : []
+  const rawItems = canRead ? (visibleQueryData ?? EMPTY_ITEMS) : EMPTY_ITEMS
   const filteredItems = useMemo(
     () => rawItems.filter((item) => includesSearch(searchValues(item), normalizedKeyword)),
     [normalizedKeyword, rawItems, searchValues],
@@ -115,13 +120,15 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const resourceActions = useKubernetesResourceActions<T>({
-    resourceKey: `storage:${kind}`,
-    resourceLabel,
-    records: rawItems,
-    getName: (record) => record.name,
-    getKey: (record) => `${getRecordNamespace?.(record) ?? ''}/${record.name}`,
-    actions: (record) => {
+  const {
+    isPending: removePending,
+    variables: removeVariables,
+    reset: resetRemove,
+    mutateAsync: removeAsync,
+    feedback: removeFeedback,
+  } = removeMutation
+  const actions = useCallback<(record: T) => KubernetesResourceAction[]>(
+    (record) => {
       const targetScope = clusterScoped
         ? toClusterStorageScope(clusterId)
         : toStorageScope(clusterId, getRecordNamespace?.(record))
@@ -151,26 +158,55 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
                 danger: true,
                 disabled: platformWriteBlocked,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === targetScope.clusterId &&
-                  removeMutation.variables?.name === record.name &&
-                  removeMutation.variables.scope.namespace === targetScope.namespace,
+                  removePending &&
+                  removeVariables?.scope.clusterId === targetScope.clusterId &&
+                  removeVariables?.name === record.name &&
+                  removeVariables.scope.namespace === targetScope.namespace,
                 confirm: kubernetesDeleteConfirmation(
                   { name: record.name, namespace: getRecordNamespace?.(record) },
                   localeCode,
                 ),
-                prepare: () => removeMutation.reset(),
-                feedback: removeMutation.feedback,
-                run: () => removeMutation.mutateAsync({ scope: targetScope, name: record.name }),
+                prepare: () => resetRemove(),
+                feedback: removeFeedback,
+                run: () => removeAsync({ scope: targetScope, name: record.name }),
               },
             ]
           : []),
       ]
     },
+    [
+      clusterId,
+      localeCode,
+      onEdit,
+      platformWriteBlocked,
+      removePending,
+      removeVariables,
+      resetRemove,
+      removeAsync,
+      removeFeedback,
+      permissionKey,
+      permissions,
+      canRead,
+      clusterScoped,
+      getRecordNamespace,
+    ],
+  )
+  const getKey = useCallback(
+    (record: T) => `${getRecordNamespace?.(record) ?? ''}/${record.name}`,
+    [getRecordNamespace],
+  )
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `storage:${kind}`,
+    resourceLabel,
+    records: rawItems,
+    getName: getResourceName,
+    getKey: getKey,
+    actions,
   })
-  const effectiveColumns = resourceActions.hasActions
-    ? [...columns, resourceActions.column]
-    : columns
+  const effectiveColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
   const effectiveEmpty = !clusterId
     ? localeCode === 'zh_CN'
       ? '请选择集群'
@@ -185,6 +221,31 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
           : `No matching ${resourceLabel}`
         : emptyLabel[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
+
+  const rowProps = useCallback(
+    (record: T) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        entityKind: kind,
+        entityName: record.name,
+        clusterId: clusterId || undefined,
+        namespace: clusterScoped ? undefined : getRecordNamespace?.(record) || undefined,
+      }),
+    }),
+    [clusterId, clusterScoped, getRecordNamespace, kind],
+  )
+
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        description={effectiveEmpty}
+        kind={clusterId ? 'empty' : 'select-scope'}
+      />
+    ),
+    [clusterId, effectiveEmpty],
+  )
 
   return (
     <>
@@ -228,21 +289,13 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
             columnSettingIconOnly={true}
             columnSettingPlacement={'header'}
             columns={effectiveColumns}
-            dataSource={clusterId ? filteredItems : []}
+            dataSource={clusterId ? filteredItems : EMPTY_ITEMS}
             rowKey={rowKey}
-            onRow={(record: T) => ({
-              'data-ai-context': encodeAIContextForElement({
-                sourceWorkbench: 'platform',
-                entityKind: kind,
-                entityName: record.name,
-                clusterId: clusterId || undefined,
-                namespace: clusterScoped ? undefined : getRecordNamespace?.(record) || undefined,
-              }),
-            })}
+            onRow={rowProps}
             loading={query.isLoading}
             localSorting={true}
             tableSize={tableSize}
-            scroll={{ x: 'max-content' }}
+            scroll={TABLE_SCROLL}
             headerExtra={
               <ManagementTableToolbar>
                 <CreateEntry
@@ -285,14 +338,7 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
                 )}
               </ManagementTableToolbar>
             }
-            empty={
-              <ManagementState
-                bordered={false}
-                compact
-                description={effectiveEmpty}
-                kind={clusterId ? 'empty' : 'select-scope'}
-              />
-            }
+            empty={empty}
           />
         }
       />

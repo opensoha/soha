@@ -3,6 +3,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import {
   createContext,
   forwardRef,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -144,6 +145,18 @@ const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((prop
   )
 })
 VirtualTableBody.displayName = 'VirtualTableBody'
+
+const MemoTable = memo(Table<any>)
+const TABLE_COMPONENTS = { header: { cell: TableHeaderCell } }
+const VIRTUAL_TABLE_COMPONENTS = { ...TABLE_COMPONENTS, body: { wrapper: VirtualTableBody } }
+const TABLE_COLUMN: TableProps['column'] = {
+  sortIcon: ({ sortOrder }) =>
+    sortOrder ? (
+      <span aria-hidden className="soha-table-sort-icon">
+        {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+      </span>
+    ) : null,
+}
 
 export interface AdminTableProps {
   className?: string
@@ -330,9 +343,8 @@ function addLocalSorters(columns: any[], dataSource: any[], collator: Intl.Colla
     ) {
       return column
     }
-    const sampleValue = dataSource
-      .map((record) => getColumnValue(record, column.dataIndex))
-      .find((value) => value != null)
+    const sample = dataSource.find((record) => getColumnValue(record, column.dataIndex) != null)
+    const sampleValue = getColumnValue(sample, column.dataIndex)
     if (!isSortableValue(sampleValue)) return column
     return {
       ...column,
@@ -344,6 +356,16 @@ function addLocalSorters(columns: any[], dataSource: any[], collator: Intl.Colla
         ),
     }
   })
+}
+
+function needsLocalSorterSamples(columns: any[]): boolean {
+  return columns.some((column) =>
+    Array.isArray(column?.children)
+      ? needsLocalSorterSamples(column.children)
+      : !isActionColumn(column) &&
+        !Object.prototype.hasOwnProperty.call(column, 'sorter') &&
+        column?.dataIndex != null,
+  )
 }
 
 function getColumnLabel(column: any, index: number) {
@@ -425,6 +447,8 @@ export function AdminTable({
       }),
     [localeCode],
   )
+  const localSorterSamples =
+    localSorting && needsLocalSorterSamples(columns) ? dataSource : EMPTY_TABLE_RECORDS
   const normalizedColumns = useMemo(() => {
     const nextColumns = columns.map((column, index) => {
       const normalized = normalizeTableColumn(column, String(index), iconActionWidths)
@@ -432,8 +456,17 @@ export function AdminTable({
         ? { ...normalized, fixed: false }
         : normalized
     })
-    return localSorting ? addLocalSorters(nextColumns, dataSource, localSortCollator) : nextColumns
-  }, [columns, dataSource, iconActionWidths, localSortCollator, localSorting, columnLayoutKey])
+    return localSorting
+      ? addLocalSorters(nextColumns, localSorterSamples, localSortCollator)
+      : nextColumns
+  }, [
+    columns,
+    localSorterSamples,
+    iconActionWidths,
+    localSortCollator,
+    localSorting,
+    columnLayoutKey,
+  ])
   const columnOptions = useMemo(
     () =>
       normalizedColumns.map((column, index) => ({
@@ -450,12 +483,17 @@ export function AdminTable({
   const columnSignature = columnOptions.map((option) => option.id).join('|')
   const [visibleColumnIds, setSessionVisibleColumnIds] = useState<string[]>([])
   const layout = useTableColumnLayout(columnLayoutKey)
-  const layoutColumns = selectableColumnOptions.map((option) => ({
-    id: option.id,
-    label: option.label,
-    width: getColumnWidth(option.column) ?? 168,
-    min: Math.max(40, Number(option.column.minWidth) || 64),
-  }))
+  const { widths: layoutWidths, setWidth: setLayoutWidth } = layout
+  const layoutColumns = useMemo(
+    () =>
+      selectableColumnOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        width: getColumnWidth(option.column) ?? 168,
+        min: Math.max(40, Number(option.column.minWidth) || 64),
+      })),
+    [selectableColumnOptions],
+  )
   const setVisibleColumnIds = (ids: string[]) => {
     if (columnLayoutKey) layout.setVisible(ids)
     else setSessionVisibleColumnIds(ids)
@@ -500,15 +538,8 @@ export function AdminTable({
   useLayoutEffect(() => {
     const shell = tableShellRef.current
     if (!shell) return
-    const groups = Array.from(
-      shell.querySelectorAll<HTMLElement>(
-        '[data-soha-action-column] .soha-row-action-icons, [data-soha-action-column] .ant-space:has(.ant-btn-icon-only), [data-soha-action-column] > .ant-btn-icon-only',
-      ),
-    ).filter(
-      (group) =>
-        group.classList.contains('soha-row-action-icons') ||
-        !group.querySelector('.ant-btn:not(.ant-btn-icon-only)'),
-    )
+    let groups: HTMLElement[] = []
+    let targets = new Set<HTMLElement>()
     const measure = () => {
       const widths: Record<string, number> = {}
       groups.forEach((group) => {
@@ -525,19 +556,72 @@ export function AdminTable({
         JSON.stringify(current) === JSON.stringify(widths) ? current : widths,
       )
     }
-    measure()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
-    groups.forEach((group) => observer?.observe(group))
-    return () => observer?.disconnect()
-  }, [columns, dataSource, currentPage, currentPageSize, pagination?.current])
+    const updateGroups = () => {
+      groups = Array.from(
+        shell.querySelectorAll<HTMLElement>(
+          '[data-soha-action-column] .soha-row-action-icons, [data-soha-action-column] .ant-space:has(.ant-btn-icon-only), [data-soha-action-column] > .ant-btn-icon-only',
+        ),
+      ).filter(
+        (group) =>
+          group.classList.contains('soha-row-action-icons') ||
+          !group.querySelector('.ant-btn:not(.ant-btn-icon-only)'),
+      )
+      const next = new Set(
+        groups.flatMap((group) => [
+          group,
+          group.closest<HTMLElement>('[data-soha-action-column]')!,
+        ]),
+      )
+      targets.forEach((target) => {
+        if (!next.has(target)) observer?.unobserve(target)
+      })
+      next.forEach((target) => {
+        if (!targets.has(target)) observer?.observe(target)
+      })
+      targets = next
+      measure()
+    }
+    updateGroups()
+    const mutations = new MutationObserver((records) => {
+      if (
+        records.some(
+          (record) =>
+            (record.target instanceof Element &&
+              record.target.closest('[data-soha-action-column]')) ||
+            [...record.addedNodes, ...record.removedNodes].some(
+              (node) =>
+                node instanceof Element &&
+                (node.matches('[data-soha-action-column]') ||
+                  node.querySelector('[data-soha-action-column]')),
+            ),
+        )
+      )
+        updateGroups()
+    })
+    mutations.observe(shell, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-soha-action-column'],
+    })
+    return () => {
+      mutations.disconnect()
+      observer?.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
+    if (columnLayoutKey) return
     const nextIds = selectableColumnOptions.map((option) => option.id)
     setSessionVisibleColumnIds((current) => {
       const filtered = current.filter((id) => nextIds.includes(id))
-      return filtered.length > 0 ? filtered : nextIds
+      const next = filtered.length > 0 ? filtered : nextIds
+      return current.length === next.length && current.every((id, index) => id === next[index])
+        ? current
+        : next
     })
-  }, [columnSignature, selectableColumnOptions])
+  }, [columnLayoutKey, columnSignature, selectableColumnOptions])
 
   useEffect(() => {
     if (pagination && pagination !== false && typeof pagination.currentPage === 'number') {
@@ -553,55 +637,75 @@ export function AdminTable({
     setCurrentPageSize(nextPageSize)
   }, [pageSize, pagination])
 
-  const defaultIds = selectableColumnOptions
-    .filter((option) => !defaultHiddenColumnKeys?.includes(option.id))
-    .map((option) => option.id)
-  const savedIds = layout.visible?.filter((id) =>
-    selectableColumnOptions.some((option) => option.id === id),
-  )
-  const activeColumnIds = columnLayoutKey
-    ? savedIds?.length
-      ? savedIds
-      : defaultIds
-    : visibleColumnIds.length > 0
-      ? visibleColumnIds
-      : selectableColumnOptions.map((option) => option.id)
-  const activeColumns = columnOptions
-    .filter((option) => isActionColumn(option.column) || activeColumnIds.includes(option.id))
-    .map((option) => {
-      const descriptor = layoutColumns.find((item) => item.id === option.id)
-      if (!columnLayoutKey || !descriptor) return option.column
-      const width = Math.max(
-        descriptor.min,
-        Math.min(800, layout.widths[option.id] ?? descriptor.width),
-      )
-      const column = option.column
-      return {
-        ...column,
-        width,
-        onHeaderCell: (...args: any[]) => {
-          const original = column.onHeaderCell?.(...args) ?? {}
+  const activeColumnIds = useMemo(() => {
+    const defaultIds = selectableColumnOptions
+      .filter((option) => !defaultHiddenColumnKeys?.includes(option.id))
+      .map((option) => option.id)
+    const savedIds = layout.visible?.filter((id) =>
+      selectableColumnOptions.some((option) => option.id === id),
+    )
+    return columnLayoutKey
+      ? savedIds?.length
+        ? savedIds
+        : defaultIds
+      : visibleColumnIds.length > 0
+        ? visibleColumnIds
+        : selectableColumnOptions.map((option) => option.id)
+  }, [
+    selectableColumnOptions,
+    defaultHiddenColumnKeys,
+    layout.visible,
+    columnLayoutKey,
+    visibleColumnIds,
+  ])
+  const activeColumns = useMemo(
+    () =>
+      columnOptions
+        .filter((option) => isActionColumn(option.column) || activeColumnIds.includes(option.id))
+        .map((option) => {
+          const descriptor = layoutColumns.find((item) => item.id === option.id)
+          if (!columnLayoutKey || !descriptor) return option.column
+          const width = Math.max(
+            descriptor.min,
+            Math.min(800, layoutWidths[option.id] ?? descriptor.width),
+          )
+          const column = option.column
           return {
-            ...original,
-            'data-column-label': descriptor.label,
-            className: mergeClassNames(original.className, 'soha-table-resizable-header'),
-            columnResizeHandle: (
-              <ColumnResizeHandle
-                column={descriptor}
-                width={width}
-                zh={localeCode === 'zh_CN'}
-                onResize={(next, persist) => layout.setWidth(option.id, next, persist)}
-              />
+            ...column,
+            width,
+            onHeaderCell: (...args: any[]) => {
+              const original = column.onHeaderCell?.(...args) ?? {}
+              return {
+                ...original,
+                'data-column-label': descriptor.label,
+                className: mergeClassNames(original.className, 'soha-table-resizable-header'),
+                columnResizeHandle: (
+                  <ColumnResizeHandle
+                    column={descriptor}
+                    width={width}
+                    zh={localeCode === 'zh_CN'}
+                    onResize={(next, persist) => setLayoutWidth(option.id, next, persist)}
+                  />
+                ),
+              }
+            },
+            title: (props: unknown) => (
+              <span className="soha-table-resizable-title">
+                {typeof column.title === 'function' ? column.title(props) : column.title}
+              </span>
             ),
           }
-        },
-        title: (props: unknown) => (
-          <span className="soha-table-resizable-title">
-            {typeof column.title === 'function' ? column.title(props) : column.title}
-          </span>
-        ),
-      }
-    })
+        }),
+    [
+      columnOptions,
+      activeColumnIds,
+      layoutColumns,
+      columnLayoutKey,
+      layoutWidths,
+      setLayoutWidth,
+      localeCode,
+    ],
+  )
   const contentScrollWidth = useMemo(() => {
     const columnWidth = activeColumns.reduce(
       (total, column) => total + (getColumnWidth(column) ?? 168),
@@ -636,21 +740,24 @@ export function AdminTable({
   const fillerWidth = columnLayoutKey ? estimatedScrollWidth - contentScrollWidth : 0
   const rightColumnIndex = activeColumns.findIndex((column) => column.fixed === 'right')
   const fillerIndex = rightColumnIndex < 0 ? activeColumns.length : rightColumnIndex
-  const renderedColumns =
-    fillerWidth > 0
-      ? [
-          ...activeColumns.slice(0, fillerIndex),
-          {
-            key: '__soha_layout_filler',
-            width: fillerWidth,
-            title: '',
-            render: () => null,
-            onHeaderCell: () => ({ 'aria-hidden': true }),
-            onCell: () => ({ 'aria-hidden': true }),
-          },
-          ...activeColumns.slice(fillerIndex),
-        ]
-      : activeColumns
+  const renderedColumns = useMemo(
+    () =>
+      fillerWidth > 0
+        ? [
+            ...activeColumns.slice(0, fillerIndex),
+            {
+              key: '__soha_layout_filler',
+              width: fillerWidth,
+              title: '',
+              render: () => null,
+              onHeaderCell: () => ({ 'aria-hidden': true }),
+              onCell: () => ({ 'aria-hidden': true }),
+            },
+            ...activeColumns.slice(fillerIndex),
+          ]
+        : activeColumns,
+    [activeColumns, fillerWidth, fillerIndex],
+  )
   const layoutWidthSignature = activeColumns.map((column) => getColumnWidth(column)).join('|')
   useLayoutEffect(() => {
     if (!columnLayoutKey) return
@@ -681,60 +788,69 @@ export function AdminTable({
     }
   }, [columnLayoutKey, virtual, layoutWidthSignature, scrollHorizontally])
 
-  const getRowKeyValue = (record: any) =>
-    typeof rowKey === 'function' ? rowKey(record) : record?.[rowKey]
-  const activeRowSelection =
-    rowSelection && typeof rowSelection === 'object' ? rowSelection : undefined
-  const currentPageRows =
-    !selectCurrentPageOnly || pagination === false
-      ? dataSource
-      : dataSource.slice((currentPage - 1) * currentPageSize, currentPage * currentPageSize)
-  const pageSelectableRows = activeRowSelection
-    ? currentPageRows.filter((record) => !activeRowSelection.getCheckboxProps?.(record)?.disabled)
-    : []
-  const pageSelectableKeys = pageSelectableRows.map((record) => getRowKeyValue(record))
-  const selectedKeySet = new Set(activeRowSelection?.selectedRowKeys ?? [])
-  const pageAllSelected =
-    pageSelectableKeys.length > 0 && pageSelectableKeys.every((key) => selectedKeySet.has(key))
-  const pageIndeterminate =
-    pageSelectableKeys.some((key) => selectedKeySet.has(key)) && !pageAllSelected
+  const resolvedRowSelection = useMemo(() => {
+    if (!selectCurrentPageOnly || !rowSelection || typeof rowSelection !== 'object')
+      return rowSelection
+    const getRowKeyValue = (record: any) =>
+      typeof rowKey === 'function' ? rowKey(record) : record?.[rowKey]
+    const activeRowSelection = rowSelection
+    const currentPageRows =
+      pagination === false
+        ? dataSource
+        : dataSource.slice((currentPage - 1) * currentPageSize, currentPage * currentPageSize)
+    const pageSelectableRows = currentPageRows.filter(
+      (record) => !activeRowSelection.getCheckboxProps?.(record)?.disabled,
+    )
+    const pageSelectableKeys = pageSelectableRows.map((record) => getRowKeyValue(record))
+    const selectedKeySet = new Set(activeRowSelection?.selectedRowKeys ?? [])
+    const pageAllSelected =
+      pageSelectableKeys.length > 0 && pageSelectableKeys.every((key) => selectedKeySet.has(key))
+    const pageIndeterminate =
+      pageSelectableKeys.some((key) => selectedKeySet.has(key)) && !pageAllSelected
 
-  const resolvedRowSelection =
-    selectCurrentPageOnly && activeRowSelection
-      ? {
-          ...activeRowSelection,
-          columnTitle: currentPageSelectionLabel ? (
-            <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span>
-          ) : (
-            activeRowSelection.columnTitle
-          ),
-          title: currentPageSelectionLabel ? (
-            <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span>
-          ) : undefined,
-          getTitleCheckboxProps: () => ({
-            checked: pageAllSelected,
-            indeterminate: pageIndeterminate,
-          }),
-          onSelectAll: (selected: boolean) => {
-            const selectedRowKeys = Array.isArray(activeRowSelection.selectedRowKeys)
-              ? [...activeRowSelection.selectedRowKeys]
-              : []
-            const pageKeySet = new Set(pageSelectableKeys)
-            const nextSelectedRowKeys = selected
-              ? Array.from(new Set(selectedRowKeys.concat(pageSelectableKeys)))
-              : selectedRowKeys.filter((key) => !pageKeySet.has(key))
-            const nextSelectedKeySet = new Set(nextSelectedRowKeys)
-            const nextSelectedRows = dataSource.filter((record) =>
-              nextSelectedKeySet.has(getRowKeyValue(record)),
-            )
-            activeRowSelection.onChange?.(nextSelectedRowKeys, nextSelectedRows)
-          },
-        }
-      : rowSelection
+    return {
+      ...activeRowSelection,
+      columnTitle: currentPageSelectionLabel ? (
+        <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span>
+      ) : (
+        activeRowSelection.columnTitle
+      ),
+      title: currentPageSelectionLabel ? (
+        <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span>
+      ) : undefined,
+      getTitleCheckboxProps: () => ({
+        checked: pageAllSelected,
+        indeterminate: pageIndeterminate,
+      }),
+      onSelectAll: (selected: boolean) => {
+        const selectedRowKeys = Array.isArray(activeRowSelection.selectedRowKeys)
+          ? [...activeRowSelection.selectedRowKeys]
+          : []
+        const pageKeySet = new Set(pageSelectableKeys)
+        const nextSelectedRowKeys = selected
+          ? Array.from(new Set(selectedRowKeys.concat(pageSelectableKeys)))
+          : selectedRowKeys.filter((key) => !pageKeySet.has(key))
+        const nextSelectedKeySet = new Set(nextSelectedRowKeys)
+        const nextSelectedRows = dataSource.filter((record) =>
+          nextSelectedKeySet.has(getRowKeyValue(record)),
+        )
+        activeRowSelection.onChange?.(nextSelectedRowKeys, nextSelectedRows)
+      },
+    }
+  }, [
+    rowSelection,
+    selectCurrentPageOnly,
+    rowKey,
+    dataSource,
+    pagination,
+    currentPage,
+    currentPageSize,
+    currentPageSelectionLabel,
+  ])
 
-  const inheritedPagination = pagination && pagination !== false ? pagination : undefined
-  const resolvedPagination =
-    pagination === false
+  const resolvedPagination = useMemo(() => {
+    const inheritedPagination = pagination && pagination !== false ? pagination : undefined
+    return pagination === false
       ? false
       : {
           pageSize: currentPageSize,
@@ -765,6 +881,7 @@ export function AdminTable({
             inheritedPagination?.onPageChange?.(nextPage)
           },
         }
+  }, [pagination, paginationSummary, currentPage, currentPageSize, localeCode])
 
   useLayoutEffect(() => {
     if (!viewportScroll) {
@@ -833,6 +950,12 @@ export function AdminTable({
       viewportScrollY,
       virtual,
     ],
+  )
+  const tableLocale = useMemo(
+    () => ({
+      emptyText: empty ?? <ManagementState key={localeCode} bordered={false} compact />,
+    }),
+    [empty, localeCode],
   )
 
   const columnSetting =
@@ -1008,26 +1131,16 @@ export function AdminTable({
       {!error || cachedRecords !== undefined ? (
         <VirtualHorizontalScroll.Provider value={scrollHorizontally}>
           <VirtualBoundaryScroll.Provider value={scrollToBoundary}>
-            <Table
+            <MemoTable
               {...rest}
               ref={attachTableRef}
               className={resolvedTableClassName}
-              components={{
-                header: { cell: TableHeaderCell },
-                ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
-              }}
-              column={{
-                sortIcon: ({ sortOrder }) =>
-                  sortOrder ? (
-                    <span aria-hidden className="soha-table-sort-icon">
-                      {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                    </span>
-                  ) : null,
-              }}
+              components={virtual ? VIRTUAL_TABLE_COMPONENTS : TABLE_COMPONENTS}
+              column={TABLE_COLUMN}
               columns={renderedColumns}
               dataSource={dataSource}
               loading={loading}
-              locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
+              locale={tableLocale}
               pagination={resolvedPagination}
               rowKey={rowKey}
               rowSelection={resolvedRowSelection}

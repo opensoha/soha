@@ -1,10 +1,11 @@
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { SlicePorts } from './endpointslice-panels'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { formatAgeSeconds } from '@/utils/time'
@@ -34,38 +35,61 @@ export function NetworkEndpointSlicesPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (record: EndpointSlice, tab?: string) => {
-    const params = new URLSearchParams({ clusterId: clusterId || '', namespace: record.namespace })
-    if (tab) params.set('tab', tab)
-    return `/network/endpointslices/${encodeURIComponent(record.name)}?${params}`
-  }
-  const columns: TableColumnsType<EndpointSlice> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      ellipsis: { showTitle: false },
-      width: 280,
-      render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
-      ),
+  const path = useCallback(
+    (record: EndpointSlice, tab?: string) => {
+      const params = new URLSearchParams({
+        clusterId: clusterId || '',
+        namespace: record.namespace,
+      })
+      if (tab) params.set('tab', tab)
+      return `/network/endpointslices/${encodeURIComponent(record.name)}?${params}`
     },
-    { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
-    { title: zh ? '地址族' : 'Address type', dataIndex: 'addressType', width: 130 },
-    { title: zh ? '端点数' : 'Endpoints', dataIndex: 'endpoints', width: 110 },
-    {
-      title: zh ? '端口' : 'Ports',
-      dataIndex: 'ports',
-      width: 280,
-      minWidth: 220,
-      render: (value?: string[]) => <SlicePorts ports={value} />,
-    },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<EndpointSlice>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        ellipsis: { showTitle: false },
+        width: 280,
+        render: (value: string, record) => (
+          <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
+        ),
+      },
+      { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
+      { title: zh ? '地址族' : 'Address type', dataIndex: 'addressType', width: 130 },
+      { title: zh ? '端点数' : 'Endpoints', dataIndex: 'endpoints', width: 110 },
+      {
+        title: zh ? '端口' : 'Ports',
+        dataIndex: 'ports',
+        width: 280,
+        minWidth: 220,
+        render: (value?: string[]) => <SlicePorts ports={value} />,
+      },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [zh, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: EndpointSlice) => [
+      record.name,
+      record.namespace,
+      record.addressType,
+      ...(record.ports ?? []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: EndpointSlice) => navigate(path(record, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="资源记录" />
@@ -84,7 +108,7 @@ export function NetworkEndpointSlicesPage() {
           })}
           columns={columns}
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           refreshControl={
             <WorkloadRefresh
               compact
@@ -106,12 +130,7 @@ export function NetworkEndpointSlicesPage() {
             zh_CN: '搜索 EndpointSlice / namespace / address type / port',
             en_US: 'Search EndpointSlice / namespace / address type / port',
           }}
-          searchValues={(record) => [
-            record.name,
-            record.namespace,
-            record.addressType,
-            ...(record.ports ?? []),
-          ]}
+          searchValues={searchValues}
         />
       )}
     </>

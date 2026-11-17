@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, InputNumber, Select } from 'antd'
 
 type Preferences = { key?: string; widths: Record<string, number>; visible?: string[] }
@@ -37,33 +37,58 @@ export function useTableColumnLayout(key?: string) {
     current.current = next
     setPreferences(next)
   }, [key])
-  const update = (
-    patch: Partial<Preferences> | ((previous: Preferences) => Partial<Preferences>),
-    persist = true,
-  ) => {
-    const previous = current.current.key === key ? current.current : read(key)
-    const next = { ...previous, ...(typeof patch === 'function' ? patch(previous) : patch), key }
-    current.current = next
-    setPreferences(next)
-    if (key && persist) {
-      try {
-        localStorage.setItem(
-          `soha-table-layout:${key}`,
-          JSON.stringify({ ...next, key: undefined, version: 1 }),
-        )
-      } catch {
-        /* Private browsing or quota must not block resizing. */
+  const update = useCallback(
+    (
+      patch: Partial<Preferences> | ((previous: Preferences) => Partial<Preferences>),
+      persist = true,
+    ) => {
+      const previous = current.current.key === key ? current.current : read(key)
+      const changes = typeof patch === 'function' ? patch(previous) : patch
+      const next = Object.keys(changes).length ? { ...previous, ...changes, key } : previous
+      current.current = next
+      setPreferences(next)
+      if (key && persist) {
+        try {
+          localStorage.setItem(
+            `soha-table-layout:${key}`,
+            JSON.stringify({ ...next, key: undefined, version: 1 }),
+          )
+        } catch {
+          /* Private browsing or quota must not block resizing. */
+        }
       }
-    }
-  }
+    },
+    [key],
+  )
+  const actions = useMemo(
+    () => ({
+      setVisible: (visible: string[]) =>
+        update((previous) =>
+          previous.visible?.length === visible.length &&
+          visible.every((id, index) => id === previous.visible?.[index])
+            ? {}
+            : { visible },
+        ),
+      setWidth: (id: string, width: number, persist = true) =>
+        update(
+          (previous) =>
+            previous.widths[id] === width ? {} : { widths: { ...previous.widths, [id]: width } },
+          persist,
+        ),
+      fit: () => update((previous) => (Object.keys(previous.widths).length ? { widths: {} } : {})),
+      reset: () =>
+        update((previous) =>
+          Object.keys(previous.widths).length || previous.visible !== undefined
+            ? { widths: {}, visible: undefined }
+            : {},
+        ),
+    }),
+    [update],
+  )
   const effective: Preferences = preferences.key === key ? preferences : { widths: {} }
   return {
     ...effective,
-    setVisible: (visible: string[]) => update({ visible }),
-    setWidth: (id: string, width: number, persist = true) =>
-      update((previous) => ({ widths: { ...previous.widths, [id]: width } }), persist),
-    fit: () => update({ widths: {} }),
-    reset: () => update({ widths: {}, visible: undefined }),
+    ...actions,
   }
 }
 

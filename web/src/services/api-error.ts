@@ -4,6 +4,7 @@ import type { ErrorEnvelope } from '@/types'
 export const API_ERROR_EVENT = 'soha:api-error'
 export const API_ERROR_PRESENTED_EVENT = 'soha:api-error-presented'
 const inlinePresentations = new Map<string, number>()
+const readPresentations = new Map<string, number>()
 
 export type ApiErrorKind = 'auth' | 'forbidden' | 'server' | 'network' | 'client'
 
@@ -66,7 +67,28 @@ export function apiErrorNotificationKey(error: ApiErrorEventDetail) {
 }
 
 export function isApiErrorPresented(error: ApiErrorEventDetail) {
-  return error.kind !== 'auth' && inlinePresentations.has(apiErrorNotificationKey(error))
+  return (
+    error.kind !== 'auth' &&
+    (inlinePresentations.has(apiErrorNotificationKey(error)) ||
+      readPresentations.has(`${error.method ?? 'GET'}:${error.path ?? ''}`))
+  )
+}
+
+// A live read failure also owns retries whose status/message may change.
+export function claimApiReadPresentation(error: Error | null) {
+  if (
+    !(error instanceof ApiError) ||
+    !error.path ||
+    !['GET', 'HEAD'].includes(error.method ?? 'GET')
+  )
+    return
+  const key = `${error.method ?? 'GET'}:${error.path}`
+  readPresentations.set(key, (readPresentations.get(key) ?? 0) + 1)
+  return () => {
+    const count = (readPresentations.get(key) ?? 1) - 1
+    if (count > 0) readPresentations.set(key, count)
+    else readPresentations.delete(key)
+  }
 }
 
 export function claimApiErrorPresentation(error?: Error | null) {

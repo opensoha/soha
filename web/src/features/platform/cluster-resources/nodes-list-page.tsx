@@ -6,7 +6,8 @@ import {
   ManagementRefreshButton,
 } from '@/components/management-list'
 import { MetadataTag } from '@/components/status-tag'
-import { TableCellLink } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
+import { ResourceNameLink } from '../shared/resource-table-cells'
 import { NodeStateTags } from '../shared/node-state-tags'
 import { NodeResourcePanel } from '../node-resource-utils'
 import { useAIPageContext } from '@/features/copilot'
@@ -23,8 +24,8 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Grid, Select, Space, Tooltip, type TableColumnsType } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { Grid, Select, Space, type TableColumnsType } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { nodeQueries } from './queries'
 import { toClusterScope } from './scope'
@@ -65,8 +66,12 @@ export function ClusterNodesPage() {
   const nodeStream = useKubernetesResourceStream({
     clusterId,
     kinds: ['Node', 'Pod', 'Event'],
+    eventDebounceMs: 250,
     onEvent: () => void queryClient.invalidateQueries({ queryKey: nodeListQuery.queryKey }),
-    onFallback: () => void queryClient.invalidateQueries({ queryKey: nodeListQuery.queryKey }),
+    onFallback: () => {
+      if (queryClient.getQueryState(nodeListQuery.queryKey)?.status !== 'error')
+        void queryClient.invalidateQueries({ queryKey: nodeListQuery.queryKey })
+    },
     onResyncRequired: () => queryClient.invalidateQueries({ queryKey: nodeListQuery.queryKey }),
   })
   const nodesQuery = useQuery(nodeListQuery)
@@ -81,8 +86,11 @@ export function ClusterNodesPage() {
     () => new Intl.Collator(zh ? 'zh-CN' : 'en-US', { numeric: true, sensitivity: 'base' }),
     [zh],
   )
-  const detailPath = (name: string, tab = 'overview') =>
-    `/cluster-resources/nodes/${encodeURIComponent(name)}?${new URLSearchParams({ clusterId: clusterId ?? '', tab })}`
+  const detailPath = useCallback(
+    (name: string, tab = 'overview') =>
+      `/cluster-resources/nodes/${encodeURIComponent(name)}?${new URLSearchParams({ clusterId: clusterId ?? '', tab })}`,
+    [clusterId],
+  )
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: zh ? '集群节点' : 'Cluster nodes',
@@ -93,107 +101,135 @@ export function ClusterNodesPage() {
     visibleFilters: { keyword, ready, scheduling, role },
     pinnedData: { nodeCount: nodes.length },
   })
-  const columns: TableColumnsType<ClusterNode> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 300,
-      fixed: pinColumns ? 'left' : undefined,
-      ellipsis: { showTitle: false },
-      defaultSortOrder: 'ascend',
-      sorter: (a, b) => nameCollator.compare(a.name, b.name),
-      render: (name: string) => (
-        <Tooltip title={name} trigger={['hover', 'focus']}>
+  const { column: actionColumn, isDraining } = actions
+  const { data: monitoringData, canRead: canReadMonitoring, query: monitoringQuery } = monitoring
+  const monitoringFailed = monitoringQuery.isError
+  const columns = useMemo<TableColumnsType<ClusterNode>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 300,
+        fixed: pinColumns ? 'left' : undefined,
+        ellipsis: { showTitle: false },
+        defaultSortOrder: 'ascend',
+        sorter: (a, b) => nameCollator.compare(a.name, b.name),
+        render: (name: string) => (
           <Link className="soha-node-name" to={detailPath(name)}>
-            {name}
+            <TableCellText value={name} />
           </Link>
-        </Tooltip>
-      ),
-    },
-    {
-      title: zh ? '状态' : 'Status',
-      dataIndex: 'status',
-      width: 160,
-      render: (_, n) => (
-        <NodeStateTags
-          status={n.status}
-          cordoned={n.unschedulable}
-          conditions={n.conditions}
-          draining={actions.isDraining(n.name)}
-        />
-      ),
-    },
-    {
-      title: 'CPU',
-      key: 'hostCpu',
-      width: 148,
-      sorter: (a, b) =>
-        (nodeUsage(monitoring.data, clusterId, a.name, 'cpu').value ?? -1) -
-        (nodeUsage(monitoring.data, clusterId, b.name, 'cpu').value ?? -1),
-      render: (_, n) => (
-        <NodeUsageCell
-          kind="cpu"
-          usage={nodeUsage(monitoring.data, clusterId, n.name, 'cpu')}
-          canRead={monitoring.canRead}
-          failed={monitoring.query.isError}
-        />
-      ),
-    },
-    {
-      title: zh ? '内存' : 'Memory',
-      key: 'hostMemory',
-      width: 148,
-      sorter: (a, b) =>
-        (nodeUsage(monitoring.data, clusterId, a.name, 'memory').value ?? -1) -
-        (nodeUsage(monitoring.data, clusterId, b.name, 'memory').value ?? -1),
-      render: (_, n) => (
-        <NodeUsageCell
-          kind="memory"
-          usage={nodeUsage(monitoring.data, clusterId, n.name, 'memory')}
-          canRead={monitoring.canRead}
-          failed={monitoring.query.isError}
-        />
-      ),
-    },
-    {
-      title: 'Pods',
-      dataIndex: 'podCount',
-      width: 80,
-      render: (count: number, n) => (
-        <TableCellLink label={String(count)} onClick={() => navigate(detailPath(n.name, 'pods'))} />
-      ),
-    },
-    {
-      title: zh ? '角色' : 'Roles',
-      dataIndex: 'roles',
-      width: 160,
-      render: (roles: string[]) => (
-        <Space size={4} wrap>
-          {roles?.length ? roles.map((r) => <MetadataTag key={r} label={r} />) : '—'}
-        </Space>
-      ),
-    },
-    { title: 'IP', dataIndex: 'internalIp', width: 144, render: (v: string) => v || '—' },
-    {
-      title: zh ? '版本' : 'Version',
-      dataIndex: 'version',
-      width: 130,
-      render: (v: string) => v || '—',
-    },
-    {
-      title: zh ? '污点' : 'Taints',
-      key: 'taints',
-      width: 180,
-      render: (_, n) => <NodeTaints taints={n.taints} compact />,
-    },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 68,
-      render: (v: number) => formatAgeSeconds(v),
-    },
-    actions.column,
-  ]
+        ),
+      },
+      {
+        title: zh ? '状态' : 'Status',
+        dataIndex: 'status',
+        width: 160,
+        render: (_, n) => (
+          <NodeStateTags
+            status={n.status}
+            cordoned={n.unschedulable}
+            conditions={n.conditions}
+            draining={isDraining(n.name)}
+          />
+        ),
+      },
+      {
+        title: 'CPU',
+        key: 'hostCpu',
+        width: 148,
+        sorter: (a, b) =>
+          (nodeUsage(monitoringData, clusterId, a.name, 'cpu').value ?? -1) -
+          (nodeUsage(monitoringData, clusterId, b.name, 'cpu').value ?? -1),
+        render: (_, n) => (
+          <NodeUsageCell
+            kind="cpu"
+            usage={nodeUsage(monitoringData, clusterId, n.name, 'cpu')}
+            canRead={canReadMonitoring}
+            failed={monitoringFailed}
+          />
+        ),
+      },
+      {
+        title: zh ? '内存' : 'Memory',
+        key: 'hostMemory',
+        width: 148,
+        sorter: (a, b) =>
+          (nodeUsage(monitoringData, clusterId, a.name, 'memory').value ?? -1) -
+          (nodeUsage(monitoringData, clusterId, b.name, 'memory').value ?? -1),
+        render: (_, n) => (
+          <NodeUsageCell
+            kind="memory"
+            usage={nodeUsage(monitoringData, clusterId, n.name, 'memory')}
+            canRead={canReadMonitoring}
+            failed={monitoringFailed}
+          />
+        ),
+      },
+      {
+        title: 'Pods',
+        dataIndex: 'podCount',
+        width: 80,
+        render: (count: number, n) => (
+          <ResourceNameLink
+            name={String(count)}
+            to={detailPath(n.name, 'pods')}
+            onNavigate={navigate}
+          />
+        ),
+      },
+      {
+        title: zh ? '角色' : 'Roles',
+        dataIndex: 'roles',
+        width: 160,
+        render: (roles: string[]) => (
+          <Space size={4} wrap>
+            {roles?.length ? roles.map((r) => <MetadataTag key={r} label={r} />) : '—'}
+          </Space>
+        ),
+      },
+      { title: 'IP', dataIndex: 'internalIp', width: 144, render: (v: string) => v || '—' },
+      {
+        title: zh ? '版本' : 'Version',
+        dataIndex: 'version',
+        width: 130,
+        render: (v: string) => v || '—',
+      },
+      {
+        title: zh ? '污点' : 'Taints',
+        key: 'taints',
+        width: 180,
+        render: (_, n) => <NodeTaints taints={n.taints} compact />,
+      },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 68,
+        render: (v: number) => formatAgeSeconds(v),
+      },
+      actionColumn,
+    ],
+    [
+      zh,
+      pinColumns,
+      nameCollator,
+      detailPath,
+      clusterId,
+      navigate,
+      isDraining,
+      actionColumn,
+      monitoringData,
+      canReadMonitoring,
+      monitoringFailed,
+    ],
+  )
+  const expandable = useMemo(
+    () => ({
+      columnWidth: 48,
+      fixed: pinColumns ? ('left' as const) : undefined,
+      expandedRowRender: (node: ClusterNode) => <NodeResourcePanel node={node} />,
+    }),
+    [pinColumns],
+  )
   return (
     <div className="soha-page soha-cluster-nodes-page">
       <WorkloadQueryPanel
@@ -301,11 +337,7 @@ export function ClusterNodesPage() {
           tableSize={tableSize}
           tableLayout="fixed"
           scroll={{ x: 1700 }}
-          expandable={{
-            columnWidth: 48,
-            fixed: pinColumns ? 'left' : undefined,
-            expandedRowRender: (node: ClusterNode) => <NodeResourcePanel node={node} />,
-          }}
+          expandable={expandable}
         />
       )}
       {actions.dialogs}

@@ -1,10 +1,11 @@
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { PolicyTypes } from './networkpolicy-panels'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink } from '@/components/table-cell-content'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { formatAgeSeconds } from '@/utils/time'
@@ -34,38 +35,56 @@ export function NetworkPoliciesPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (record: NetworkPolicy, tab?: string) => {
-    const params = new URLSearchParams({ clusterId: clusterId || '', namespace: record.namespace })
-    if (tab) params.set('tab', tab)
-    return `/network/networkpolicies/${encodeURIComponent(record.name)}?${params}`
-  }
-  const columns: TableColumnsType<NetworkPolicy> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      ellipsis: { showTitle: false },
-      width: 280,
-      render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
-      ),
+  const path = useCallback(
+    (record: NetworkPolicy, tab?: string) => {
+      const params = new URLSearchParams({
+        clusterId: clusterId || '',
+        namespace: record.namespace,
+      })
+      if (tab) params.set('tab', tab)
+      return `/network/networkpolicies/${encodeURIComponent(record.name)}?${params}`
     },
-    { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
-    {
-      title: zh ? '隔离方向' : 'Policy types',
-      dataIndex: 'policyTypes',
-      width: 200,
-      minWidth: 160,
-      render: (value?: string[]) => <PolicyTypes types={value} />,
-    },
-    { title: zh ? 'Ingress 规则' : 'Ingress rules', dataIndex: 'ingressRules', width: 130 },
-    { title: zh ? 'Egress 规则' : 'Egress rules', dataIndex: 'egressRules', width: 130 },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<NetworkPolicy>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        ellipsis: { showTitle: false },
+        width: 280,
+        render: (value: string, record) => (
+          <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
+        ),
+      },
+      { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
+      {
+        title: zh ? '隔离方向' : 'Policy types',
+        dataIndex: 'policyTypes',
+        width: 200,
+        minWidth: 160,
+        render: (value?: string[]) => <PolicyTypes types={value} />,
+      },
+      { title: zh ? 'Ingress 规则' : 'Ingress rules', dataIndex: 'ingressRules', width: 130 },
+      { title: zh ? 'Egress 规则' : 'Egress rules', dataIndex: 'egressRules', width: 130 },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [zh, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: NetworkPolicy) => [record.name, record.namespace, ...(record.policyTypes ?? [])],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: NetworkPolicy) => navigate(path(record, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="资源记录" />
@@ -84,7 +103,7 @@ export function NetworkPoliciesPage() {
           })}
           columns={columns}
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           refreshControl={
             <WorkloadRefresh
               compact
@@ -106,7 +125,7 @@ export function NetworkPoliciesPage() {
             zh_CN: '搜索 NetworkPolicy / namespace / direction',
             en_US: 'Search NetworkPolicy / namespace / direction',
           }}
-          searchValues={(record) => [record.name, record.namespace, ...(record.policyTypes ?? [])]}
+          searchValues={searchValues}
         />
       )}
     </>

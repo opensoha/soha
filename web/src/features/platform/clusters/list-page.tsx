@@ -8,7 +8,8 @@ import {
   ManagementQueryPanel,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { MetadataTag } from '@/components/status-tag'
+import { ResourceStatusCell as StatusTag } from '@/features/platform/shared/resource-table-cells'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import {
@@ -29,7 +30,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { App, Button, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd'
 import type { Key } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AgentUpgradeModal } from './agent-upgrade-modal'
 import { clusterMutations } from './mutations'
@@ -48,6 +49,29 @@ import { KubernetesResourceActionsMenu } from '../shared/kubernetes-resource-act
 import { WorkloadRefresh, useWorkloadRefresh } from '../workloads/shared/workload-refresh'
 
 const { Text } = Typography
+
+const ClusterNameCell = memo(function ClusterNameCell({
+  id,
+  name,
+  onNavigate,
+}: {
+  id: string
+  name: string
+  onNavigate: (path: string) => void
+}) {
+  return (
+    <div className="soha-cluster-name-cell">
+      <Button
+        className="soha-cluster-name-link"
+        type="link"
+        title={name}
+        onClick={() => onNavigate(`/clusters/${id}`)}
+      >
+        {name}
+      </Button>
+    </div>
+  )
+})
 
 export function ClustersPage() {
   const { t, localeCode } = useI18n()
@@ -114,11 +138,17 @@ export function ClustersPage() {
 
   const clusters = visibleClustersQueryData ?? []
   const targetFor = (id: string) => ({ scope: toScopeKey(id, null) })
-  const showAgentInstallation = (clusterId: string) => {
-    agentInstallationMutation.mutate(targetFor(clusterId), {
-      onSuccess: setAgentInstallation,
-    })
-  }
+  const showAgentInstallation = useCallback(
+    (clusterId: string) => {
+      agentInstallationMutation.mutate(
+        { scope: toScopeKey(clusterId, null) },
+        {
+          onSuccess: setAgentInstallation,
+        },
+      )
+    },
+    [agentInstallationMutation.mutate],
+  )
 
   useEffect(() => {
     const clusterIds = new Set(clusters.map((cluster) => cluster.id))
@@ -199,152 +229,176 @@ export function ClustersPage() {
     pinnedData: { itemCount: clusters.length },
   })
 
-  const columns: TableColumnsType<Cluster> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 280,
-      fixed: 'left',
-      ellipsis: true,
-      sorter: (a, b) => nameCollator.compare(a.name, b.name),
-      defaultSortOrder: 'ascend',
-      render: (_: unknown, record: Cluster) => (
-        <div className="soha-cluster-name-cell">
-          <Button
-            className="soha-cluster-name-link"
-            type="link"
-            title={record.name}
-            onClick={() => navigate(`/clusters/${record.id}`)}
-          >
-            {record.name}
-          </Button>
-        </div>
-      ),
-    },
-    {
-      ...tableColumnPresets.status,
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      dataIndex: 'health',
-      width: 104,
-      sorter: (a, b) =>
-        nameCollator.compare(
-          formatClusterHealth(a.health?.status || 'unknown', localeCode),
-          formatClusterHealth(b.health?.status || 'unknown', localeCode),
+  const columns = useMemo<TableColumnsType<Cluster>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 280,
+        fixed: 'left',
+        ellipsis: true,
+        sorter: (a, b) => nameCollator.compare(a.name, b.name),
+        defaultSortOrder: 'ascend',
+        render: (_: unknown, record: Cluster) => (
+          <ClusterNameCell id={record.id} name={record.name} onNavigate={navigate} />
         ),
-      render: (health: Cluster['health']) => {
-        const status = health?.status ?? 'unknown'
-        return <StatusTag label={formatClusterHealth(status, localeCode)} value={status} />
       },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '类型' : 'Type',
-      dataIndex: 'region',
-      width: 120,
-      ellipsis: true,
-      sorter: (a, b) =>
-        nameCollator.compare(
-          formatClusterType(clusterTypeOf(a), localeCode),
-          formatClusterType(clusterTypeOf(b), localeCode),
+      {
+        ...tableColumnPresets.status,
+        title: localeCode === 'zh_CN' ? '状态' : 'Status',
+        dataIndex: 'health',
+        width: 104,
+        sorter: (a, b) =>
+          nameCollator.compare(
+            formatClusterHealth(a.health?.status || 'unknown', localeCode),
+            formatClusterHealth(b.health?.status || 'unknown', localeCode),
+          ),
+        render: (health: Cluster['health']) => {
+          const status = health?.status ?? 'unknown'
+          return <StatusTag label={formatClusterHealth(status, localeCode)} value={status} />
+        },
+      },
+      {
+        title: localeCode === 'zh_CN' ? '类型' : 'Type',
+        dataIndex: 'region',
+        width: 120,
+        ellipsis: true,
+        sorter: (a, b) =>
+          nameCollator.compare(
+            formatClusterType(clusterTypeOf(a), localeCode),
+            formatClusterType(clusterTypeOf(b), localeCode),
+          ),
+        render: (_: string, record: Cluster) =>
+          formatClusterType(clusterTypeOf(record), localeCode),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '版本' : 'Version',
+        dataIndex: 'version',
+        width: 124,
+        ellipsis: true,
+        render: (value: string) => value || '-',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '环境' : 'Environment',
+        dataIndex: 'environment',
+        width: 132,
+        ellipsis: true,
+        render: (value: string) => value || '-',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '连接方式' : 'Mode',
+        dataIndex: 'connectionMode',
+        width: 104,
+        sorter: (a, b) =>
+          nameCollator.compare(
+            formatConnectionMode(a.connectionMode, localeCode),
+            formatConnectionMode(b.connectionMode, localeCode),
+          ),
+        render: (value: string) => <MetadataTag label={formatConnectionMode(value, localeCode)} />,
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked',
+        dataIndex: ['health', 'lastChecked'],
+        render: (_: unknown, record: Cluster) =>
+          record.health?.lastChecked ? formatDateTime(record.health.lastChecked) : '-',
+      },
+      {
+        key: 'actions',
+        title: '',
+        width: 64,
+        fixed: 'right',
+        className: 'soha-table-actions-column',
+        render: (_: unknown, record: Cluster) => (
+          <KubernetesResourceActionsMenu
+            name={record.name}
+            resourceLabel="Cluster"
+            localeCode={localeCode}
+            items={[
+              { key: 'view', label: localeCode === 'zh_CN' ? '查看详情' : 'View details' },
+              ...(canUpdate
+                ? [
+                    {
+                      key: 'edit',
+                      label: localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster',
+                      disabled: platformWriteBlocked,
+                    },
+                    ...(record.connectionMode === 'agent'
+                      ? [
+                          {
+                            key: 'install',
+                            label:
+                              localeCode === 'zh_CN'
+                                ? '生成 Agent 安装命令'
+                                : 'Generate Agent install command',
+                            disabled: platformWriteBlocked,
+                          },
+                          {
+                            key: 'upgrade',
+                            label: localeCode === 'zh_CN' ? '更新 Agent' : 'Update Agent',
+                            disabled: platformWriteBlocked,
+                          },
+                        ]
+                      : []),
+                  ]
+                : []),
+              ...(canDelete
+                ? [
+                    {
+                      key: 'delete',
+                      label: localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster',
+                      danger: true,
+                      disabled: platformWriteBlocked,
+                    },
+                  ]
+                : []),
+            ]}
+            onSelect={(key) => {
+              if (key === 'view') navigate(`/clusters/${record.id}`)
+              if (key === 'edit' && canUpdate && !platformWriteBlocked) {
+                setEditingCluster(record)
+                setModalVisible(true)
+              }
+              if (key === 'install' && canUpdate && !platformWriteBlocked)
+                showAgentInstallation(record.id)
+              if (key === 'upgrade' && canUpdate && !platformWriteBlocked)
+                setUpgradingCluster(record)
+              if (key === 'delete' && canDelete && !platformWriteBlocked) setDeletingCluster(record)
+            }}
+          />
         ),
-      render: (_: string, record: Cluster) => formatClusterType(clusterTypeOf(record), localeCode),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '版本' : 'Version',
-      dataIndex: 'version',
-      width: 124,
-      ellipsis: true,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '环境' : 'Environment',
-      dataIndex: 'environment',
-      width: 132,
-      ellipsis: true,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '连接方式' : 'Mode',
-      dataIndex: 'connectionMode',
-      width: 104,
-      sorter: (a, b) =>
-        nameCollator.compare(
-          formatConnectionMode(a.connectionMode, localeCode),
-          formatConnectionMode(b.connectionMode, localeCode),
-        ),
-      render: (value: string) => <MetadataTag label={formatConnectionMode(value, localeCode)} />,
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked',
-      dataIndex: ['health', 'lastChecked'],
-      render: (_: unknown, record: Cluster) =>
-        record.health?.lastChecked ? formatDateTime(record.health.lastChecked) : '-',
-    },
-    {
-      key: 'actions',
-      title: '',
-      width: 64,
-      fixed: 'right',
-      className: 'soha-table-actions-column',
-      render: (_: unknown, record: Cluster) => (
-        <KubernetesResourceActionsMenu
-          name={record.name}
-          resourceLabel="Cluster"
-          localeCode={localeCode}
-          items={[
-            { key: 'view', label: localeCode === 'zh_CN' ? '查看详情' : 'View details' },
-            ...(canUpdate
-              ? [
-                  {
-                    key: 'edit',
-                    label: localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster',
-                    disabled: platformWriteBlocked,
-                  },
-                  ...(record.connectionMode === 'agent'
-                    ? [
-                        {
-                          key: 'install',
-                          label:
-                            localeCode === 'zh_CN'
-                              ? '生成 Agent 安装命令'
-                              : 'Generate Agent install command',
-                          disabled: platformWriteBlocked,
-                        },
-                        {
-                          key: 'upgrade',
-                          label: localeCode === 'zh_CN' ? '更新 Agent' : 'Update Agent',
-                          disabled: platformWriteBlocked,
-                        },
-                      ]
-                    : []),
-                ]
-              : []),
-            ...(canDelete
-              ? [
-                  {
-                    key: 'delete',
-                    label: localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster',
-                    danger: true,
-                    disabled: platformWriteBlocked,
-                  },
-                ]
-              : []),
-          ]}
-          onSelect={(key) => {
-            if (key === 'view') navigate(`/clusters/${record.id}`)
-            if (key === 'edit' && canUpdate && !platformWriteBlocked) {
-              setEditingCluster(record)
-              setModalVisible(true)
-            }
-            if (key === 'install' && canUpdate && !platformWriteBlocked)
-              showAgentInstallation(record.id)
-            if (key === 'upgrade' && canUpdate && !platformWriteBlocked) setUpgradingCluster(record)
-            if (key === 'delete' && canDelete && !platformWriteBlocked) setDeletingCluster(record)
-          }}
-        />
-      ),
-    },
-  ]
+      },
+    ],
+    [
+      localeCode,
+      navigate,
+      nameCollator,
+      canUpdate,
+      canDelete,
+      platformWriteBlocked,
+      showAgentInstallation,
+    ],
+  )
+
+  const onRow = useCallback(
+    (record: Cluster) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        entityKind: 'Cluster',
+        entityName: record.name,
+        clusterId: record.id,
+      }),
+    }),
+    [],
+  )
+  const rowSelection = useMemo(
+    () => ({
+      selectedRowKeys,
+      onChange: (keys: Key[]) =>
+        setSelectedRowKeys(keys.filter((key): key is string => typeof key === 'string')),
+    }),
+    [selectedRowKeys],
+  )
 
   const openCreateModal = () => {
     setEditingCluster(null)
@@ -576,27 +630,13 @@ export function ClustersPage() {
         headerExtra={tableHeaderExtra}
         columns={columns}
         dataSource={filteredClusters}
-        onRow={(record: Cluster) => ({
-          'data-ai-context': encodeAIContextForElement({
-            sourceWorkbench: 'platform',
-            entityKind: 'Cluster',
-            entityName: record.name,
-            clusterId: record.id,
-          }),
-        })}
+        onRow={onRow}
         rowKey="id"
         loading={clustersQuery.isLoading}
         localSorting
         tableSize={tableSize}
         scroll={{ x: 1200 }}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (nextSelectedRowKeys: Key[]) => {
-            setSelectedRowKeys(
-              nextSelectedRowKeys.filter((key): key is string => typeof key === 'string'),
-            )
-          },
-        }}
+        rowSelection={rowSelection}
       />
 
       <Modal

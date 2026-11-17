@@ -3,7 +3,7 @@ import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { Button, Card, Select, Typography, type TableColumnsType } from 'antd'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, memo, type ReactNode } from 'react'
 import { WorkloadOverviewConfiguration } from '../../workloads/shared/workload-overview'
 import { GatewayConditions } from './gateway-panels'
 import type {
@@ -16,7 +16,7 @@ import type {
 import './httproute.css'
 
 export type HTTPRouteReferenceRenderer = (ref: HTTPRouteReference) => ReactNode
-export function HTTPRouteValues({
+export const HTTPRouteValues = memo(function HTTPRouteValues({
   values,
   empty = '—',
   compact = false,
@@ -48,7 +48,7 @@ export function HTTPRouteValues({
       )}
     </div>
   )
-}
+})
 export function HTTPRouteRulePicker({
   rules,
   selectedKey,

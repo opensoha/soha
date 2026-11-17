@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { LoadingOutlined } from '@ant-design/icons'
 import { Modal, type MenuProps, type TableColumnsType } from 'antd'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { KubernetesResourceActionsMenu } from './kubernetes-resource-actions-menu'
 
 export function kubernetesDeleteConfirmation(
@@ -43,6 +43,14 @@ export type KubernetesResourceAction = {
   confirm?: { title: ReactNode; description?: ReactNode; okText?: string }
 }
 
+export function getResourceName(record: { name: string }) {
+  return record.name
+}
+
+export function getNamespacedResourceKey(record: { name: string; namespace?: string | null }) {
+  return `${record.namespace ?? ''}/${record.name}`
+}
+
 /** Presentation only: resource owners provide permissions, immutable targets and mutations. */
 export function useKubernetesResourceActions<T>({
   resourceKey,
@@ -76,6 +84,8 @@ export function useKubernetesResourceActions<T>({
   currentTarget.current = target
   const currentScope = useRef(scope)
   currentScope.current = scope
+  const currentOptions = useRef({ records, getKey, actions })
+  currentOptions.current = { records, getKey, actions }
   const sequence = useRef(0)
   const submitting = useRef<number | null>(null)
   const [pending, setPending] = useState(false)
@@ -94,77 +104,85 @@ export function useKubernetesResourceActions<T>({
     liveAction ??
     (target ? actions(target.record).find((item) => item.key === target.actionKey) : undefined)
   const ready = Boolean(target?.scope === scope && liveAction && !liveAction.disabled && !pending)
-  const selectAction = (record: T, key: string) => {
-    const current = records.find((item) => getKey(item) === getKey(record))
-    const action =
-      current === undefined ? undefined : actions(current).find((item) => item.key === key)
-    if (!action || action.disabled) return
-    if (action.confirm) {
-      action.prepare?.()
-      setError(null)
-      setTarget({
-        scope,
-        record: current as T,
-        key: getKey(current as T),
-        actionKey: key,
-        token: ++sequence.current,
-      })
-    } else {
-      // The request owner keeps its existing durable feedback and write fence.
-      void Promise.resolve(action.run()).catch(() => undefined)
-    }
-  }
-  const column: TableColumnsType<T>[number] = {
-    key: 'actions',
-    title: '',
-    fixed: 'right',
-    width: 64,
-    align: 'center',
-    className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-kubernetes-actions-column`,
-    render: (_value, record) => {
-      const entries = actions(record)
-      const items: NonNullable<MenuProps['items']> = []
-      let ordinary = false
-      let divided = false
-      for (const entry of entries) {
-        if (entry.danger && ordinary && !divided) {
-          items.push({ key: '__danger-divider', type: 'divider' })
-          divided = true
-        }
-        if (!entry.danger) ordinary = true
-        items.push({
-          key: entry.key,
-          danger: entry.danger,
-          disabled: entry.disabled,
-          icon: entry.loading ? (
-            <LoadingOutlined aria-hidden />
-          ) : entry.icon ? (
-            <span aria-hidden>{entry.icon}</span>
-          ) : undefined,
-          label:
-            entry.disabled && entry.reason ? (
-              <span className="soha-kubernetes-action-menu-label">
-                <span>{entry.label}</span>
-                <span className="soha-kubernetes-action-menu-reason">{entry.reason}</span>
-              </span>
-            ) : (
-              entry.label
-            ),
+  const selectAction = useCallback(
+    (record: T, key: string) => {
+      if (currentScope.current !== scope) return
+      const { records, getKey, actions } = currentOptions.current
+      const current = records.find((item) => getKey(item) === getKey(record))
+      const action =
+        current === undefined ? undefined : actions(current).find((item) => item.key === key)
+      if (!action || action.disabled) return
+      if (action.confirm) {
+        action.prepare?.()
+        setError(null)
+        setTarget({
+          scope,
+          record: current as T,
+          key: getKey(current as T),
+          actionKey: key,
+          token: ++sequence.current,
         })
+      } else {
+        // The request owner keeps its existing durable feedback and write fence.
+        void Promise.resolve(action.run()).catch(() => undefined)
       }
-      return (
-        <KubernetesResourceActionsMenu
-          resourceLabel={resourceLabel}
-          name={getName(record)}
-          localeCode={localeCode}
-          items={items}
-          onSelect={(key) => {
-            selectAction(record, key)
-          }}
-        />
-      )
     },
-  }
+    [scope],
+  )
+  const column = useMemo<TableColumnsType<T>[number]>(
+    () => ({
+      key: 'actions',
+      title: '',
+      fixed: 'right',
+      width: 64,
+      align: 'center',
+      className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-kubernetes-actions-column`,
+      render: (_value, record) => {
+        const entries = actions(record)
+        const items: NonNullable<MenuProps['items']> = []
+        let ordinary = false
+        let divided = false
+        for (const entry of entries) {
+          if (entry.danger && ordinary && !divided) {
+            items.push({ key: '__danger-divider', type: 'divider' })
+            divided = true
+          }
+          if (!entry.danger) ordinary = true
+          items.push({
+            key: entry.key,
+            danger: entry.danger,
+            disabled: entry.disabled,
+            icon: entry.loading ? (
+              <LoadingOutlined aria-hidden />
+            ) : entry.icon ? (
+              <span aria-hidden>{entry.icon}</span>
+            ) : undefined,
+            label:
+              entry.disabled && entry.reason ? (
+                <span className="soha-kubernetes-action-menu-label">
+                  <span>{entry.label}</span>
+                  <span className="soha-kubernetes-action-menu-reason">{entry.reason}</span>
+                </span>
+              ) : (
+                entry.label
+              ),
+          })
+        }
+        return (
+          <KubernetesResourceActionsMenu
+            resourceLabel={resourceLabel}
+            name={getName(record)}
+            localeCode={localeCode}
+            items={items}
+            onSelect={(key) => {
+              selectAction(record, key)
+            }}
+          />
+        )
+      },
+    }),
+    [actions, getName, localeCode, resourceLabel, selectAction],
+  )
   const confirmation = (
     <Modal
       destroyOnHidden

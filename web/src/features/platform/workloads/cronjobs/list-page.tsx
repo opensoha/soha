@@ -1,11 +1,16 @@
+import {
+  ResourceNameLink,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementTableToolbar } from '@/components/management-list'
-import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
@@ -18,7 +23,6 @@ import {
   normalizeSearchKeyword,
 } from '@/features/platform/workloads-model'
 import {
-  renderWorkloadNameLink,
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
@@ -42,7 +46,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { cronJobMutations } from './mutations'
@@ -98,13 +102,22 @@ export function WorkloadsCronJobsPage() {
   })
 
   useEffect(() => setEditTarget(null), [clusterId, namespace])
-  const resourceActions = useKubernetesResourceActions({
-    resourceKey: 'cronjobs',
-    resourceLabel: 'CronJob',
-    records: cronJobs,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) => {
+  const {
+    feedback: removeMutationFeedback,
+    isPending: removeMutationIsPending,
+    mutateAsync: removeMutationMutateAsync,
+    reset: removeMutationReset,
+    variables: removeMutationVariables,
+  } = removeMutation
+  const {
+    feedback: suspendMutationFeedback,
+    isPending: suspendMutationIsPending,
+    mutateAsync: suspendMutationMutateAsync,
+    reset: suspendMutationReset,
+    variables: suspendMutationVariables,
+  } = suspendMutation
+  const actions = useCallback(
+    (record: CronJob) => {
       const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
       return [
         ...(hasAllowedAction(record.allowedActions, 'update')
@@ -138,12 +151,12 @@ export function WorkloadsCronJobsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading:
-                  suspendMutation.isPending &&
-                  suspendMutation.variables?.scope.clusterId === clusterId &&
-                  suspendMutation.variables?.name === record.name &&
-                  suspendMutation.variables.scope.namespace === record.namespace,
-                feedback: suspendMutation.feedback,
-                prepare: () => suspendMutation.reset(),
+                  suspendMutationIsPending &&
+                  suspendMutationVariables?.scope.clusterId === clusterId &&
+                  suspendMutationVariables?.name === record.name &&
+                  suspendMutationVariables.scope.namespace === record.namespace,
+                feedback: suspendMutationFeedback,
+                prepare: () => suspendMutationReset(),
                 confirm: {
                   title: record.suspend
                     ? localeCode === 'zh_CN'
@@ -155,7 +168,7 @@ export function WorkloadsCronJobsPage() {
                   description: `${record.namespace} / ${record.name}`,
                   okText: localeCode === 'zh_CN' ? '确认' : 'OK',
                 },
-                run: () => suspendMutation.mutateAsync({ ...target, suspend: !record.suspend }),
+                run: () => suspendMutationMutateAsync({ ...target, suspend: !record.suspend }),
               },
             ]
           : []),
@@ -169,81 +182,135 @@ export function WorkloadsCronJobsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === clusterId &&
-                  removeMutation.variables?.name === record.name &&
-                  removeMutation.variables.scope.namespace === record.namespace,
-                feedback: removeMutation.feedback,
-                prepare: () => removeMutation.reset(),
+                  removeMutationIsPending &&
+                  removeMutationVariables?.scope.clusterId === clusterId &&
+                  removeMutationVariables?.name === record.name &&
+                  removeMutationVariables.scope.namespace === record.namespace,
+                feedback: removeMutationFeedback,
+                prepare: () => removeMutationReset(),
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                run: () => removeMutation.mutateAsync(target),
+                run: () => removeMutationMutateAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      removeMutationFeedback,
+      removeMutationIsPending,
+      removeMutationMutateAsync,
+      removeMutationReset,
+      removeMutationVariables,
+      suspendMutationFeedback,
+      suspendMutationIsPending,
+      suspendMutationMutateAsync,
+      suspendMutationReset,
+      suspendMutationVariables,
+      clusterId,
+      localeCode,
+      platformWriteBlocked,
+      workloadMutationCapability.disabled,
+      workloadMutationCapability.reason,
+      yamlApplyCapability.disabled,
+      yamlApplyCapability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'cronjobs',
+    resourceLabel: 'CronJob',
+    records: cronJobs,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
 
-  const columns: TableColumnsType<CronJob> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      ellipsis: { showTitle: false },
-      render: (name: string, record: CronJob) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(
-            buildWorkloadDetailPath('cronjobs', name, namespace, record.namespace, clusterId),
-          ),
+  const columns = useMemo<TableColumnsType<CronJob>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        ellipsis: { showTitle: false },
+        render: (name: string, record: CronJob) => (
+          <ResourceNameLink
+            name={name}
+            to={buildWorkloadDetailPath('cronjobs', name, namespace, record.namespace, clusterId)}
+            onNavigate={navigate}
+          />
         ),
-    },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
-    {
-      title: localeCode === 'zh_CN' ? '调度计划' : 'Schedule',
-      dataIndex: 'schedule',
-      width: 180,
-    },
-    {
-      ...tableColumnPresets.status,
-      title: localeCode === 'zh_CN' ? '调度状态' : 'Scheduling',
-      dataIndex: 'suspend',
-      width: 128,
-      render: (suspend: boolean) => (
-        <StatusTag
-          value={suspend ? 'suspended' : 'enabled'}
-          label={
-            suspend
-              ? localeCode === 'zh_CN'
-                ? '已暂停'
-                : 'Suspended'
-              : localeCode === 'zh_CN'
-                ? '调度启用'
-                : 'Scheduling enabled'
-          }
-        />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '活跃' : 'Active',
-      dataIndex: 'activeJobs',
-      width: 88,
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '上次调度' : 'Last Schedule',
-      dataIndex: 'lastScheduleTime',
-      width: 140,
-      render: (value: string) => (value ? formatRelativeTime(value) : '-'),
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    resourceActions.column,
-  ]
+      },
+      { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
+      {
+        title: localeCode === 'zh_CN' ? '调度计划' : 'Schedule',
+        dataIndex: 'schedule',
+        width: 180,
+      },
+      {
+        ...tableColumnPresets.status,
+        title: localeCode === 'zh_CN' ? '调度状态' : 'Scheduling',
+        dataIndex: 'suspend',
+        width: 128,
+        render: (suspend: boolean) => (
+          <ResourceStatusCell
+            value={suspend ? 'suspended' : 'enabled'}
+            label={
+              suspend
+                ? localeCode === 'zh_CN'
+                  ? '已暂停'
+                  : 'Suspended'
+                : localeCode === 'zh_CN'
+                  ? '调度启用'
+                  : 'Scheduling enabled'
+            }
+          />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '活跃' : 'Active',
+        dataIndex: 'activeJobs',
+        width: 88,
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '上次调度' : 'Last Schedule',
+        dataIndex: 'lastScheduleTime',
+        width: 140,
+        render: (value: string) => (value ? formatRelativeTime(value) : '-'),
+      },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      resourceActions.column,
+    ],
+    [localeCode, t, namespace, clusterId, navigate, resourceActions.column],
+  )
+
+  const rowProps = useCallback(
+    (record: CronJob) => workloadRowAIContext('cronjobs', record, clusterId),
+    [clusterId],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredCronJobs.length}
+        localeCode={localeCode}
+        resourceLabel="CronJobs"
+        totalCount={cronJobs.length}
+      />
+    ),
+    [clusterId, filteredCronJobs.length, localeCode, cronJobs.length],
+  )
+
+  const visibleColumns = useMemo(
+    () =>
+      resourceActions.hasActions ? columns : columns.filter((column) => column.key !== 'actions'),
+    [columns, resourceActions.hasActions],
+  )
 
   return (
     <div className="soha-page">
@@ -294,25 +361,13 @@ export function WorkloadsCronJobsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={
-          resourceActions.hasActions
-            ? columns
-            : columns.filter((column) => column.key !== 'actions')
-        }
+        columns={visibleColumns}
         dataSource={filteredCronJobs}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: CronJob) => workloadRowAIContext('cronjobs', record, clusterId)}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={cronJobsQuery.isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredCronJobs.length}
-            localeCode={localeCode}
-            resourceLabel="CronJobs"
-            totalCount={cronJobs.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
       />

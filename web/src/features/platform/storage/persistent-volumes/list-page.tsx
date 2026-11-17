@@ -1,10 +1,13 @@
+import {
+  ResourceNameLink,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
-import { StatusTag } from '@/components/status-tag'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { StorageListPage } from '../shared/list-page'
@@ -77,7 +80,7 @@ export function StoragePvPage() {
       ellipsis: { showTitle: false },
       width: 260,
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(detailPath(record))} />
+        <ResourceNameLink name={value} to={detailPath(record)} onNavigate={navigate} />
       ),
     },
     {
@@ -85,7 +88,7 @@ export function StoragePvPage() {
       dataIndex: 'status',
       sorter: (a, b) => a.status.localeCompare(b.status),
       width: 110,
-      render: (value: string) => <StatusTag value={value} />,
+      render: (value: string) => <ResourceStatusCell value={value} />,
     },
     {
       title: localeCode === 'zh_CN' ? '容量' : 'Capacity',
@@ -104,17 +107,10 @@ export function StoragePvPage() {
         const identity = claimIdentity(record)
         const value = claimLabel(record)
         return identity && canViewPVC ? (
-          <TableCellLink
-            label={`${identity.namespace}/${identity.name}`}
-            onClick={() => {
-              const params = new URLSearchParams({
-                clusterId: clusterId || '',
-                namespace: identity.namespace,
-              })
-              navigate(
-                `/storage/persistentvolumeclaims/${encodeURIComponent(identity.name)}?${params}`,
-              )
-            }}
+          <ResourceNameLink
+            name={`${identity.namespace}/${identity.name}`}
+            to={`/storage/persistentvolumeclaims/${encodeURIComponent(identity.name)}?${new URLSearchParams({ clusterId: clusterId || '', namespace: identity.namespace })}`}
+            onNavigate={navigate}
           />
         ) : (
           <TableCellText value={value} />
@@ -129,7 +125,7 @@ export function StoragePvPage() {
       sorter: (a, b) => (a.storageClass ?? '').localeCompare(b.storageClass ?? ''),
       render: (value?: string) =>
         value && canViewStorageClass ? (
-          <TableCellLink label={value} onClick={() => navigate(storageClassPath(value))} />
+          <ResourceNameLink name={value} to={storageClassPath(value)} onNavigate={navigate} />
         ) : (
           <TableCellText value={value} />
         ),

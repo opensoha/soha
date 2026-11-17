@@ -1,4 +1,7 @@
-import { StatusTag } from '@/components/status-tag'
+import {
+  ResourceNameLink,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { replicaSetHealth } from './replicaset-detail-model'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
@@ -7,7 +10,6 @@ import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { buildWorkloadDetailPath } from '@/features/platform/workloads-model'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { renderWorkloadNameLink } from '../shared/list-controls'
 import { ReplicaControllerListPage } from '../shared/replica-controller-list'
 import type { ReplicaSet } from './types'
 import '@/features/platform/workloads/styles.css'
@@ -21,10 +23,14 @@ export function WorkloadsReplicaSetsPage() {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
       ellipsis: { showTitle: false },
-      render: (name: string, record) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(buildWorkloadDetailPath('replicasets', name, null, record.namespace, clusterId)),
-        ),
+      render: (name: string, record) => (
+        <ResourceNameLink
+          name={name}
+          to={buildWorkloadDetailPath('replicasets', name, null, record.namespace, clusterId)}
+          onNavigate={navigate}
+        />
+      ),
+
       width: 240,
     },
     {
@@ -38,28 +44,31 @@ export function WorkloadsReplicaSetsPage() {
       key: 'health',
       width: 150,
       sorter: (a, b) => replicaSetHealth(a).localeCompare(replicaSetHealth(b)),
-      render: (_, record) => (
-        <StatusTag
-          value={replicaSetHealth(record)}
-          label={
-            replicaSetHealth(record) === 'healthy'
-              ? localeCode === 'zh_CN'
-                ? '健康'
-                : 'Healthy'
-              : replicaSetHealth(record) === 'inactive'
+      render: (_, record) => {
+        const health = replicaSetHealth(record)
+        return (
+          <ResourceStatusCell
+            value={health}
+            label={
+              health === 'healthy'
                 ? localeCode === 'zh_CN'
-                  ? '期望为 0'
-                  : 'Zero desired'
-                : replicaSetHealth(record) === 'unknown'
+                  ? '健康'
+                  : 'Healthy'
+                : health === 'inactive'
                   ? localeCode === 'zh_CN'
-                    ? '状态未知'
-                    : 'Unknown'
-                  : localeCode === 'zh_CN'
-                    ? '未就绪或不可用'
-                    : 'Not ready or available'
-          }
-        />
-      ),
+                    ? '期望为 0'
+                    : 'Zero desired'
+                  : health === 'unknown'
+                    ? localeCode === 'zh_CN'
+                      ? '状态未知'
+                      : 'Unknown'
+                    : localeCode === 'zh_CN'
+                      ? '未就绪或不可用'
+                      : 'Not ready or available'
+            }
+          />
+        )
+      },
     },
     {
       title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',

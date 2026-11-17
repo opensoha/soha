@@ -148,6 +148,10 @@ a universal page component, add another ConfigProvider or change navigation/cont
 - Runtime sidebar icons come from the server menu `iconKey` and resolve through
   `src/features/system/menu-icons.tsx`; change built-in defaults in the backend menu seed and
   idempotent upgrader, not in route-local icon metadata.
+- Navigation and Heya use `src/components/animated-icon.tsx` with shared stroke, color and
+  hover/keyboard-focus motion. Menu keys remain server-owned; workbench launchers use the shared
+  workbench mapping rather than borrowing a child menu icon. Motion plays once per interaction
+  and respects reduced-motion preferences; brand images remain separate.
 - Choose icons for the primary operator task. Within one sibling group, avoid reusing the same
   rendered glyph for unrelated actions when a clearer registered icon exists; reuse the shared
   registry and installed icon set before adding assets or dependencies.

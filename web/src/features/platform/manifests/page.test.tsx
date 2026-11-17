@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { App } from 'antd'
 
 import { act } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -118,9 +119,11 @@ async function renderPage() {
   await act(async () => {
     root.render(
       <MemoryRouter>
-        <QueryClientProvider client={queryClient}>
-          <PlatformManifestsPage />
-        </QueryClientProvider>
+        <App>
+          <QueryClientProvider client={queryClient}>
+            <PlatformManifestsPage />
+          </QueryClientProvider>
+        </App>
       </MemoryRouter>,
     )
     await flush()
@@ -236,15 +239,21 @@ it.each([403, 503])(
     })
 
     const drawer = document.querySelector('.ant-drawer-open [role="dialog"]')!
-    const feedback = document.querySelectorAll('.soha-read-feedback')
-    expect(feedback).toHaveLength(1)
-    expect(feedback[0].closest('[role="dialog"]')).toBe(drawer)
-    expect(drawer.textContent).toContain('Deployment evidence unavailable')
-    expect(drawer.textContent).toContain(
-      status === 403 ? '部署记录无访问权限' : '正在展示上次读取结果',
-    )
+    if (status === 403) {
+      expect(drawer.querySelector('.soha-read-feedback')?.textContent).toContain(
+        '部署记录无访问权限',
+      )
+    } else {
+      await vi.waitFor(() =>
+        expect(
+          document.body.querySelector('.soha-read-feedback-notification')?.textContent,
+        ).toContain('正在展示上次读取结果'),
+      )
+      expect(drawer.querySelector('.soha-read-feedback')).toBeNull()
+    }
+    expect(document.body.textContent).toContain('Deployment evidence unavailable')
     expect(drawer.textContent).not.toContain('实际 v2')
-    expect(drawer.querySelector('button[aria-label="重试读取部署记录"]') !== null).toBe(
+    expect(document.body.querySelector('button[aria-label="重试读取部署记录"]') !== null).toBe(
       status === 503,
     )
     expect(container.querySelector('.soha-read-feedback')).toBeNull()

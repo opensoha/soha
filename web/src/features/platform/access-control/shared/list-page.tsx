@@ -1,6 +1,9 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import {
+  getResourceName,
+  getNamespacedResourceKey,
   kubernetesDeleteConfirmation,
+  type KubernetesResourceAction,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -29,12 +32,15 @@ import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { accessControlMutations } from './mutations'
 import { accessControlQueries } from './queries'
 import { accessControlScopeFromSelection, accessControlTargetFromRecord } from './scope'
 import type { AccessControlKind, AccessControlResourceRecord } from './types'
+
+const EMPTY_ITEMS: never[] = []
+const TABLE_SCROLL = { x: 'max-content' } as const
 
 const ACCESS_CONTROL_ENTITY_KINDS: Record<AccessControlKind, string> = {
   serviceaccounts: 'ServiceAccount',
@@ -99,7 +105,7 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = canRead ? (visibleQueryData ?? []) : []
+  const rawItems = canRead ? (visibleQueryData ?? EMPTY_ITEMS) : EMPTY_ITEMS
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesSearchValues(searchValues(item), normalizedKeyword)),
@@ -129,13 +135,15 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
           : `No matching ${label}`
         : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const resourceActions = useKubernetesResourceActions<T>({
-    resourceKey: `rbac:${kind}`,
-    resourceLabel: entityKind,
-    records: rawItems,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
-    actions: (record) => {
+  const {
+    isPending: removePending,
+    variables: removeVariables,
+    reset: resetRemove,
+    mutateAsync: removeAsync,
+    feedback: removeFeedback,
+  } = removeMutation
+  const actions = useCallback<(record: T) => KubernetesResourceAction[]>(
+    (record) => {
       const target = accessControlTargetFromRecord(kind, clusterId, record)
       const deleteActions =
         canRead &&
@@ -151,14 +159,14 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
                   platformWriteBlocked || yamlCapability.isLoading || yamlCapability.disabled,
                 reason: yamlCapability.reason,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === clusterId &&
-                  removeMutation.variables?.name === target.name &&
-                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                  removePending &&
+                  removeVariables?.scope.clusterId === clusterId &&
+                  removeVariables?.name === target.name &&
+                  removeVariables.scope.namespace === target.scope.namespace,
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                prepare: () => removeMutation.reset(),
-                feedback: removeMutation.feedback,
-                run: () => removeMutation.mutateAsync(target),
+                prepare: () => resetRemove(),
+                feedback: removeFeedback,
+                run: () => removeAsync(target),
               },
             ]
           : []
@@ -179,7 +187,61 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
         ...deleteActions,
       ]
     },
+    [
+      clusterId,
+      localeCode,
+      onEdit,
+      platformWriteBlocked,
+      removePending,
+      removeVariables,
+      resetRemove,
+      removeAsync,
+      removeFeedback,
+      permissionKey,
+      permissions,
+      canRead,
+      kind,
+      yamlCapability.isLoading,
+      yamlCapability.disabled,
+      yamlCapability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `rbac:${kind}`,
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
+
+  const effectiveColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
+  const rowProps = useCallback(
+    (record: T) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        entityKind,
+        entityName: record.name,
+        clusterId: clusterId || undefined,
+        namespace: record.namespace || undefined,
+      }),
+    }),
+    [clusterId, entityKind],
+  )
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        description={effectiveEmptyDescription}
+        kind={!clusterId ? 'select-scope' : 'empty'}
+      />
+    ),
+    [clusterId, effectiveEmptyDescription],
+  )
 
   return (
     <>
@@ -235,16 +297,9 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
             className={'soha-rbac-table soha-platform-table'}
             columnSettingIconOnly={true}
             columnSettingPlacement={'header'}
-            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
-            dataSource={clusterId ? filteredItems : []}
-            empty={
-              <ManagementState
-                bordered={false}
-                compact
-                description={effectiveEmptyDescription}
-                kind={!clusterId ? 'select-scope' : 'empty'}
-              />
-            }
+            columns={effectiveColumns}
+            dataSource={clusterId ? filteredItems : EMPTY_ITEMS}
+            empty={empty}
             headerExtra={
               <ManagementTableToolbar>
                 <CreateEntry
@@ -306,16 +361,8 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
             loading={query.isLoading}
             localSorting={true}
             rowKey={rowKey}
-            onRow={(record: T) => ({
-              'data-ai-context': encodeAIContextForElement({
-                sourceWorkbench: 'platform',
-                entityKind,
-                entityName: record.name,
-                clusterId: clusterId || undefined,
-                namespace: record.namespace || undefined,
-              }),
-            })}
-            scroll={{ x: 'max-content' }}
+            onRow={rowProps}
+            scroll={TABLE_SCROLL}
             tableSize={tableSize}
           />
         }

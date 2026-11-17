@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cloneElement, isValidElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoragePvcPage } from './persistent-volume-claims/list-page'
 import { StoragePvPage } from './persistent-volumes/list-page'
@@ -11,6 +11,8 @@ import { StorageClassesPage } from './storage-classes/list-page'
 
 const testState = vi.hoisted(() => ({
   editorModuleLoads: 0,
+  canViewPVC: true,
+  pvRows: [] as Array<Record<string, unknown>>,
   scope: { clusterId: 'cluster-a', namespace: 'selected-ns' },
 }))
 const apiGetMock = vi.hoisted(() =>
@@ -28,6 +30,7 @@ const apiGetMock = vi.hoisted(() =>
         ],
       }
     }
+    if (path.endsWith('/persistentvolumes')) return { data: testState.pvRows }
     return { data: [] }
   }),
 )
@@ -66,7 +69,9 @@ vi.mock('@/features/auth', async (importOriginal) => ({
           'platform.storage.persistent-volume-claims.delete',
           'platform.storage.persistent-volumes.view',
           'platform.storage.storage-classes.view',
-        ],
+        ].filter(
+          (key) => testState.canViewPVC || key !== 'platform.storage.persistent-volume-claims.view',
+        ),
         visibleMenuIds: [],
         visibleMenus: [],
       },
@@ -135,9 +140,10 @@ vi.mock('@/components/management-data-page', () => ({
 vi.mock('antd', async (importOriginal) => {
   const actual = await importOriginal<typeof import('antd')>()
   const message = { error: vi.fn(), success: vi.fn() }
+  const notification = { destroy: vi.fn(), open: vi.fn() }
   return {
     ...actual,
-    App: { ...actual.App, useApp: () => ({ message }) },
+    App: { ...actual.App, useApp: () => ({ message, notification }) },
     Popconfirm: ({ children, onConfirm }: { children?: ReactNode; onConfirm?: () => void }) => (
       <span onClick={onConfirm}>{children}</span>
     ),
@@ -163,6 +169,8 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks()
   testState.editorModuleLoads = 0
+  testState.canViewPVC = true
+  testState.pvRows = []
   testState.scope.clusterId = 'cluster-a'
   testState.scope.namespace = 'selected-ns'
 })
@@ -220,6 +228,58 @@ describe('storage list pages', () => {
       '/clusters/cluster-a/storage/persistentvolumeclaims/claim-a?namespace=row-ns',
     )
     expect(testState.editorModuleLoads).toBe(0)
+  })
+
+  it('keeps PV claim links scoped to their validated identity and falls back to text without permission', async () => {
+    testState.pvRows = [
+      {
+        name: 'pv-valid',
+        status: 'Bound',
+        ageSeconds: 60,
+        claimNamespace: 'claim-ns',
+        claimName: 'claim-a',
+        claimRef: 'stale-ns/stale-claim',
+      },
+      {
+        name: 'pv-partial',
+        status: 'Bound',
+        ageSeconds: 60,
+        claimNamespace: 'partial-ns',
+        claimRef: 'must-not/fill',
+      },
+    ]
+    function PathLabel() {
+      const location = useLocation()
+      return <output data-testid="current-path">{location.pathname + location.search}</output>
+    }
+    function ListWithPath() {
+      return (
+        <>
+          <StoragePvPage />
+          <PathLabel />
+        </>
+      )
+    }
+    const { container, rerender } = await renderPage(<ListWithPath />)
+    const claimButton = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent === 'claim-ns/claim-a',
+      )
+    expect(claimButton()).toBeDefined()
+    expect(container.textContent).toContain('must-not/fill')
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent === 'must-not/fill',
+      ),
+    ).toBe(false)
+    await act(async () => claimButton()!.click())
+    expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(
+      '/storage/persistentvolumeclaims/claim-a?clusterId=cluster-a&namespace=claim-ns',
+    )
+    testState.canViewPVC = false
+    await rerender()
+    expect(claimButton()).toBeUndefined()
+    expect(container.textContent).toContain('claim-ns/claim-a')
   })
 
   it('keeps PV and StorageClass lists cluster scoped', async () => {

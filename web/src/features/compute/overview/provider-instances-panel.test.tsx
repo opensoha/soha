@@ -121,21 +121,24 @@ describe('provider instances panel', () => {
     },
   )
 
-  it('retries a failed provider query', () => {
+  it('retries a failed provider query', async () => {
     const refetch = vi.fn()
     vi.mocked(useQuery).mockReturnValue(
       providerQuery({ data: undefined, isError: true, refetch }) as never,
     )
     vi.mocked(useMutation).mockReturnValue({ isPending: false, mutate: vi.fn() } as never)
 
-    const container = render(
+    render(
       <ProviderInstancesPanel canDiscover={false} canTest={false} enabled localeCode="zh_CN" />,
     )
-    const retry = container.querySelector<HTMLButtonElement>(
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="重试读取提供方实例"]')).not.toBeNull(),
+    )
+    const retry = document.body.querySelector<HTMLButtonElement>(
       'button[aria-label="重试读取提供方实例"]',
     )
 
-    expect(retry).toBeDefined()
+    expect(retry).not.toBeNull()
     act(() => retry?.click())
     expect(refetch).toHaveBeenCalledTimes(1)
   })

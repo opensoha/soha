@@ -1,8 +1,9 @@
+import { getNamespacedResourceKey } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { OverviewMetricCard, type OverviewMetricItem } from '@/components/overview-visuals'
 import { ReadFeedback } from '@/components/request-feedback'
-import { StatusTag } from '@/components/status-tag'
+import { ResourceStatusCell } from '@/features/platform/shared/resource-table-cells'
 import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { SecurityPosturePanel } from '@/features/platform/shared/resource-insights/security-posture-panel'
@@ -28,7 +29,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Link } from 'react-router-dom'
 import { Segmented } from 'antd'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   useWorkloadTableDensity,
   WorkloadRefreshButton,
@@ -141,6 +142,72 @@ export function WorkloadsOverviewPage() {
   })
   const { densityButton, tableSize } = useWorkloadTableDensity(localeCode)
 
+  const eventColumns = useMemo<TableColumnsType<WorkloadEvent>>(
+    () => [
+      {
+        title: t('common.namespace', 'Namespace'),
+        dataIndex: 'namespace',
+        render: (value: string) => value || '-',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '类型' : 'Type',
+        dataIndex: 'type',
+        render: (value: string) => <ResourceStatusCell value={value} />,
+      },
+      { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason' },
+      {
+        title: localeCode === 'zh_CN' ? '对象' : 'Object',
+        dataIndex: 'involvedName',
+        render: (_: string, record: WorkloadEvent) => {
+          const label = `${record.involvedKind || '-'} / ${record.involvedName || '-'}`
+          const path = buildKubernetesEventResourcePath(record, clusterId)
+          return path ? (
+            <Link className="soha-workload-overview-event-link" to={path}>
+              {label}
+            </Link>
+          ) : (
+            label
+          )
+        },
+      },
+      {
+        title: localeCode === 'zh_CN' ? '消息' : 'Message',
+        dataIndex: 'message',
+        ellipsis: { showTitle: false },
+        render: (value?: string) => <TableCellText value={value} />,
+      },
+      { title: localeCode === 'zh_CN' ? '次数' : 'Count', dataIndex: 'count' },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [t, localeCode, clusterId],
+  )
+
+  const events = visibleEventsQueryData ?? []
+  const filteredEvents = useMemo(
+    () =>
+      eventType === 'warning'
+        ? events.filter((event) => event.type?.toLowerCase() === 'warning')
+        : events,
+    [events, eventType],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredEvents.length}
+        localeCode={localeCode}
+        resourceLabel={localeCode === 'zh_CN' ? '事件记录' : 'event records'}
+        totalCount={events.length}
+      />
+    ),
+    [clusterId, filteredEvents.length, localeCode, events.length],
+  )
+
   if (!clusterId) {
     return (
       <div className="soha-page soha-overview-page soha-workloads-overview-page">
@@ -236,53 +303,6 @@ export function WorkloadsOverviewPage() {
               : item.helper,
       }
     })
-
-  const eventColumns: TableColumnsType<WorkloadEvent> = [
-    {
-      title: t('common.namespace', 'Namespace'),
-      dataIndex: 'namespace',
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '类型' : 'Type',
-      dataIndex: 'type',
-      render: (value: string) => <StatusTag value={value} />,
-    },
-    { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason' },
-    {
-      title: localeCode === 'zh_CN' ? '对象' : 'Object',
-      dataIndex: 'involvedName',
-      render: (_: string, record: WorkloadEvent) => {
-        const label = `${record.involvedKind || '-'} / ${record.involvedName || '-'}`
-        const path = buildKubernetesEventResourcePath(record, clusterId)
-        return path ? (
-          <Link className="soha-workload-overview-event-link" to={path}>
-            {label}
-          </Link>
-        ) : (
-          label
-        )
-      },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '消息' : 'Message',
-      dataIndex: 'message',
-      ellipsis: { showTitle: false },
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-    { title: localeCode === 'zh_CN' ? '次数' : 'Count', dataIndex: 'count' },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
-  const events = visibleEventsQueryData ?? []
-  const filteredEvents =
-    eventType === 'warning'
-      ? events.filter((event) => event.type?.toLowerCase() === 'warning')
-      : events
 
   return (
     <div className="soha-page soha-overview-page soha-workloads-overview-page">
@@ -392,17 +412,9 @@ export function WorkloadsOverviewPage() {
         columns={eventColumns}
         dataSource={filteredEvents}
         localSorting
-        rowKey={(record) => `${record.namespace || ''}/${record.name}`}
+        rowKey={getNamespacedResourceKey}
         loading={eventsQuery.isLoading}
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredEvents.length}
-            localeCode={localeCode}
-            resourceLabel={localeCode === 'zh_CN' ? '事件记录' : 'event records'}
-            totalCount={events.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
       />

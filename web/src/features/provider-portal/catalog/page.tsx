@@ -5,7 +5,11 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useAnnouncementInbox, type AnnouncementInboxItem } from '@/features/announcements'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import type { IdentityApplication } from '@/features/identity'
-import { MENU_WORKBENCH_LABELS, MENU_WORKBENCH_ORDER, resolveMenuIcon } from '@/features/system'
+import {
+  MENU_WORKBENCH_LABELS,
+  MENU_WORKBENCH_ORDER,
+  resolveWorkbenchIcon,
+} from '@/features/system'
 import { useI18n } from '@/i18n'
 import {
   canAccessRoute,
@@ -453,7 +457,6 @@ export function SohaProviderPortalPage() {
           )[0]
         return [
           {
-            iconKey: menu?.iconKey,
             id: workbenchId,
             label:
               (localeCode === 'en_US'
@@ -716,7 +719,7 @@ export function SohaProviderPortalPage() {
                     {canAccessRoute(getRouteMeta('/heya'), permissionSnapshot) ? (
                       <Link
                         aria-label={localeCode === 'en_US' ? 'Open Heya' : '打开 Heya'}
-                        className="soha-portal-recent-item soha-portal-workbench-link"
+                        className="soha-portal-recent-item soha-portal-workbench-link soha-icon-trigger"
                         to="/heya"
                       >
                         <span className="soha-portal-workbench-icon">
@@ -731,12 +734,12 @@ export function SohaProviderPortalPage() {
                     {workbenches.map((workbench) => (
                       <Link
                         aria-label={`${t('providerPortal.home.open', 'Open')} ${workbench.label}`}
-                        className="soha-portal-recent-item soha-portal-workbench-link"
+                        className="soha-portal-recent-item soha-portal-workbench-link soha-icon-trigger"
                         key={workbench.id}
                         to={workbench.path}
                       >
                         <span className="soha-portal-workbench-icon">
-                          {resolveMenuIcon(workbench.iconKey)}
+                          {resolveWorkbenchIcon(workbench.id)}
                         </span>
                         <Text
                           className="soha-portal-workbench-label"

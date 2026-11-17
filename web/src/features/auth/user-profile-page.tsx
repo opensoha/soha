@@ -311,7 +311,7 @@ export function UserProfilePage() {
     queryFn: authProfileApi.get,
   })
   const identityProvidersQuery = useQuery({
-    queryKey: [...authKeys.profile(), 'identity-providers'],
+    queryKey: authKeys.profileIdentityProviders(),
     queryFn: authProfileApi.listIdentityProviders,
   })
   const permissionSnapshotQuery = usePermissionSnapshot()

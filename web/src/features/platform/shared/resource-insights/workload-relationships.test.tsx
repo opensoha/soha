@@ -28,7 +28,8 @@ vi.mock('@/features/auth', () => ({
   hasPermission: (permissions: string[] | undefined, key: string) =>
     Boolean(permissions?.includes('*') || permissions?.includes(key)),
 }))
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   queryOptions: (o: unknown) => o,
   useQuery: (o: { enabled: boolean }) => {
     state.enabled = o.enabled

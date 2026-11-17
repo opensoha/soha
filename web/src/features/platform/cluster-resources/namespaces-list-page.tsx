@@ -1,5 +1,6 @@
 import {
   kubernetesDeleteConfirmation,
+  getResourceName,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -8,7 +9,7 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { StatusTag } from '@/components/status-tag'
+import { ResourceStatusCell } from '../shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
 import { TableCellLink } from '@/components/table-cell-content'
 import { podQueries } from '../workloads/pods/queries'
@@ -41,7 +42,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Button, Form, Input, Modal, Select, Tooltip, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { namespaceMutations } from './mutations'
 import { namespaceQueries } from './queries'
@@ -93,14 +94,17 @@ export function ClusterNamespacesPage() {
     () => filterNamespaces(rows, keyword, status),
     [rows, keyword, status],
   )
-  const openNamespace = (name: string, path = '/workloads/overview') => {
-    if (!clusterId) return
-    setNamespace(name)
-    navigate({
-      pathname: path,
-      search: new URLSearchParams({ clusterId, namespace: name }).toString(),
-    })
-  }
+  const openNamespace = useCallback(
+    (name: string, path = '/workloads/overview') => {
+      if (!clusterId) return
+      setNamespace(name)
+      navigate({
+        pathname: path,
+        search: new URLSearchParams({ clusterId, namespace: name }).toString(),
+      })
+    },
+    [clusterId, setNamespace, navigate],
+  )
   const statsHint = !canReadPods
     ? zh
       ? '需要命名空间与 Pod 查看权限'
@@ -165,14 +169,15 @@ export function ClusterNamespacesPage() {
     setKeyword('')
     setStatus('')
   }, [clusterId])
-  const resourceActions = useKubernetesResourceActions<ClusterNamespace>({
-    resourceKey: 'namespaces',
-    resourceLabel: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-    records: visibleNamespacesQueryData ?? [],
-    scopeKey: clusterId ?? '',
-    getName: (record) => record.name,
-    getKey: (record) => record.name,
-    actions: (record) => [
+  const {
+    feedback: deleteNamespaceMutationFeedback,
+    isPending: deleteNamespaceMutationIsPending,
+    mutateAsync: deleteNamespaceMutationMutateAsync,
+    reset: deleteNamespaceMutationReset,
+    variables: deleteNamespaceMutationVariables,
+  } = deleteNamespaceMutation
+  const actions = useCallback(
+    (record: ClusterNamespace) => [
       {
         key: 'resources',
         label: localeCode === 'zh_CN' ? '查看资源' : 'View resources',
@@ -212,9 +217,9 @@ export function ClusterNamespacesPage() {
               danger: true,
               disabled: platformWriteBlocked,
               loading:
-                deleteNamespaceMutation.isPending &&
-                deleteNamespaceMutation.variables?.scope.clusterId === clusterId &&
-                deleteNamespaceMutation.variables?.name === record.name,
+                deleteNamespaceMutationIsPending &&
+                deleteNamespaceMutationVariables?.scope.clusterId === clusterId &&
+                deleteNamespaceMutationVariables?.name === record.name,
               confirm: kubernetesDeleteConfirmation(
                 record,
                 localeCode,
@@ -222,94 +227,127 @@ export function ClusterNamespacesPage() {
                   ? '删除后该命名空间下的资源会一并回收，请确认。'
                   : 'Resources in this namespace will also be deleted.',
               ),
-              prepare: () => deleteNamespaceMutation.reset(),
-              feedback: deleteNamespaceMutation.feedback,
-              run: () => deleteNamespaceMutation.mutateAsync({ scope, name: record.name }),
+              prepare: () => deleteNamespaceMutationReset(),
+              feedback: deleteNamespaceMutationFeedback,
+              run: () =>
+                deleteNamespaceMutationMutateAsync({
+                  scope: toClusterScope(clusterId),
+                  name: record.name,
+                }),
             },
           ]
         : []),
     ],
+    [
+      deleteNamespaceMutationFeedback,
+      deleteNamespaceMutationIsPending,
+      deleteNamespaceMutationMutateAsync,
+      deleteNamespaceMutationReset,
+      deleteNamespaceMutationVariables,
+      localeCode,
+      openNamespace,
+      platformWriteBlocked,
+      clusterId,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<ClusterNamespace>({
+    resourceKey: 'namespaces',
+    resourceLabel: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+    records: visibleNamespacesQueryData ?? [],
+    scopeKey: clusterId ?? '',
+    getName: getResourceName,
+    getKey: getResourceName,
+    actions,
   })
 
-  const columns: TableColumnsType<NamespaceListRow> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      defaultSortOrder: 'ascend',
-      sorter: (a, b) => nameCollator.compare(a.name, b.name),
-      render: (name: string) => <TableCellLink label={name} onClick={() => openNamespace(name)} />,
-    },
-    {
-      ...tableColumnPresets.status,
-      title: zh ? '状态' : 'Status',
-      dataIndex: 'status',
-      render: (status: string) => <StatusTag value={status} />,
-    },
-    {
-      title: zh ? '可见 Pods' : 'Visible Pods',
-      onHeaderCell: () => ({ title: statsHint }),
-      dataIndex: 'podCount',
-      width: 112,
-      render: (count: number | undefined, record) =>
-        count === undefined ? (
-          <Tooltip title={statsHint}>
-            <span>—</span>
-          </Tooltip>
-        ) : (
-          <TableCellLink
-            label={String(count)}
-            onClick={() => openNamespace(record.name, '/workloads/pods')}
-          />
+  const columns = useMemo<TableColumnsType<NamespaceListRow>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        defaultSortOrder: 'ascend',
+        sorter: (a, b) => nameCollator.compare(a.name, b.name),
+        render: (name: string) => (
+          <TableCellLink label={name} onClick={() => openNamespace(name)} />
         ),
-    },
-    {
-      title: zh ? '待就绪 / 异常' : 'Not ready / abnormal',
-      onHeaderCell: () => ({
-        title: zh
-          ? '未就绪或异常的可见 Pods；已完成的 Pods 不计入'
-          : 'Visible Pods that are not ready or abnormal; completed Pods are excluded',
-      }),
-      dataIndex: 'attentionCount',
-      width: 136,
-      render: (count: number | undefined, record) => {
-        const unknown = record.unknownReadiness ?? 0
-        const label =
-          count === undefined || (unknown > 0 && count === 0)
-            ? '—'
-            : `${unknown ? '≥ ' : ''}${count}`
-        return (
-          <Tooltip
-            title={
-              count === undefined
-                ? statsHint
-                : unknown
-                  ? zh
-                    ? `${unknown} 个 Pod 缺少就绪信息，仅统计已知异常`
-                    : `${unknown} Pods have unknown readiness; only known issues are counted`
-                  : zh
-                    ? 'Pending、Failed、Unknown 或容器未就绪；已完成不计入'
-                    : 'Pending, Failed, Unknown or containers not ready; completed Pods excluded'
-            }
-          >
-            <Typography.Text type={count ? 'warning' : undefined}>{label}</Typography.Text>
-          </Tooltip>
-        )
       },
-    },
-    {
-      title: zh ? '创建时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 112,
-      render: (age: number | undefined) =>
-        typeof age === 'number' && Number.isFinite(age) && age >= 0 ? formatAgeSeconds(age) : '—',
-    },
-    {
-      title: zh ? '标签' : 'Labels',
-      dataIndex: 'labels',
-      width: 320,
-      render: (labels: Record<string, string>) => <NamespaceLabelsCell labels={labels} zh={zh} />,
-    },
-  ]
+      {
+        ...tableColumnPresets.status,
+        title: zh ? '状态' : 'Status',
+        dataIndex: 'status',
+        render: (status: string) => <ResourceStatusCell value={status} />,
+      },
+      {
+        title: zh ? '可见 Pods' : 'Visible Pods',
+        onHeaderCell: () => ({ title: statsHint }),
+        dataIndex: 'podCount',
+        width: 112,
+        render: (count: number | undefined, record) =>
+          count === undefined ? (
+            <Tooltip title={statsHint}>
+              <span>—</span>
+            </Tooltip>
+          ) : (
+            <TableCellLink
+              label={String(count)}
+              onClick={() => openNamespace(record.name, '/workloads/pods')}
+            />
+          ),
+      },
+      {
+        title: zh ? '待就绪 / 异常' : 'Not ready / abnormal',
+        onHeaderCell: () => ({
+          title: zh
+            ? '未就绪或异常的可见 Pods；已完成的 Pods 不计入'
+            : 'Visible Pods that are not ready or abnormal; completed Pods are excluded',
+        }),
+        dataIndex: 'attentionCount',
+        width: 136,
+        render: (count: number | undefined, record) => {
+          const unknown = record.unknownReadiness ?? 0
+          const label =
+            count === undefined || (unknown > 0 && count === 0)
+              ? '—'
+              : `${unknown ? '≥ ' : ''}${count}`
+          return (
+            <Tooltip
+              title={
+                count === undefined
+                  ? statsHint
+                  : unknown
+                    ? zh
+                      ? `${unknown} 个 Pod 缺少就绪信息，仅统计已知异常`
+                      : `${unknown} Pods have unknown readiness; only known issues are counted`
+                    : zh
+                      ? 'Pending、Failed、Unknown 或容器未就绪；已完成不计入'
+                      : 'Pending, Failed, Unknown or containers not ready; completed Pods excluded'
+              }
+            >
+              <Typography.Text type={count ? 'warning' : undefined}>{label}</Typography.Text>
+            </Tooltip>
+          )
+        },
+      },
+      {
+        title: zh ? '创建时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 112,
+        render: (age: number | undefined) =>
+          typeof age === 'number' && Number.isFinite(age) && age >= 0 ? formatAgeSeconds(age) : '—',
+      },
+      {
+        title: zh ? '标签' : 'Labels',
+        dataIndex: 'labels',
+        width: 320,
+        render: (labels: Record<string, string>) => <NamespaceLabelsCell labels={labels} zh={zh} />,
+      },
+    ],
+    [zh, nameCollator, openNamespace, statsHint],
+  )
+  const visibleColumns = useMemo(
+    () => [...columns, resourceActions.column],
+    [columns, resourceActions.column],
+  )
 
   return (
     <div className="soha-page soha-namespaces-list">
@@ -374,7 +412,7 @@ export function ClusterNamespacesPage() {
             columnSettingIconOnly
             columnSettingPlacement="header"
             shellClassName="soha-management-table-shell"
-            columns={[...columns, resourceActions.column]}
+            columns={visibleColumns}
             dataSource={filteredRows}
             rowKey="name"
             loading={namespacesQuery.isLoading}

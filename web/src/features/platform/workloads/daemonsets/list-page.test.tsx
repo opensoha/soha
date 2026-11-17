@@ -105,7 +105,10 @@ vi.mock('antd', async (importOriginal) => {
   const message = { error: vi.fn(), success: vi.fn() }
   return {
     ...actual,
-    App: { ...actual.App, useApp: () => ({ message }) },
+    App: {
+      ...actual.App,
+      useApp: () => ({ message, notification: { open: vi.fn(), destroy: vi.fn() } }),
+    },
     Popconfirm: ({ children }: { children?: ReactNode }) => <>{children}</>,
     message,
   }

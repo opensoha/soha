@@ -1,3 +1,5 @@
+import { memo, useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -11,12 +13,16 @@ import { buildGatewayAPIRoutePath } from '../shared/paths'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { gatewayAPIQueries } from './queries'
 import type { BackendTLSPolicy } from './types'
 import './backend-tls.css'
 
-function ReferenceSummary({ values }: { values?: readonly string[] }) {
+const ReferenceSummary = memo(function ReferenceSummary({
+  values,
+}: {
+  values?: readonly string[]
+}) {
   if (!values?.length) return <span>—</span>
   return (
     <div className="soha-backend-tls-reference-summary">
@@ -33,7 +39,7 @@ function ReferenceSummary({ values }: { values?: readonly string[] }) {
       )}
     </div>
   )
-}
+})
 
 export function NetworkBackendTLSPoliciesPage() {
   const { localeCode } = useI18n()
@@ -53,54 +59,76 @@ export function NetworkBackendTLSPoliciesPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (record: BackendTLSPolicy, tab?: string) =>
-    buildGatewayAPIRoutePath('backendtlspolicies', record.name, record.namespace, {
-      clusterId: clusterId || '',
-      tab,
-    })
-  const columns: TableColumnsType<BackendTLSPolicy> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 160,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '应用目标' : 'Targets',
-      dataIndex: 'targetRefs',
-      width: 280,
-      minWidth: 240,
-      render: (value?: string[]) => <ReferenceSummary values={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '校验域名' : 'Hostname',
-      dataIndex: 'hostname',
-      width: 240,
-      minWidth: 180,
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? 'CA 来源' : 'CA source',
-      dataIndex: 'caCertificateRefs',
-      width: 280,
-      minWidth: 240,
-      render: (value: string[] | undefined, record) =>
-        record.wellKnownCACertificates || <ReferenceSummary values={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+  const path = useCallback(
+    (record: BackendTLSPolicy, tab?: string) =>
+      buildGatewayAPIRoutePath('backendtlspolicies', record.name, record.namespace, {
+        clusterId: clusterId || '',
+        tab,
+      }),
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<BackendTLSPolicy>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        render: (value: string, record) => (
+          <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        width: 160,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '应用目标' : 'Targets',
+        dataIndex: 'targetRefs',
+        width: 280,
+        minWidth: 240,
+        render: (value?: string[]) => <ReferenceSummary values={value} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '校验域名' : 'Hostname',
+        dataIndex: 'hostname',
+        width: 240,
+        minWidth: 180,
+        render: (value?: string) => <TableCellText value={value} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? 'CA 来源' : 'CA source',
+        dataIndex: 'caCertificateRefs',
+        width: 280,
+        minWidth: 240,
+        render: (value: string[] | undefined, record) =>
+          record.wellKnownCACertificates || <ReferenceSummary values={value} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [localeCode, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: BackendTLSPolicy) => [
+      record.name,
+      record.namespace,
+      record.hostname,
+      record.wellKnownCACertificates,
+      ...(record.targetRefs ?? []),
+      ...(record.caCertificateRefs ?? []),
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: BackendTLSPolicy) => navigate(path(record, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="资源记录" />
@@ -119,7 +147,7 @@ export function NetworkBackendTLSPoliciesPage() {
           })}
           columns={columns}
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           refreshControl={
             <WorkloadRefresh
               compact
@@ -141,14 +169,7 @@ export function NetworkBackendTLSPoliciesPage() {
             zh_CN: '搜索 BackendTLSPolicy / namespace / target / hostname',
             en_US: 'Search BackendTLSPolicy / namespace / target / hostname',
           }}
-          searchValues={(record) => [
-            record.name,
-            record.namespace,
-            record.hostname,
-            record.wellKnownCACertificates,
-            ...(record.targetRefs ?? []),
-            ...(record.caCertificateRefs ?? []),
-          ]}
+          searchValues={searchValues}
         />
       )}
     </>

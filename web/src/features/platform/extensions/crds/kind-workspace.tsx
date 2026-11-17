@@ -1,8 +1,11 @@
 import {
+  getResourceName,
   kubernetesDeleteConfirmation,
+  type KubernetesResourceAction,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { ResourceStatusCell } from '@/features/platform/shared/resource-table-cells'
 import {
   ManagementIconButton,
   ManagementQueryField,
@@ -11,7 +14,7 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
-import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { MetadataTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { namespaceQueries } from '@/features/platform/cluster-resources/queries'
@@ -39,11 +42,13 @@ import type { TableColumnsType, TableProps } from 'antd'
 import { App, Button, Card, Descriptions, Popconfirm, Select, Spin } from 'antd'
 import {
   lazy,
+  memo,
   Suspense,
   useCallback,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
 } from 'react'
 import { useBeforeUnload, useLocation, useSearchParams } from 'react-router-dom'
@@ -76,6 +81,46 @@ const definitionAPI = {
 const canViewInstance = (instance?: CRDResourceInstance) =>
   ['view', 'update'].some((action) => hasAllowedAction(instance?.allowedActions, action))
 const resourceKey = (record: CRDResourceInstance) => `${record.namespace || ''}/${record.name}`
+const resourceActionKey = (record: CRDResourceInstance) =>
+  `${resourceKey(record)}/${record.uid ?? ''}`
+const EMPTY_RESOURCES: CRDResourceInstance[] = []
+const TABLE_SCROLL = { x: 'max-content' } as const
+
+const InstanceName = memo(function InstanceName({
+  record,
+  busy,
+  onOpen,
+}: {
+  record: CRDResourceInstance
+  busy: boolean
+  onOpen: (record: CRDResourceInstance) => void
+}) {
+  return (
+    <Button
+      type="link"
+      className="soha-crd-instance-name"
+      title={record.name}
+      disabled={busy}
+      onClick={() => onOpen(record)}
+    >
+      {record.name}
+    </Button>
+  )
+})
+
+const InstanceNamespace = memo(function InstanceNamespace({
+  value,
+  onSelect,
+}: {
+  value: string
+  onSelect: (value: string) => void
+}) {
+  return (
+    <button className="soha-crd-namespace-filter" title={value} onClick={() => onSelect(value)}>
+      <MetadataTag tone="blue" title={value} label={<span>{value}</span>} />
+    </button>
+  )
+})
 function resourceAge(record: CRDResourceInstance, now: number) {
   const created = record.createdAt ? Date.parse(record.createdAt) : NaN
   return Number.isFinite(created)
@@ -206,18 +251,24 @@ function CRDInstancesWorkspace({
   const resourceView = Boolean(resourceName)
   const tab = params.get('tab') || (resourceView ? 'overview' : 'instances')
   const refreshSettings = useWorkloadRefresh()
-  const scopedParams = (previous: URLSearchParams, changes: Record<string, string | null>) => {
-    const next = new URLSearchParams(previous)
-    next.set('kind', crd.name)
-    if (clusterId) next.set('clusterId', clusterId)
-    next.set('namespace', namespace || '')
-    Object.entries(changes).forEach(([key, value]) =>
-      value === null ? next.delete(key) : next.set(key, value),
-    )
-    return next
-  }
-  const updateView = (changes: Record<string, string | null>, replace = false) =>
-    setParams((previous) => scopedParams(previous, changes), { replace })
+  const scopedParams = useCallback(
+    (previous: URLSearchParams, changes: Record<string, string | null>) => {
+      const next = new URLSearchParams(previous)
+      next.set('kind', crd.name)
+      if (clusterId) next.set('clusterId', clusterId)
+      next.set('namespace', namespace || '')
+      Object.entries(changes).forEach(([key, value]) =>
+        value === null ? next.delete(key) : next.set(key, value),
+      )
+      return next
+    },
+    [crd.name, clusterId, namespace],
+  )
+  const updateView = useCallback(
+    (changes: Record<string, string | null>, replace = false) =>
+      setParams((previous) => scopedParams(previous, changes), { replace }),
+    [scopedParams, setParams],
+  )
   const queryClient = useQueryClient()
   const capability = useClusterCapability('custom.resources', localeCode)
   const [createOpen, setCreateOpen] = useState(false)
@@ -281,19 +332,23 @@ function CRDInstancesWorkspace({
     target: platformResourceTarget,
   })
   const platformWriteBlocked = deleteMutation.blocked
-  const resources = disabled ? [] : (visibleResourcesQueryData ?? [])
-  const filtered = resources.filter((record) =>
-    includesSearch(
-      [
-        record.name,
-        record.namespace,
-        record.kind || crd.kind,
-        record.apiVersion || `${crd.group}/${crd.version}`,
-        record.status,
-        ...Object.entries(record.summary ?? {}).flatMap(([key, value]) => [key, value]),
-      ],
-      keyword,
-    ),
+  const resources = disabled ? EMPTY_RESOURCES : (visibleResourcesQueryData ?? EMPTY_RESOURCES)
+  const filtered = useMemo(
+    () =>
+      resources.filter((record) =>
+        includesSearch(
+          [
+            record.name,
+            record.namespace,
+            record.kind || crd.kind,
+            record.apiVersion || `${crd.group}/${crd.version}`,
+            record.status,
+            ...Object.entries(record.summary ?? {}).flatMap(([key, value]) => [key, value]),
+          ],
+          keyword,
+        ),
+      ),
+    [resources, keyword, crd.kind, crd.group, crd.version],
   )
   const resourcesReadable =
     resourcesQuery.isEnabled && (!resourcesQuery.isError || visibleResourcesQueryData !== undefined)
@@ -415,14 +470,17 @@ function CRDInstancesWorkspace({
     },
     [discard, onStateChange],
   )
-  const switchResource = (action: () => void) => {
-    if (busy) return
-    onLeave(() => {
-      setEditingTarget(null)
-      setEditorState({ dirty: false, busy: false })
-      action()
-    })
-  }
+  const switchResource = useCallback(
+    (action: () => void) => {
+      if (busy) return
+      onLeave(() => {
+        setEditingTarget(null)
+        setEditorState({ dirty: false, busy: false })
+        action()
+      })
+    },
+    [busy, onLeave],
+  )
   const refresh = () => {
     if (busy || editing || editorState.dirty || createOpen) return
     if (catalogQuery.isEnabled) void catalogQuery.refetch()
@@ -455,16 +513,19 @@ function CRDInstancesWorkspace({
       setSelection(undefined)
       updateView({ resource: null, resourceNamespace: null, tab: 'instances' })
     })
-  const openResource = (record: CRDResourceInstance, edit = false) =>
-    switchResource(() => {
-      setSelection(record)
-      setEditingTarget(edit ? resourceKey(record) : null)
-      updateView({
-        resource: record.name,
-        resourceNamespace: record.namespace || '',
-        tab: edit ? 'yaml' : 'overview',
-      })
-    })
+  const openResource = useCallback(
+    (record: CRDResourceInstance, edit = false) =>
+      switchResource(() => {
+        setSelection(record)
+        setEditingTarget(edit ? resourceKey(record) : null)
+        updateView({
+          resource: record.name,
+          resourceNamespace: record.namespace || '',
+          tab: edit ? 'yaml' : 'overview',
+        })
+      }),
+    [switchResource, updateView],
+  )
   const backButton = (
     <Button
       autoInsertSpace={false}
@@ -475,19 +536,29 @@ function CRDInstancesWorkspace({
       {zh ? '返回实例列表' : 'Back to instances'}
     </Button>
   )
-  const deleteResource = async (record: CRDResourceInstance) => {
-    if (!clusterId || !record.uid) return
-    const uid = record.uid
-    await deleteMutation.mutateAsync({
-      clusterId,
-      crd,
-      namespace: record.namespace ?? namespace,
-      resourceName: record.name,
-      expectedUid: uid,
-    })
-    if (resourceName === record.name && resourceNamespace === (record.namespace || ''))
-      setReturnAfterDelete({ locationKey, uid })
-  }
+  const {
+    mutateAsync: removeAsync,
+    isPending: removePending,
+    variables: removeVariables,
+    reset: resetRemove,
+    feedback: removeFeedback,
+  } = deleteMutation
+  const deleteResource = useCallback(
+    async (record: CRDResourceInstance) => {
+      if (!clusterId || !record.uid) return
+      const uid = record.uid
+      await removeAsync({
+        clusterId,
+        crd,
+        namespace: record.namespace ?? namespace,
+        resourceName: record.name,
+        expectedUid: uid,
+      })
+      if (resourceName === record.name && resourceNamespace === (record.namespace || ''))
+        setReturnAfterDelete({ locationKey, uid })
+    },
+    [clusterId, crd, namespace, removeAsync, resourceName, resourceNamespace, locationKey],
+  )
   const deleteButton = (record: CRDResourceInstance) =>
     !record.deletingAt && hasAllowedAction(record.allowedActions, 'delete') ? (
       <Popconfirm
@@ -521,14 +592,8 @@ function CRDInstancesWorkspace({
         />
       </Popconfirm>
     ) : null
-  const resourceActions = useKubernetesResourceActions<CRDResourceInstance>({
-    resourceKey: `crd-instances:${crd.name}`,
-    resourceLabel: crd.kind,
-    records: resources,
-    scopeKey: JSON.stringify([clusterId, namespace, crd.group, crd.plural, crd.version]),
-    getName: (record) => record.name,
-    getKey: (record) => `${resourceKey(record)}/${record.uid ?? ''}`,
-    actions: (record) => [
+  const actions = useCallback<(record: CRDResourceInstance) => KubernetesResourceAction[]>(
+    (record) => [
       ...(hasAllowedAction(record.allowedActions, 'update')
         ? [
             {
@@ -557,108 +622,130 @@ function CRDInstancesWorkspace({
                   ? capability.reason
                   : undefined,
               loading:
-                deleteMutation.isPending &&
-                deleteMutation.variables?.clusterId === clusterId &&
-                deleteMutation.variables.resourceName === record.name &&
-                deleteMutation.variables.expectedUid === record.uid,
+                removePending &&
+                removeVariables?.clusterId === clusterId &&
+                removeVariables.resourceName === record.name &&
+                removeVariables.expectedUid === record.uid,
               confirm: kubernetesDeleteConfirmation(record, localeCode),
-              prepare: () => deleteMutation.reset(),
-              feedback: deleteMutation.feedback,
+              prepare: () => resetRemove(),
+              feedback: removeFeedback,
               run: () => deleteResource(record),
             },
           ]
         : []),
     ],
+    [
+      t,
+      platformWriteBlocked,
+      disabled,
+      busy,
+      capability.reason,
+      editing,
+      zh,
+      clusterId,
+      removePending,
+      removeVariables,
+      localeCode,
+      resetRemove,
+      removeFeedback,
+      openResource,
+      deleteResource,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<CRDResourceInstance>({
+    resourceKey: `crd-instances:${crd.name}`,
+    resourceLabel: crd.kind,
+    records: resources,
+    scopeKey: JSON.stringify([clusterId, namespace, crd.group, crd.plural, crd.version]),
+    getName: getResourceName,
+    getKey: resourceActionKey,
+    actions,
   })
 
-  const columns: TableColumnsType<CRDResourceInstance> = [
-    {
-      key: 'name',
-      dataIndex: 'name',
-      title: zh ? '名称' : 'Name',
-      width: 240,
-      sortOrder: sort.key === 'name' ? sort.order : null,
-      render: (_value, record) => (
-        <Button
-          type="link"
-          className="soha-crd-instance-name"
-          title={record.name}
-          disabled={busy}
-          onClick={() => openResource(record)}
-        >
-          {record.name}
-        </Button>
-      ),
+  const selectNamespace = useCallback(
+    (value: string) => {
+      setNamespace(value)
+      updateView({ namespace: value })
     },
-    ...(crd.scope === 'Namespaced'
-      ? [
-          {
-            key: 'namespace',
-            dataIndex: 'namespace',
-            title: zh ? '命名空间' : 'Namespace',
-            width: 150,
-            sortOrder: sort.key === 'namespace' ? sort.order : null,
-            render: (value: string) => (
-              <button
-                className="soha-crd-namespace-filter"
-                title={value}
-                onClick={() => {
-                  setNamespace(value)
-                  updateView({ namespace: value })
-                }}
-              >
-                <MetadataTag tone="blue" title={value} label={<span>{value}</span>} />
-              </button>
-            ),
-          },
-        ]
-      : []),
-    {
-      key: 'status',
-      dataIndex: 'status',
-      title: zh ? '状态' : 'Status',
-      width: 100,
-      sortOrder: sort.key === 'status' ? sort.order : null,
-      render: (_value, record) =>
-        record.status || record.deletingAt ? (
-          <StatusTag value={record.deletingAt ? 'deleting' : record.status!} />
-        ) : (
-          '—'
+    [setNamespace, updateView],
+  )
+  const columns = useMemo<TableColumnsType<CRDResourceInstance>>(
+    () => [
+      {
+        key: 'name',
+        dataIndex: 'name',
+        title: zh ? '名称' : 'Name',
+        width: 240,
+        sortOrder: sort.key === 'name' ? sort.order : null,
+        render: (_value, record) => (
+          <InstanceName record={record} busy={busy} onOpen={openResource} />
         ),
-    },
-    {
-      key: 'age',
-      title: zh ? '创建时间' : 'Created',
-      width: 110,
-      sortOrder: sort.key === 'age' ? sort.order : null,
-      sorter: (left, right) => {
-        const now = Date.now()
-        const a = resourceAge(left, now),
-          b = resourceAge(right, now)
-        if (a === b) return 0
-        if (!Number.isFinite(a)) return 1
-        if (!Number.isFinite(b)) return -1
-        return b - a
       },
-      render: (_value, record) =>
-        record.createdAt
-          ? formatRelativeTime(record.createdAt)
-          : record.ageSeconds == null
-            ? '—'
-            : formatAgeSeconds(record.ageSeconds),
+      ...(crd.scope === 'Namespaced'
+        ? [
+            {
+              key: 'namespace',
+              dataIndex: 'namespace',
+              title: zh ? '命名空间' : 'Namespace',
+              width: 150,
+              sortOrder: sort.key === 'namespace' ? sort.order : null,
+              render: (value: string) => (
+                <InstanceNamespace value={value} onSelect={selectNamespace} />
+              ),
+            },
+          ]
+        : []),
+      {
+        key: 'status',
+        dataIndex: 'status',
+        title: zh ? '状态' : 'Status',
+        width: 100,
+        sortOrder: sort.key === 'status' ? sort.order : null,
+        render: (_value, record) =>
+          record.status || record.deletingAt ? (
+            <ResourceStatusCell value={record.deletingAt ? 'deleting' : record.status!} />
+          ) : (
+            '—'
+          ),
+      },
+      {
+        key: 'age',
+        title: zh ? '创建时间' : 'Created',
+        width: 110,
+        sortOrder: sort.key === 'age' ? sort.order : null,
+        sorter: (left, right) => {
+          const now = Date.now()
+          const a = resourceAge(left, now),
+            b = resourceAge(right, now)
+          if (a === b) return 0
+          if (!Number.isFinite(a)) return 1
+          if (!Number.isFinite(b)) return -1
+          return b - a
+        },
+        render: (_value, record) =>
+          record.createdAt
+            ? formatRelativeTime(record.createdAt)
+            : record.ageSeconds == null
+              ? '—'
+              : formatAgeSeconds(record.ageSeconds),
+      },
+    ],
+    [busy, openResource, crd.scope, sort.key, sort.order, zh, selectNamespace],
+  )
+  const onTableChange = useCallback<NonNullable<TableProps<CRDResourceInstance>['onChange']>>(
+    (_pagination, _filters, sorter) => {
+      const column = Array.isArray(sorter) ? sorter[0] : sorter
+      setSort({
+        key: column.columnKey == null ? undefined : String(column.columnKey),
+        order: column.order,
+      })
     },
-  ]
-  const onTableChange: NonNullable<TableProps<CRDResourceInstance>['onChange']> = (
-    _pagination,
-    _filters,
-    sorter,
-  ) => {
-    const column = Array.isArray(sorter) ? sorter[0] : sorter
-    setSort({
-      key: column.columnKey == null ? undefined : String(column.columnKey),
-      order: column.order,
-    })
-  }
+    [],
+  )
+  const effectiveColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
   const header = selected ? (
     <ResourceDetailHeader
       hideBack
@@ -820,12 +907,10 @@ function CRDInstancesWorkspace({
                     allRows={resources}
                     filterKey={keyword}
                     scopeMode={isNamespacedCRD(crd) ? 'namespace' : 'cluster'}
-                    columns={
-                      resourceActions.hasActions ? [...columns, resourceActions.column] : columns
-                    }
+                    columns={effectiveColumns}
                     dataSource={filtered}
                     rowKey={resourceKey}
-                    scroll={{ x: 'max-content' }}
+                    scroll={TABLE_SCROLL}
                     localSorting
                     enableDensity
                     columnSettingIconOnly

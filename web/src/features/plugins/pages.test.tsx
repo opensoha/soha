@@ -130,11 +130,11 @@ async function renderPage(node: ReactNode, route: string) {
   })
   await act(async () => {
     root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
+      <MemoryRouter initialEntries={[route]}>
+        <AntdApp>
+          <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+        </AntdApp>
+      </MemoryRouter>,
     )
   })
   await act(async () => {
@@ -262,12 +262,12 @@ describe('plugin list page data boundaries', () => {
       return Promise.reject(new Error('network unavailable'))
     })
 
-    const container = await renderPage(<PluginMarketplacePage />, '/plugins/marketplace')
+    await renderPage(<PluginMarketplacePage />, '/plugins/marketplace')
 
-    expect(container.textContent).toContain('插件市场读取失败')
-    expect(container.textContent).toContain('network unavailable')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('插件市场读取失败'))
+    expect(document.body.textContent).toContain('network unavailable')
     expect(
-      Array.from(container.querySelectorAll('button')).some(
+      Array.from(document.body.querySelectorAll('button')).some(
         (button) => button.getAttribute('aria-label') === '重试读取插件市场',
       ),
     ).toBe(true)

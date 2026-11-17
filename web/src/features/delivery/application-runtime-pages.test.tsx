@@ -1903,11 +1903,11 @@ describe('ApplicationDetailPage workbench', () => {
       <ApplicationWorkflowDesignerPage />,
       '/applications/app-1/workflows/design?bindingId=binding-test&source=template&templateId=wf-template-1',
     )
-    expect(container.textContent).toContain('应用环境读取失败')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('应用环境读取失败'))
     expect(container.querySelector('[data-testid="release-flow-dag-editor"]')).toBeNull()
     testState.readErrors.clear()
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="重试读取应用环境"]')!.click()
+      document.body.querySelector<HTMLButtonElement>('[aria-label="重试读取应用环境"]')!.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -1940,7 +1940,9 @@ describe('ApplicationDetailPage workbench', () => {
         await client.refetchQueries({ queryKey: deliveryQueries.environments.list(true).queryKey })
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
-      expect(container.textContent).toContain('应用环境未更新，正在展示上次读取结果')
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain('应用环境未更新，正在展示上次读取结果'),
+      )
       expect(container.querySelector('[data-testid="release-flow-dag-editor"]')).toBe(editor)
       expect(input.value).toBe('保留的草稿')
       testState.readErrors.set('/application-environments', new ApiError(status, 'access lost'))

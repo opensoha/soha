@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CloseOutlined } from '@ant-design/icons'
 import { Button, Drawer, Grid, Tooltip } from 'antd'
 import { Link, useLocation } from 'react-router-dom'
-import { AnimatedAssistantIcon } from './animated-icon'
+import { AnimatedIcon } from '@/components/animated-icon'
 
 export function WorkbenchShell({
   personal = false,
@@ -63,22 +63,22 @@ export function WorkbenchShell({
         <div className="soha-ai-rail-actions">
           <Tooltip title="对话" placement="right">
             <Button
-              className="soha-ai-rail-action soha-ai-icon-trigger"
+              className="soha-ai-rail-action soha-icon-trigger"
               aria-label={
                 !chatActive ? '返回对话' : sidebarVisible ? '收起会话列表' : '展开会话列表'
               }
               aria-expanded={sidebarVisible || sessionsOpen}
               type="text"
-              icon={<AnimatedAssistantIcon name="chat" />}
+              icon={<AnimatedIcon name="chat" />}
               onClick={chatActive ? toggleSessions : onChat}
             />
           </Tooltip>
           <Tooltip title="搜索对话" placement="right">
             <Button
-              className="soha-ai-rail-action soha-ai-icon-trigger"
+              className="soha-ai-rail-action soha-icon-trigger"
               type="text"
               aria-label="搜索对话"
-              icon={<AnimatedAssistantIcon name="search" />}
+              icon={<AnimatedIcon name="search" />}
               onClick={onSearch}
             />
           </Tooltip>
@@ -89,17 +89,17 @@ export function WorkbenchShell({
           {personal ? (
             <Tooltip title="Heya 开通状态" placement="right">
               <Link className="soha-ai-rail-action" to="/heya/access" aria-label="Heya 开通状态">
-                <AnimatedAssistantIcon name="identity" />
+                <AnimatedIcon name="identity" />
               </Link>
             </Tooltip>
           ) : null}
           <Tooltip title="AI 工作台" placement="right">
             <Link
-              className="soha-ai-rail-action soha-ai-icon-trigger"
+              className="soha-ai-rail-action soha-icon-trigger"
               to="/ai-workbench/overview"
               aria-label="AI 工作台"
             >
-              <AnimatedAssistantIcon name="workbench" />
+              <AnimatedIcon name="workbench" />
             </Link>
           </Tooltip>
         </div>
@@ -111,10 +111,10 @@ export function WorkbenchShell({
         >
           {!screens.lg ? (
             <Button
-              className="soha-ai-topic-toggle soha-ai-icon-trigger"
+              className="soha-ai-topic-toggle soha-icon-trigger"
               aria-label="展开话题"
               type="text"
-              icon={<AnimatedAssistantIcon name="chat" />}
+              icon={<AnimatedIcon name="chat" />}
               onClick={toggleSessions}
             />
           ) : null}
@@ -155,15 +155,15 @@ export function MobileAssistantNav({
   return (
     <nav className="soha-ai-mobile-nav" aria-label="个人助手">
       {[
-        { key: 'chat' as const, label: '对话', icon: <AnimatedAssistantIcon name="chat" /> },
-        { key: 'feed' as const, label: '动态', icon: <AnimatedAssistantIcon name="tasks" /> },
-        { key: 'tasks' as const, label: '任务', icon: <AnimatedAssistantIcon name="tasks" /> },
-        { key: 'results' as const, label: '成果', icon: <AnimatedAssistantIcon name="results" /> },
-        { key: 'me' as const, label: '我的', icon: <AnimatedAssistantIcon name="identity" /> },
+        { key: 'chat' as const, label: '对话', icon: <AnimatedIcon name="chat" /> },
+        { key: 'feed' as const, label: '动态', icon: <AnimatedIcon name="tasks" /> },
+        { key: 'tasks' as const, label: '任务', icon: <AnimatedIcon name="tasks" /> },
+        { key: 'results' as const, label: '成果', icon: <AnimatedIcon name="results" /> },
+        { key: 'me' as const, label: '我的', icon: <AnimatedIcon name="identity" /> },
       ].map((item) => (
         <Button
           key={item.key}
-          className="soha-ai-icon-trigger"
+          className="soha-icon-trigger"
           type="text"
           aria-label={item.label}
           aria-current={value === item.key ? 'page' : undefined}

@@ -60,7 +60,8 @@ const testState = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   queryOptions: (options: unknown) => options,
   useQuery: (options: QueryOptions) => {
     testState.queryEnabled[String(options.queryKey[0])] = options.enabled
@@ -199,12 +200,12 @@ async function updatePage() {
   await act(async () => {
     root.render(
       <I18nProvider>
-        <App>
-          <MemoryRouter>
+        <MemoryRouter>
+          <App>
             <OverviewPage />
             <RouteProbe />
-          </MemoryRouter>
-        </App>
+          </App>
+        </MemoryRouter>
       </I18nProvider>,
     )
   })
@@ -269,10 +270,12 @@ describe('OverviewPage error states', () => {
     testState.alerts.data = undefined
     await renderPage()
 
-    const feedback = container.querySelectorAll('.soha-read-feedback')
-    expect(feedback).toHaveLength(1)
-    expect(feedback[0].closest('.soha-overview-panel-card')).not.toBeNull()
-    expect(feedback[0].textContent).toContain('告警事件读取失败')
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector('.soha-read-feedback-notification')?.textContent,
+      ).toContain('告警事件读取失败'),
+    )
+    expect(container.querySelector('.soha-read-feedback')).toBeNull()
     expect(container.querySelector('.soha-overview-alert-stack')).toBeNull()
     expect(container.querySelector('.soha-overview-panel-card .is-error')).toBeNull()
     expect(container.textContent).toContain('近期活跃告警: —')
@@ -283,17 +286,19 @@ describe('OverviewPage error states', () => {
     testState.workload.data = undefined
     await renderPage()
 
-    const feedback = container.querySelectorAll('.soha-read-feedback')
-    expect(feedback).toHaveLength(1)
-    expect(feedback[0].closest('.soha-overview-runtime-card')).not.toBeNull()
-    expect(feedback[0].textContent).toContain('工作负载总览读取失败')
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector('.soha-read-feedback-notification')?.textContent,
+      ).toContain('工作负载总览读取失败'),
+    )
+    expect(container.querySelector('.soha-read-feedback')).toBeNull()
     expect(container.querySelector('.soha-overview-runtime-card .is-error')).toBeNull()
     expect(container.querySelector('.soha-overview-runtime-layout')).toBeNull()
     expect(container.textContent).toContain('Pod 总数: —')
     expect(container.textContent).not.toContain('No workload runtime summary for the platform')
   })
 
-  it('retains readable workload and alert cache with one local feedback per failed query', async () => {
+  it('retains readable workload and alert cache with one combined floating feedback', async () => {
     testState.permissionKeys.push('observe.alerts.view')
     testState.workload.data = {
       data: workloadFixture({
@@ -326,10 +331,12 @@ describe('OverviewPage error states', () => {
     testState.alerts.isError = true
     await renderPage()
 
-    expect(container.querySelectorAll('.soha-read-feedback')).toHaveLength(2)
-    expect(
-      container.querySelector('.soha-overview-runtime-card .soha-read-feedback')?.textContent,
-    ).toContain('未更新')
+    await vi.waitFor(() =>
+      expect(document.body.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(1),
+    )
+    expect(container.querySelector('.soha-read-feedback')).toBeNull()
+    expect(document.body.textContent).toContain('工作负载总览')
+    expect(document.body.textContent).toContain('告警事件')
     expect(container.querySelector('.soha-overview-runtime-layout')).not.toBeNull()
     expect(container.querySelector('.soha-overview-namespace-list')?.textContent).toContain(
       'cached-team',
@@ -689,9 +696,11 @@ describe('OverviewPage error states', () => {
     await act(async () => {
       finish({ isError: true, error: new Error('Events unavailable') })
     })
-    expect(document.querySelectorAll('.ant-notification-notice')).toHaveLength(1)
-    expect(document.body.textContent).toContain('刷新未完成')
-    expect(document.body.textContent).toContain('资源事件未更新')
+    await vi.waitFor(() =>
+      expect(document.body.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(1),
+    )
+    expect(document.body.textContent).toContain('资源事件读取失败')
+    expect(document.body.textContent).toContain('Events unavailable')
   })
 
   it('lets manual refresh recover failed alert and summary queries before automatic signals resume', async () => {

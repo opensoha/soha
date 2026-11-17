@@ -117,7 +117,10 @@ vi.mock('antd', async (importOriginal) => {
   const message = { error: vi.fn(), success: vi.fn() }
   return {
     ...actual,
-    App: { ...actual.App, useApp: () => ({ message }) },
+    App: {
+      ...actual.App,
+      useApp: () => ({ message, notification: { open: vi.fn(), destroy: vi.fn() } }),
+    },
     InputNumber: () => <input aria-label="replicas" />,
     Modal: ({
       children,

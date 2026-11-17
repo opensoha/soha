@@ -1,10 +1,12 @@
+import {
+  ResourceNameLink,
+  ResourceNamespaceCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { TableColumnsType } from 'antd'
 import { AccessControlResourceListPage } from '../shared/list-page'
-import { TableCellLink } from '@/components/table-cell-content'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { useNavigate } from 'react-router-dom'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { ROLE_DEFAULT_TEMPLATE } from '../shared/templates'
@@ -23,7 +25,7 @@ export function PlatformAccessControlRolesPage() {
       width: 280,
       sorter: (a, b) => a.name.localeCompare(b.name),
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
+        <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
       ),
     },
     {
@@ -31,7 +33,7 @@ export function PlatformAccessControlRolesPage() {
       dataIndex: 'namespace',
       width: 200,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       ...tableColumnPresets.datetime,

@@ -1,5 +1,8 @@
 import {
+  getResourceName,
+  getNamespacedResourceKey,
   kubernetesDeleteConfirmation,
+  type KubernetesResourceAction,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -28,11 +31,14 @@ import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { networkMutations } from './mutations'
 import { networkTargetFromRecord } from './scope'
 import type { NetworkKind, NetworkResourceRecord } from './types'
+
+const EMPTY_ITEMS: never[] = []
+const TABLE_SCROLL = { x: 'max-content' } as const
 
 const NETWORK_ENTITY_KINDS: Record<NetworkKind, string> = {
   services: 'Service',
@@ -46,6 +52,10 @@ const NETWORK_ENTITY_KINDS: Record<NetworkKind, string> = {
   endpointslices: 'EndpointSlice',
   ingressclasses: 'IngressClass',
   networkpolicies: 'NetworkPolicy',
+}
+
+function defaultRowKey(record: NetworkResourceRecord) {
+  return `${record.namespace}/${record.name}`
 }
 
 function normalizeKeyword(value: string) {
@@ -88,7 +98,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
-  const rawItems = readableQueryData(query) ?? []
+  const rawItems = readableQueryData(query) ?? EMPTY_ITEMS
   const filteredItems = useMemo(
     () =>
       rawItems.filter((record) =>
@@ -129,30 +139,35 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
     : normalizedKeyword && rawItems.length > 0
       ? noMatchDescription[localeCode]
       : emptyDescription[localeCode]
-  const rowProps = (record: T) => {
-    const provided = onRow?.(record) ?? {}
-    return {
-      ...provided,
-      'data-ai-context':
-        provided['data-ai-context'] ??
-        encodeAIContextForElement({
-          sourceWorkbench: 'platform',
-          entityKind: NETWORK_ENTITY_KINDS[kind],
-          entityName: record.name,
-          clusterId: clusterId || undefined,
-          namespace: record.namespace || undefined,
-          service: kind === 'services' ? record.name : undefined,
-        }),
-    }
-  }
+  const rowProps = useCallback(
+    (record: T) => {
+      const provided = onRow?.(record) ?? {}
+      return {
+        ...provided,
+        'data-ai-context':
+          provided['data-ai-context'] ??
+          encodeAIContextForElement({
+            sourceWorkbench: 'platform',
+            entityKind: NETWORK_ENTITY_KINDS[kind],
+            entityName: record.name,
+            clusterId: clusterId || undefined,
+            namespace: record.namespace || undefined,
+            service: kind === 'services' ? record.name : undefined,
+          }),
+      }
+    },
+    [clusterId, kind, onRow],
+  )
 
-  const resourceActions = useKubernetesResourceActions<T>({
-    resourceKey: `network:${kind}`,
-    resourceLabel: NETWORK_ENTITY_KINDS[kind],
-    records: rawItems,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
-    actions: (record) => {
+  const {
+    isPending: removePending,
+    variables: removeVariables,
+    reset: resetRemove,
+    mutateAsync: removeAsync,
+    feedback: removeFeedback,
+  } = removeMutation
+  const actions = useCallback<(record: T) => KubernetesResourceAction[]>(
+    (record) => {
       const target = networkTargetFromRecord(clusterId, record)
       return [
         ...(onEdit && hasAllowedAction(record.allowedActions, 'update')
@@ -175,20 +190,57 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
                 danger: true,
                 disabled: platformWriteBlocked,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === clusterId &&
-                  removeMutation.variables?.name === target.name &&
-                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                  removePending &&
+                  removeVariables?.scope.clusterId === clusterId &&
+                  removeVariables?.name === target.name &&
+                  removeVariables.scope.namespace === target.scope.namespace,
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                prepare: () => removeMutation.reset(),
-                feedback: removeMutation.feedback,
-                run: () => removeMutation.mutateAsync(target),
+                prepare: () => resetRemove(),
+                feedback: removeFeedback,
+                run: () => removeAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      clusterId,
+      localeCode,
+      onEdit,
+      platformWriteBlocked,
+      removePending,
+      removeVariables,
+      resetRemove,
+      removeAsync,
+      removeFeedback,
+      deletable,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `network:${kind}`,
+    resourceLabel: NETWORK_ENTITY_KINDS[kind],
+    records: rawItems,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
+
+  const effectiveColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
+
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        description={effectiveEmpty}
+        kind={!clusterId ? 'select-scope' : 'empty'}
+      />
+    ),
+    [clusterId, effectiveEmpty],
+  )
 
   return (
     <>
@@ -233,14 +285,14 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
             className={'soha-platform-table'}
             columnSettingIconOnly={true}
             columnSettingPlacement={'header'}
-            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
-            dataSource={clusterId ? filteredItems : []}
-            rowKey={rowKey ?? ((record) => `${record.namespace}/${record.name}`)}
+            columns={effectiveColumns}
+            dataSource={clusterId ? filteredItems : EMPTY_ITEMS}
+            rowKey={rowKey ?? defaultRowKey}
             onRow={rowProps}
             loading={query.isLoading}
             localSorting={true}
             tableSize={tableSize}
-            scroll={{ x: 'max-content' }}
+            scroll={TABLE_SCROLL}
             headerExtra={
               <ManagementTableToolbar>
                 {createKind ? (
@@ -280,14 +332,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
                 )}
               </ManagementTableToolbar>
             }
-            empty={
-              <ManagementState
-                bordered={false}
-                compact
-                description={effectiveEmpty}
-                kind={!clusterId ? 'select-scope' : 'empty'}
-              />
-            }
+            empty={empty}
           />
         }
       />

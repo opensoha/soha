@@ -74,3 +74,25 @@ it('keeps a missing namespace as non-interactive text', async () => {
     await view.cleanup()
   }
 })
+
+it('preserves focus and the namespace action when first hover mounts the tooltip', async () => {
+  usePlatformScopeStore.setState({ clusterId: 'cluster-a', namespace: null })
+  const view = await render('monitoring')
+  try {
+    const original = view.container.querySelector('button')!
+    await act(async () => {
+      original.focus()
+      original.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+    const current = view.container.querySelector('button')!
+    expect(document.activeElement).toBe(current)
+    await act(async () => current.click())
+    expect(usePlatformScopeStore.getState().namespace).toBe('monitoring')
+    const params = new URLSearchParams(view.location.search)
+    expect(params.get('namespace')).toBe('monitoring')
+    expect(params.get('clusterId')).toBe('cluster-a')
+    expect(params.get('view')).toBe('compact')
+  } finally {
+    await view.cleanup()
+  }
+})

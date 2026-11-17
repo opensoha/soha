@@ -99,6 +99,36 @@ it('keeps initial widths on refresh and refits explicitly from the full scope', 
   await act(async () => table.onResetColumns?.())
   expect(table.columns[0].width).toBe(initialName)
 })
+it('reuses active columns without scanning content on refresh and measures on explicit fit', async () => {
+  const readNamespace = vi.fn(() => 'monitoring')
+  const records = [
+    {
+      name: 'api',
+      get namespace() {
+        return readNamespace()
+      },
+    },
+  ]
+  await render({ allRows: records, dataSource: records })
+  const initial = table.columns
+  expect(readNamespace).toHaveBeenCalled()
+  readNamespace.mockClear()
+  const refreshed = records.slice()
+  await render({ allRows: refreshed, dataSource: refreshed })
+  expect(table.columns).toBe(initial)
+  expect(readNamespace).not.toHaveBeenCalled()
+  await act(async () => table.onFitColumns?.())
+  expect(readNamespace).toHaveBeenCalled()
+})
+it('measures the first readable result and recomputes widths for a new scope', async () => {
+  await render({ allRows: [], dataSource: [] })
+  await render()
+  const initial = table.columns[1].width
+  state.namespace = 'another-scope'
+  const changed = rows.map((row) => ({ ...row, namespace: 'a'.repeat(50) }))
+  await render({ allRows: changed, dataSource: changed })
+  expect(table.columns[1].width).toBeGreaterThan(initial)
+})
 it('keeps namespace visible by default and supports an explicit scoped fold', async () => {
   await render()
   expect(table.defaultHiddenColumnKeys).toEqual([])
@@ -127,4 +157,35 @@ it('releases wide fixed action groups on narrow screens while keeping compact me
 it('composes selection actions beside the shared truthful count without replacing it', async () => {
   await render({ selectionToolbar: <button>批量操作</button> })
   expect(container.textContent).toBe('2 个 Deployments批量操作')
+})
+
+it('keeps table callbacks and selection stable on toolbar refresh while forwarding updated behavior', async () => {
+  const onScroll = vi.fn()
+  const initialChange = vi.fn()
+  const updatedChange = vi.fn()
+  const selection = { selectedRowKeys: ['api'] }
+  await render({
+    headerExtra: 'before',
+    onScroll,
+    onChange: initialChange,
+    rowSelection: selection,
+  })
+  const before = { ...table }
+  await render({
+    headerExtra: 'refreshing',
+    onScroll,
+    onChange: initialChange,
+    rowSelection: selection,
+  })
+  expect(table.columns).toBe(before.columns)
+  expect(table.onScroll).toBe(before.onScroll)
+  expect(table.onChange).toBe(before.onChange)
+  expect(table.defaultHiddenColumnKeys).toBe(before.defaultHiddenColumnKeys)
+  expect(table.rowSelection).toBe(before.rowSelection)
+  await render({ onScroll, onChange: updatedChange, rowSelection: { selectedRowKeys: [] } })
+  expect(table.onChange).not.toBe(before.onChange)
+  expect(table.rowSelection).not.toBe(before.rowSelection)
+  table.onChange?.({}, {}, {}, { action: 'sort', currentDataSource: rows })
+  expect(updatedChange).toHaveBeenCalledOnce()
+  expect(initialChange).not.toHaveBeenCalled()
 })

@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
+import { App } from 'antd'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { ApiError } from '@/services/api-error'
@@ -71,7 +72,9 @@ function render(id = 'same-id') {
     act(() =>
       root.render(
         <MemoryRouter>
-          <ComputeRelationsPanel domain="virtualization" kind="vm" resourceId={resourceId} />
+          <App>
+            <ComputeRelationsPanel domain="virtualization" kind="vm" resourceId={resourceId} />
+          </App>
         </MemoryRouter>,
       ),
     )
@@ -105,7 +108,7 @@ describe('compute relationship exploration', () => {
     update('different-resource')
     expect(container.querySelector('button[aria-pressed="true"]')?.textContent).toBe('全部关系')
   })
-  it('retains cached evidence after a server failure, hides it after denial, and clears removed selection', () => {
+  it('retains cached evidence after a server failure, hides it after denial, and clears removed selection', async () => {
     vi.mocked(useInfiniteQuery).mockReturnValue(query() as never)
     const { container, update } = render()
     act(() =>
@@ -117,7 +120,7 @@ describe('compute relationship exploration', () => {
       query({ isError: true, error: new ApiError(503, 'offline') }) as never,
     )
     update()
-    expect(container.textContent).toContain('上次读取结果')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('上次读取结果'))
     expect(container.querySelectorAll('.soha-compute-relation-row')).toHaveLength(2)
     vi.mocked(useInfiniteQuery).mockReturnValue(
       query({ data: { resource: vm, relations: [] } }) as never,

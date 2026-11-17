@@ -2,14 +2,18 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
-import { act, forwardRef, type ReactNode } from 'react'
+import { act, forwardRef, isValidElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClusterNamespacesPage } from './namespaces-list-page'
 import { ClusterNodesPage } from './nodes-list-page'
+import { clusterResourceKeys } from './keys'
+import { toClusterScope } from './scope'
+import { monitoringKeys } from '../resource-monitoring/keys'
 
 const testState = vi.hoisted(() => ({
+  t: (_key: string, fallback?: string) => fallback ?? _key,
   permissions: [] as string[],
   responses: {} as Record<string, unknown>,
   scope: {
@@ -20,6 +24,7 @@ const testState = vi.hoisted(() => ({
   },
 }))
 
+const tablePropsMock = vi.hoisted(() => vi.fn())
 const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
   get: vi.fn(async (path: string) => ({ data: testState.responses[path] ?? [] })),
@@ -43,7 +48,7 @@ vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),
   useI18n: () => ({
     localeCode: 'zh_CN' as const,
-    t: (_key: string, fallback?: string) => fallback ?? _key,
+    t: testState.t,
   }),
 }))
 vi.mock('@/features/platform/node-resource-utils', () => ({
@@ -67,6 +72,7 @@ vi.mock('@/components/admin-table', () => ({
     dataSource = [],
     headerExtra,
     tableSize,
+    ...bodyProps
   }: {
     columns?: Array<{
       dataIndex?: string
@@ -76,21 +82,25 @@ vi.mock('@/components/admin-table', () => ({
     dataSource?: Array<Record<string, unknown>>
     headerExtra?: ReactNode
     tableSize?: string
-  }) => (
-    <div data-count={dataSource.length} data-table-size={tableSize} data-testid="admin-table">
-      {headerExtra}
-      {dataSource.length}
-      {dataSource.flatMap((record) =>
-        columns.map((column, index) => (
-          <div key={`${String(record.name)}-${column.key ?? column.dataIndex}-${index}`}>
-            {column.render
-              ? column.render(record[column.dataIndex ?? ''], record)
-              : (record[column.dataIndex ?? ''] as ReactNode)}
-          </div>
-        )),
-      )}
-    </div>
-  ),
+    [key: string]: unknown
+  }) => {
+    tablePropsMock({ columns, dataSource, headerExtra, tableSize, ...bodyProps })
+    return (
+      <div data-count={dataSource.length} data-table-size={tableSize} data-testid="admin-table">
+        {headerExtra}
+        {dataSource.length}
+        {dataSource.flatMap((record) =>
+          columns.map((column, index) => (
+            <div key={`${String(record.name)}-${column.key ?? column.dataIndex}-${index}`}>
+              {column.render
+                ? column.render(record[column.dataIndex ?? ''], record)
+                : (record[column.dataIndex ?? ''] as ReactNode)}
+            </div>
+          )),
+        )}
+      </div>
+    )
+  },
 }))
 vi.mock('@/components/management-list', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/components/management-list')>()),
@@ -112,8 +122,16 @@ vi.mock('@/components/management-list', async (importOriginal) => ({
   >(({ 'aria-label': ariaLabel, onClick }, ref) => (
     <button ref={ref} aria-label={ariaLabel} onClick={onClick} />
   )),
-  ManagementRefreshButton: ({ 'aria-label': ariaLabel }: { 'aria-label': string }) => (
-    <button aria-label={ariaLabel}>{ariaLabel}</button>
+  ManagementRefreshButton: ({
+    'aria-label': ariaLabel,
+    onClick,
+  }: {
+    'aria-label': string
+    onClick?: () => void
+  }) => (
+    <button aria-label={ariaLabel} onClick={onClick}>
+      {ariaLabel}
+    </button>
   ),
   ManagementState: ({ title }: { title?: ReactNode }) => <div>{title}</div>,
   ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
@@ -123,6 +141,8 @@ const mountedRoots: Root[] = []
 
 beforeAll(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const getComputedStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation(() => ({
@@ -146,7 +166,17 @@ afterEach(async () => {
     for (const root of mountedRoots.splice(0)) root.unmount()
   })
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
+
+let currentQueryClient: QueryClient
+let renderCurrentPage: (page: ReactNode) => Promise<void>
+async function flushQueries() {
+  await act(async () => {
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(1)
+    else await new Promise((resolve) => setTimeout(resolve, 5))
+  })
+}
 
 async function renderPage(page: ReactNode) {
   const container = document.createElement('div')
@@ -157,23 +187,242 @@ async function renderPage(page: ReactNode) {
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
 
-  await act(async () => {
-    root.render(
-      <AntdApp>
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter>{page}</MemoryRouter>
-        </QueryClientProvider>
-      </AntdApp>,
-    )
-  })
+  renderCurrentPage = async (page: ReactNode) =>
+    act(async () => {
+      root.render(
+        <AntdApp>
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter>{page}</MemoryRouter>
+          </QueryClientProvider>
+        </AntdApp>,
+      )
+    })
+  currentQueryClient = queryClient
+  await renderCurrentPage(page)
   await act(async () => {
     await Promise.resolve()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(1)
+    else await new Promise((resolve) => setTimeout(resolve, 0))
   })
   return container
 }
 
 describe('cluster resource list pages', () => {
+  it.each([
+    ['nodes', ClusterNodesPage],
+    ['namespaces', ClusterNamespacesPage],
+  ])(
+    'keeps %s body props stable on equal refreshes and binds updated permissions and scope',
+    async (kind, Page) => {
+      testState.scope.clusterId = 'cluster-a'
+      const path =
+        kind === 'nodes'
+          ? '/clusters/cluster-a/infrastructure/nodes'
+          : '/clusters/cluster-a/namespaces'
+      const key =
+        kind === 'nodes'
+          ? clusterResourceKeys.nodeList(toClusterScope('cluster-a'))
+          : clusterResourceKeys.namespaceList(toClusterScope('cluster-a'))
+      const record = {
+        name: 'resource-a',
+        status: 'ready',
+        unschedulable: false,
+        roles: [],
+        labels: { owner: 'team-a' },
+        taints: [],
+        ageSeconds: 60,
+        podCount: 1,
+        allowedActions: ['update', 'drain', 'delete'],
+      }
+      testState.responses[path] = [record]
+      const container = await renderPage(<Page />)
+      await flushQueries()
+      const before = tablePropsMock.mock.calls.at(-1)![0]
+      expect(before.dataSource).toHaveLength(1)
+      if (kind === 'nodes') {
+        const link = container.querySelector('a.soha-node-name')!
+        expect(link.getAttribute('href')).toContain('clusterId=cluster-a')
+        expect(link.querySelector('.soha-table-cell-text')?.textContent).toBe('resource-a')
+      }
+      let complete!: (response: { data: unknown[] }) => void
+      apiMocks.get.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve
+          }),
+      )
+      await act(async () => {
+        void currentQueryClient.invalidateQueries({ queryKey: key })
+      })
+      await flushQueries()
+      const pending = tablePropsMock.mock.calls.at(-1)![0]
+      for (const prop of ['columns', 'onRow', 'rowKey', 'empty', 'dataSource', 'expandable'])
+        expect(pending[prop], prop).toBe(before[prop])
+      await act(async () => complete({ data: [{ ...record, labels: { ...record.labels } }] }))
+      await flushQueries()
+      const same = tablePropsMock.mock.calls.at(-1)![0]
+      expect(same.columns).toBe(before.columns)
+      expect(same.dataSource).toBe(before.dataSource)
+      await act(async () => currentQueryClient.setQueryData(key, [{ ...record, ageSeconds: 120 }]))
+      await flushQueries()
+      const changed = tablePropsMock.mock.calls.at(-1)![0]
+      expect(changed.dataSource[0].ageSeconds).toBe(120)
+      expect(changed.columns).toBe(before.columns)
+      const action = before.columns.find((column: { key?: string }) => column.key === 'actions')
+      const oldMenu = action.render(undefined, before.dataSource[0], 0)
+      expect(isValidElement(oldMenu)).toBe(true)
+      await act(async () =>
+        currentQueryClient.setQueryData(key, [{ ...record, allowedActions: [] }]),
+      )
+      await flushQueries()
+      if (!isValidElement<{ onSelect: (key: string) => void }>(oldMenu))
+        throw new Error('missing menu')
+      await act(async () => oldMenu.props.onSelect('delete'))
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(apiMocks.delete).not.toHaveBeenCalled()
+      const nextPath = path.replace('cluster-a', 'cluster-b')
+      testState.responses[nextPath] = [{ ...record, name: 'resource-b' }]
+      testState.scope.clusterId = 'cluster-b'
+      await renderCurrentPage(<Page />)
+      await flushQueries()
+      const nextScope = tablePropsMock.mock.calls.at(-1)![0]
+      expect(nextScope.dataSource[0].name).toBe('resource-b')
+      expect(nextScope.columns).not.toBe(before.columns)
+      expect(apiMocks.get).toHaveBeenCalledWith(nextPath)
+      if (kind === 'nodes')
+        expect(container.querySelector('a.soha-node-name')?.getAttribute('href')).toContain(
+          'clusterId=cluster-b',
+        )
+    },
+  )
+
+  it('keeps node fallback scoped, stops retrying errors and allows manual retry', async () => {
+    vi.useFakeTimers()
+    const visible = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    try {
+      testState.scope.clusterId = 'cluster-a'
+      const path = '/clusters/cluster-a/infrastructure/nodes'
+      testState.responses[path] = [{ name: 'node-a' }]
+      const container = await renderPage(<ClusterNodesPage />)
+      const invalidations = vi.spyOn(currentQueryClient, 'invalidateQueries')
+      const queryKey = clusterResourceKeys.nodeList(toClusterScope('cluster-a'))
+      await act(async () => vi.advanceTimersByTimeAsync(15_000))
+      expect(invalidations).toHaveBeenCalledWith({ queryKey })
+      apiMocks.get.mockRejectedValueOnce(new Error('nodes unavailable'))
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="刷新节点"]')!.click(),
+      )
+      await flushQueries()
+      expect(currentQueryClient.getQueryState(queryKey)?.status).toBe('error')
+      const reads = apiMocks.get.mock.calls.filter(([url]) => url === path).length
+      invalidations.mockClear()
+      await act(async () => vi.advanceTimersByTimeAsync(30_000))
+      expect(invalidations).not.toHaveBeenCalled()
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === path)).toHaveLength(reads)
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="刷新节点"]')!.click(),
+      )
+      await flushQueries()
+      expect(apiMocks.get.mock.calls.filter(([url]) => url === path)).toHaveLength(reads + 1)
+      expect(currentQueryClient.getQueryState(queryKey)?.status).toBe('success')
+    } finally {
+      visible.mockRestore()
+    }
+  })
+
+  it('updates node monitoring columns and sorters on metrics and permission changes', async () => {
+    testState.scope.clusterId = 'cluster-a'
+    testState.permissions = ['platform.nodes.view', 'platform.resource-monitoring.overview.view']
+    testState.responses['/clusters/cluster-a/infrastructure/nodes'] = [
+      { name: 'node-a' },
+      { name: 'node-b' },
+    ]
+    const nodeRef = { clusterId: 'cluster-a', name: 'node-a' }
+    const metric = {
+      clusterId: 'cluster-a',
+      nodes: [{ nodeRef, quality: 'valid', capacity: { cpuCores: 4 } }],
+      panels: [
+        {
+          key: 'host.cpu.used',
+          quality: 'valid',
+          series: [{ nodeRef, quality: 'valid', latest: 1 }],
+        },
+      ],
+    }
+    testState.responses[
+      '/clusters/cluster-a/resource-monitoring?view=overview&rangeMinutes=15&stepSeconds=60'
+    ] = metric
+    await renderPage(<ClusterNodesPage />)
+    await flushQueries()
+    const before = tablePropsMock.mock.calls.at(-1)![0]
+    const cpu = (props: typeof before) =>
+      props.columns.find((column: { key?: string }) => column.key === 'hostCpu')
+    expect(cpu(before).render(undefined, { name: 'node-a' }).props.usage.value).toBe(1)
+    const monitoringKey = monitoringKeys.view('', '@undefined', 'cluster-a', {
+      view: 'overview',
+      rangeMinutes: 15,
+      stepSeconds: 60,
+    })
+    await act(async () =>
+      currentQueryClient.setQueryData(monitoringKey, {
+        ...metric,
+        panels: [{ ...metric.panels[0], series: [{ ...metric.panels[0].series[0], latest: 2 }] }],
+      }),
+    )
+    await flushQueries()
+    const updated = tablePropsMock.mock.calls.at(-1)![0]
+    expect(updated.columns).not.toBe(before.columns)
+    expect(cpu(updated).render(undefined, { name: 'node-a' }).props.usage.value).toBe(2)
+    expect(cpu(updated).sorter({ name: 'node-a' }, { name: 'node-b' })).toBeGreaterThan(0)
+    testState.permissions = ['platform.nodes.view']
+    await renderCurrentPage(<ClusterNodesPage />)
+    await flushQueries()
+    const denied = tablePropsMock.mock.calls.at(-1)![0]
+    expect(denied.columns).not.toBe(updated.columns)
+    const cell = cpu(denied).render(undefined, { name: 'node-a' })
+    expect(cell.props.canRead).toBe(false)
+    expect(cell.props.usage.value).toBeNull()
+  })
+
+  it('refreshes namespace resources and Pod counts independently and removes counts without permission', async () => {
+    testState.scope.clusterId = 'cluster-a'
+    testState.permissions = ['platform.namespaces.view', 'platform.pods.view']
+    const namespacePath = '/clusters/cluster-a/namespaces'
+    const podPath = '/clusters/cluster-a/workloads/pods'
+    testState.responses[namespacePath] = [{ name: 'team-a', status: 'Active', labels: {} }]
+    testState.responses[podPath] = [
+      { name: 'pod-a', namespace: 'team-a', phase: 'Running', readyContainers: '1/1' },
+    ]
+    const container = await renderPage(<ClusterNamespacesPage />)
+    await flushQueries()
+    const before = tablePropsMock.mock.calls.at(-1)![0]
+    expect(before.dataSource[0]).toMatchObject({ podCount: 1, attentionCount: 0 })
+    testState.responses[podPath] = [
+      { name: 'pod-a', namespace: 'team-a', phase: 'Failed', readyContainers: '0/1' },
+    ]
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!.click(),
+    )
+    await flushQueries()
+    const updated = tablePropsMock.mock.calls.at(-1)![0]
+    expect(updated.dataSource[0]).toMatchObject({ podCount: 1, attentionCount: 1 })
+    expect(updated.columns).toBe(before.columns)
+    expect(apiMocks.get.mock.calls.filter(([path]) => path === namespacePath)).toHaveLength(2)
+    expect(apiMocks.get.mock.calls.filter(([path]) => path === podPath)).toHaveLength(2)
+    testState.permissions = ['platform.namespaces.view']
+    await renderCurrentPage(<ClusterNamespacesPage />)
+    await flushQueries()
+    const denied = tablePropsMock.mock.calls.at(-1)![0]
+    expect(denied.dataSource[0].podCount).toBeUndefined()
+    const count = denied.columns.find(
+      (column: { dataIndex?: string }) => column.dataIndex === 'podCount',
+    )
+    expect(count.onHeaderCell().title).toBe('需要命名空间与 Pod 查看权限')
+    expect(count.render(undefined, denied.dataSource[0]).props.title).toBe(
+      '需要命名空间与 Pod 查看权限',
+    )
+  })
+
   it('keeps both list queries disabled until a cluster is selected', async () => {
     const nodes = await renderPage(<ClusterNodesPage />)
     expect(nodes.textContent).toContain('请选择集群')

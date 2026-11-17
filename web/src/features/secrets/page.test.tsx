@@ -146,10 +146,10 @@ describe('SecretsPage', () => {
     apiGet.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ items: [] })
     const container = await renderPage()
 
-    expect(container.textContent).toContain('列表读取失败')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('列表读取失败'))
     expect(container.textContent).not.toContain('暂无 Secret')
 
-    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+    const retry = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent?.includes('重试'),
     )
     await act(async () => retry?.click())
@@ -157,7 +157,7 @@ describe('SecretsPage', () => {
 
     expect(apiGet).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('暂无 Secret')
-    expect(container.textContent).not.toContain('列表读取失败')
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('列表读取失败'))
   })
 
   it('aligns Vault locator fields with the contract and rejects fractional versions', async () => {

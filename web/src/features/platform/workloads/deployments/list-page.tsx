@@ -1,10 +1,13 @@
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
+import {
+  ResourceNameLink,
+  ResourceNamespaceCell,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
+import { getNamespacedResourceKey } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementQueryField, ManagementTableToolbar } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
-import { TableCellLink } from '@/components/table-cell-content'
-import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import {
@@ -44,7 +47,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
 import { Button, InputNumber, Modal, Select, Spin, Typography } from 'antd'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { workloadKeys } from '../shared/keys'
@@ -122,10 +125,10 @@ function buildWorkloadActionColumn({
   restartMutation,
   rollbackMutation,
 }: {
-  capability: ClusterCapabilityDecision
+  capability: Pick<ClusterCapabilityDecision, 'disabled' | 'reason'>
   blocked: boolean
   deleteMutation: { isPending: boolean; variables?: DeploymentTarget }
-  editCapability: ClusterCapabilityDecision
+  editCapability: Pick<ClusterCapabilityDecision, 'disabled' | 'reason'>
   localeCode: 'zh_CN' | 'en_US'
   onEdit: (record: Deployment) => void
   onRestart: (record: Deployment) => void
@@ -239,18 +242,22 @@ export function WorkloadsDeploymentsPage() {
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
   const listScope = toScopeKey(clusterId, namespace)
+  const deploymentQueryOptions = deploymentQueries.list(listScope)
   const deploymentStream = useKubernetesResourceStream({
     clusterId,
     namespace,
     kinds: ['Deployment', 'ReplicaSet', 'Pod', 'Event'],
+    eventDebounceMs: 250,
     onEvent: () =>
-      void queryClient.invalidateQueries({ queryKey: workloadKeys.lists('deployments') }),
-    onFallback: () =>
-      void queryClient.invalidateQueries({ queryKey: workloadKeys.lists('deployments') }),
+      void queryClient.invalidateQueries({ queryKey: deploymentQueryOptions.queryKey }),
+    onFallback: () => {
+      if (queryClient.getQueryState(deploymentQueryOptions.queryKey)?.status !== 'error')
+        void queryClient.invalidateQueries({ queryKey: deploymentQueryOptions.queryKey })
+    },
     onResyncRequired: () =>
-      queryClient.invalidateQueries({ queryKey: workloadKeys.lists('deployments') }),
+      queryClient.invalidateQueries({ queryKey: deploymentQueryOptions.queryKey }),
   })
-  const deploymentsQuery = useQuery(deploymentQueries.list(listScope))
+  const deploymentsQuery = useQuery(deploymentQueryOptions)
   const visibleDeploymentsQueryData = readableQueryData(deploymentsQuery)
   const [scaleTarget, setScaleTarget] = useState<{
     name: string
@@ -267,8 +274,10 @@ export function WorkloadsDeploymentsPage() {
   const activeRollbackScope = useRef(rollbackScope)
   activeRollbackScope.current = rollbackScope
   const [selection, setSelection] = useState({ scope: selectionScope, keys: [] as string[] })
-  const setSelectedDeploymentKeys = (keys: string[]) =>
-    setSelection({ scope: selectionScope, keys })
+  const setSelectedDeploymentKeys = useCallback(
+    (keys: string[]) => setSelection({ scope: selectionScope, keys }),
+    [selectionScope],
+  )
   const [deleteTarget, setDeleteTarget] = useState<
     (DeploymentTarget & { selectionScope: string }) | null
   >(null)
@@ -322,10 +331,13 @@ export function WorkloadsDeploymentsPage() {
         hasAllowedAction(item.allowedActions, action),
       ),
     )
-  const targetFor = (name: string, targetNamespace: string) => ({
-    name,
-    scope: toScopeKey(clusterId, targetNamespace),
-  })
+  const targetFor = useCallback(
+    (name: string, targetNamespace: string) => ({
+      name,
+      scope: toScopeKey(clusterId, targetNamespace),
+    }),
+    [clusterId],
+  )
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -490,7 +502,10 @@ export function WorkloadsDeploymentsPage() {
         : [],
     [filteredDeployments, selection, selectionScope],
   )
-  const selectedDeploymentKeys = selectedDeployments.map((item) => `${item.namespace}/${item.name}`)
+  const selectedDeploymentKeys = useMemo(
+    () => selectedDeployments.map(getNamespacedResourceKey),
+    [selectedDeployments],
+  )
   const canConfirmBatchScale = Boolean(
     batchScaleDraft?.scope === selectionScope &&
     batchScaleDraft.items.length &&
@@ -572,93 +587,198 @@ export function WorkloadsDeploymentsPage() {
     }
   }
 
-  const restartActionMutation = {
-    isPending: restartMutation.isPending,
-    variables: restartMutation.variables,
-  }
-  const rollbackActionMutation = {
-    isPending: rollbackMutation.isPending,
-    variables: rollbackMutation.variables,
-  }
-  const deleteActionMutation = {
-    isPending: deleteMutation.isPending,
-    variables: deleteMutation.variables,
-  }
+  const {
+    isPending: restartMutationIsPending,
+    variables: restartMutationVariables,
+    mutate: restartMutationMutate,
+  } = restartMutation
+  const {
+    isPending: rollbackMutationIsPending,
+    variables: rollbackMutationVariables,
+    mutate: rollbackMutationMutate,
+  } = rollbackMutation
+  const {
+    isPending: deleteMutationIsPending,
+    variables: deleteMutationVariables,
+    reset: deleteMutationReset,
+  } = deleteMutation
 
-  const columns: TableColumnsType<Deployment> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      render: (name: string, record: Deployment) => (
-        <TableCellLink
-          label={name}
-          onClick={() =>
-            navigate(
-              buildWorkloadDetailPath('deployments', name, namespace, record.namespace, clusterId),
-            )
-          }
-        />
-      ),
-    },
-    {
-      title: t('common.namespace', 'Namespace'),
-      dataIndex: 'namespace',
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      dataIndex: 'health',
-      key: 'health',
-      width: 120,
-      sorter: (left, right) => getDeploymentHealth(left).localeCompare(getDeploymentHealth(right)),
-      render: (_: unknown, record: Deployment) => <StatusTag value={getDeploymentHealth(record)} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
-      dataIndex: 'readyReplicas',
-      width: 88,
-      render: (_: number, record: Deployment) =>
-        `${record.readyReplicas}/${record.desiredReplicas}`,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '已更新' : 'Up-to-date',
-      dataIndex: 'updatedReplicas',
-      width: 96,
-    },
-    { title: localeCode === 'zh_CN' ? '可用' : 'Available', dataIndex: 'available', width: 88 },
-    {
-      title: t('common.age', '时长'),
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    buildWorkloadActionColumn({
-      capability: workloadMutationCapability,
-      blocked: platformWriteBlocked,
-      deleteMutation: deleteActionMutation,
-      editCapability: yamlApplyCapability,
-      localeCode,
-      onEdit: (record) => setEditTarget(record),
-      onRestart: (record) => restartMutation.mutate(targetFor(record.name, record.namespace), {}),
-      onRollback: (record) => rollbackMutation.mutate(targetFor(record.name, record.namespace), {}),
-      onDelete: (record) => {
-        deleteMutation.reset()
-        setDeleteTarget({
-          ...targetFor(record.name, record.namespace),
-          uid: record.uid,
-          selectionScope,
-        })
+  const columns = useMemo<TableColumnsType<Deployment>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        render: (name: string, record: Deployment) => (
+          <ResourceNameLink
+            name={name}
+            to={buildWorkloadDetailPath(
+              'deployments',
+              name,
+              namespace,
+              record.namespace,
+              clusterId,
+            )}
+            onNavigate={navigate}
+          />
+        ),
       },
-      onScale: (record) =>
-        setScaleTarget({
-          name: record.name,
-          namespace: record.namespace,
-          replicas: record.desiredReplicas,
-        }),
-      restartMutation: restartActionMutation,
-      rollbackMutation: rollbackActionMutation,
+      {
+        title: t('common.namespace', 'Namespace'),
+        dataIndex: 'namespace',
+        render: (value: string) => <ResourceNamespaceCell namespace={value} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '状态' : 'Status',
+        dataIndex: 'health',
+        key: 'health',
+        width: 120,
+        sorter: (left, right) =>
+          getDeploymentHealth(left).localeCompare(getDeploymentHealth(right)),
+        render: (_: unknown, record: Deployment) => (
+          <ResourceStatusCell value={getDeploymentHealth(record)} />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
+        dataIndex: 'readyReplicas',
+        width: 88,
+        render: (_: number, record: Deployment) =>
+          `${record.readyReplicas}/${record.desiredReplicas}`,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '已更新' : 'Up-to-date',
+        dataIndex: 'updatedReplicas',
+        width: 96,
+      },
+      { title: localeCode === 'zh_CN' ? '可用' : 'Available', dataIndex: 'available', width: 88 },
+      {
+        title: t('common.age', '时长'),
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      buildWorkloadActionColumn({
+        capability: {
+          disabled: workloadMutationCapability.disabled,
+          reason: workloadMutationCapability.reason,
+        },
+        blocked: platformWriteBlocked,
+        deleteMutation: { isPending: deleteMutationIsPending, variables: deleteMutationVariables },
+        editCapability: {
+          disabled: yamlApplyCapability.disabled,
+          reason: yamlApplyCapability.reason,
+        },
+        localeCode,
+        onEdit: (record) => setEditTarget(record),
+        onRestart: (record) => restartMutationMutate(targetFor(record.name, record.namespace), {}),
+        onRollback: (record) =>
+          rollbackMutationMutate(targetFor(record.name, record.namespace), {}),
+        onDelete: (record) => {
+          deleteMutationReset()
+          setDeleteTarget({
+            ...targetFor(record.name, record.namespace),
+            uid: record.uid,
+            selectionScope,
+          })
+        },
+        onScale: (record) =>
+          setScaleTarget({
+            name: record.name,
+            namespace: record.namespace,
+            replicas: record.desiredReplicas,
+          }),
+        restartMutation: {
+          isPending: restartMutationIsPending,
+          variables: restartMutationVariables,
+        },
+        rollbackMutation: {
+          isPending: rollbackMutationIsPending,
+          variables: rollbackMutationVariables,
+        },
+      }),
+    ],
+    [
+      localeCode,
+      t,
+      namespace,
+      clusterId,
+      navigate,
+      targetFor,
+      selectionScope,
+      platformWriteBlocked,
+      workloadMutationCapability.disabled,
+      workloadMutationCapability.reason,
+      yamlApplyCapability.disabled,
+      yamlApplyCapability.reason,
+      restartMutationIsPending,
+      restartMutationVariables,
+      restartMutationMutate,
+      rollbackMutationIsPending,
+      rollbackMutationVariables,
+      rollbackMutationMutate,
+      deleteMutationIsPending,
+      deleteMutationVariables,
+      deleteMutationReset,
+    ],
+  )
+
+  const rowProps = useCallback(
+    (record: Deployment) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        sourceRoute: buildWorkloadDetailPath(
+          'deployments',
+          record.name,
+          namespace,
+          record.namespace,
+          clusterId,
+        ),
+        sourceTitle: `Deployment ${record.name}`,
+        entityKind: 'kubernetes.deployment',
+        entityName: record.name,
+        clusterId: clusterId ?? undefined,
+        namespace: record.namespace,
+        workload: record.name,
+        timeRangeMinutes: 60,
+      }),
     }),
-  ]
+    [clusterId, namespace],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredDeployments.length}
+        localeCode={localeCode}
+        resourceLabel="Deployments"
+        totalCount={deployments.length}
+      />
+    ),
+    [clusterId, filteredDeployments.length, localeCode, deployments.length],
+  )
+  const visibleColumns = useMemo(
+    () => (canShowActions ? columns : columns.filter((column) => column.key !== 'actions')),
+    [columns, canShowActions],
+  )
+  const rowSelection = useMemo(
+    () =>
+      canSelectDeployments
+        ? {
+            getCheckboxProps: () => ({
+              disabled: platformWriteBlocked || batchRollbackLoading,
+            }),
+            selectedRowKeys: selectedDeploymentKeys,
+            onChange: (selectedRowKeys: string[]) => setSelectedDeploymentKeys(selectedRowKeys),
+          }
+        : undefined,
+    [
+      canSelectDeployments,
+      platformWriteBlocked,
+      batchRollbackLoading,
+      selectedDeploymentKeys,
+      setSelectedDeploymentKeys,
+    ],
+  )
 
   const deploymentQueryPanel = (
     <WorkloadQueryPanel
@@ -825,52 +945,16 @@ export function WorkloadsDeploymentsPage() {
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         headerExtra={deploymentToolbarExtra}
-        columns={canShowActions ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={visibleColumns}
         dataSource={filteredDeployments}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: Deployment) => ({
-          'data-ai-context': encodeAIContextForElement({
-            sourceWorkbench: 'platform',
-            sourceRoute: buildWorkloadDetailPath(
-              'deployments',
-              record.name,
-              namespace,
-              record.namespace,
-              clusterId,
-            ),
-            sourceTitle: `Deployment ${record.name}`,
-            entityKind: 'kubernetes.deployment',
-            entityName: record.name,
-            clusterId: clusterId ?? undefined,
-            namespace: record.namespace,
-            workload: record.name,
-            timeRangeMinutes: 60,
-          }),
-        })}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredDeployments.length}
-            localeCode={localeCode}
-            resourceLabel="Deployments"
-            totalCount={deployments.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        rowSelection={
-          canSelectDeployments
-            ? {
-                getCheckboxProps: () => ({
-                  disabled: platformWriteBlocked || batchRollbackLoading,
-                }),
-                selectedRowKeys: selectedDeploymentKeys,
-                onChange: (selectedRowKeys: string[]) => setSelectedDeploymentKeys(selectedRowKeys),
-              }
-            : undefined
-        }
+        rowSelection={rowSelection}
       />
       <Modal
         title={

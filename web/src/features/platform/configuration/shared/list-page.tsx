@@ -1,5 +1,8 @@
 import {
+  getResourceName,
+  getNamespacedResourceKey,
   kubernetesDeleteConfirmation,
+  type KubernetesResourceAction,
   useKubernetesResourceActions,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
@@ -12,7 +15,7 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TableCellLink } from '@/components/table-cell-content'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
@@ -28,7 +31,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, FormOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../styles.css'
 import { configurationMutations } from './mutations'
@@ -39,6 +42,9 @@ import type {
   ConfigurationResourceRecord,
   ConfigurationScopeMode,
 } from './types'
+
+const EMPTY_ITEMS: never[] = []
+const TABLE_SCROLL = { x: 'max-content' } as const
 
 const CONFIGURATION_ENTITY_KINDS: Record<ConfigurationKind, string> = {
   configmaps: 'ConfigMap',
@@ -65,7 +71,7 @@ function matchesKeyword(record: ConfigurationResourceRecord, keyword: string) {
   )
 }
 
-export function ConfigurationNameLink({
+export const ConfigurationNameLink = memo(function ConfigurationNameLink({
   kind,
   name,
   namespace,
@@ -83,12 +89,13 @@ export function ConfigurationNameLink({
   if (includeCluster && clusterId) params.set('clusterId', clusterId)
   const query = params.size ? `?${params}` : ''
   return (
-    <TableCellLink
-      label={name}
-      onClick={() => navigate(`/configuration/${kind}/${encodeURIComponent(name)}${query}`)}
+    <ResourceNameLink
+      name={name}
+      to={`/configuration/${kind}/${encodeURIComponent(name)}${query}`}
+      onNavigate={navigate}
     />
   )
-}
+})
 
 export function ConfigurationResourceListPage<T extends ConfigurationResourceRecord>({
   columns,
@@ -135,7 +142,7 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = canRead ? (visibleQueryData ?? []) : []
+  const rawItems = canRead ? (visibleQueryData ?? EMPTY_ITEMS) : EMPTY_ITEMS
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesKeyword(item, normalizedKeyword)),
@@ -169,14 +176,15 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   const searchDimensions = scopeMode === 'namespace' ? '名称 / 命名空间' : '名称'
   const englishSearchDimensions = scopeMode === 'namespace' ? 'name / namespace' : 'name'
 
-  const resourceActions = useKubernetesResourceActions<T>({
-    resourceKey: `configuration:${kind}`,
-    scopeKey: JSON.stringify([clusterId, namespace, kind]),
-    resourceLabel: entityKind,
-    records: rawItems,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
-    actions: (record) => {
+  const {
+    isPending: removePending,
+    variables: removeVariables,
+    reset: resetRemove,
+    mutateAsync: removeAsync,
+    feedback: removeFeedback,
+  } = removeMutation
+  const actions = useCallback<(record: T) => KubernetesResourceAction[]>(
+    (record) => {
       const target = configurationTargetFromRecord(clusterId, record)
       return [
         ...(onEdit &&
@@ -202,20 +210,72 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
                 danger: true,
                 disabled: platformWriteBlocked,
                 loading:
-                  removeMutation.isPending &&
-                  removeMutation.variables?.scope.clusterId === clusterId &&
-                  removeMutation.variables?.name === target.name &&
-                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                  removePending &&
+                  removeVariables?.scope.clusterId === clusterId &&
+                  removeVariables?.name === target.name &&
+                  removeVariables.scope.namespace === target.scope.namespace,
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                prepare: () => removeMutation.reset(),
-                feedback: removeMutation.feedback,
-                run: () => removeMutation.mutateAsync(target),
+                prepare: () => resetRemove(),
+                feedback: removeFeedback,
+                run: () => removeAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      clusterId,
+      localeCode,
+      onEdit,
+      platformWriteBlocked,
+      removePending,
+      removeVariables,
+      resetRemove,
+      removeAsync,
+      removeFeedback,
+      permissionKey,
+      permissions,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `configuration:${kind}`,
+    scopeKey: JSON.stringify([clusterId, namespace, kind]),
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
+
+  const effectiveColumns = useMemo(
+    () => (resourceActions.hasActions ? [...columns, resourceActions.column] : columns),
+    [columns, resourceActions.hasActions, resourceActions.column],
+  )
+
+  const rowProps = useCallback(
+    (record: T) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        entityKind,
+        entityName: record.name,
+        clusterId: clusterId || undefined,
+        namespace: record.namespace || undefined,
+      }),
+    }),
+    [clusterId, entityKind],
+  )
+
+  const empty = useMemo(
+    () => (
+      <ManagementState
+        bordered={false}
+        compact
+        description={effectiveEmptyDescription}
+        kind={!clusterId ? 'select-scope' : 'empty'}
+      />
+    ),
+    [clusterId, effectiveEmptyDescription],
+  )
 
   return (
     <>
@@ -309,30 +369,15 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
                 )}
               </ManagementTableToolbar>
             }
-            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
-            dataSource={clusterId ? filteredItems : []}
-            rowKey={(record) => `${record.namespace ?? ''}/${record.name}`}
-            onRow={(record: T) => ({
-              'data-ai-context': encodeAIContextForElement({
-                sourceWorkbench: 'platform',
-                entityKind,
-                entityName: record.name,
-                clusterId: clusterId || undefined,
-                namespace: record.namespace || undefined,
-              }),
-            })}
+            columns={effectiveColumns}
+            dataSource={clusterId ? filteredItems : EMPTY_ITEMS}
+            rowKey={getNamespacedResourceKey}
+            onRow={rowProps}
             loading={query.isLoading}
             localSorting={true}
-            empty={
-              <ManagementState
-                bordered={false}
-                compact
-                description={effectiveEmptyDescription}
-                kind={!clusterId ? 'select-scope' : 'empty'}
-              />
-            }
+            empty={empty}
             tableSize={tableSize}
-            scroll={{ x: 'max-content' }}
+            scroll={TABLE_SCROLL}
           />
         }
       />

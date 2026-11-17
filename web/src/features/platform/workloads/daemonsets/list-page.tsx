@@ -1,7 +1,10 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
+  getResourceName,
+  getNamespacedResourceKey,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementTableToolbar } from '@/components/management-list'
@@ -17,7 +20,6 @@ import {
   normalizeSearchKeyword,
 } from '@/features/platform/workloads-model'
 import {
-  renderWorkloadNameLink,
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
@@ -36,7 +38,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined, FormOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { daemonSetMutations } from './mutations'
@@ -86,10 +88,6 @@ export function WorkloadsDaemonSetsPage() {
   const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
 
   const daemonSets = visibleDaemonSetsQueryData ?? []
-  const targetFor = (name: string, targetNamespace: string): DaemonSetTarget => ({
-    name,
-    scope: toScopeKey(clusterId, targetNamespace),
-  })
   const filteredDaemonSets = useMemo(
     () =>
       daemonSets.filter((item) =>
@@ -110,14 +108,21 @@ export function WorkloadsDaemonSetsPage() {
   useEffect(() => {
     setEditTarget(null)
   }, [clusterId, namespace])
-  const resourceActions = useKubernetesResourceActions({
-    resourceKey: 'daemonsets',
-    resourceLabel: 'DaemonSet',
-    records: daemonSets,
-    getName: (record) => record.name,
-    getKey: (record) => `${record.namespace}/${record.name}`,
-    actions: (record) => {
-      const target = targetFor(record.name, record.namespace)
+  const {
+    feedback: deleteMutationFeedback,
+    mutateAsync: deleteMutationMutateAsync,
+    reset: deleteMutationReset,
+    isPending: deleteMutationIsPending,
+    variables: deleteMutationVariables,
+  } = deleteMutation
+  const {
+    mutateAsync: restartMutationMutateAsync,
+    isPending: restartMutationIsPending,
+    variables: restartMutationVariables,
+  } = restartMutation
+  const actions = useCallback(
+    (record: DaemonSet) => {
+      const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
       return [
         ...(hasAllowedAction(record.allowedActions, 'update')
           ? [
@@ -140,12 +145,12 @@ export function WorkloadsDaemonSetsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading: isTargetMutationPending(
-                  restartMutation,
+                  { isPending: restartMutationIsPending, variables: restartMutationVariables },
                   record.name,
                   record.namespace,
                   clusterId,
                 ),
-                run: () => restartMutation.mutateAsync(target),
+                run: () => restartMutationMutateAsync(target),
               },
             ]
           : []),
@@ -159,62 +164,118 @@ export function WorkloadsDaemonSetsPage() {
                 disabled: platformWriteBlocked || workloadMutationCapability.disabled,
                 reason: workloadMutationCapability.reason,
                 loading: isTargetMutationPending(
-                  deleteMutation,
+                  { isPending: deleteMutationIsPending, variables: deleteMutationVariables },
                   record.name,
                   record.namespace,
                   clusterId,
                 ),
-                prepare: () => deleteMutation.reset(),
-                feedback: deleteMutation.feedback,
+                prepare: () => deleteMutationReset(),
+                feedback: deleteMutationFeedback,
                 confirm: kubernetesDeleteConfirmation(record, localeCode),
-                run: () => deleteMutation.mutateAsync(target),
+                run: () => deleteMutationMutateAsync(target),
               },
             ]
           : []),
       ]
     },
+    [
+      deleteMutationFeedback,
+      deleteMutationMutateAsync,
+      deleteMutationReset,
+      restartMutationMutateAsync,
+      restartMutationIsPending,
+      restartMutationVariables,
+      deleteMutationIsPending,
+      deleteMutationVariables,
+      clusterId,
+      localeCode,
+      platformWriteBlocked,
+      workloadMutationCapability.disabled,
+      workloadMutationCapability.reason,
+      yamlApplyCapability.disabled,
+      yamlApplyCapability.reason,
+    ],
+  )
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'daemonsets',
+    resourceLabel: 'DaemonSet',
+    records: daemonSets,
+    getName: getResourceName,
+    getKey: getNamespacedResourceKey,
+    actions,
   })
 
-  const columns: TableColumnsType<DaemonSet> = [
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 260,
-      ellipsis: { showTitle: false },
-      render: (name: string, record) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(
-            buildWorkloadDetailPath('daemonsets', name, namespace, record.namespace, clusterId),
-          ),
+  const columns = useMemo<TableColumnsType<DaemonSet>>(
+    () => [
+      {
+        title: localeCode === 'zh_CN' ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 260,
+        ellipsis: { showTitle: false },
+        render: (name: string, record) => (
+          <ResourceNameLink
+            name={name}
+            to={buildWorkloadDetailPath('daemonsets', name, namespace, record.namespace, clusterId)}
+            onNavigate={navigate}
+          />
         ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 160,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
-      dataIndex: 'readyNumber',
-      width: 112,
-      render: (_value: number, record) => `${record.readyNumber}/${record.desiredNumber}`,
-    },
-    { title: localeCode === 'zh_CN' ? '已更新' : 'Updated', dataIndex: 'updatedNumber', width: 96 },
-    {
-      title: localeCode === 'zh_CN' ? '可用' : 'Available',
-      dataIndex: 'availableNumber',
-      width: 96,
-    },
-    { title: localeCode === 'zh_CN' ? '当前' : 'Current', dataIndex: 'currentNumber', width: 96 },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    resourceActions.column,
-  ]
+      },
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        width: 160,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
+        dataIndex: 'readyNumber',
+        width: 112,
+        render: (_value: number, record) => `${record.readyNumber}/${record.desiredNumber}`,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '已更新' : 'Updated',
+        dataIndex: 'updatedNumber',
+        width: 96,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '可用' : 'Available',
+        dataIndex: 'availableNumber',
+        width: 96,
+      },
+      { title: localeCode === 'zh_CN' ? '当前' : 'Current', dataIndex: 'currentNumber', width: 96 },
+      {
+        ...tableColumnPresets.datetime,
+        title: localeCode === 'zh_CN' ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      resourceActions.column,
+    ],
+    [localeCode, namespace, clusterId, navigate, resourceActions.column],
+  )
+
+  const rowProps = useCallback(
+    (record: DaemonSet) => workloadRowAIContext('daemonsets', record, clusterId),
+    [clusterId],
+  )
+  const tableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={filteredDaemonSets.length}
+        localeCode={localeCode}
+        resourceLabel="DaemonSets"
+        totalCount={daemonSets.length}
+      />
+    ),
+    [clusterId, filteredDaemonSets.length, localeCode, daemonSets.length],
+  )
+
+  const visibleColumns = useMemo(
+    () =>
+      resourceActions.hasActions ? columns : columns.filter((column) => column.key !== 'actions'),
+    [columns, resourceActions.hasActions],
+  )
 
   return (
     <div className="soha-page">
@@ -263,25 +324,13 @@ export function WorkloadsDaemonSetsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={
-          resourceActions.hasActions
-            ? columns
-            : columns.filter((column) => column.key !== 'actions')
-        }
+        columns={visibleColumns}
         dataSource={filteredDaemonSets}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        onRow={(record: DaemonSet) => workloadRowAIContext('daemonsets', record, clusterId)}
+        rowKey={getNamespacedResourceKey}
+        onRow={rowProps}
         loading={daemonSetsQuery.isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={filteredDaemonSets.length}
-            localeCode={localeCode}
-            resourceLabel="DaemonSets"
-            totalCount={daemonSets.length}
-          />
-        }
+        empty={tableEmpty}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
       />

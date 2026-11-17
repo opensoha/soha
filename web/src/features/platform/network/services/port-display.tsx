@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import { MetadataTag } from '@/components/status-tag'
 import type { MetadataTagTone } from '@/components/status-tag'
@@ -19,9 +20,9 @@ function serviceTypeTone(type: string): MetadataTagTone {
   }
 }
 
-export function ServiceTypeTag({ type }: { type: string }) {
+export const ServiceTypeTag = memo(function ServiceTypeTag({ type }: { type: string }) {
   return <MetadataTag label={type || '-'} tone={serviceTypeTone(type)} />
-}
+})
 
 function PortArrow() {
   return <ArrowRightOutlined aria-hidden className="soha-service-port-arrow" />
@@ -68,7 +69,7 @@ function PortFields({ mapping }: { mapping: ServicePortMapping }) {
   )
 }
 
-export function ServicePortDisplay({
+export const ServicePortDisplay = memo(function ServicePortDisplay({
   portMappings,
   ports,
   detailed = false,
@@ -118,4 +119,4 @@ export function ServicePortDisplay({
       ))}
     </span>
   )
-}
+})

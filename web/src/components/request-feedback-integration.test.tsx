@@ -8,7 +8,7 @@ import { expect, it, vi } from 'vitest'
 import { GlobalApiErrorHandler } from './global-api-error-handler'
 import { OperationFeedback, ReadFeedback } from './request-feedback'
 
-it('removes queued Antd notifications when an inline read changes from server failure to denial', async () => {
+it('replaces a floating read failure with regional denial without a duplicate fallback', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('matchMedia', () => ({
     matches: false,
@@ -35,12 +35,12 @@ it('removes queued Antd notifications when an inline read changes from server fa
     await act(async () =>
       root.render(
         <ConfigProvider theme={{ token: { motion: false } }}>
-          <App>
-            <MemoryRouter>
+          <MemoryRouter>
+            <App>
               <GlobalApiErrorHandler />
               <Read />
-            </MemoryRouter>
-          </App>
+            </App>
+          </MemoryRouter>
         </ConfigProvider>,
       ),
     )
@@ -51,7 +51,9 @@ it('removes queued Antd notifications when an inline read changes from server fa
         showError(error)
       })
       await vi.waitFor(() =>
-        expect(document.querySelectorAll('.ant-notification-notice')).toHaveLength(0),
+        expect(document.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(
+          status === 503 ? 1 : 0,
+        ),
       )
     }
     expect(container.textContent).toContain('记录无访问权限')
@@ -76,11 +78,25 @@ it('removes retry when the consumer no longer permits the read', async () => {
     refetch,
   }
   try {
-    await act(async () => root.render(<ReadFeedback label="记录" query={query} />))
-    expect(container.querySelector('button')).not.toBeNull()
-    await act(async () => root.render(<ReadFeedback canRead={false} label="记录" query={query} />))
+    const render = (canRead: boolean) =>
+      act(async () =>
+        root.render(
+          <MemoryRouter>
+            <App>
+              <ReadFeedback canRead={canRead} label="记录" query={query} />
+            </App>
+          </MemoryRouter>,
+        ),
+      )
+    await render(true)
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="重试读取记录"]')).not.toBeNull(),
+    )
+    await render(false)
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[aria-label="重试读取记录"]')).toBeNull(),
+    )
     expect(container.textContent).toBe('')
-    expect(container.querySelector('button')).toBeNull()
     expect(refetch).not.toHaveBeenCalled()
   } finally {
     await act(async () => root.unmount())

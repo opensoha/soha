@@ -1,10 +1,11 @@
+import { useDeferredOverlay } from '@/components/use-deferred-overlay'
 import { MetadataTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { Button, Popover, Typography } from 'antd'
-import { useEffect, useId, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 
-export function ServiceSelectorDisplay({
+export const ServiceSelectorDisplay = memo(function ServiceSelectorDisplay({
   selector,
   compact = false,
   backendPath,
@@ -17,13 +18,21 @@ export function ServiceSelectorDisplay({
 }) {
   const { localeCode } = useI18n(),
     zh = localeCode === 'zh_CN'
-  const entries = Object.entries(selector || {}).sort(([a], [b]) => a.localeCompare(b))
+  const entries = useMemo(
+    () => Object.entries(selector || {}).sort(([a], [b]) => a.localeCompare(b)),
+    [selector],
+  )
   const identity = JSON.stringify([backendPath, entries])
-  const [open, setOpen] = useState(false)
-  const trigger = useRef<HTMLButtonElement>(null)
+  const {
+    triggerRef: trigger,
+    activated,
+    activate,
+    open,
+    setOpen,
+  } = useDeferredOverlay<HTMLButtonElement>()
   const content = useRef<HTMLDivElement>(null)
   const id = useId()
-  useEffect(() => setOpen(false), [identity])
+  useEffect(() => setOpen(false), [identity, setOpen])
   useEffect(() => {
     if (!open) return
     const frame = requestAnimationFrame(() =>
@@ -62,6 +71,23 @@ export function ServiceSelectorDisplay({
       'No selector'
     )
   if (!compact) return tags(entries)
+  const triggerButton = (
+    <Button
+      ref={trigger}
+      type="text"
+      size="small"
+      className="soha-service-selector-more"
+      aria-label={zh ? '查看完整选择器' : 'View full selector'}
+      aria-expanded={open}
+      aria-controls={open ? id : undefined}
+      onClick={activated ? undefined : activate}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') close()
+      }}
+    >
+      {entries.length > 2 ? `+${entries.length - 2}` : zh ? '展开' : 'Expand'}
+    </Button>
+  )
   return (
     <div className="soha-service-selector-summary">
       {backendPath ? (
@@ -71,56 +97,47 @@ export function ServiceSelectorDisplay({
       ) : (
         tags(entries.slice(0, 2), true)
       )}
-      <Popover
-        open={open}
-        trigger="click"
-        placement="leftTop"
-        onOpenChange={setOpen}
-        destroyOnHidden
-        content={
-          <div
-            ref={content}
-            id={id}
-            className="soha-service-selector-expanded"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.stopPropagation()
-                close()
-              }
-            }}
-          >
-            <div className="soha-service-selector-heading">
-              <Typography.Text strong>
-                {zh ? `选择器 · ${entries.length}` : `Selectors · ${entries.length}`}
-              </Typography.Text>
-              <Button size="small" type="text" onClick={close}>
-                {zh ? '收起' : 'Close'}
-              </Button>
+      {activated ? (
+        <Popover
+          open={open}
+          trigger="click"
+          placement="leftTop"
+          onOpenChange={setOpen}
+          destroyOnHidden
+          content={
+            <div
+              ref={content}
+              id={id}
+              className="soha-service-selector-expanded"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation()
+                  close()
+                }
+              }}
+            >
+              <div className="soha-service-selector-heading">
+                <Typography.Text strong>
+                  {zh ? `选择器 · ${entries.length}` : `Selectors · ${entries.length}`}
+                </Typography.Text>
+                <Button size="small" type="text" onClick={close}>
+                  {zh ? '收起' : 'Close'}
+                </Button>
+              </div>
+              {tags(entries)}
+              {backendPath && (
+                <Link to={backendPath} onClick={() => setOpen(false)}>
+                  {zh ? '查看匹配后端' : 'View matching backends'}
+                </Link>
+              )}
             </div>
-            {tags(entries)}
-            {backendPath && (
-              <Link to={backendPath} onClick={() => setOpen(false)}>
-                {zh ? '查看匹配后端' : 'View matching backends'}
-              </Link>
-            )}
-          </div>
-        }
-      >
-        <Button
-          ref={trigger}
-          type="text"
-          size="small"
-          className="soha-service-selector-more"
-          aria-label={zh ? '查看完整选择器' : 'View full selector'}
-          aria-expanded={open}
-          aria-controls={open ? id : undefined}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') close()
-          }}
+          }
         >
-          {entries.length > 2 ? `+${entries.length - 2}` : zh ? '展开' : 'Expand'}
-        </Button>
-      </Popover>
+          {triggerButton}
+        </Popover>
+      ) : (
+        triggerButton
+      )}
     </div>
   )
-}
+})

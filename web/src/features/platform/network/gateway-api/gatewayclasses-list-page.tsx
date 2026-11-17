@@ -1,5 +1,7 @@
+import { useCallback, useMemo } from 'react'
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { ReadFeedback } from '@/components/request-feedback'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -35,45 +37,70 @@ export function NetworkGatewayClassesPage() {
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
-  const path = (name: string, tab?: string) =>
-    buildGatewayAPIRoutePath('gatewayclasses', name, '', { clusterId: clusterId || '', tab })
-  const columns: TableColumnsType<GatewayClass> = [
-    {
-      title: zh ? '名称' : 'Name',
-      dataIndex: 'name',
-      width: 280,
-      ellipsis: { showTitle: false },
-      render: (name: string) => <TableCellLink label={name} onClick={() => navigate(path(name))} />,
-    },
-    {
-      title: zh ? '控制器' : 'Controller',
-      dataIndex: 'controllerName',
-      width: 340,
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-    {
-      title: 'Accepted',
-      dataIndex: 'accepted',
-      width: 150,
-      render: (value?: string) => (
-        <GatewayConditionTag compact condition={{ type: 'Accepted', status: value || 'Unknown' }} />
-      ),
-    },
-    {
-      title: zh ? '参数引用' : 'Parameters',
-      dataIndex: 'parametersRef',
-      width: 280,
-      render: (value?: string) => (
-        <TableCellText value={value || (zh ? '未配置' : 'Not configured')} />
-      ),
-    },
-    {
-      title: zh ? '时长' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 104,
-      render: (value: number) => formatAgeSeconds(value),
-    },
-  ]
+  const path = useCallback(
+    (name: string, tab?: string) =>
+      buildGatewayAPIRoutePath('gatewayclasses', name, '', { clusterId: clusterId || '', tab }),
+    [clusterId],
+  )
+  const columns = useMemo<TableColumnsType<GatewayClass>>(
+    () => [
+      {
+        title: zh ? '名称' : 'Name',
+        dataIndex: 'name',
+        width: 280,
+        ellipsis: { showTitle: false },
+        render: (name: string) => (
+          <ResourceNameLink name={name} to={path(name)} onNavigate={navigate} />
+        ),
+      },
+      {
+        title: zh ? '控制器' : 'Controller',
+        dataIndex: 'controllerName',
+        width: 340,
+        render: (value?: string) => <TableCellText value={value} />,
+      },
+      {
+        title: 'Accepted',
+        dataIndex: 'accepted',
+        width: 150,
+        render: (value?: string) => (
+          <GatewayConditionTag
+            compact
+            condition={{ type: 'Accepted', status: value || 'Unknown' }}
+          />
+        ),
+      },
+      {
+        title: zh ? '参数引用' : 'Parameters',
+        dataIndex: 'parametersRef',
+        width: 280,
+        render: (value?: string) => (
+          <TableCellText value={value || (zh ? '未配置' : 'Not configured')} />
+        ),
+      },
+      {
+        title: zh ? '时长' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 104,
+        render: (value: number) => formatAgeSeconds(value),
+      },
+    ],
+    [zh, navigate, path],
+  )
+  const searchValues = useCallback(
+    (record: GatewayClass) => [
+      record.name,
+      record.controllerName,
+      record.accepted,
+      record.parametersRef,
+    ],
+    [],
+  )
+  const editRecord = useCallback(
+    (record: GatewayClass) => navigate(path(record.name, 'yaml')),
+    [navigate, path],
+  )
+
   return (
     <>
       <ReadFeedback canRead={canRead} query={query} label="GatewayClasses" />
@@ -94,7 +121,7 @@ export function NetworkGatewayClassesPage() {
           query={query}
           rowKey="name"
           deletable={permitted('delete')}
-          onEdit={permitted('update') ? (record) => navigate(path(record.name, 'yaml')) : undefined}
+          onEdit={permitted('update') ? editRecord : undefined}
           emptyDescription={{
             zh_CN: '当前未读取到 GatewayClass',
             en_US: 'No GatewayClasses returned',
@@ -107,12 +134,7 @@ export function NetworkGatewayClassesPage() {
             zh_CN: '搜索名称 / 控制器 / 参数 / Accepted',
             en_US: 'Search name / controller / parameters / Accepted',
           }}
-          searchValues={(record) => [
-            record.name,
-            record.controllerName,
-            record.accepted,
-            record.parametersRef,
-          ]}
+          searchValues={searchValues}
           refreshControl={
             <WorkloadRefresh
               compact

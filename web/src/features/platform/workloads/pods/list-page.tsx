@@ -1,13 +1,11 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import {
   ManagementBatchBar,
   ManagementQueryField,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
-import { StatusTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
@@ -37,10 +35,9 @@ import { formatAgeSeconds } from '@/utils/time'
 import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
-import { Button, Modal, Popconfirm, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Modal, Popconfirm, Select, Switch, Tooltip, Typography } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
-import { workloadKeys } from '../shared/keys'
 import {
   WorkloadQueryPanel,
   WorkloadRefreshButton,
@@ -55,8 +52,9 @@ import { PodContainersCell } from './pod-containers-cell'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
 import { podContentWidths } from './pod-column-widths'
+import { PodNameCell, PodNamespaceCell, PodPhaseCell, PodRestartCell } from './pod-identity-cells'
 
-const { Link, Text } = Typography
+const { Text } = Typography
 
 function podRowKey(pod: { namespace?: string | null; name: string; uid?: string }) {
   return `${pod.namespace}/${pod.name}${pod.uid ? `/${pod.uid}` : ''}`
@@ -71,25 +69,6 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
     if (!right) return 1
     return compareFn(left, right)
   }
-}
-
-function renderPodNameCell(record: Pod, onClick: () => void) {
-  const persistentVolumeClaims = record.persistentVolumeClaims ?? []
-
-  return (
-    <div className="soha-pod-table-name-cell">
-      <Link className="soha-pod-table-name-link" onClick={onClick}>
-        <TableCellText value={record.name} />
-      </Link>
-      {persistentVolumeClaims.length > 0 ? (
-        <Space size={4} wrap={false} className="soha-pod-table-meta">
-          <Tag variant="filled" className="soha-pod-table-pvc-tag">
-            PVC {persistentVolumeClaims.length}
-          </Tag>
-        </Space>
-      ) : null}
-    </div>
-  )
 }
 
 export function WorkloadsPodsPage() {
@@ -157,9 +136,10 @@ export function WorkloadsPodsPage() {
     clusterId,
     namespace,
     kinds: ['Pod', 'Event'],
-    onEvent: () => void queryClient.invalidateQueries({ queryKey: workloadKeys.lists('pods') }),
-    onFallback: () => void queryClient.invalidateQueries({ queryKey: workloadKeys.lists('pods') }),
-    onResyncRequired: () => queryClient.invalidateQueries({ queryKey: workloadKeys.lists('pods') }),
+    eventDebounceMs: 250,
+    fallbackIntervalMs: false,
+    onEvent: () => void queryClient.invalidateQueries({ queryKey: podsQueryOptions.queryKey }),
+    onResyncRequired: () => queryClient.invalidateQueries({ queryKey: podsQueryOptions.queryKey }),
   })
   const podsQuery = useQuery({
     ...podsQueryOptions,
@@ -173,9 +153,28 @@ export function WorkloadsPodsPage() {
   const isLoading = podsQuery.isLoading
 
   const pods = visiblePodsQueryData ?? []
+  const {
+    cpu: cpuWidth,
+    memory: memoryWidth,
+    namespace: namespaceWidth,
+    nodeName: nodeWidth,
+    podIp: ipWidth,
+    readyContainers: containersWidth,
+  } = useMemo(() => podContentWidths(pods, localeCode === 'zh_CN'), [pods, localeCode])
   const resourceColumnWidths = useMemo(
-    () => podContentWidths(pods, localeCode === 'zh_CN'),
-    [pods, localeCode],
+    () => ({
+      cpu: cpuWidth,
+      memory: memoryWidth,
+      namespace: namespaceWidth,
+      nodeName: nodeWidth,
+      podIp: ipWidth,
+      readyContainers: containersWidth,
+    }),
+    [cpuWidth, memoryWidth, namespaceWidth, nodeWidth, ipWidth, containersWidth],
+  )
+  const [cpuMinimumWidth, memoryMinimumWidth] = useMemo(
+    () => [podResourceMinimumWidth('cpu', pods), podResourceMinimumWidth('memory', pods)],
+    [pods],
   )
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
@@ -329,290 +328,386 @@ export function WorkloadsPodsPage() {
     }
   }
 
-  const baseColumns: TableColumnsType<Pod> = [
-    {
-      title: 'Pod',
-      dataIndex: 'name',
-      fixed: 'left',
-      width: 360,
-      ellipsis: { showTitle: false },
-      sorter: podSorter((left, right) => {
-        const nameCompare = compareStrings(left.name, right.name)
-        if (nameCompare !== 0) return nameCompare
-        return compareStrings(left.namespace, right.namespace)
-      }),
-      defaultSortOrder: 'ascend',
-      render: (_name: string, record: Pod) =>
-        renderPodNameCell(record, () =>
-          navigate(
-            buildWorkloadDetailPath('pods', record.name, namespace, record.namespace, clusterId),
-          ),
-        ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 132,
-      sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
-    },
-    {
-      title: 'IP',
-      dataIndex: 'podIp',
-      width: 128,
-      sorter: podSorter((left, right) => compareStrings(left.podIp, right.podIp)),
-      render: (value?: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '节点' : 'Node',
-      dataIndex: 'nodeName',
-      width: 180,
-      ellipsis: { showTitle: false },
-      sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)),
-      render: (value?: string) => {
-        const label = <TableCellText className="soha-pod-table-node-text" value={value} />
-        if (!value || value === '-' || !canViewNodes) return label
-        return (
-          <RouterLink
-            className="soha-pod-table-node-link"
-            to={`/cluster-resources/nodes/${encodeURIComponent(value)}?clusterId=${encodeURIComponent(clusterId || '')}`}
-          >
-            {label}
-          </RouterLink>
-        )
-      },
-    },
-    {
-      title: 'QoS',
-      dataIndex: 'qosClass',
-      width: 112,
-      sorter: podSorter((left, right) => compareStrings(left.qosClass, right.qosClass)),
-      render: (value?: string) => value || '—',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '运行时间' : 'Age',
-      dataIndex: 'ageSeconds',
-      width: 96,
-      sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds),
-      render: (value: number) => formatAgeSeconds(value),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '运行状态' : 'Runtime',
-      dataIndex: 'phase',
-      width: 104,
-      sorter: podSorter((left, right) => compareStrings(left.phase, right.phase)),
-      render: (phase: string) => <StatusTag value={phase} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '容器' : 'Containers',
-      dataIndex: 'readyContainers',
-      width: 160,
-      sorter: podSorter((left, right) => {
-        const leftReady = parseReadyContainers(left.readyContainers)
-        const rightReady = parseReadyContainers(right.readyContainers)
-        if (leftReady.total !== rightReady.total) return leftReady.total - rightReady.total
-        return leftReady.ready - rightReady.ready
-      }),
-      render: (readyContainers: string, record: Pod) => (
-        <PodContainersCell
-          readyContainers={readyContainers}
-          statuses={record.containerStatuses}
-          zh={localeCode === 'zh_CN'}
-        />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '重启' : 'Restarts',
-      dataIndex: 'restarts',
-      width: 64,
-      sorter: podSorter((left, right) => left.restarts - right.restarts),
-      render: (value: number) => (
-        <Tag variant="filled" color={value > 0 ? 'warning' : 'default'}>
-          {value}
-        </Tag>
-      ),
-    },
-    {
-      title: 'CPU',
-      key: 'cpu-resource',
-      width: resourceColumnWidths.cpu,
-      sorter: podSorter(
-        (left, right) =>
-          getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
-      ),
-      render: (_: unknown, record: Pod) => (
-        <PodResourceCell pod={record} resource="cpu" localeCode={localeCode} />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '内存' : 'Memory',
-      key: 'memory-resource',
-      width: resourceColumnWidths.memory,
-      sorter: podSorter(
-        (left, right) =>
-          getPodResourceAmount('memory', left.memory) -
-          getPodResourceAmount('memory', right.memory),
-      ),
-      render: (_: unknown, record: Pod) => (
-        <PodResourceCell pod={record} resource="memory" localeCode={localeCode} />
-      ),
-    },
-    {
-      fixed: 'right',
-      title: localeCode === 'zh_CN' ? '操作' : 'Actions',
-      dataIndex: 'name',
-      key: 'actions',
-      width: 64,
-      align: 'center',
-      className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
-      onHeaderCell: () => ({
-        className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
-      }),
-      onCell: () => ({ className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column` }),
-      render: (_value: string, record: Pod) => {
-        const canOpenLogs = canViewPodLogs && hasAllowedAction(record.allowedActions, 'logs')
-        const canOpenTerminal = canExecPods && hasAllowedAction(record.allowedActions, 'exec')
-        const canDeletePod =
-          canDeletePods && Boolean(record.uid) && hasAllowedAction(record.allowedActions, 'delete')
-        const logsDisabled = !clusterId || podLogsCapability.isLoading || podLogsCapability.disabled
-        const terminalDisabled =
-          !clusterId ||
-          podExecCapability.isLoading ||
-          podExecCapability.disabled ||
-          podExecCapability.status === 'partial'
-        const logLabel = localeCode === 'zh_CN' ? '打开日志会话' : 'Open log session'
-        const terminalLabel = localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'
-        const deleteLabel = localeCode === 'zh_CN' ? '删除 Pod' : 'Delete pod'
-
-        const actionLabel = (label: string, reason?: string) => (
-          <span className="soha-pod-action-menu-label">
-            <span>{label}</span>
-            {reason ? <span className="soha-pod-action-menu-reason">{reason}</span> : null}
-          </span>
-        )
-        const items: MenuProps['items'] = []
-        const actions: Record<string, () => void> = {}
-        if (canOpenLogs) {
-          items.push({
-            key: 'logs',
-            label: actionLabel(logLabel, podLogsCapability.reason),
-            icon: <FileTextOutlined aria-hidden />,
-            disabled: logsDisabled,
-          })
-          actions.logs = () => {
-            if (!clusterId) return
-            openSession({
-              clusterId,
-              kind: 'logs',
-              namespace: record.namespace,
-              podName: record.name,
-              podUid: record.uid,
-              streamingDisabledReason:
-                podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
-            })
-          }
-        }
-        if (canOpenTerminal) {
-          items.push({
-            key: 'terminal',
-            label: actionLabel(terminalLabel, podExecCapability.reason),
-            icon: <CodeOutlined aria-hidden />,
-            disabled: terminalDisabled,
-          })
-          actions.terminal = () => {
-            if (!clusterId) return
-            openSession({
-              clusterId,
-              kind: 'terminal',
-              namespace: record.namespace,
-              podName: record.name,
-              podUid: record.uid,
-              shell: '/bin/sh',
-            })
-          }
-        }
-        if (canDeletePod) {
-          if (items.length) items.push({ type: 'divider', key: 'mutation-divider' })
-          items.push({
-            key: 'delete',
-            label: actionLabel(deleteLabel, podDeleteCapability.reason),
-            danger: true,
-            disabled: platformWriteBlocked || rowDeleteUnavailable,
-            icon: deletePodMutation.isPending ? (
-              <LoadingOutlined aria-hidden />
-            ) : (
-              <DeleteOutlined aria-hidden />
-            ),
-          })
-          actions.delete = () => {
-            if (!clusterId || !canDeletePod || rowDeleteUnavailable || platformWriteBlocked) return
-            deletePodMutation.reset()
-            setRowDeleteDraft({
-              scope: selectionScope,
-              target: podTargetFromRecord(clusterId, record),
-            })
-          }
-        }
-        return (
-          <KubernetesResourceActionsMenu
-            resourceLabel="Pod"
+  const columns = useMemo<TableColumnsType<Pod>>(() => {
+    const baseColumns: TableColumnsType<Pod> = [
+      {
+        title: 'Pod',
+        dataIndex: 'name',
+        fixed: 'left',
+        width: 360,
+        ellipsis: { showTitle: false },
+        sorter: podSorter((left, right) => {
+          const nameCompare = compareStrings(left.name, right.name)
+          if (nameCompare !== 0) return nameCompare
+          return compareStrings(left.namespace, right.namespace)
+        }),
+        defaultSortOrder: 'ascend',
+        render: (_name: string, record: Pod) => (
+          <PodNameCell
             name={record.name}
-            localeCode={localeCode}
-            items={items}
-            onSelect={(key) => actions[key]?.()}
+            pvcCount={record.persistentVolumeClaims?.length ?? 0}
+            to={buildWorkloadDetailPath(
+              'pods',
+              record.name,
+              namespace,
+              record.namespace,
+              clusterId,
+            )}
+            onNavigate={navigate}
           />
-        )
+        ),
       },
-    },
-  ]
+      {
+        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+        dataIndex: 'namespace',
+        width: 132,
+        sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)),
+        render: (value: string) => <PodNamespaceCell namespace={value} />,
+      },
+      {
+        title: 'IP',
+        dataIndex: 'podIp',
+        width: 128,
+        sorter: podSorter((left, right) => compareStrings(left.podIp, right.podIp)),
+        render: (value?: string) => value || '-',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '节点' : 'Node',
+        dataIndex: 'nodeName',
+        width: 180,
+        ellipsis: { showTitle: false },
+        sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)),
+        render: (value?: string) => {
+          const label = <TableCellText className="soha-pod-table-node-text" value={value} />
+          if (!value || value === '-' || !canViewNodes) return label
+          return (
+            <RouterLink
+              className="soha-pod-table-node-link"
+              to={`/cluster-resources/nodes/${encodeURIComponent(value)}?clusterId=${encodeURIComponent(clusterId || '')}`}
+            >
+              {label}
+            </RouterLink>
+          )
+        },
+      },
+      {
+        title: 'QoS',
+        dataIndex: 'qosClass',
+        width: 112,
+        sorter: podSorter((left, right) => compareStrings(left.qosClass, right.qosClass)),
+        render: (value?: string) => value || '—',
+      },
+      {
+        title: localeCode === 'zh_CN' ? '运行时间' : 'Age',
+        dataIndex: 'ageSeconds',
+        width: 96,
+        sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds),
+        render: (value: number) => formatAgeSeconds(value),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '运行状态' : 'Runtime',
+        dataIndex: 'phase',
+        width: 104,
+        sorter: podSorter((left, right) => compareStrings(left.phase, right.phase)),
+        render: (phase: string) => <PodPhaseCell value={phase} />,
+      },
+      {
+        title: localeCode === 'zh_CN' ? '容器' : 'Containers',
+        dataIndex: 'readyContainers',
+        width: 160,
+        sorter: podSorter((left, right) => {
+          const leftReady = parseReadyContainers(left.readyContainers)
+          const rightReady = parseReadyContainers(right.readyContainers)
+          if (leftReady.total !== rightReady.total) return leftReady.total - rightReady.total
+          return leftReady.ready - rightReady.ready
+        }),
+        render: (readyContainers: string, record: Pod) => (
+          <PodContainersCell
+            readyContainers={readyContainers}
+            statuses={record.containerStatuses}
+            zh={localeCode === 'zh_CN'}
+          />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '重启' : 'Restarts',
+        dataIndex: 'restarts',
+        width: 64,
+        sorter: podSorter((left, right) => left.restarts - right.restarts),
+        render: (value: number) => <PodRestartCell restarts={value} />,
+      },
+      {
+        title: 'CPU',
+        key: 'cpu-resource',
+        width: resourceColumnWidths.cpu,
+        sorter: podSorter(
+          (left, right) =>
+            getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
+        ),
+        render: (_: unknown, record: Pod) => (
+          <PodResourceCell pod={record} resource="cpu" localeCode={localeCode} />
+        ),
+      },
+      {
+        title: localeCode === 'zh_CN' ? '内存' : 'Memory',
+        key: 'memory-resource',
+        width: resourceColumnWidths.memory,
+        sorter: podSorter(
+          (left, right) =>
+            getPodResourceAmount('memory', left.memory) -
+            getPodResourceAmount('memory', right.memory),
+        ),
+        render: (_: unknown, record: Pod) => (
+          <PodResourceCell pod={record} resource="memory" localeCode={localeCode} />
+        ),
+      },
+      {
+        fixed: 'right',
+        title: localeCode === 'zh_CN' ? '操作' : 'Actions',
+        dataIndex: 'name',
+        key: 'actions',
+        width: 64,
+        align: 'center',
+        className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
+        onHeaderCell: () => ({
+          className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
+        }),
+        onCell: () => ({ className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column` }),
+        render: (_value: string, record: Pod) => {
+          const canOpenLogs = canViewPodLogs && hasAllowedAction(record.allowedActions, 'logs')
+          const canOpenTerminal = canExecPods && hasAllowedAction(record.allowedActions, 'exec')
+          const canDeletePod =
+            canDeletePods &&
+            Boolean(record.uid) &&
+            hasAllowedAction(record.allowedActions, 'delete')
+          const logsDisabled =
+            !clusterId || podLogsCapability.isLoading || podLogsCapability.disabled
+          const terminalDisabled =
+            !clusterId ||
+            podExecCapability.isLoading ||
+            podExecCapability.disabled ||
+            podExecCapability.status === 'partial'
+          const logLabel = localeCode === 'zh_CN' ? '打开日志会话' : 'Open log session'
+          const terminalLabel = localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'
+          const deleteLabel = localeCode === 'zh_CN' ? '删除 Pod' : 'Delete pod'
 
-  const columnOrder = [
-    'name',
-    'namespace',
-    'phase',
-    'readyContainers',
-    'restarts',
-    'cpu-resource',
-    'memory-resource',
-    'nodeName',
-    'ageSeconds',
-    'podIp',
-    'qosClass',
-    'actions',
-  ]
-  const fittedWidths: Record<string, number> = resourceColumnWidths
-  const compactWidths: Record<string, number> = {
-    phase: 88,
-    ageSeconds: 88,
-    qosClass: 96,
-    actions: 48,
-  }
-  const columns = baseColumns
-    .map((column) => {
-      const key = String(column.key ?? ('dataIndex' in column ? column.dataIndex : ''))
-      const widthKey = key.replace('-resource', '')
-      const width = fittedWidths[widthKey] ?? compactWidths[key] ?? column.width
-      const minWidth =
-        key === 'name'
-          ? 240
-          : key.endsWith('-resource')
-            ? podResourceMinimumWidth(widthKey as 'cpu' | 'memory', pods)
-            : key === 'readyContainers'
-              ? fittedWidths.readyContainers
-              : key === 'namespace' || key === 'podIp'
-                ? 96
-                : key === 'nodeName'
-                  ? 128
-                  : 64
-      return {
-        ...column,
-        key,
-        width,
-        minWidth,
-        fixed: column.fixed,
-      }
-    })
-    .sort((left, right) => columnOrder.indexOf(left.key) - columnOrder.indexOf(right.key))
+          const actionLabel = (label: string, reason?: string) => (
+            <span className="soha-pod-action-menu-label">
+              <span>{label}</span>
+              {reason ? <span className="soha-pod-action-menu-reason">{reason}</span> : null}
+            </span>
+          )
+          const items: MenuProps['items'] = []
+          const actions: Record<string, () => void> = {}
+          if (canOpenLogs) {
+            items.push({
+              key: 'logs',
+              label: actionLabel(logLabel, podLogsCapability.reason),
+              icon: <FileTextOutlined aria-hidden />,
+              disabled: logsDisabled,
+            })
+            actions.logs = () => {
+              if (!clusterId) return
+              openSession({
+                clusterId,
+                kind: 'logs',
+                namespace: record.namespace,
+                podName: record.name,
+                podUid: record.uid,
+                streamingDisabledReason:
+                  podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
+              })
+            }
+          }
+          if (canOpenTerminal) {
+            items.push({
+              key: 'terminal',
+              label: actionLabel(terminalLabel, podExecCapability.reason),
+              icon: <CodeOutlined aria-hidden />,
+              disabled: terminalDisabled,
+            })
+            actions.terminal = () => {
+              if (!clusterId) return
+              openSession({
+                clusterId,
+                kind: 'terminal',
+                namespace: record.namespace,
+                podName: record.name,
+                podUid: record.uid,
+                shell: '/bin/sh',
+              })
+            }
+          }
+          if (canDeletePod) {
+            if (items.length) items.push({ type: 'divider', key: 'mutation-divider' })
+            items.push({
+              key: 'delete',
+              label: actionLabel(deleteLabel, podDeleteCapability.reason),
+              danger: true,
+              disabled: platformWriteBlocked || rowDeleteUnavailable,
+              icon: deletePodMutation.isPending ? (
+                <LoadingOutlined aria-hidden />
+              ) : (
+                <DeleteOutlined aria-hidden />
+              ),
+            })
+            actions.delete = () => {
+              if (!clusterId || !canDeletePod || rowDeleteUnavailable || platformWriteBlocked)
+                return
+              deletePodMutation.reset()
+              setRowDeleteDraft({
+                scope: selectionScope,
+                target: podTargetFromRecord(clusterId, record),
+              })
+            }
+          }
+          return (
+            <KubernetesResourceActionsMenu
+              resourceLabel="Pod"
+              name={record.name}
+              localeCode={localeCode}
+              items={items}
+              onSelect={(key) => actions[key]?.()}
+            />
+          )
+        },
+      },
+    ]
+
+    const columnOrder = [
+      'name',
+      'namespace',
+      'phase',
+      'readyContainers',
+      'restarts',
+      'cpu-resource',
+      'memory-resource',
+      'nodeName',
+      'ageSeconds',
+      'podIp',
+      'qosClass',
+      'actions',
+    ]
+    const fittedWidths: Record<string, number> = resourceColumnWidths
+    const compactWidths: Record<string, number> = {
+      phase: 88,
+      ageSeconds: 88,
+      qosClass: 96,
+      actions: 48,
+    }
+    return baseColumns
+      .map((column) => {
+        const key = String(column.key ?? ('dataIndex' in column ? column.dataIndex : ''))
+        const widthKey = key.replace('-resource', '')
+        const width = fittedWidths[widthKey] ?? compactWidths[key] ?? column.width
+        const minWidth =
+          key === 'name'
+            ? 240
+            : key.endsWith('-resource')
+              ? widthKey === 'cpu'
+                ? cpuMinimumWidth
+                : memoryMinimumWidth
+              : key === 'readyContainers'
+                ? fittedWidths.readyContainers
+                : key === 'namespace' || key === 'podIp'
+                  ? 96
+                  : key === 'nodeName'
+                    ? 128
+                    : 64
+        return {
+          ...column,
+          key,
+          width,
+          minWidth,
+          fixed: column.fixed,
+        }
+      })
+      .sort((left, right) => columnOrder.indexOf(left.key) - columnOrder.indexOf(right.key))
+  }, [
+    navigate,
+    namespace,
+    clusterId,
+    localeCode,
+    canViewNodes,
+    canViewPodLogs,
+    canExecPods,
+    canDeletePods,
+    podLogsCapability.isLoading,
+    podLogsCapability.disabled,
+    podLogsCapability.reason,
+    podLogsCapability.status,
+    podExecCapability.isLoading,
+    podExecCapability.disabled,
+    podExecCapability.reason,
+    podExecCapability.status,
+    podDeleteCapability.reason,
+    platformWriteBlocked,
+    rowDeleteUnavailable,
+    deletePodMutation.isPending,
+    deletePodMutation.reset,
+    selectionScope,
+    openSession,
+    resourceColumnWidths,
+    cpuMinimumWidth,
+    memoryMinimumWidth,
+  ])
+
+  const podRowProps = useCallback(
+    (record: Pod) => ({
+      'data-ai-context': encodeAIContextForElement({
+        sourceWorkbench: 'platform',
+        sourceRoute: buildWorkloadDetailPath(
+          'pods',
+          record.name,
+          namespace,
+          record.namespace,
+          clusterId,
+        ),
+        sourceTitle: `Pod ${record.name}`,
+        entityKind: 'kubernetes.pod',
+        entityName: record.name,
+        clusterId: clusterId ?? undefined,
+        namespace: record.namespace,
+        pod: record.name,
+        node: record.nodeName,
+        timeRangeMinutes: 60,
+      }),
+    }),
+    [namespace, clusterId],
+  )
+  const podTableEmpty = useMemo(
+    () => (
+      <WorkloadTableEmpty
+        clusterId={clusterId}
+        filteredCount={orderedPods.length}
+        localeCode={localeCode}
+        resourceLabel="Pods"
+        totalCount={pods.length}
+      />
+    ),
+    [clusterId, orderedPods.length, localeCode, pods.length],
+  )
+  const podRowSelection = useMemo(
+    () =>
+      canShowPodDeleteActions
+        ? {
+            columnWidth: 44,
+            selectedRowKeys: selectedPodKeys,
+            onChange: (selectedRowKeys: string[]) => setSelectedPodKeys(selectedRowKeys),
+            getTitleCheckboxProps: () => ({
+              'aria-label':
+                localeCode === 'zh_CN'
+                  ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                  : `Select all ${orderedPods.length} matching Pods`,
+              title:
+                localeCode === 'zh_CN'
+                  ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                  : `Select all ${orderedPods.length} matching Pods`,
+            }),
+          }
+        : undefined,
+    [canShowPodDeleteActions, selectedPodKeys, localeCode, orderedPods.length],
+  )
 
   const podQueryPanel = (
     <WorkloadQueryPanel
@@ -860,58 +955,13 @@ export function WorkloadsPodsPage() {
         columns={columns}
         dataSource={orderedPods}
         rowKey={podRowKey}
-        onRow={(record: Pod) => ({
-          'data-ai-context': encodeAIContextForElement({
-            sourceWorkbench: 'platform',
-            sourceRoute: buildWorkloadDetailPath(
-              'pods',
-              record.name,
-              namespace,
-              record.namespace,
-              clusterId,
-            ),
-            sourceTitle: `Pod ${record.name}`,
-            entityKind: 'kubernetes.pod',
-            entityName: record.name,
-            clusterId: clusterId ?? undefined,
-            namespace: record.namespace,
-            pod: record.name,
-            node: record.nodeName,
-            timeRangeMinutes: 60,
-          }),
-        })}
+        onRow={podRowProps}
         loading={isLoading}
         localSorting
-        empty={
-          <WorkloadTableEmpty
-            clusterId={clusterId}
-            filteredCount={orderedPods.length}
-            localeCode={localeCode}
-            resourceLabel="Pods"
-            totalCount={pods.length}
-          />
-        }
+        empty={podTableEmpty}
         tableSize={tableSize}
         scroll={{ scrollToFirstRowOnChange: false }}
-        rowSelection={
-          canShowPodDeleteActions
-            ? {
-                columnWidth: 44,
-                selectedRowKeys: selectedPodKeys,
-                onChange: (selectedRowKeys: string[]) => setSelectedPodKeys(selectedRowKeys),
-                getTitleCheckboxProps: () => ({
-                  'aria-label':
-                    localeCode === 'zh_CN'
-                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
-                      : `Select all ${orderedPods.length} matching Pods`,
-                  title:
-                    localeCode === 'zh_CN'
-                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
-                      : `Select all ${orderedPods.length} matching Pods`,
-                }),
-              }
-            : undefined
-        }
+        rowSelection={podRowSelection}
       />
       <Modal
         destroyOnHidden

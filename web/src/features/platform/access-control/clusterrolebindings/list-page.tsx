@@ -1,5 +1,6 @@
+import { ResourceNameLink } from '@/features/platform/shared/resource-table-cells'
 import { useI18n } from '@/i18n'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -30,7 +31,7 @@ export function PlatformAccessControlClusterRoleBindingsPage() {
       width: 310,
       sorter: (a, b) => a.name.localeCompare(b.name),
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(path(record))} />
+        <ResourceNameLink name={value} to={path(record)} onNavigate={navigate} />
       ),
     },
     {
@@ -44,13 +45,10 @@ export function PlatformAccessControlClusterRoleBindingsPage() {
           return <TableCellText value={value} />
         }
         return (
-          <TableCellLink
-            label={value}
-            onClick={() =>
-              navigate(
-                `/platform-access-control/clusterroles/${encodeURIComponent(ref.name)}?${new URLSearchParams({ clusterId: clusterId || '' })}`,
-              )
-            }
+          <ResourceNameLink
+            name={value}
+            to={`/platform-access-control/clusterroles/${encodeURIComponent(ref.name)}?${new URLSearchParams({ clusterId: clusterId || '' })}`}
+            onNavigate={navigate}
           />
         )
       },

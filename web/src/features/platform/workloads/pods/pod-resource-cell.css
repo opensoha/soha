@@ -33,12 +33,20 @@
 }
 
 .soha-pod-resource-progress-wrap {
+  background: var(--soha-fill-weak);
   position: relative;
   width: 100%;
   height: 20px;
   margin-block: 2px;
   overflow: hidden;
   border-radius: calc(var(--soha-radius-control) / 2);
+}
+
+.soha-pod-resource-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--soha-pod-resource-fill) 28%, transparent);
 }
 
 .soha-pod-resource-value {

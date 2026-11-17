@@ -3,7 +3,7 @@ import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { Card, Typography } from 'antd'
-import { type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import {
   policySelectorTerms,
   type PolicyConfiguration,
@@ -30,7 +30,7 @@ export function PolicySelector({ selector, all }: { selector: PolicyObject; all:
     </div>
   )
 }
-export function PolicyTypes({ types }: { types?: readonly string[] }) {
+export const PolicyTypes = memo(function PolicyTypes({ types }: { types?: readonly string[] }) {
   return (
     <div className="soha-policy-types">
       {types?.length ? (
@@ -40,7 +40,7 @@ export function PolicyTypes({ types }: { types?: readonly string[] }) {
       )}
     </div>
   )
-}
+})
 
 export function PolicyRules({
   detail,

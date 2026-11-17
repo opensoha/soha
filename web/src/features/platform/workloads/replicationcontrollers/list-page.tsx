@@ -1,13 +1,15 @@
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
-import { StatusTag } from '@/components/status-tag'
+import {
+  ResourceNameLink,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { replicaControllerHealth } from '../shared/replica-controller-model'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { buildWorkloadDetailPath } from '@/features/platform/workloads-model'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { renderWorkloadNameLink } from '../shared/list-controls'
 import { ReplicaControllerListPage } from '../shared/replica-controller-list'
 import type { ReplicationController } from './types'
 import '@/features/platform/workloads/styles.css'
@@ -21,18 +23,20 @@ export function WorkloadsReplicationControllersPage() {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
       ellipsis: { showTitle: false },
-      render: (name: string, record) =>
-        renderWorkloadNameLink(name, () =>
-          navigate(
-            buildWorkloadDetailPath(
-              'replicationcontrollers',
-              name,
-              null,
-              record.namespace,
-              clusterId,
-            ),
-          ),
-        ),
+      render: (name: string, record) => (
+        <ResourceNameLink
+          name={name}
+          to={buildWorkloadDetailPath(
+            'replicationcontrollers',
+            name,
+            null,
+            record.namespace,
+            clusterId,
+          )}
+          onNavigate={navigate}
+        />
+      ),
+
       width: 260,
     },
     {
@@ -52,7 +56,7 @@ export function WorkloadsReplicationControllersPage() {
       render: (_: unknown, record) => {
         const health = replicaControllerHealth(record, undefined, true)
         return (
-          <StatusTag
+          <ResourceStatusCell
             value={health}
             label={
               health === 'healthy'

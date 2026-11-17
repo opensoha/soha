@@ -1,7 +1,7 @@
+import { ResourceNamespaceCell } from '@/features/platform/shared/resource-table-cells'
 import { MetadataTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -39,7 +39,7 @@ export function ConfigurationSecretsPage() {
       dataIndex: 'namespace',
       width: 200,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       title: zh ? '类型' : 'Type',

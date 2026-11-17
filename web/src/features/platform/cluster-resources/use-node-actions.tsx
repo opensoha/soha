@@ -1,5 +1,5 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Checkbox, Form, Input, InputNumber, Modal, Space, Spin, Typography } from 'antd'
@@ -18,6 +18,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { NodeStateTags } from '../shared/node-state-tags'
 import {
   kubernetesDeleteConfirmation,
+  getResourceName,
   useKubernetesResourceActions,
   type KubernetesResourceAction,
 } from '../shared/use-kubernetes-resource-actions'
@@ -25,10 +26,11 @@ import { platformResourceTarget, usePlatformMutation } from '../shared/use-platf
 import { parseStringMap, parseTaints, stringifyMap, stringifyTaints } from '../node-resource-utils'
 import { nodeMutations } from './mutations'
 import { nodeQueries } from './queries'
+import { toClusterScope } from './scope'
 import type { ClusterNode, ClusterScope } from './types'
 
 export function useNodeActions({
-  scope,
+  scope: inputScope,
   nodes,
   onDeleted,
 }: {
@@ -39,7 +41,8 @@ export function useNodeActions({
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const clusterId = scope.clusterId
+  const clusterId = inputScope.clusterId
+  const scope = useMemo(() => toClusterScope(clusterId), [clusterId])
   const [editingTarget, setEditingTarget] = useState<{
     clusterId: string | null
     name: string
@@ -50,10 +53,14 @@ export function useNodeActions({
   } | null>(null)
   const editingNodeName = editingTarget?.clusterId === clusterId ? editingTarget.name : null
   const drainingNodeName = drainingTarget?.clusterId === clusterId ? drainingTarget.name : null
-  const setEditingNodeName = (name: string | null) =>
-    setEditingTarget(name ? { clusterId, name } : null)
-  const setDrainingNodeName = (name: string | null) =>
-    setDrainingTarget(name ? { clusterId, name } : null)
+  const setEditingNodeName = useCallback(
+    (name: string | null) => setEditingTarget(name ? { clusterId, name } : null),
+    [clusterId],
+  )
+  const setDrainingNodeName = useCallback(
+    (name: string | null) => setDrainingTarget(name ? { clusterId, name } : null),
+    [clusterId],
+  )
   const currentCluster = useRef(clusterId)
   currentCluster.current = clusterId
   const [drainForm] = Form.useForm()
@@ -96,143 +103,197 @@ export function useNodeActions({
     }
   }, [nodeDetail])
 
-  const detailPath = (name: string) =>
-    `/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`
-  const copy =
-    localeCode === 'zh_CN'
-      ? {
-          unschedulable: '禁止调度',
-          restoreScheduling: '恢复调度',
-          drain: '排空节点',
-          edit: '编辑节点',
-          deleted: '节点对象已删除',
-          updated: '节点配置已更新',
-          drained: '节点已禁止调度，可迁移 Pod 已完成驱逐',
-          drainWarning:
-            '节点会先进入禁止调度状态，再驱逐可迁移的 Pod。DaemonSet 和静态 Pod 不会被驱逐。失败或超时后请核对最新调度状态和剩余 Pod，再决定是否恢复调度。',
-          deleteDescription: '这会删除 Kubernetes 中的 Node 对象，不会自动回收底层机器。',
-        }
-      : {
-          unschedulable: 'Disable Scheduling',
-          restoreScheduling: 'Enable Scheduling',
-          drain: 'Drain Node',
-          edit: 'Edit Node',
-          deleted: 'Node object deleted',
-          updated: 'Node configuration updated',
-          drained: 'Node cordoned and evictable pods drained',
-          drainWarning:
-            'The node will be cordoned before evictable pods are drained. DaemonSet and static pods are not evicted. After a failure or timeout, inspect the current schedulability and remaining pods before uncordoning.',
-          deleteDescription:
-            'This deletes the Kubernetes Node object without reclaiming the underlying machine.',
-        }
+  const detailPath = useCallback(
+    (name: string) =>
+      `/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`,
+    [clusterId],
+  )
+  const copy = useMemo(
+    () =>
+      localeCode === 'zh_CN'
+        ? {
+            unschedulable: '禁止调度',
+            restoreScheduling: '恢复调度',
+            drain: '排空节点',
+            edit: '编辑节点',
+            deleted: '节点对象已删除',
+            updated: '节点配置已更新',
+            drained: '节点已禁止调度，可迁移 Pod 已完成驱逐',
+            drainWarning:
+              '节点会先进入禁止调度状态，再驱逐可迁移的 Pod。DaemonSet 和静态 Pod 不会被驱逐。失败或超时后请核对最新调度状态和剩余 Pod，再决定是否恢复调度。',
+            deleteDescription: '这会删除 Kubernetes 中的 Node 对象，不会自动回收底层机器。',
+          }
+        : {
+            unschedulable: 'Disable Scheduling',
+            restoreScheduling: 'Enable Scheduling',
+            drain: 'Drain Node',
+            edit: 'Edit Node',
+            deleted: 'Node object deleted',
+            updated: 'Node configuration updated',
+            drained: 'Node cordoned and evictable pods drained',
+            drainWarning:
+              'The node will be cordoned before evictable pods are drained. DaemonSet and static pods are not evicted. After a failure or timeout, inspect the current schedulability and remaining pods before uncordoning.',
+            deleteDescription:
+              'This deletes the Kubernetes Node object without reclaiming the underlying machine.',
+          },
+    [localeCode],
+  )
 
   useEffect(() => {
     setEditingTarget(null)
     setDrainingTarget(null)
   }, [clusterId])
-  const entries = (record: ClusterNode): KubernetesResourceAction[] => {
-    const name = record.name
-    const schedulingLabel = record.unschedulable ? copy.restoreScheduling : copy.unschedulable
-    return [
-      {
-        key: 'details',
-        label: t('common.details', '详情'),
-        icon: <EyeOutlined />,
-        run: () => navigate(detailPath(name)),
-      },
-      ...(hasAllowedAction(record.allowedActions, 'update')
-        ? [
-            {
-              key: 'edit',
-              label: copy.edit,
-              icon: <EditOutlined />,
-              disabled: platformWriteBlocked,
-              run: () => setEditingNodeName(name),
-            },
-            {
-              key: record.unschedulable ? 'uncordon' : 'cordon',
-              label: schedulingLabel,
-              icon: record.unschedulable ? <PlayCircleOutlined /> : <StopOutlined />,
-              disabled: platformWriteBlocked,
-              loading:
-                schedulabilityMutation.isPending &&
-                schedulabilityMutation.variables?.scope.clusterId === clusterId &&
-                schedulabilityMutation.variables?.name === name,
-              confirm: {
-                title:
-                  localeCode === 'zh_CN'
-                    ? `确认${schedulingLabel}节点 ${name}？`
-                    : `Confirm ${schedulingLabel.toLowerCase()} for node ${name}?`,
-                description: record.unschedulable
-                  ? localeCode === 'zh_CN'
-                    ? '恢复后，新的 Pod 可以再次调度到该节点。'
-                    : 'New pods can be scheduled to this node again.'
-                  : localeCode === 'zh_CN'
-                    ? '现有 Pod 不受影响，但新的 Pod 将不再调度到该节点。'
-                    : 'Existing pods are unaffected, but new pods will not be scheduled here.',
+  const {
+    feedback: deleteNodeMutationFeedback,
+    isPending: deleteNodeMutationIsPending,
+    mutateAsync: deleteNodeMutationMutateAsync,
+    reset: deleteNodeMutationReset,
+    variables: deleteNodeMutationVariables,
+  } = deleteNodeMutation
+  const {
+    isPending: drainNodeMutationIsPending,
+    reset: drainNodeMutationReset,
+    variables: drainNodeMutationVariables,
+  } = drainNodeMutation
+  const {
+    feedback: schedulabilityMutationFeedback,
+    isPending: schedulabilityMutationIsPending,
+    mutateAsync: schedulabilityMutationMutateAsync,
+    reset: schedulabilityMutationReset,
+    variables: schedulabilityMutationVariables,
+  } = schedulabilityMutation
+  const entries = useCallback(
+    (record: ClusterNode): KubernetesResourceAction[] => {
+      const name = record.name
+      const schedulingLabel = record.unschedulable ? copy.restoreScheduling : copy.unschedulable
+      return [
+        {
+          key: 'details',
+          label: t('common.details', '详情'),
+          icon: <EyeOutlined />,
+          run: () => navigate(detailPath(name)),
+        },
+        ...(hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: copy.edit,
+                icon: <EditOutlined />,
+                disabled: platformWriteBlocked,
+                run: () => setEditingNodeName(name),
               },
-              prepare: () => schedulabilityMutation.reset(),
-              feedback: schedulabilityMutation.feedback,
-              run: () =>
-                schedulabilityMutation.mutateAsync({
-                  scope,
-                  name,
-                  unschedulable: !record.unschedulable,
-                }),
-            },
-          ]
-        : []),
-      ...(hasAllowedAction(record.allowedActions, 'drain')
-        ? [
-            {
-              key: 'drain',
-              label: copy.drain,
-              icon: <ClearOutlined />,
-              danger: true,
-              disabled: platformWriteBlocked,
-              loading:
-                drainNodeMutation.isPending &&
-                drainNodeMutation.variables?.scope.clusterId === clusterId &&
-                drainNodeMutation.variables?.name === name,
-              run: () => {
-                drainNodeMutation.reset()
-                drainForm.resetFields()
-                setDrainingNodeName(name)
+              {
+                key: record.unschedulable ? 'uncordon' : 'cordon',
+                label: schedulingLabel,
+                icon: record.unschedulable ? <PlayCircleOutlined /> : <StopOutlined />,
+                disabled: platformWriteBlocked,
+                loading:
+                  schedulabilityMutationIsPending &&
+                  schedulabilityMutationVariables?.scope.clusterId === clusterId &&
+                  schedulabilityMutationVariables?.name === name,
+                confirm: {
+                  title:
+                    localeCode === 'zh_CN'
+                      ? `确认${schedulingLabel}节点 ${name}？`
+                      : `Confirm ${schedulingLabel.toLowerCase()} for node ${name}?`,
+                  description: record.unschedulable
+                    ? localeCode === 'zh_CN'
+                      ? '恢复后，新的 Pod 可以再次调度到该节点。'
+                      : 'New pods can be scheduled to this node again.'
+                    : localeCode === 'zh_CN'
+                      ? '现有 Pod 不受影响，但新的 Pod 将不再调度到该节点。'
+                      : 'Existing pods are unaffected, but new pods will not be scheduled here.',
+                },
+                prepare: () => schedulabilityMutationReset(),
+                feedback: schedulabilityMutationFeedback,
+                run: () =>
+                  schedulabilityMutationMutateAsync({
+                    scope,
+                    name,
+                    unschedulable: !record.unschedulable,
+                  }),
               },
-            },
-          ]
-        : []),
-      ...(hasAllowedAction(record.allowedActions, 'delete')
-        ? [
-            {
-              key: 'delete',
-              label: t('common.delete', '删除'),
-              icon: <DeleteOutlined />,
-              danger: true,
-              disabled: platformWriteBlocked,
-              loading:
-                deleteNodeMutation.isPending &&
-                deleteNodeMutation.variables?.scope.clusterId === clusterId &&
-                deleteNodeMutation.variables?.name === name,
-              confirm: kubernetesDeleteConfirmation(record, localeCode, copy.deleteDescription),
-              prepare: () => deleteNodeMutation.reset(),
-              feedback: deleteNodeMutation.feedback,
-              run: async () => {
-                await deleteNodeMutation.mutateAsync({ scope, name })
-                if (currentCluster.current === clusterId) onDeleted?.(name)
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'drain')
+          ? [
+              {
+                key: 'drain',
+                label: copy.drain,
+                icon: <ClearOutlined />,
+                danger: true,
+                disabled: platformWriteBlocked,
+                loading:
+                  drainNodeMutationIsPending &&
+                  drainNodeMutationVariables?.scope.clusterId === clusterId &&
+                  drainNodeMutationVariables?.name === name,
+                run: () => {
+                  drainNodeMutationReset()
+                  drainForm.resetFields()
+                  setDrainingNodeName(name)
+                },
               },
-            },
-          ]
-        : []),
-    ]
-  }
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: t('common.delete', '删除'),
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: platformWriteBlocked,
+                loading:
+                  deleteNodeMutationIsPending &&
+                  deleteNodeMutationVariables?.scope.clusterId === clusterId &&
+                  deleteNodeMutationVariables?.name === name,
+                confirm: kubernetesDeleteConfirmation(record, localeCode, copy.deleteDescription),
+                prepare: () => deleteNodeMutationReset(),
+                feedback: deleteNodeMutationFeedback,
+                run: async () => {
+                  await deleteNodeMutationMutateAsync({ scope, name })
+                  if (currentCluster.current === clusterId) onDeleted?.(name)
+                },
+              },
+            ]
+          : []),
+      ]
+    },
+    [
+      deleteNodeMutationFeedback,
+      deleteNodeMutationIsPending,
+      deleteNodeMutationMutateAsync,
+      deleteNodeMutationReset,
+      deleteNodeMutationVariables,
+      drainNodeMutationIsPending,
+      drainNodeMutationReset,
+      drainNodeMutationVariables,
+      schedulabilityMutationFeedback,
+      schedulabilityMutationIsPending,
+      schedulabilityMutationMutateAsync,
+      schedulabilityMutationReset,
+      schedulabilityMutationVariables,
+      clusterId,
+      scope,
+      t,
+      localeCode,
+      copy,
+      navigate,
+      detailPath,
+      platformWriteBlocked,
+      setEditingNodeName,
+      setDrainingNodeName,
+      drainForm,
+      onDeleted,
+    ],
+  )
   const resourceActions = useKubernetesResourceActions<ClusterNode>({
     resourceKey: 'nodes',
     resourceLabel: localeCode === 'zh_CN' ? '节点' : 'Node',
     records: nodes,
     scopeKey: clusterId ?? '',
-    getName: (record) => record.name,
-    getKey: (record) => record.name,
+    getName: getResourceName,
+    getKey: getResourceName,
     actions: entries,
   })
   const feedback = (
@@ -266,14 +327,18 @@ export function useNodeActions({
           {action.label}
         </Button>
       ))
+  const isDraining = useCallback(
+    (name: string) =>
+      drainNodeMutationIsPending &&
+      drainNodeMutationVariables?.scope.clusterId === clusterId &&
+      drainNodeMutationVariables?.name === name,
+    [clusterId, drainNodeMutationIsPending, drainNodeMutationVariables],
+  )
   return {
     ...resourceActions,
     editingNodeName,
     drainingNodeName,
-    isDraining: (name: string) =>
-      drainNodeMutation.isPending &&
-      drainNodeMutation.variables?.scope.clusterId === clusterId &&
-      drainNodeMutation.variables?.name === name,
+    isDraining,
     feedback,
     buttons,
     dialogs: (

@@ -1,12 +1,15 @@
+import {
+  ResourceNameLink,
+  ResourceNamespaceCell,
+  ResourceStatusCell,
+} from '@/features/platform/shared/resource-table-cells'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { compareRequestedStorage } from './pvc-sorters'
-import { StatusTag } from '@/components/status-tag'
-import { TableCellLink, TableCellText } from '@/components/table-cell-content'
+import { TableCellText } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { StorageListPage } from '../shared/list-page'
@@ -51,7 +54,7 @@ export function StoragePvcPage() {
       ellipsis: { showTitle: false },
       width: 260,
       render: (value: string, record) => (
-        <TableCellLink label={value} onClick={() => navigate(detailPath(record))} />
+        <ResourceNameLink name={value} to={detailPath(record)} onNavigate={navigate} />
       ),
     },
     {
@@ -59,14 +62,14 @@ export function StoragePvcPage() {
       dataIndex: 'namespace',
       width: 180,
       sorter: (a, b) => a.namespace.localeCompare(b.namespace),
-      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+      render: (value: string) => <ResourceNamespaceCell namespace={value} />,
     },
     {
       title: localeCode === 'zh_CN' ? '状态' : 'Status',
       dataIndex: 'status',
       sorter: (a, b) => a.status.localeCompare(b.status),
       width: 110,
-      render: (value: string) => <StatusTag value={value} />,
+      render: (value: string) => <ResourceStatusCell value={value} />,
     },
     {
       title: localeCode === 'zh_CN' ? '申请容量' : 'Requested',
@@ -83,9 +86,10 @@ export function StoragePvcPage() {
       sorter: (a, b) => (a.volumeName ?? '').localeCompare(b.volumeName ?? ''),
       render: (value?: string) =>
         value && canViewPV ? (
-          <TableCellLink
-            label={value}
-            onClick={() => navigate(relatedPath('persistentvolumes', value))}
+          <ResourceNameLink
+            name={value}
+            to={relatedPath('persistentvolumes', value)}
+            onNavigate={navigate}
           />
         ) : (
           <TableCellText value={value} />
@@ -99,9 +103,10 @@ export function StoragePvcPage() {
       width: 180,
       render: (value?: string) =>
         value && canViewStorageClass ? (
-          <TableCellLink
-            label={value}
-            onClick={() => navigate(relatedPath('storageclasses', value))}
+          <ResourceNameLink
+            name={value}
+            to={relatedPath('storageclasses', value)}
+            onNavigate={navigate}
           />
         ) : (
           <TableCellText value={value} />
