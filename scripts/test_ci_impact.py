@@ -92,6 +92,45 @@ class ImpactTests(unittest.TestCase):
         self.assert_selection(b"M\0web/src/example.test.ts\0", {"core", "web"})
         self.assert_selection(b"M\0internal/example_test.go\0", {"core", "deletion"})
 
+    def test_generated_cli_document_always_selects_existing_cli_gate(self):
+        for status in ("A", "M", "D", "T"):
+            with self.subTest(status=status):
+                self.assert_selection(f"{status}\0cli/docs/commands.md\0".encode(), {"cli"})
+        for status in ("R100", "C100"):
+            for old, new in (("cli/docs/commands.md", "cli/docs/old.md"),
+                             ("docs/old.md", "cli/docs/commands.md")):
+                with self.subTest(status=status, old=old, new=new):
+                    self.assert_selection(f"{status}\0{old}\0{new}\0".encode(), {"cli"})
+        self.assert_selection(b"M\0cli/docs/usage.md\0M\0cli/docs/commands.md\0", {"cli"})
+
+    def test_reviewed_guidance_only_uses_route_local_validation(self):
+        for path in impact.GUIDANCE_PATHS:
+            for status in ("A", "M", "D"):
+                with self.subTest(path=path, status=status):
+                    self.assert_selection(f"{status}\0{path}\0".encode(), set())
+        guide = b"M\0.agents/skills/soha-frontend/SKILL.md\0"
+        self.assert_selection(guide + b"M\0web/src/example.tsx\0", {"core", "web"})
+        self.assert_selection(guide + b"M\0cli/docs/commands.md\0", {"cli"})
+        self.assert_selection(guide + b"M\0skills/skills/example/SKILL.md\0", {"skills", "cli", "agent"})
+
+    def test_unknown_development_paths_and_executables_keep_full_validation(self):
+        for path in (".agents/skills/new/SKILL.md", ".agents/skills/soha-cli/references/new.md",
+                     ".agents/skills/soha-cli/check.py", ".agents/skills/soha-security/scripts/ocr.py",
+                     ".agents/skills/soha-cli/.hidden", "web/.agents/skills/new/SKILL.md"):
+            with self.subTest(path=path):
+                self.assertTrue(all(impact.select(f"M\0{path}\0".encode()).values()))
+
+    def test_guidance_renames_union_both_classifications(self):
+        for status in ("R100", "C100"):
+            for old, new in ((".agents/skills/soha-cli/SKILL.md", "cli/internal/rules.md"),
+                             ("cli/internal/rules.md", ".agents/skills/soha-cli/SKILL.md")):
+                with self.subTest(status=status, old=old, new=new):
+                    self.assert_selection(f"{status}\0{old}\0{new}\0".encode(), {"cli"})
+            for old, new in (("AGENTS.md", "unknown.md"), ("unknown.md", "AGENTS.md"),
+                             (".agents/skills/soha-cli/SKILL.md", ".agents/skills/new/SKILL.md")):
+                with self.subTest(status=status, old=old, new=new):
+                    self.assertTrue(all(impact.select(f"{status}\0{old}\0{new}\0".encode()).values()))
+
     def test_new_component_source_tests_fixtures_and_generated_paths(self):
         examples = {
             "cli": ["cli/cmd/soha/main.go", "cli/internal/fixture_test.go", "cli/testdata/prompt.md", "cli/npm/cli/bin/soha.js"],
@@ -245,6 +284,11 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertEqual([name.strip() for name in names.split(",")], ["route", *impact.JOBS])
         self.assertIn("CI_NEEDS: ${{ toJSON(needs) }}", summary)
         self.assertIn("python3 scripts/ci-impact.py summary", summary)
+        route = blocks["route"]
+        self.assertIn("python3 -m unittest discover -s scripts -p 'test_check_dev_guidance.py'", route)
+        self.assertIn("run: python3 scripts/check_dev_guidance.py", route)
+        self.assertNotIn("continue-on-error", route)
+        self.assertLess(route.index("run: python3 scripts/check_dev_guidance.py"), route.index("id: impact"))
         for command in ("go test ./...", "go test -race ./...", "go vet ./...", "make complexity-check",
                         "govulncheck@v1.8.0", "run-proxy-native-tests.py --sdk-mode source", "Docker build"):
             self.assertIn(command, blocks["core"])

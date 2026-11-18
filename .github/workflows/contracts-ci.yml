@@ -218,7 +218,7 @@ jobs:
           printf '### Consumer validation (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
           printf 'Contracts: `%s`\n' "$(git -C source rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           printf 'Consumer controls: `%s`\n' "$(git -C "$CONTRACTS_TOOL_ROOT" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          printf '%s: `%s`\n' "$CONSUMER" "$(git -C "consumers/$CONSUMER" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Pinned declared consumer %s: `%s`\n' "$CONSUMER" "$(git -C "consumers/$CONSUMER" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.4"
@@ -266,10 +266,15 @@ jobs:
       - name: Report both dependency modes
         if: always()
         env:
+          CONSUMER: ${{ matrix.consumer }}
           DECLARED_RESULT: ${{ steps.declared.outcome }}
           CANDIDATE_RESULT: ${{ steps.candidate.outcome }}
         run: |
-          printf 'Declared dependency: `%s`\nCandidate source: `%s`\n' "$DECLARED_RESULT" "$CANDIDATE_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          case "$CONSUMER" in
+            soha|soha-cli|soha-agent) candidate_mode=internal-source ;;
+            *) candidate_mode=candidate-source ;;
+          esac
+          printf 'Declared dependency (pinned): `%s`\nCandidate (%s): `%s`\n' "$DECLARED_RESULT" "$candidate_mode" "$CANDIDATE_RESULT" >> "$GITHUB_STEP_SUMMARY"
       - name: Save dependency mode reports
         if: always()
         uses: actions/upload-artifact@v6

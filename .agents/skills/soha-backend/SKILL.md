@@ -96,25 +96,9 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - When adding a migration after the consolidated baseline, add an incremental file under `migrations/postgres/` and keep bootstrap tests aligned; do not recreate removed root-level legacy migration mirrors.
 - Keep generated frontend artifacts out of hand-written source changes unless the task explicitly asks to publish built output.
 
-## CI Gate
+## Verification entry points
 
-Use the toolchain and tool versions declared by [Core go.mod](../../../go.mod), [active Core CI](../../../.github/workflows/ci.yml), and [Core release workflow](../../../.github/workflows/release.yml). From the `soha/` repository root, internal source checks use the committed four-module workspace; distributed-dependency and publication checks separately use `GOWORK=off` without local replacements. Local execution uses the workspace verification wrapper and its temporary output paths:
-
-```bash
-export GOWORK="$PWD/go.work"
-python3 scripts/source-workspace.py tidy
-go mod verify
-go test ./...
-go test -race ./...
-go vet ./...
-make complexity-check
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
-docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test .
-git diff --check
-```
-
-CI also runs `golangci-lint v2.14.0` with only-new-issues semantics on pull requests and builds the same-checkout `web/` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing usable Docker engine must be covered by a successful GitHub Actions Docker job; an explicitly isolated remote engine build must retain source and cleanup evidence.
+Use the committed Root `go.work` for focused package tests and the [module boundary check](../../../scripts/check-module-boundaries.go) for ownership changes. The [Core workflow](../../../.github/workflows/ci.yml) runs the full suite, vulnerability scan, complexity, lint and real image checks. Public dependency and [release verification](../../../.github/workflows/release.yml) use their declared inputs. Record `git diff --check` locally before committing.
 
 ## Done Criteria
 

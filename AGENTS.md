@@ -31,7 +31,7 @@
 
 ## 验证与交付
 
-- Go 变更先验证受影响包；源码主入口为 `python3 scripts/source-workspace.py check-go` 后使用根 `go.work` 运行 `go test ./...`，SDK、CLI、Agent modules 分别验证，根 `go test ./...` 不覆盖嵌套模块。整洁性使用 `python3 scripts/source-workspace.py tidy`，不把未发布 SDK 当作内部开发的前置。对外声明依赖/发布验证仍使用 `GOWORK=off` 且禁止本地替换。架构、契约、依赖、安全、并发、部署或发布变更执行 [CI](.github/workflows/ci.yml) 适用完整门禁，保留 race、vet、复杂度、漏洞与镜像检查。
+- 本地对受影响的包或用例运行定向回归。Go 源码使用根 `go.work`，模块归属检查用 `python3 scripts/source-workspace.py check-go`；外部声明依赖另用 `GOWORK=off`。完整测试、依赖审计、race、vet、漏洞扫描与镜像矩阵由 [GitHub Actions](.github/workflows/ci.yml) 按变更路径执行。需要复现某项失败时在本地运行对应检查。
 - npm 安装只从根 `npm ci` 开始；四个 workspace 为 `contracts`、`web`、`connectors`、`cli/npm/cli`，组件从根使用 `npm run <script> --workspace <组件>`。Agent DSH 独立 Node 24 runtime 保留自己的锁文件；不加入根 npm workspace。`npm run build:web` 生成并校验 SDK、构建 Web、核对字节后嵌入；不得新增子目录锁文件或用工作区链接冒充 registry 分发。
 - 发布所有者与标签入口以 [.github/release-components.json](.github/release-components.json) 为准；组件工作流只使用本仓精确 tag/SHA，公开依赖验证与同源码验证分开。写入前按发布守卫核对 `.github/legacy-retirement.json` 的封存回执及 `.github/release-components.json` 中的哈希、该精确 SHA 的 main CI 和受限 environment/owner 开关；不要求已退役旧仓的 API 继续可读，也不能将 404 当作交接证明。只有 Core 管理 GitHub latest。已发布版本、附件和镜像版本标签不得覆盖，SDK staged 恢复复用原产物，不能重新打包替换。
 - 主仓源码构建记录共同的 Root SHA 及各组件产物摘要；外部消费者另记其 SHA/产物。固定兼容组合和同提交源码检查分别报告。写入版本号不等于组合已经通过验收。

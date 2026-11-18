@@ -459,7 +459,11 @@ Local runs skip missing sibling checkouts by default. CI and release candidate
 validation should use `--require-all` or a specific `--consumer <name>` so a
 missing checkout is a failure.
 
-Candidate source and declared dependency validation are distinct results. CI runs
+Candidate source and declared dependency validation are distinct results. All six
+pinned sources retain their original declared dependencies. The candidate stage checks
+migrated Root Core/CLI/Agent as `internal-source`, and pinned external Web/App/Skills
+as `candidate-source`. The new Go module namespace requires an explicit import migration;
+same-source success is not a fixed legacy consumer/new SDK compatibility claim. CI runs
 both even when the declared step fails; either failure keeps the existing consumer
 job failed. Manual CI may select an explicit full `contracts_sha`, while consumer
 pins remain unchanged. Local candidate checks can bind `--contracts-sha` and, for
@@ -490,8 +494,8 @@ in the executable matrix. CI and release use `scripts/select-consumer-revision.m
 missing or invalid revisions fail instead of falling back to `main`. Update a pin
 only with an explicit compatibility reason and successful matrix evidence.
 
-Manual CI may select `consumer_mode=latest` for separate integration evidence.
-This does not rewrite the fixed manifest or replace fixed-combination acceptance.
+Current CI exposes only `consumer_mode=pinned`. A separately prepared latest-source
+integration run does not rewrite the fixed manifest or replace fixed-combination acceptance.
 Record the actual contracts and consumer commits, not only the selected mode.
 
 The matrix includes the independent App frontend. Its initial pin

@@ -13,7 +13,9 @@ for (const consumer of consumers) {
     const report = readReport(join(input, `consumer-${consumer}-reports`), `${mode}.json`);
     assert.equal(report.results.length, 1);
     assert.equal(report.results[0].consumer, consumer);
-    assert(mode === "declared" ? report.dependencyMode === "declared" : ["candidate-source", "internal-source"].includes(report.dependencyMode));
+    const expectedMode = mode === "declared" ? "declared"
+      : ["soha", "soha-cli", "soha-agent"].includes(consumer) ? "internal-source" : "candidate-source";
+    assert.equal(report.dependencyMode, expectedMode, `${consumer}/${mode}.json must use ${expectedMode}`);
     results.push({ ...report.results[0], dependencyMode: report.dependencyMode });
   }
 }

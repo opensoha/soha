@@ -80,8 +80,11 @@ npm run check:internal-consumers
 git diff --check
 ```
 
-The external matrix additionally uses the isolated checkouts and both declared/candidate
-modes from active Contracts CI. Go declared mode uses `--declared --archived-declared-sdk`
+The matrix retains declared evidence for all six pinned external consumers. Candidate
+evidence uses `internal-source` for migrated Root Core/CLI/Agent, and `candidate-source`
+for pinned external Web/App/Skills. These are distinct guarantees: new Go module identity
+is not a drop-in SDK replacement for an unchanged legacy consumer. The full five-consumer
+internal-source job is separate. Go declared mode uses `--declared --archived-declared-sdk`
 for the preserved legacy SDK; original module paths, checksums and pins stay unchanged.
 Never substitute same-source success for that matrix.
 

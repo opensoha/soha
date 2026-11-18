@@ -27,7 +27,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Impact selector and summary counterexamples
-        run: python3 -m unittest discover -s scripts -p 'test_ci_impact.py'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_ci_impact.py'
+          python3 -m unittest discover -s scripts -p 'test_check_dev_guidance.py'
+      - name: Development guidance local links and skill metadata
+        run: python3 scripts/check_dev_guidance.py
       - name: Route actual source changes
         id: impact
         run: python3 scripts/ci-impact.py route
