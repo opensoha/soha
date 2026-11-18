@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import resolve_contracts as resolver
 
+check_output = subprocess.check_output
+
 
 class ResolveContractsTest(unittest.TestCase):
     def setUp(self):
@@ -103,18 +105,26 @@ class SourceContractsTest(unittest.TestCase):
         self.schema.parent.mkdir()
         self.schema.write_text('{"type":"object"}')
 
-    def query(self, args):
+    def query(self, args, reported_root, **kwargs):
+        if args[0] == "go":
+            self.assertIn(args[:4], (["go", "mod", "edit", "-json"], ["go", "work", "edit", "-json"]))
+            self.assertEqual(len(args), 5)
+            self.assertEqual(Path(args[-1]).name, "go.mod" if args[1] == "mod" else "go.work")
+            self.assertTrue(kwargs["cwd"].is_relative_to(self.root))
+            for key, value in {"GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off"}.items():
+                self.assertEqual(kwargs["env"][key], value)
+            return check_output(args, **kwargs)
         self.assertEqual(args[:3], ["git", "-C", str(self.root)])
         if args[3:] == ["rev-parse", "--show-toplevel"]:
-            return str(self.root).encode() + b"\n"
+            return str(reported_root or self.root).encode() + b"\n"
         if args[3:] == ["rev-parse", "HEAD"]:
             return b"a" * 40 + b"\n"
         self.assertEqual(args[3:], ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "contracts"])
         return b"contracts/go.mod\0contracts/go.sum\0contracts/agent/dsh-runtime.schema.json\0"
 
-    def resolve(self):
-        with patch.object(subprocess, "check_output", side_effect=self.query), \
-                patch.object(subprocess, "run", side_effect=AssertionError("source mode must not download SDK")):
+    def resolve(self, reported_root=None):
+        with patch.object(subprocess, "check_output",
+                          side_effect=lambda args, **kwargs: self.query(args, reported_root, **kwargs)):
             return resolver.resolve_source_contracts(self.root)
 
     def test_source_uses_exact_four_modules_and_actual_root_provenance(self):
@@ -156,9 +166,8 @@ class SourceContractsTest(unittest.TestCase):
             self.resolve()
         self.schema.unlink()
         self.schema.write_text('{"type":"object"}')
-        with patch.object(subprocess, "check_output", return_value=str(self.root / "agent").encode()):
-            with self.assertRaises(ValueError):
-                resolver.resolve_source_contracts(self.root)
+        with self.assertRaisesRegex(ValueError, "actual Root repository"):
+            self.resolve(reported_root=self.root / "agent")
 
     def test_source_cannot_claim_an_external_requested_ref(self):
         output = self.root / "output"
@@ -169,10 +178,53 @@ class SourceContractsTest(unittest.TestCase):
 
     def test_exact_two_version_aliases_support_single_and_block_forms_and_bind_workspace(self):
         original = self.resolve()
-        (self.root / "go.work").write_text(self.workspace + "".join("replace " + alias for alias in self.aliases))
+        (self.root / "go.work").write_text(self.workspace + "".join(
+            "replace " + alias.replace("./contracts", '"./contracts"') for alias in self.aliases))
         updated = self.resolve()
         self.assertNotEqual(original["goWorkSHA256"], updated["goWorkSHA256"])
         self.assertEqual(original["sourceSHA256"], updated["sourceSHA256"])
+
+    def test_go_legal_require_variants_keep_the_same_sdk_aliases(self):
+        manifest = self.root / "agent/go.mod"
+        original = manifest.read_text()
+        dependency = f"{resolver.MODULE} {self.versions['agent']}"
+        for declaration in (f"require\t(\n {dependency} // indirect\n)",
+                            f"require  (\n {dependency}\n)",
+                            f'require "{resolver.MODULE}" {self.versions["agent"]}',
+                            f'require {resolver.MODULE} "{self.versions["agent"]}"'):
+            with self.subTest(declaration=declaration):
+                manifest.write_text(original.replace(f"require {dependency}", declaration))
+                original_bytes = manifest.read_bytes()
+                self.assertEqual(self.resolve()["mode"], "source")
+                self.assertEqual(manifest.read_bytes(), original_bytes)
+
+    def test_unknown_manifest_directives_fail_source_resolution(self):
+        for relative in ("agent/go.mod", "go.work"):
+            manifest = self.root / relative
+            original = manifest.read_text()
+            with self.subTest(relative=relative):
+                manifest.write_text(original + "typoDirective unexpected\n")
+                with self.assertRaisesRegex(ValueError, f"cannot parse source manifest: {relative}"):
+                    self.resolve()
+            manifest.write_text(original)
+
+    def test_workspace_use_must_keep_the_reviewed_spelling(self):
+        work = self.root / "go.work"
+        work.write_text(work.read_text().replace("./agent", "agent"))
+        with self.assertRaisesRegex(ValueError, "exact Root module directory"):
+            self.resolve()
+
+    def test_sdk_aliases_must_match_before_go_normalizes_the_versions(self):
+        manifest = self.root / "agent/go.mod"
+        original = manifest.read_text()
+        work = self.root / "go.work"
+        work.write_text(work.read_text().replace(self.versions["agent"], "v0.2.0"))
+        for pin, error in (("v0.2", "declare exactly one SDK version"),
+                           ("v0.2.0+custom", "workspace aliases must match")):
+            with self.subTest(pin=pin):
+                manifest.write_text(original.replace(self.versions["agent"], pin))
+                with self.assertRaisesRegex(ValueError, error):
+                    self.resolve()
 
     def test_missing_extra_duplicate_unversioned_foreign_and_outside_aliases_are_rejected(self):
         variants = [self.aliases[:1], self.aliases + [resolver.MODULE + " v0.1.29 => ./contracts\n"],
@@ -200,11 +252,12 @@ class SourceContractsTest(unittest.TestCase):
         for name in ("go.mod", "cli/go.mod", "agent/go.mod", "contracts/go.mod"):
             manifest = self.root / name
             original = manifest.read_text()
-            with self.subTest(manifest=name):
-                manifest.write_text(original + "replace github.com/other/sdk v1.0.0 => ../outside\n")
-                with self.assertRaises(ValueError):
-                    self.resolve()
-                manifest.write_text(original)
+            for replacement in ("replace github.com/other/sdk v1.0.0 => ../outside\n", "replace (\n)\n"):
+                with self.subTest(manifest=name, replacement=replacement):
+                    manifest.write_text(original + replacement)
+                    with self.assertRaisesRegex(ValueError, "without go.mod replacements"):
+                        self.resolve()
+            manifest.write_text(original)
 
     def test_sdk_directory_or_manifest_symlink_is_rejected(self):
         sdk = self.root / "contracts"

@@ -13,6 +13,7 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location("source_workspace", Path(__file__).with_name("source-workspace.py"))
 workspace = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(workspace)
+run_go = workspace.run
 
 
 class WebStageTest(unittest.TestCase):
@@ -118,8 +119,10 @@ class GoSourceTest(unittest.TestCase):
     def fake_go(self, args, **kwargs):
         if args == ["go", "env", "GOWORK"]:
             return str(self.root / "go.work")
-        if args == ["go", "work", "edit", "-json"]:
+        if args[:4] == ["go", "work", "edit", "-json"]:
             return json.dumps({"Use": [{"DiskPath": str(directory)} for _, directory in self.modules], "Replace": self.aliases})
+        if args[:4] == ["go", "mod", "edit", "-json"]:
+            return run_go(args, **kwargs)
         if args[:2] == ["go", "run"]:
             return ""
         name = args[-1]
@@ -162,10 +165,11 @@ class GoSourceTest(unittest.TestCase):
         for _, directory in self.modules:
             manifest = directory / "go.mod"
             before = manifest.read_text()
-            with self.subTest(module=directory):
-                manifest.write_text(before + "replace github.com/google/uuid v1.6.0 => /outside\n")
-                with self.assertRaisesRegex(ValueError, "must not contain replacements"):
-                    workspace.check_go()
+            for replacement in ("replace github.com/google/uuid v1.6.0 => /outside\n", "replace (\n)\n"):
+                with self.subTest(module=directory, replacement=replacement):
+                    manifest.write_text(before + replacement)
+                    with self.assertRaisesRegex(ValueError, "must not contain replacements"):
+                        workspace.check_go()
             manifest.write_text(before)
 
     def test_wrong_module_resolution_fails(self):
@@ -188,17 +192,63 @@ class GoSourceTest(unittest.TestCase):
             cases.append(aliases)
         for aliases in cases:
             with self.subTest(aliases=aliases), self.assertRaisesRegex(ValueError, "exactly"):
-                workspace.validate_sdk_aliases({"Replace": aliases}, self.root)
+                workspace.validate_sdk_aliases({"Replace": aliases}, set(self.versions))
 
     def test_sdk_alias_versions_come_only_from_require_declarations(self):
         manifest = self.root / "cli/go.mod"
         manifest.write_text(f"module github.com/opensoha/soha/cli\nrequire (\n {workspace.SDK_MODULE} {self.versions[1]} // SDK\n)\n"
-                            f"exclude {workspace.SDK_MODULE} v9.0.0\n")
-        self.assertEqual(workspace.validate_sdk_aliases({"Replace": self.aliases}, self.root), set(self.versions))
+                            f"exclude {workspace.SDK_MODULE} v0.9.0\n")
+        with patch.object(workspace, "run", side_effect=self.fake_go):
+            workspace.check_go()
         with manifest.open("a") as stream:
             stream.write(f"require {workspace.SDK_MODULE} {self.versions[1]}\n")
-        with self.assertRaisesRegex(ValueError, "exactly one"):
-            workspace.validate_sdk_aliases({"Replace": self.aliases}, self.root)
+        with patch.object(workspace, "run", side_effect=self.fake_go), self.assertRaisesRegex(ValueError, "exactly one"):
+            workspace.check_go()
+
+    def check_offline(self):
+        with patch.dict(os.environ, {"GOWORK": str(self.root / "go.work"),
+                                     "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off"}):
+            workspace.check_go()
+
+    def test_go_legal_require_variants_keep_the_same_sdk_aliases(self):
+        manifest = self.root / "agent/go.mod"
+        original = manifest.read_text()
+        dependency = f"{workspace.SDK_MODULE} {self.versions[2]}"
+        for declaration in (f"require\t(\n {dependency} // indirect\n)",
+                            f"require  (\n {dependency}\n)",
+                            f'require "{workspace.SDK_MODULE}" {self.versions[2]}',
+                            f'require {workspace.SDK_MODULE} "{self.versions[2]}"'):
+            with self.subTest(declaration=declaration):
+                manifest.write_text(original.replace(f"require {dependency}", declaration))
+                original_bytes = manifest.read_bytes()
+                self.check_offline()
+                self.assertEqual(manifest.read_bytes(), original_bytes)
+
+    def test_go_rejects_unknown_manifest_directives(self):
+        for relative in ("agent/go.mod", "go.work"):
+            manifest = self.root / relative
+            original = manifest.read_text()
+            with self.subTest(relative=relative):
+                manifest.write_text(original + "typoDirective unexpected\n")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.check_offline()
+            manifest.write_text(original)
+
+    def test_sdk_pin_must_match_before_go_normalizes_the_version(self):
+        manifest = self.root / "agent/go.mod"
+        original = manifest.read_text()
+        work = self.root / "go.work"
+        work.write_text(work.read_text().replace(self.versions[2], "v0.2.0"))
+        for pin in ("v0.2", "v0.2.0+custom"):
+            with self.subTest(pin=pin):
+                manifest.write_text(original.replace(self.versions[2], pin))
+                with self.assertRaisesRegex(ValueError, "exact SDK version"):
+                    self.check_offline()
+
+    def test_workspace_use_is_compared_by_directory(self):
+        work = self.root / "go.work"
+        work.write_text(work.read_text().replace("./agent", "agent"))
+        self.check_offline()
 
     def test_unpublished_sdk_graph_with_external_dependency_builds_from_source_workspace(self):
         sdk = self.root / "contracts/unpublished"

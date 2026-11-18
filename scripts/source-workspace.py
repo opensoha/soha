@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,37 +29,24 @@ def go_modules():
     ]
 
 
-def validate_sdk_aliases(config: dict, root: Path) -> set[str]:
-    """Bind exact declared SDK versions to this checkout without changing release pins."""
-    sdk = root / "contracts"
-    if sdk.resolve() != sdk or not sdk.is_dir():
-        raise ValueError("SDK aliases require confined same-checkout contracts")
-    versions = set()
-    for part in (".", "cli", "agent"):
-        directory = root / part
-        manifest = directory / "go.mod"
-        if directory.resolve() != directory or manifest.is_symlink() or not manifest.is_file():
-            raise ValueError("SDK aliases require confined same-checkout manifests")
-        required = []
-        in_require = False
-        for original in manifest.read_text().splitlines():
-            line = original.split("//", 1)[0].strip()
-            if line == "require (":
-                in_require = True
-                continue
+def literal_directive_rows(text, directive):
+    """Read literal policy tokens that Go's validated JSON normalizes or drops."""
+    block = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if block:
             if line == ")":
-                in_require = False
-                continue
-            fields = line.split()
-            if fields[:1] == ["require"]:
-                fields = fields[1:]
-            elif not in_require:
-                continue
-            if fields[:1] == [SDK_MODULE] and len(fields) == 2:
-                required.append(fields[1])
-        if len(required) != 1:
-            raise ValueError("each consumer must require exactly one SDK version")
-        versions.add(required[0])
+                block = False
+            elif line:
+                yield shlex.split(line)
+        elif (fields := line.split(maxsplit=1)) and fields[0] == directive:
+            block = fields[1] == "("
+            if not block:
+                yield shlex.split(fields[1])
+
+
+def validate_sdk_aliases(config: dict, versions: set[str]) -> set[str]:
+    """Bind exact declared SDK versions to this checkout without changing release pins."""
     found = []
     for entry in config.get("Replace") or []:
         if not isinstance(entry, dict):
@@ -79,21 +67,36 @@ def check_go():
     modules = go_modules()
     if not work.is_file() or work.is_symlink():
         raise ValueError("same-checkout go.work is required")
+    versions = set()
+    edit_env = {**os.environ, "GOWORK": "off", "GOTOOLCHAIN": "local",
+                "GOPROXY": "off", "GOSUMDB": "off", "GOFLAGS": ""}
     for name, directory in modules:
         manifest = directory / "go.mod"
         if (directory.resolve() != directory or not manifest.is_file()
                 or manifest.is_symlink()):
             raise ValueError(f"{name} requires a confined same-checkout go.mod")
-        if re.search(r"(?m)^\s*replace\b", manifest.read_text()):
+        config = json.loads(run(["go", "mod", "edit", "-json", str(manifest)], cwd=directory, env=edit_env))
+        # Go omits empty replace blocks from JSON. Source go.mod files forbid the directive itself.
+        spelling = manifest.read_text()
+        if config.get("Replace") or re.search(r"(?m)^\s*replace\b", spelling):
             raise ValueError("source go.mod files must not contain replacements")
+        if directory != SDK:
+            required = [entry["Version"] for entry in config.get("Require") or [] if entry["Path"] == SDK_MODULE]
+            if len(required) != 1:
+                raise ValueError("each consumer must require exactly one SDK version")
+            literal = [row[1] for row in literal_directive_rows(spelling, "require")
+                       if len(row) == 2 and row[0] == SDK_MODULE]
+            if literal != required:
+                raise ValueError("each consumer must spell the exact SDK version")
+            versions.add(required[0])
     active = run(["go", "env", "GOWORK"])
     if not active or active == "off" or Path(active).resolve() != work:
         raise ValueError("internal Go checks require this checkout's go.work")
-    config = json.loads(run(["go", "work", "edit", "-json"]))
+    config = json.loads(run(["go", "work", "edit", "-json", str(work)], cwd=ROOT, env=edit_env))
     uses = {(ROOT / entry["DiskPath"]).resolve() for entry in config["Use"]}
     if len(config["Use"]) != 4 or uses != {directory for _, directory in modules}:
         raise ValueError("go.work must use exactly Core, contracts, CLI and Agent")
-    validate_sdk_aliases(config, ROOT)
+    validate_sdk_aliases(config, versions)
     for name, directory in modules:
         module = json.loads(run(["go", "list", "-m", "-json", name]))
         if (module.get("Path") != name or not module.get("Main") or module.get("Replace")

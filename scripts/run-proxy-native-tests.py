@@ -117,6 +117,30 @@ def source_workspace_config(workspace):
             'Replace': replacements}
 
 
+def declared_sdk_version(text):
+    # Native source preflight runs before the Go test container starts.
+    required = []
+    in_require = False
+    for original in text.splitlines():
+        line = original.split("//", 1)[0].strip()
+        if line == "require (":
+            in_require = True
+            continue
+        if line == ")":
+            in_require = False
+            continue
+        fields = line.split()
+        if fields[:1] == ["require"]:
+            fields = fields[1:]
+        elif not in_require:
+            continue
+        if fields[:1] == [SDK] and len(fields) == 2:
+            required.append(fields[1])
+    if len(required) != 1:
+        raise ValueError("each consumer must require exactly one SDK version")
+    return required[0]
+
+
 def sdk_input(root, mode):
     root = root.resolve(strict=True)
 
@@ -142,16 +166,22 @@ def sdk_input(root, mode):
         workspace = read('go.work')
         config = source_workspace_config(workspace)
         modules = identity['sourceModules'] = {}
+        versions = set()
         for folder, module in SOURCE_MODULES.items():
             content = core if folder == '.' else read(folder + '/go.mod')
+            manifest = root / folder / 'go.mod'
+            if (root / folder).resolve() != root / folder or (module != SDK and manifest.is_symlink()):
+                raise ValueError('Native source SDK aliases require confined manifests')
             if not re.search(r'^module ' + re.escape(module) + r'\s*$', content, re.M):
                 raise ValueError('Incorrect native source module identity: ' + module)
             if re.search(r'^\s*replace\b', content, re.M):
                 raise ValueError('Native source gate forbids module replacements')
+            if module != SDK:
+                versions.add(declared_sdk_version(content))
             modules[module] = {'Dir': '/src' if folder == '.' else '/src/' + folder,
                                'goModSHA256': hashlib.sha256(content.encode()).hexdigest()}
         policy = load('source-workspace')
-        identity['sourceSDKAliasVersions'] = sorted(policy.validate_sdk_aliases(config, root))
+        identity['sourceSDKAliasVersions'] = sorted(policy.validate_sdk_aliases(config, versions))
         identity['sourcePolicySHA256'] = hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest()
         identity['contractsGoModSHA256'] = modules[SDK]['goModSHA256']
         identity['goWorkSHA256'] = hashlib.sha256(workspace.encode()).hexdigest()

@@ -6,33 +6,13 @@ import json
 import os
 from pathlib import Path
 import re
-import shlex
+import runpy
 import stat
 import subprocess
 import sys
+import tempfile
 
 MODULE = "github.com/opensoha/soha/contracts"
-
-
-def directive_rows(text, directive):
-    rows = []
-    block = False
-    for raw in text.splitlines():
-        line = raw.split("//", 1)[0].strip()
-        if block:
-            if line == ")":
-                block = False
-            elif line:
-                rows.append(shlex.split(line))
-        elif re.match(r"^" + directive + r"\b", line):
-            value = line[len(directive):].strip()
-            if value == "(":
-                block = True
-            else:
-                rows.append(shlex.split(value))
-    if block:
-        raise ValueError("unterminated " + directive + " directive")
-    return rows
 
 
 def resolve_source_contracts(root=None):
@@ -45,16 +25,38 @@ def resolve_source_contracts(root=None):
             or workspace_sum.is_symlink() or not workspace_sum.is_file()):
         raise ValueError("same-Root source mode requires the committed four-module go.work")
     workspace_bytes = workspace.read_bytes()
-    workspace_text = workspace_bytes.decode()
+    edit_env = {**os.environ, "GOWORK": "off", "GOTOOLCHAIN": "local",
+                "GOPROXY": "off", "GOSUMDB": "off", "GOFLAGS": ""}
+
+    def edit(kind, path, contents):
+        try:
+            # Parse the same bytes used for literal checks and the workspace digest.
+            with tempfile.TemporaryDirectory(prefix="soha-manifest-") as temporary:
+                snapshot = Path(temporary) / path.name
+                snapshot.write_bytes(contents)
+                return json.loads(subprocess.check_output(
+                    ["go", kind, "edit", "-json", str(snapshot)], cwd=path.parent, env=edit_env,
+                ))
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"cannot parse source manifest: {path.relative_to(root)}") from error
+
+    literal_rows = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/source-workspace.py"))[
+        "literal_directive_rows"
+    ]
+    config = edit("work", workspace, workspace_bytes)
     uses = []
-    for row in directive_rows(workspace_text, "use"):
-        if len(row) != 1 or row[0] not in {".", "./contracts", "./cli", "./agent"}:
+    for entry in config.get("Use") or []:
+        path = entry["DiskPath"]
+        if path not in {".", "./contracts", "./cli", "./agent"}:
             raise ValueError("source workspace use must name an exact Root module directory")
-        directory = (root / row[0]).resolve(strict=True)
+        directory = (root / path).resolve(strict=True)
         uses.append(str(directory.relative_to(root)) if directory != root else ".")
     if len(uses) != 4 or set(uses) != set(expected):
         raise ValueError("source mode must use exactly Root, contracts, cli and agent")
+    if list(literal_rows(workspace_bytes.decode(), "use")) != [[entry["DiskPath"]] for entry in config["Use"]]:
+        raise ValueError("source workspace use must name an exact Root module directory")
     versions = set()
+    literal_versions = set()
     for directory, module in expected.items():
         module_directory = root / directory
         manifest = root / directory / "go.mod"
@@ -62,18 +64,30 @@ def resolve_source_contracts(root=None):
         if (module_directory.is_symlink() or not module_directory.is_dir() or module_directory.resolve(strict=True) != module_directory
                 or manifest.is_symlink() or not manifest.is_file() or sums.is_symlink() or not sums.is_file()):
             raise ValueError("source module identity is missing or changed: " + directory)
-        manifest_text = manifest.read_text()
-        if directive_rows(manifest_text, "module") != [[module]] or re.search(r"(?m)^\s*replace\b", manifest_text):
+        contents = manifest.read_bytes()
+        config_mod = edit("mod", manifest, contents)
+        spelling = contents.decode()
+        if ((config_mod.get("Module") or {}).get("Path") != module or config_mod.get("Replace")
+                or re.search(r"(?m)^\s*replace\b", spelling)):
             raise ValueError("source modules must keep their identities without go.mod replacements")
         if directory != "contracts":
-            requirements = [row for row in directive_rows(manifest_text, "require") if row and row[0] == MODULE]
-            if (len(requirements) != 1 or len(requirements[0]) != 2
-                    or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", requirements[0][1])):
+            requirements = [entry["Version"] for entry in config_mod.get("Require") or [] if entry["Path"] == MODULE]
+            if len(requirements) != 1:
                 raise ValueError("each source consumer must declare exactly one SDK version")
-            versions.add(requirements[0][1])
-    aliases = directive_rows(workspace_text, "replace")
-    required_aliases = {(MODULE, version, "=>", "./contracts") for version in versions}
-    if len(aliases) != len(required_aliases) or {tuple(row) for row in aliases} != required_aliases:
+            literal = [row[1] for row in literal_rows(spelling, "require") if len(row) == 2 and row[0] == MODULE]
+            if len(literal) != 1 or not re.fullmatch(
+                    r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", literal[0]):
+                raise ValueError("each source consumer must declare exactly one SDK version")
+            versions.add(requirements[0])
+            literal_versions.add(literal[0])
+    aliases = config.get("Replace") or []
+    expected_aliases = {(MODULE, version, "./contracts", "") for version in versions}
+    actual_aliases = {(entry["Old"]["Path"], entry["Old"].get("Version", ""),
+                       entry["New"]["Path"], entry["New"].get("Version", "")) for entry in aliases}
+    literal_aliases = list(literal_rows(workspace_bytes.decode(), "replace"))
+    expected_literals = {(MODULE, version, "=>", "./contracts") for version in literal_versions}
+    if (actual_aliases != expected_aliases or len(literal_aliases) != len(expected_literals)
+            or {tuple(row) for row in literal_aliases} != expected_literals):
         raise ValueError("workspace aliases must match only the declared SDK versions to ./contracts")
     schema = root / "contracts/agent/dsh-runtime.schema.json"
     if schema.parent.is_symlink() or schema.is_symlink() or not schema.is_file() or not isinstance(json.loads(schema.read_text()), dict):
