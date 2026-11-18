@@ -3,7 +3,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import socket
 import stat
 import subprocess
@@ -49,7 +51,7 @@ class ProxyNativeTests(unittest.TestCase):
             self.assertEqual(runner.docker_endpoint({'DOCKER_HOST': 'unix://' + path}, False), 'unix://' + path)
 
     def source(self, directory):
-        root = Path(directory)
+        root = Path(directory).resolve()
         (root / 'go.mod').write_text('module github.com/opensoha/soha\n\ngo 1.27.4\nrequire ' + runner.SDK + ' v1.2.3\n')
         (root / 'go.sum').write_text(runner.SDK + ' v1.2.3 h1:distribution\n')
         (root / 'go.work').write_text(runner.SOURCE_WORKSPACE + '\nreplace (\n\t' + runner.SDK
@@ -238,7 +240,8 @@ class ProxyNativeTests(unittest.TestCase):
                 path.write_text(content)
             names.extend(files)
             with patch.object(runner, 'command', return_value=('\0'.join(names) + '\0').encode()):
-                archive, digest = runner.source_archive(root, 'source')
+                base, digest = runner.source_archive(root, 'source')
+                archive, _ = runner.add_embeds(root, 'source', base, {'cli/cmd/message.txt'})
                 declared, _ = runner.source_archive(root, 'declared')
                 (root / 'cli/cmd/main.go').write_text(files['cli/cmd/main.go'] + '// changed source\n')
                 _, changed_cli = runner.source_archive(root, 'source')
@@ -246,6 +249,8 @@ class ProxyNativeTests(unittest.TestCase):
                 _, changed_agent = runner.source_archive(root, 'source')
             self.assertNotEqual(digest, changed_cli)
             self.assertNotEqual(changed_cli, changed_agent)
+            with tarfile.open(fileobj=io.BytesIO(base)) as tar:
+                self.assertNotIn('src/cli/cmd/message.txt', tar.getnames())
             with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                 members = tar.getnames()
                 for name in names[:6] + list(files)[:4]:
@@ -282,11 +287,14 @@ class ProxyNativeTests(unittest.TestCase):
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text('//go:embed embedded.txt\n' if name.endswith('new_test.go') else 'fixture')
             with patch.object(runner, 'command', return_value=('\0'.join(names) + '\0').encode()):
-                archive, digest = runner.source_archive(root, 'source')
+                base, digest = runner.source_archive(root, 'source')
+                archive, _ = runner.add_embeds(root, 'source', base, {'internal/test/embedded.txt'})
                 again, other_digest = runner.source_archive(root, 'source')
                 declared, _ = runner.source_archive(root, 'declared')
-            self.assertEqual(archive, again)
+            self.assertEqual(base, again)
             self.assertEqual(digest, other_digest)
+            with tarfile.open(fileobj=io.BytesIO(base)) as tar:
+                self.assertNotIn('src/internal/test/embedded.txt', tar.getnames())
             with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                 members = tar.getnames()
                 self.assertIn('src/internal/test/new_test.go', members)
@@ -308,7 +316,10 @@ class ProxyNativeTests(unittest.TestCase):
                 names = ['go.mod', 'go.sum', 'go.work', 'contracts/go.mod',
                          'contracts/network/schema.go', 'contracts/network/event.schema.json']
                 with patch.object(runner, 'command', return_value=('\0'.join(names) + '\0').encode()):
-                    archive, _ = runner.source_archive(root, 'source')
+                    base, _ = runner.source_archive(root, 'source')
+                with tarfile.open(fileobj=io.BytesIO(base)) as tar:
+                    self.assertNotIn('src/contracts/network/event.schema.json', tar.getnames())
+                archive, _ = runner.add_embeds(root, 'source', base, {'contracts/network/event.schema.json'})
                 with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                     self.assertEqual(tar.extractfile('src/contracts/network/event.schema.json').read(), schema)
 
@@ -321,6 +332,179 @@ class ProxyNativeTests(unittest.TestCase):
             (root / 'internal/link.go').symlink_to(target)
             with patch.object(runner, 'command', return_value=b'internal/link.go\0'), self.assertRaises(ValueError):
                 runner.source_archive(root, 'source')
+
+    def go_oracle(self, root, flags=(), discover=False):
+        go = shutil.which('go')
+        if go is None:
+            self.skipTest('Go is not installed')
+        env = dict(os.environ, GOTOOLCHAIN='local', GOWORK='off', GOOS='linux', GOARCH='amd64',
+                   GOPROXY='off', GOSUMDB='off',
+                   CGO_ENABLED='1', GOFLAGS='-mod=readonly', GODEBUG='embedfollowsymlinks=0')
+        version = subprocess.run([go, 'env', 'GOVERSION'], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(version.stdout.strip(), 'go1.27.4', 'The embed oracle must use the native gate Go version')
+        query = ['-e', '-json=Dir'] if discover else ['-json=Dir,EmbedFiles,TestEmbedFiles,XTestEmbedFiles']
+        return subprocess.run([go, 'list', '-deps', '-test', *flags, *query, runner.NATIVE_PACKAGE],
+            cwd=root, env=env, capture_output=True, text=True, timeout=120)
+
+    def git_snapshot(self, root, files):
+        for name, content in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        subprocess.run(['git', 'init', '-q', str(root)], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, capture_output=True)
+
+    def staged_catalog(self, root, stage, flags=()):
+        base, digest = runner.source_archive(root, 'source')
+        with tarfile.open(fileobj=io.BytesIO(base)) as tar:
+            tar.extractall(stage, filter='data')
+        source = stage / 'src'
+        directories = self.go_oracle(source, flags, discover=True)
+        self.assertEqual(directories.returncode, 0, directories.stderr)
+        package_paths = {p.as_posix() for p, _ in runner.local_packages(directories.stdout, str(source))}
+        catalog = runner.embed_catalog(root, 'source', base, package_paths)
+        with tarfile.open(fileobj=io.BytesIO(catalog)) as tar:
+            tar.extractall(stage, filter='data')
+        return base, digest, catalog
+
+    def test_go_oracle_selects_exact_embeds_from_filtered_catalog_and_preserves_base(self):
+        package = 'internal/networkproxyruntime/'
+        files = {
+            'go.mod': 'module example.invalid/native\n\ngo 1.27.4\n',
+            '.gitignore': ''.join(package + name + '\n' for name in
+                                  ('resources/ignored.txt', 'resources/template.go', 'ignored.go', 'ignored.c')),
+            package + 'runtime.go': r'''package networkproxyruntime
+import (
+    "embed"
+    _ "example.invalid/native/pkg/dependency"
+)
+//go:embed "quoted space.txt"
+var quoted string
+//go:embed "escaped\x20name.txt"
+var escaped string
+//go:embed `backtick space.txt`
+var backtick string
+//go:embed resources
+var resources embed.FS
+var decoy = `
+//go:embed raw-decoy.txt
+`
+''',
+            package + 'runtime_test.go': 'package networkproxyruntime\nimport _ "embed"\n//go:embed inline.txt\nvar inline string\n',
+            package + 'external_test.go': 'package networkproxyruntime_test\nimport _ "embed"\n//go:embed external.txt\nvar external string\n',
+            package + 'default.go': '//go:build !soha_native_integration\n\npackage networkproxyruntime\nimport _ "embed"\n//go:embed default.txt\nvar selected string\n',
+            package + 'active.go': '//go:build soha_native_integration\n\npackage networkproxyruntime\nimport _ "embed"\n//go:embed active.txt\nvar selected string\n',
+            package + 'platform_linux_amd64.go': 'package networkproxyruntime\nimport _ "embed"\n//go:embed linux.txt\nvar platform string\n',
+            'pkg/dependency/dependency.go': 'package dependency\nimport _ "embed"\n//go:embed dep.txt\nvar data string\n',
+            package + 'resources/nested/go.mod': 'module example.invalid/nested\n\ngo 1.27.4\n',
+            package + 'resources/tracked.go': 'package template\n',
+            package + 'testdata/reply.json': '{"base":"preserved"}',
+        }
+        for name in ('quoted space.txt', 'escaped name.txt', 'backtick space.txt', 'inline.txt',
+                     'external.txt', 'default.txt', 'active.txt', 'linux.txt', 'raw-decoy.txt',
+                     'resources/visible.txt', 'resources/ignored.txt', 'resources/template.go',
+                     'ignored.go', 'ignored.c', 'resources/.hidden.txt',
+                     'resources/_hidden.txt', 'resources/nested/child.txt', 'resources/private/token.txt',
+                     'resources/.env', 'resources/key.pem', 'resources/dist/bundle.txt'):
+            files[package + name] = 'concealed-resource:' + name
+        files['pkg/dependency/dep.txt'] = 'concealed-dependency'
+        for name, prefix in (('.hidden.go', ''), ('_hidden.go', ''),
+                             ('inactive.go', '//go:build never_enabled\n\n'), ('platform_windows.go', '')):
+            files[package + name] = prefix + 'package networkproxyruntime\nimport _ "embed"\n//go:embed missing-negative.txt\nvar inactive string\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve() / 'checkout'
+            root.mkdir()
+            self.git_snapshot(root, files)
+            # The Git snapshot includes unstaged source and ignored resource files on disk.
+            (root / package / 'runtime.go').write_text(files[package + 'runtime.go'] + '// unstaged source\n')
+            expected = {package + name for name in ('quoted space.txt', 'escaped name.txt', 'backtick space.txt',
+                'inline.txt', 'external.txt', 'linux.txt', 'resources/visible.txt', 'resources/ignored.txt',
+                'resources/template.go', 'resources/tracked.go')}
+            expected.add('pkg/dependency/dep.txt')
+            for flags, selected in (((), 'default.txt'), (runner.NATIVE_FLAGS, 'active.txt')):
+                with self.subTest(flags=flags), tempfile.TemporaryDirectory() as staged:
+                    stage = Path(staged).resolve()
+                    base, base_digest, catalog = self.staged_catalog(root, stage, flags)
+                    with tarfile.open(fileobj=io.BytesIO(catalog)) as tar:
+                        members = tar.getmembers()
+                        self.assertTrue(members)
+                        self.assertTrue(all(entry.size == 0 for entry in members))
+                        self.assertTrue(all(tar.extractfile(entry).read() == b'' for entry in members if entry.isfile()))
+                        self.assertIn('src/' + package + 'resources/ignored.txt', tar.getnames())
+                        self.assertFalse(any('/private/' in entry.name or '/dist/' in entry.name
+                            or entry.name.endswith(('/.env', '.pem')) for entry in members))
+                    result = self.go_oracle(stage / 'src', flags)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    names = runner.local_embed_files(result.stdout, 'source', str(stage / 'src'))
+                    self.assertEqual(names, expected | {package + selected})
+                    archive, digest = runner.add_embeds(root, 'source', base, names)
+                    self.assertNotEqual(digest, base_digest)
+                    with tarfile.open(fileobj=io.BytesIO(base)) as before, tarfile.open(fileobj=io.BytesIO(archive)) as after:
+                        self.assertEqual(set(after.getnames()), set(before.getnames()) | {'src/' + name for name in names})
+                        for entry in before:
+                            self.assertEqual(after.extractfile(entry.name).read(), before.extractfile(entry).read())
+                            self.assertEqual(after.getmember(entry.name).mode, entry.mode)
+                        for name in names:
+                            self.assertEqual(after.extractfile('src/' + name).read(), (root / name).read_bytes())
+                    self.assertEqual(runner.add_embeds(root, 'source', base, names), (archive, digest))
+
+    def test_go_oracle_and_native_archive_refuse_symlink_and_fifo_embeds(self):
+        package = 'internal/networkproxyruntime/'
+        for kind in ('symlink', 'fifo'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as staged:
+                root = Path(tmp).resolve()
+                self.git_snapshot(root, {
+                    'go.mod': 'module example.invalid/native\n\ngo 1.27.4\n',
+                    package + 'runtime.go': 'package networkproxyruntime\nimport _ "embed"\n//go:embed unsafe.txt\nvar data string\n',
+                })
+                path = root / package / 'unsafe.txt'
+                if kind == 'symlink':
+                    target = root / 'outside.txt'
+                    target.write_text('never copy target bytes')
+                    path.symlink_to(target)
+                else:
+                    os.mkfifo(path)
+                stage = Path(staged).resolve()
+                base, _, catalog = self.staged_catalog(root, stage)
+                with tarfile.open(fileobj=io.BytesIO(catalog)) as tar:
+                    entry = tar.getmember('src/' + package + 'unsafe.txt')
+                    self.assertTrue(entry.issym())
+                    self.assertEqual(entry.linkname, 'unsafe.txt')
+                result = self.go_oracle(stage / 'src', runner.NATIVE_FLAGS)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('unsafe.txt', result.stderr)
+                with self.assertRaises(ValueError):
+                    runner.add_embeds(root, 'source', base, {package + 'unsafe.txt'})
+
+    def test_install_native_source_uses_shared_flags_and_replaces_catalog_with_selected_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            folder = root / 'internal/networkproxyruntime'
+            folder.mkdir(parents=True)
+            (folder / 'runtime.go').write_text('package networkproxyruntime\n')
+            (folder / 'selected.txt').write_text('selected bytes')
+            (folder / 'unselected.txt').write_text('unselected bytes')
+            with patch.object(runner, 'command', return_value=b'internal/networkproxyruntime/runtime.go\0'):
+                base, _ = runner.source_archive(root, 'source')
+            metadata = json.dumps({'Dir': '/src/internal/networkproxyruntime', 'EmbedFiles': ['selected.txt']})
+            resources = self.resources()
+            with patch.object(resources, 'call', side_effect=[metadata, b'', metadata, b'', b'']) as call:
+                archive, digest = runner.install_native_source(resources, 'prep', root, 'source', base)
+            self.assertEqual(call.call_args_list[0].args[0], ['exec', 'prep', 'go', 'list', '-deps', '-test',
+                '-race', '-tags', 'soha_native_integration', '-e', '-json=Dir', runner.NATIVE_PACKAGE])
+            self.assertEqual(call.call_args_list[2].args[0], ['exec', 'prep', 'go', 'list', '-deps', '-test',
+                '-race', '-tags', 'soha_native_integration', '-json=Dir,EmbedFiles,TestEmbedFiles,XTestEmbedFiles', runner.NATIVE_PACKAGE])
+            self.assertEqual(call.call_args_list[3].args[0], ['exec', 'prep', 'rm', '-rf', '/src'])
+            self.assertEqual(call.call_args_list[4].kwargs['input'], archive)
+            self.assertEqual((archive, digest), runner.add_embeds(root, 'source', base, {'internal/networkproxyruntime/selected.txt'}))
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                self.assertNotIn('src/internal/networkproxyruntime/unselected.txt', tar.getnames())
+            with patch.object(resources, 'call', side_effect=[metadata, b'', RuntimeError('go list failed')]) as call:
+                with self.assertRaisesRegex(RuntimeError, 'go list failed'):
+                    runner.install_native_source(resources, 'prep', root, 'source', base)
+            self.assertEqual(call.call_count, 3)
+            self.assertEqual(call.call_args_list[1].args[0], ['cp', '-', 'prep:/'])
+            self.assertEqual(call.call_args_list[2].args[0][:4], ['exec', 'prep', 'go', 'list'])
 
     def test_private_config_is_excluded_even_inside_source_directories(self):
         for name in ('internal/secret.key', 'internal/private/token.go', 'internal/.env.local',
