@@ -44,13 +44,19 @@ export default tseslint.config(
         'error',
         {
           paths: [
-            {
-              name: 'antd',
-              importNames: ['Alert'],
-              message:
-                'Use ContextFeedback for persistent context, ReadFeedback for reads, or OperationFeedback for request notifications.',
-            },
-          ],
+            'antd',
+            'antd/es',
+            'antd/es/index',
+            'antd/es/index.js',
+            'antd/lib',
+            'antd/lib/index',
+            'antd/lib/index.js',
+          ].map((name) => ({
+            name,
+            importNames: ['Alert'],
+            message:
+              'Use ContextFeedback for persistent context, ReadFeedback for reads, or OperationFeedback for request notifications.',
+          })),
           patterns: ['antd/es/alert', 'antd/es/alert/*', 'antd/lib/alert', 'antd/lib/alert/*'],
         },
       ],

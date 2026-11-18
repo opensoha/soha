@@ -101,7 +101,7 @@ async function designerMocks(context: BrowserContext, page: Page) {
             code: 'save_failed',
             message:
               state.saveFailure === 409 ? '工作流版本已变化，请保留草稿并核对' : '保存响应未能确认',
-            request_id: 'config-save-demo',
+            request_id: state.writes === 1 ? 'config-save-demo' : 'config-save-retry',
           },
         },
       }
@@ -133,14 +133,25 @@ for (const viewport of [
     await verifyGeometry(page, save)
     await save.press('Enter')
     const feedback = page.locator('.soha-operation-feedback')
+    const notices = page.locator('.ant-notification-notice:visible, .ant-message-notice:visible')
     await expect(feedback).toContainText('操作请求失败')
     await expect(feedback).toContainText('集成测试 · 订单服务 · 审批调整')
     await expect(feedback).toContainText('config-save-demo')
+    await expect(notices).toHaveCount(1)
     await name.fill('继续编辑的草稿')
     await expect(feedback).toContainText('集成测试 · 订单服务 · 审批调整')
     await expect(feedback).not.toContainText('继续编辑的草稿')
     await expect(page.locator('.react-flow__node')).toHaveCount(1)
     expect(state.writes).toBe(1)
+    await feedback.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(notices).toHaveCount(0)
+    await save.click()
+    await expect.poll(() => state.writes).toBe(2)
+    await expect(feedback).toContainText('操作请求失败')
+    await expect(feedback).toContainText('config-save-retry')
+    await expect(feedback).toContainText('集成测试 · 继续编辑的草稿')
+    await expect(notices).toHaveCount(1)
+    await expect(name).toHaveValue('继续编辑的草稿')
     await page.screenshot({
       path: testInfo.outputPath(`workflow-config-${viewport.width}.png`),
       fullPage: true,
@@ -153,12 +164,14 @@ test('workflow configuration retries an initial dependency failure', async ({ co
   const { state, evidence } = await designerMocks(context, page)
   state.readFailure = true
   await page.goto(route)
-  const feedback = page.locator('.soha-read-feedback')
-  await expect(feedback).toContainText('应用环境读取失败')
+  const feedback = page.getByRole('status').filter({ hasText: '应用环境读取失败' })
+  await expect(feedback).toHaveCount(1)
+  await expect(page.locator('main .soha-read-feedback')).toHaveCount(0)
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
   state.readFailure = false
-  await page.getByRole('button', { name: '重试读取应用环境', exact: true }).click()
+  await feedback.getByRole('button', { name: '重试读取应用环境', exact: true }).click()
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  await expect(feedback).toHaveCount(0)
   expect(state.writes).toBe(0)
   verifyBrowserEvidence(evidence)
 })
