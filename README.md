@@ -267,6 +267,20 @@ Soha runs one process per container. The default process serves the management A
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): independent network-control, ingest, ingest PostgreSQL, and WireGuard gateway workloads
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
 
+### Native Linux installation
+
+Use `soha-linux-amd64.tar.gz` from a release that provides the installation bundle,
+verify its `.sha256`, and extract it into a new directory. It includes the binary,
+all PostgreSQL migration files and a public configuration example. Follow the
+[native installation instructions](deploy/native/README.md). The raw
+`soha-linux-amd64` asset is retained for existing installations that already have
+the matching migrations; it is not a complete fresh installation by itself.
+
+Raw Kubernetes and Helm use TCP liveness and `/readyz` startup/readiness probes.
+A database outage removes readiness without restarting Core solely for that
+dependency failure. Startup allows five minutes before Kubernetes restarts it;
+increase that window if an existing database needs longer migrations.
+
 ### Remote Kubernetes development
 
 `ops.popicorns.com` is the shared development endpoint; no separate
@@ -294,14 +308,22 @@ make remote-dev-down
 This is a shared-data development environment: migrations and application writes
 affect the existing `soha` database.
 
+### Docker Compose
+
 ```bash
 make deploy-image
-docker compose -f deploy/docker-compose.yaml up -d --build
+docker compose -f deploy/docker-compose.yaml up -d --no-build
 ```
 
 Compose uses the tracked `configs/config.example.yaml` by default. To reuse a
 private `configs/config.yaml`, set `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`
 in the shell or Compose environment file. Relative paths resolve from `deploy/`.
+
+`make deploy-image` derives the plugin compatibility version from Core `v*` tags.
+Direct Compose builds default to `SOHA_BUILD_VERSION=0.1.13`; set it explicitly
+when building another Core version (for example, `SOHA_BUILD_VERSION=0.1.13 docker
+compose -f deploy/docker-compose.yaml build soha`). The optional Hermes build
+uses this same Root checkout, including `agent/` and `contracts/`.
 
 For new Chat and Heya on a dsh-capable Core build, deploy the matching dsh image
 and enable protected checkpoint storage. Follow the [runtime deployment and cutover

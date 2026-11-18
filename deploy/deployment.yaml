@@ -220,17 +220,16 @@ spec:
               name: http
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
-            periodSeconds: 2
-            failureThreshold: 30
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
           livenessProbe:
-            httpGet:
-              path: /healthz
+            tcpSocket:
               port: http
           resources:
             requests:
