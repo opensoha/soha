@@ -19,7 +19,7 @@ import (
 )
 
 type Applications interface {
-	List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error)
+	ListAccessible(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error)
 	Get(context.Context, domainidentity.Principal, string) (domainapp.App, error)
 	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
 	Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error)

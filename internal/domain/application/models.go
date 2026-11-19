@@ -177,6 +177,13 @@ type UpsertInput struct {
 type Filter struct {
 	Search string
 	Limit  int
+	After  *ListCursor
+}
+
+type ListCursor struct {
+	Group string
+	Name  string
+	ID    string
 }
 
 type GitRepository struct {
