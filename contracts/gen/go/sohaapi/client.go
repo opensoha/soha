@@ -18,6 +18,22 @@ import (
 
 const defaultUserAgent = "opensoha-contracts/0.2.0"
 
+const (
+	maxJSONResponseBytes = 10 << 20
+	maxStreamErrorBytes  = 1 << 20
+)
+
+// ResponseTooLargeError reports a response body that exceeded the SDK's read limit.
+type ResponseTooLargeError struct {
+	StatusCode int
+	Limit      int64
+	RequestID  string
+}
+
+func (e *ResponseTooLargeError) Error() string {
+	return fmt.Sprintf("HTTP %d response exceeds %d-byte limit", e.StatusCode, e.Limit)
+}
+
 type Client struct {
 	BaseURL    string
 	Token      string
@@ -830,8 +846,12 @@ func (c *Client) StreamComputeTask(ctx context.Context, domain ComputeTaskDomain
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return fmt.Errorf("GET %s failed: %s: %s", computeTaskPath(domain, taskID)+"/stream", resp.Status, responseErrorMessage(raw))
+		path := computeTaskPath(domain, taskID) + "/stream"
+		raw, err := readResponseBody(resp, maxStreamErrorBytes)
+		if err != nil {
+			return fmt.Errorf("GET %s failed: %w", path, err)
+		}
+		return fmt.Errorf("GET %s failed: %s: %s", path, resp.Status, responseErrorMessage(raw))
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
@@ -1127,9 +1147,9 @@ func (c *Client) doJSONWithHeaders(ctx context.Context, method, path string, use
 		return err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	raw, err := readResponseBody(resp, maxJSONResponseBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s %s failed: %w", method, path, err)
 	}
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("%s %s failed: %s: %s", method, path, resp.Status, responseErrorMessage(raw))
@@ -1141,6 +1161,21 @@ func (c *Client) doJSONWithHeaders(ctx context.Context, method, path string, use
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func readResponseBody(resp *http.Response, limit int64) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, &ResponseTooLargeError{
+			StatusCode: resp.StatusCode,
+			Limit:      limit,
+			RequestID:  resp.Header.Get("X-Request-ID"),
+		}
+	}
+	return raw, nil
 }
 
 func (c *Client) endpoint(path string) (string, error) {
