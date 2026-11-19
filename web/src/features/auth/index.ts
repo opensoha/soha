@@ -10,6 +10,7 @@ export {
   restoreAuthSession,
 } from './auth-api'
 export { publishAuthSessionAvailable, subscribeAuthSessionAvailable } from './auth-session-channel'
+export { assertAuthSession, captureAuthSession } from './auth-session'
 export { authKeys } from './keys'
 export { authProfileApi } from './profile-api'
 export { createGatewayCredential, rotateGatewayCredential } from './governed-credentials-api'

@@ -2,7 +2,6 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import {
   API_BASE_URL,
-  commitAuthResult,
   fetchAuthProviders,
   fetchLoginOptions,
   fetchPermissionSnapshot,
@@ -571,7 +570,6 @@ export function LoginPage() {
     setLoading(true)
     try {
       const authResult = await loginWithPassword(values.username, values.password)
-      commitAuthResult(authResult)
       publishAuthSessionAvailable()
       const nextPath = await resolvePostLoginPath(authResult.user.roles, returnTo ?? undefined)
       message.success('登录成功')

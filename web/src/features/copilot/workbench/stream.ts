@@ -5,7 +5,13 @@ import type {
   WorkbenchStreamEvent,
   WorkbenchToolCall,
 } from '@opensoha/contracts/gen/ts/sohaapi'
-import { API_BASE_URL, getStoredAccessToken, refreshAuthSession } from '@/features/auth'
+import {
+  API_BASE_URL,
+  assertAuthSession,
+  captureAuthSession,
+  getStoredAccessToken,
+  refreshAuthSession,
+} from '@/features/auth'
 
 export interface WorkbenchSSEParseResult {
   events: WorkbenchStreamEvent[]
@@ -309,8 +315,10 @@ export async function streamWorkbenchMessage(
   onEvent: (event: WorkbenchStreamEvent) => void | Promise<void>,
   signal?: AbortSignal,
 ) {
+  const owner = captureAuthSession()
   const streamPath = path.startsWith('/') ? path : `/${path}`
   const request = () => {
+    assertAuthSession(owner)
     const headers = new Headers({
       Accept: 'text/event-stream',
       'Content-Type': 'application/json',
@@ -327,10 +335,13 @@ export async function streamWorkbenchMessage(
   }
 
   let response = await request()
-  if (response.status === 401 && !signal?.aborted && (await refreshAuthSession())) {
+  assertAuthSession(owner, response)
+  if (response.status === 401 && !signal?.aborted && (await refreshAuthSession(owner))) {
+    assertAuthSession(owner, response)
     await response.body?.cancel().catch(() => undefined)
     response = await request()
   }
+  assertAuthSession(owner, response)
 
   if (!response.ok) {
     throw new Error(`Workbench stream failed: ${response.status} ${response.statusText}`)
@@ -346,6 +357,7 @@ export async function streamWorkbenchMessage(
   let nativeRunHandedOff = false
 
   const dispatch = async (event: WorkbenchStreamEvent) => {
+    assertAuthSession(owner)
     terminalReceived ||= isTerminalWorkbenchStreamEvent(event)
     nativeRunHandedOff ||= isNativeRunHandoff(event)
     await onEvent(event)
@@ -386,6 +398,7 @@ export async function streamWorkbenchMessage(
       )
     }
   } finally {
+    await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
 }
