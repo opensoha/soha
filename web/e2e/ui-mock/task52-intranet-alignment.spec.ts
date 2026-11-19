@@ -545,15 +545,17 @@ test('admission settings preserve their tab scopes and reveal the runtime guide 
   verifyBrowserEvidence(evidence)
 })
 
-test('telemetry first-load errors are owned inline and recover without a global duplicate', async ({
+test('telemetry first-load errors have one notification and recover without a duplicate', async ({
   context,
   page,
 }) => {
   const { state, evidence } = await setup(context, page)
   state.telemetryError = true
   await page.goto('/network-access/telemetry')
-  await expect(page.getByText('遥测读取失败', { exact: true })).toBeVisible()
-  await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText('遥测读取失败', { exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('.ant-notification-notice')).toHaveCount(1)
   state.telemetryError = false
   await page.getByRole('button', { name: '重试读取遥测', exact: true }).click()
   await expect(page.getByText('遥测读取失败', { exact: true })).toHaveCount(0)

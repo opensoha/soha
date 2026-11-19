@@ -317,7 +317,7 @@ test('Secret rotation keeps the draft and pauses duplicate writes after an unkno
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[type="password"]').fill('synthetic-canary-value')
   await dialog.getByRole('button', { name: /确.*定/ }).click()
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await expect(dialog.locator('input[type="password"]')).toHaveValue('synthetic-canary-value')
   await expect(dialog.locator('input[type="password"]')).toBeDisabled()
   await expect(dialog.getByRole('button', { name: /确.*定/ })).toBeDisabled()
@@ -426,7 +426,10 @@ test('write permission refusal clears sensitive draft while preserving separatel
   verifyBrowserEvidence(evidence)
 })
 
-test('failed proxy polling pauses until an explicit read succeeds', async ({ context, page }) => {
+test('failed proxy polling uses bounded read retries before manual recovery', async ({
+  context,
+  page,
+}) => {
   const { state, evidence } = await mocks(context, page)
   await page.clock.install()
   await page.goto('/network-access/proxy-instances')
@@ -436,13 +439,22 @@ test('failed proxy polling pauses until an explicit read succeeds', async ({ con
   await page.getByRole('button', { name: /刷新/ }).click()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toBeVisible()
   const failedReads = state.proxyReads
+  for (const [index, delay] of [15000, 30000, 60000].entries()) {
+    await page.clock.fastForward(delay)
+    await expect.poll(() => state.proxyReads).toBe(failedReads + index + 1)
+  }
+  await expect(
+    page
+      .locator('.soha-read-feedback-notification')
+      .getByText('自动重试已暂停，可手动重试。', { exact: true }),
+  ).toBeVisible()
   await page.clock.fastForward(31000)
-  expect(state.proxyReads).toBe(failedReads)
+  expect(state.proxyReads).toBe(failedReads + 3)
   state.status = 200
   await page.getByRole('button', { name: /重试读取/ }).click()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toHaveCount(0)
   await page.clock.fastForward(16000)
-  await expect.poll(() => state.proxyReads).toBeGreaterThan(failedReads + 1)
+  await expect.poll(() => state.proxyReads).toBeGreaterThan(failedReads + 4)
   verifyBrowserEvidence(evidence)
 })
 
@@ -485,7 +497,7 @@ test('software batch stops after an unknown item and keeps unsubmitted files sep
       .click()
   }
   await dialog.getByRole('button', { name: /批量上传并发布/ }).click()
-  await expect(dialog.locator('.soha-operation-feedback')).toContainText('请求结果不明')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('请求结果不明')
   await expect(page.locator('.ant-message')).toContainText('1 个未提交')
   await expect(dialog.getByRole('button', { name: /批量上传并发布/ })).toBeDisabled()
   await expect(dialog.getByRole('radio', { name: '单个发布', exact: true })).toBeDisabled()
@@ -509,10 +521,15 @@ test('Secret version history preserves cached rows with a warning and hides refu
   state.status = 503
   await page.clock.fastForward(31000)
   await page.getByRole('button', { name: '查看 Secret 版本', exact: true }).click()
-  await expect(drawer.getByText(/版本记录未更新/)).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText(/版本记录未更新/),
+  ).toBeVisible()
   await expect(drawer.getByText('v3', { exact: true })).toBeVisible()
   state.status = 403
-  await drawer.getByRole('button', { name: /重试读取/ }).click()
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /重试读取/ })
+    .click()
   await expect(drawer.getByText(/版本记录无访问权限/)).toBeVisible()
   await expect(drawer.getByText('v3', { exact: true })).toHaveCount(0)
   verifyBrowserEvidence(evidence)

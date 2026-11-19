@@ -926,7 +926,9 @@ test('Pod container details keep read errors recoverable and gate reference navi
   state.yamlFault = 'identity'
   state.containerArgument = '--rejected-identity-value'
   await page.getByRole('button', { name: '刷新容器详情', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Pod YAML identity does not match')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'Pod YAML identity does not match',
+  )
   await expect(app).toContainText('Exit Code 137')
   await expect(app).not.toContainText(state.containerArgument)
   verifyBrowserEvidence(evidence)
@@ -967,7 +969,9 @@ test('Pod header deletion confirms the scoped target, keeps errors and returns t
   state.deleteStatus = 409
   await remove.click()
   await dialog.getByRole('button', { name: '删除', exact: true }).click()
-  await expect(dialog).toContainText('Synthetic Pod delete rejected')
+  await expect(page.locator('.soha-operation-feedback')).toContainText(
+    'Synthetic Pod delete rejected',
+  )
   await expect(dialog.getByRole('button', { name: '删除', exact: true })).toBeEnabled()
   expect(state.deletes).toEqual([
     `/api/v1/clusters/cluster-a/workloads/pods/${podName}?namespace=monitoring&expectedUid=pod-uid`,

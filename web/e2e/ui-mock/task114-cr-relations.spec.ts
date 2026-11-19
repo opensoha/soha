@@ -227,7 +227,7 @@ for (const width of [1440, 390]) {
       }),
     )
     await dialog.getByRole('button', { name: '保存观察规则', exact: true }).click()
-    await expect(dialog).toContainText('环境已被修改')
+    await expect(page.locator('.soha-operation-feedback')).toContainText('环境已被修改')
     await expect(dialog.getByLabel('关系规则 JSON')).toHaveValue(/shared-service/)
     expect(writes).toHaveLength(1)
     await page.reload()
@@ -252,7 +252,9 @@ for (const width of [1440, 390]) {
       }),
     )
     await dialog.getByRole('button', { name: '保存观察规则', exact: true }).click()
-    await expect(dialog).toContainText('关系规则已保存')
+    await expect(
+      page.locator('.soha-operation-feedback').filter({ hasText: '关系规则已保存' }),
+    ).toBeVisible()
     expect(writes).toHaveLength(2)
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await relations.getByRole('button', { name: '选择 Pod search-pod-0', exact: true }).click()

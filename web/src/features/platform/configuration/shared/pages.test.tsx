@@ -380,9 +380,13 @@ describe('configuration leaf pages', () => {
         `/configuration/${kind}/demo`,
         `/configuration/${kind}/:${param}`,
       )
-      expect(container.textContent).toContain('Agent action or Kubernetes RBAC denied')
+      expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+        'Agent action or Kubernetes RBAC denied',
+      )
       expect(container.textContent).not.toContain('未找到')
-      const retry = Array.from(container.querySelectorAll('button')).find(
+      const retry = Array.from(
+        document.querySelectorAll('.soha-read-feedback-notification button'),
+      ).find(
         (button) =>
           button.getAttribute('aria-label') ===
           (kind === 'configmaps' ? '重试读取ConfigMap' : '重试读取Secret'),
@@ -797,7 +801,9 @@ describe('configuration leaf pages', () => {
       '/configuration/configmaps/app-config',
       '/configuration/configmaps/:configMapName',
     )
-    expect(container.textContent).toContain('identity does not match')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'identity does not match',
+    )
     expect(container.textContent).not.toContain('do-not-show-this')
     expect(container.querySelector('[role="tab"]')).toBeNull()
   })

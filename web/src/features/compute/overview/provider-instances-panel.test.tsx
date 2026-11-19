@@ -139,7 +139,7 @@ describe('provider instances panel', () => {
     )
 
     expect(retry).not.toBeNull()
-    act(() => retry?.click())
+    await act(async () => retry?.click())
     expect(refetch).toHaveBeenCalledTimes(1)
   })
 

@@ -867,7 +867,7 @@ for (const theme of ['light', 'dark'])
         await expect(
           page
             .getByRole('navigation', { name: 'Heya 导航', exact: true })
-            .locator('.soha-ai-animated-icon'),
+            .locator('.soha-animated-icon'),
         ).toHaveCount(9)
         const footerBox = (await page.locator('.soha-ai-rail-footer').boundingBox())!
         expect(900 - footerBox.y - footerBox.height).toBeCloseTo(20, 1)
@@ -885,7 +885,7 @@ for (const theme of ['light', 'dark'])
         await expect(tasks).toHaveAttribute('aria-pressed', 'true')
         await page.emulateMedia({ reducedMotion: 'no-preference' })
         await tasks.hover()
-        const check = tasks.locator('.soha-ai-icon-check').first()
+        const check = tasks.locator('.soha-icon-check').first()
         await expect(tasks.locator('svg')).toHaveCSS('transform', 'none')
         await expect(check).toHaveCSS('animation-name', 'soha-icon-write')
         const drawing = await check.evaluate((element) => {

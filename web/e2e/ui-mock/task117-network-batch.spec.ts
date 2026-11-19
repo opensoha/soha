@@ -308,15 +308,14 @@ for (const c of cases) {
       await expect(page.getByRole('heading', { name: 'sample', exact: true })).toBeVisible()
       state.fail = 503
       await page.getByRole('button', { name: '刷新 ' + c.label, exact: true }).click()
-      await expect(page.getByText('Network read failed', { exact: false }).first()).toBeVisible()
+      await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+        'Network read failed',
+      )
       await expect(page.getByRole('heading', { name: 'sample', exact: true })).toBeVisible()
       await expect(page.getByRole('switch', { name: /刷新失败/ })).toBeVisible({ timeout: 15_000 })
-      // Dismiss the real, visible notifications before retrying the covered header button.
-      const notices = page
-        .locator('.ant-notification')
-        .getByRole('button', { name: '关闭', exact: true })
-      for (let i = 0; i < 4 && (await notices.count()); i++) await notices.first().click()
-      await expect(notices).toHaveCount(0)
+      const notice = page.locator('.soha-read-feedback-notification')
+      await notice.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect(notice).toHaveCount(0)
       state.fail = 403
       await page.getByRole('button', { name: '刷新 ' + c.label, exact: true }).click()
       await expect(page.getByRole('heading', { name: 'sample', exact: true })).toHaveCount(0)

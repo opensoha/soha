@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { App as AntdApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -72,7 +73,9 @@ async function render() {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <AgentUpgradeModal cluster={{ id: 'one', name: 'One' } as Cluster} onClose={() => {}} />
+        <AntdApp>
+          <AgentUpgradeModal cluster={{ id: 'one', name: 'One' } as Cluster} onClose={() => {}} />
+        </AntdApp>
       </QueryClientProvider>,
     ),
   )
@@ -153,7 +156,12 @@ describe('Agent update completion', () => {
     await render()
     await act(async () => host.querySelector<HTMLButtonElement>('#upgrade')!.click())
     await flush()
-    expect(host.textContent).toContain('Agent connection unavailable')
+    await vi.waitFor(async () => {
+      await flush()
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        'Agent connection unavailable',
+      )
+    })
     expect(host.textContent).not.toContain('更新完成')
     expect(host.querySelector<HTMLButtonElement>('#upgrade')!.disabled).toBe(false)
   })

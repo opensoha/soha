@@ -1,7 +1,7 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { buildKubernetesResourcePath } from '@/features/platform/shared/resource-ref'
 import { useI18n } from '@/i18n'
@@ -108,6 +108,9 @@ export function WorkloadRelationships({
   const feedbackQuery = denial?.error
     ? { ...query, error: denial.error, isError: true, refetch: () => refresh() }
     : { ...query, refetch: () => refresh() }
+  const manualError =
+    canRequest && denial && query.isError && !queryAccessDenied(feedbackQuery) ? query.error : null
+  useInlineApiError(manualError)
   const refresh = async () => {
     if (!canRequest || retrying) return
     setRetryingIdentity(queryIdentity)
@@ -299,9 +302,23 @@ export function WorkloadRelationships({
     >
       <ReadFeedback
         canRead={canRead && active}
-        query={feedbackQuery}
+        query={{
+          ...feedbackQuery,
+          isEnabled: canRequest && (!denial || queryAccessDenied(feedbackQuery)),
+        }}
         label={zh ? '资源关系' : 'Resource relationships'}
       />
+      {manualError && (
+        <ContextFeedback
+          type="warning"
+          title={requestErrorMessage(manualError, localeCode)}
+          description={
+            zh
+              ? '自动读取保持暂停，可使用「刷新资源关系」重试。'
+              : 'Automatic reads remain paused. Use Refresh relationships to retry.'
+          }
+        />
+      )}
       {!canRead ? (
         <ManagementState
           compact

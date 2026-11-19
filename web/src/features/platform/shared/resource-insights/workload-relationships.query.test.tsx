@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   reads: [] as string[],
   storageRead: vi.fn<() => Promise<KubernetesResourceGraph>>(),
   navigate: vi.fn(),
+  feedbackEnabled: true,
 }))
 vi.mock('@/i18n', () => ({ useI18n: () => ({ localeCode: 'zh_CN' }) }))
 vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }))
@@ -69,8 +70,14 @@ vi.mock('./api', () => ({
   getKubernetesSecurityPosture: vi.fn(),
 }))
 vi.mock('@/components/request-feedback', () => ({
-  ReadFeedback: ({ query }: { query: { error: Error | null } }) =>
-    query.error ? <div role="alert">{query.error.message}</div> : null,
+  ReadFeedback: ({ query }: { query: { error: Error | null; isEnabled?: boolean } }) => {
+    state.feedbackEnabled = query.isEnabled !== false
+    return state.feedbackEnabled && query.error ? (
+      <div role="alert">{query.error.message}</div>
+    ) : null
+  },
+  requestErrorMessage: (error: Error) => error.message,
+  useInlineApiError: vi.fn(),
 }))
 vi.mock('@/components/management-list', () => ({
   ManagementState: ({ title }: { title: string }) => <div>{title}</div>,
@@ -149,7 +156,12 @@ vi.mock('antd', () => ({
   ),
   Switch: () => null,
   Spin: () => null,
-  Alert: ({ title }: { title: string }) => <div role="alert">{title}</div>,
+  Alert: ({ title, description }: { title: string; description?: ReactNode }) => (
+    <div role="alert">
+      {title}
+      {description}
+    </div>
+  ),
 }))
 vi.mock('./workload-relationship-canvas', () => ({
   default: ({
@@ -247,6 +259,7 @@ describe('relationship reads with a real QueryClient', () => {
     state.status = 403
     state.response = 'valid'
     state.reads = []
+    state.feedbackEnabled = true
     state.storageRead.mockReset()
     client = new QueryClient({ defaultOptions: { queries: { retryDelay: 0, gcTime: Infinity } } })
     container = document.createElement('div')
@@ -328,6 +341,42 @@ describe('relationship reads with a real QueryClient', () => {
       expect(state.reads).toHaveLength(5)
     },
   )
+  it('keeps a transient retry after denial manual until an explicit read succeeds', async () => {
+    await render()
+    expect(state.reads).toHaveLength(1)
+    expect(state.feedbackEnabled).toBe(true)
+    state.status = 503
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[aria-label="刷新资源关系"]')!.click()
+        await vi.advanceTimersByTimeAsync(7_100)
+      })
+      expect(state.reads).toHaveLength(5)
+      expect(state.feedbackEnabled).toBe(false)
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('rejected 503')
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('刷新资源关系')
+      expect(container.querySelector('[data-id]')).toBeNull()
+      await act(async () => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        await client.invalidateQueries({ queryKey: resourceInsightKeys.all })
+        await vi.advanceTimersByTimeAsync(60_100)
+      })
+      expect(state.reads).toHaveLength(5)
+    } finally {
+      vi.useRealTimers()
+    }
+    state.status = 0
+    const refreshButton = container.querySelector<HTMLButtonElement>('[aria-label="刷新资源关系"]')!
+    refreshButton.focus()
+    await refresh()
+    expect(document.activeElement).toBe(refreshButton)
+    expect(state.reads).toHaveLength(6)
+    expect(state.feedbackEnabled).toBe(true)
+    expect(container.querySelector('[data-id="root"]')?.textContent).toBe('Pod api')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
   it.each(['wrong-gvk', 'wrong-scope', 'wrong-cluster'])(
     'does not display a successful API response with %s as the current root',
     async (response) => {
