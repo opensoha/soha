@@ -128,10 +128,16 @@ function responseRequestId(response: Response) {
   )
 }
 
-async function parseJsonStrictly<T>(response: Response, path: string, method: string): Promise<T> {
+async function parseJsonStrictly<T>(
+  response: Response,
+  path: string,
+  method: string,
+  owner: AuthSessionOwner,
+): Promise<T> {
   try {
     return (await response.json()) as T
   } catch (cause) {
+    assertAuthSession(owner)
     const reason = cause instanceof Error && cause.message ? `: ${cause.message}` : ''
     const error = new ApiError(response.status, `Invalid JSON response${reason}`, {
       cause,
@@ -218,11 +224,14 @@ async function request<T>(
   const res = await requestResponse(path, options, owner)
   if (res.status === 204) return undefined as T
   if (responseFormat === 'text') {
-    const body = await res.text()
+    const body = await res.text().catch((cause: unknown) => {
+      assertAuthSession(owner)
+      throw cause
+    })
     assertAuthSession(owner)
     return body as T
   }
-  const body = await parseJsonStrictly<unknown>(res, path, getRequestMethod(options))
+  const body = await parseJsonStrictly<unknown>(res, path, getRequestMethod(options), owner)
   assertAuthSession(owner)
   return normalizeBody ? normalizeResponseBody<T>(body) : (body as T)
 }

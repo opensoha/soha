@@ -34,10 +34,12 @@ function json(body: unknown, status = 200) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (cause: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 describe('API session ownership', () => {
@@ -174,6 +176,40 @@ describe('API session ownership', () => {
     commitAuthResult(session('user-b', 'new-session'))
     body.resolve({ data: 'old-data' })
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it.each(['json', 'text'] as const)(
+    'suppresses a stale %s body failure after another login',
+    async (format) => {
+      const body = deferred<string>()
+      const response = new Response('old body', { headers: { 'x-request-id': 'old-request' } })
+      const read =
+        format === 'json'
+          ? vi.spyOn(response, 'json').mockImplementation(() => body.promise)
+          : vi.spyOn(response, 'text').mockImplementation(() => body.promise)
+      vi.stubGlobal('fetch', vi.fn(async () => response))
+
+      const request =
+        format === 'json' ? api.get('/synthetic-resource') : api.getText('/synthetic-resource')
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+      commitAuthResult(session('user-b', 'new-session'))
+      body.reject(new SyntaxError('old malformed body'))
+
+      await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+      expect(events).toEqual([])
+      expect(useAuthStore.getState().accessToken).toBe('new-session')
+    },
+  )
+
+  it('still reports invalid JSON for the current session', async () => {
+    const response = new Response('{', { headers: { 'x-request-id': 'current-request' } })
+    vi.stubGlobal('fetch', vi.fn(async () => response))
+
+    await expect(api.get('/synthetic-resource')).rejects.toMatchObject({
+      name: 'ApiError',
+      requestId: 'current-request',
+    })
+    expect(events).toEqual([expect.objectContaining({ requestId: 'current-request' })])
   })
 
   it('preserves original expiry details and auth signaling after the refresh itself clears the session', async () => {
