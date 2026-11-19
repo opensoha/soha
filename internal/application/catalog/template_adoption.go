@@ -15,7 +15,7 @@ import (
 // Application-wide build bindings affect every environment, including those a
 // filtered list would hide. Fail closed unless the whole scope is accessible.
 func (s *Service) ListTemplateAdoptionEnvironments(ctx context.Context, p domainidentity.Principal, appID string) ([]domaincatalog.ApplicationEnvironment, error) {
-	items, err := s.repo.ListApplicationEnvironments(ctx)
+	items, err := s.repo.ListApplicationEnvironmentsByApplication(ctx, appID)
 	if err != nil {
 		return nil, err
 	}

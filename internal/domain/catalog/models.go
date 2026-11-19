@@ -287,6 +287,7 @@ type Repository interface {
 	ListEnvironments(context.Context) ([]Environment, error)
 
 	ListApplicationEnvironments(context.Context) ([]ApplicationEnvironment, error)
+	ListApplicationEnvironmentsByApplication(context.Context, string) ([]ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, string) (ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, ApplicationEnvironmentInput) (ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, string, ApplicationEnvironmentInput) (ApplicationEnvironment, error)

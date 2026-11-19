@@ -50,13 +50,26 @@ func (r *Repository) ListEnvironments(ctx context.Context) ([]domaincatalog.Envi
 }
 
 func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
-	rows, err := dbtx.DB(ctx, r.db).Raw(`
+	return r.listApplicationEnvironments(ctx, nil)
+}
+
+func (r *Repository) ListApplicationEnvironmentsByApplication(ctx context.Context, applicationID string) ([]domaincatalog.ApplicationEnvironment, error) {
+	return r.listApplicationEnvironments(ctx, &applicationID)
+}
+
+func (r *Repository) listApplicationEnvironments(ctx context.Context, applicationID *string) ([]domaincatalog.ApplicationEnvironment, error) {
+	query := `
 		SELECT ae.id, ae.application_id, a.business_line_id, a.app_group, ae.environment_id, COALESCE(e.environment_key, ae.environment_id), ae.alias, ae.cluster_id, ae.namespace, ae.registry_id, ae.strategy_profile_id, ae.promotion_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.workflow_template_version, ae.build_policy, ae.release_policy, ae.resource_selector, ae.created_at, ae.updated_at
 		FROM application_environments ae
 		JOIN applications a ON a.id = ae.application_id
 		LEFT JOIN delivery_environments e ON e.id = ae.environment_id
-		ORDER BY ae.created_at DESC
-	`).Rows()
+	`
+	var args []any
+	if applicationID != nil {
+		query += " WHERE ae.application_id = ?"
+		args = append(args, *applicationID)
+	}
+	rows, err := dbtx.DB(ctx, r.db).Raw(query+" ORDER BY ae.created_at DESC", args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query application environments: %w", err)
 	}
@@ -73,25 +86,18 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// A transaction has one connection. Finish the outer result before querying
-	// targets or bound workflow versions on that same connection.
+	// A transaction has one connection. Close the base rows before the batch reads.
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close application environments: %w", err)
 	}
-	for index := range items {
-		item := &items[index]
-		targets, err := r.listReleaseTargets(ctx, item.ID)
-		if err != nil {
-			return nil, err
-		}
-		item.Targets = targets
-		if item.WorkflowTemplateID != "" {
-			template, templateErr := r.GetWorkflowTemplateVersion(ctx, item.WorkflowTemplateID, item.WorkflowTemplateVersion)
-			if templateErr != nil {
-				return nil, fmt.Errorf("read bound workflow version: %w", templateErr)
-			}
-			item.WorkflowTemplate = &template
-		}
+	if len(items) == 0 {
+		return items, nil
+	}
+	if err := r.loadEnvironmentTargets(ctx, items); err != nil {
+		return nil, err
+	}
+	if err := r.loadEnvironmentWorkflowVersions(ctx, items); err != nil {
+		return nil, fmt.Errorf("read bound workflow version: %w", err)
 	}
 	return items, nil
 }
@@ -361,12 +367,15 @@ func (r *Repository) SaveApplicationWorkflow(ctx context.Context, applicationID,
 }
 
 func (r *Repository) listReleaseTargets(ctx context.Context, applicationEnvironmentID string) ([]domaincatalog.ReleaseTarget, error) {
-	rows, err := dbtx.DB(ctx, r.db).Raw(`
+	return r.queryReleaseTargets(ctx, "application_environment_id = ?", applicationEnvironmentID)
+}
+
+func (r *Repository) queryReleaseTargets(ctx context.Context, predicate string, arg any) ([]domaincatalog.ReleaseTarget, error) {
+	query := `
 		SELECT id, application_environment_id, COALESCE(cluster_id, ''), namespace, target_kind, executor_kind, group_key, wave_key, region_key, config_ref, workload_kind, workload_name, container_name, metadata, enabled, created_at, updated_at, helm_configuration, docker_configuration
 		FROM release_targets
-		WHERE application_environment_id = ?
-		ORDER BY created_at ASC
-	`, applicationEnvironmentID).Rows()
+		WHERE ` + predicate + " ORDER BY created_at ASC"
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, arg).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query release targets: %w", err)
 	}

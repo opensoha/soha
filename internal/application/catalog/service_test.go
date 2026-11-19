@@ -63,6 +63,16 @@ func (s *stubCatalogRepository) ListApplicationEnvironments(context.Context) ([]
 	return items, nil
 }
 
+func (s *stubCatalogRepository) ListApplicationEnvironmentsByApplication(_ context.Context, appID string) ([]domaincatalog.ApplicationEnvironment, error) {
+	items := []domaincatalog.ApplicationEnvironment{}
+	for _, item := range s.applicationEnvironments {
+		if item.ApplicationID == appID {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
 func (s *stubCatalogRepository) GetApplicationEnvironment(_ context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {
 	if s.applicationEnvironments == nil {
 		return domaincatalog.ApplicationEnvironment{}, nil
