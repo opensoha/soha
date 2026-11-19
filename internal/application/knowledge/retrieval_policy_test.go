@@ -124,18 +124,16 @@ func TestBuildHitsUsesVectorAvailabilityPerBase(t *testing.T) {
 	}
 }
 
-type belowThresholdReranker struct{}
+type policyReranker func([]domainknowledge.SearchHit) ([]domainknowledge.SearchHit, error)
 
-func (belowThresholdReranker) Rerank(_ context.Context, _ domainidentity.Principal, _ string, hits []domainknowledge.SearchHit) ([]domainknowledge.SearchHit, error) {
-	hits[0].Score = .01
-	return hits, nil
+func (r policyReranker) Rerank(_ context.Context, _ domainidentity.Principal, _ string, hits []domainknowledge.SearchHit) ([]domainknowledge.SearchHit, error) {
+	return r(hits)
 }
 
-func TestSearchMinScoreControlsAnswerAndRerankedHits(t *testing.T) {
+func TestSearchMinScoreControlsAnswer(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		minimum  float64
-		rerank   bool
 		wantN    int
 		noAnswer bool
 	}{
@@ -143,19 +141,59 @@ func TestSearchMinScoreControlsAnswerAndRerankedHits(t *testing.T) {
 		{name: "positive below legacy threshold", minimum: .02, wantN: 1},
 		{name: "exact configured threshold", minimum: .03, wantN: 1},
 		{name: "below configured threshold", minimum: .04, noAnswer: true},
-		{name: "rerank cannot bypass threshold", minimum: .02, rerank: true, noAnswer: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repo := &searchRepository{chunks: []domainknowledge.Chunk{{ID: "chunk", KnowledgeBaseID: "base"}}, policies: map[string]domainknowledge.RetrievalPolicy{
 				"base": {LexicalWeight: 1, MinScore: test.minimum},
 			}}
 			service, principal := policySearchService(t, repo, policyLexicalScores{.03}, policyVectorScores{scores: []float64{0}})
-			if test.rerank {
-				service.reranker = belowThresholdReranker{}
-			}
 			result, err := service.Search(t.Context(), principal, domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{"base"}, Query: "query"})
 			if err != nil || len(result.Hits) != test.wantN || result.NoAnswer != test.noAnswer {
 				t.Fatalf("threshold result = %+v, %v", result, err)
+			}
+		})
+	}
+}
+
+func TestSearchRerankOnlyBreaksPolicyScoreTies(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		err    error
+		second string
+	}{
+		{name: "rerank ties", second: "tie-b"},
+		{name: "provider failure", err: errors.New("provider unavailable"), second: "tie-a"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &searchRepository{chunks: []domainknowledge.Chunk{
+				{ID: "tie-a", KnowledgeBaseID: "base"},
+				{ID: "below-threshold", KnowledgeBaseID: "base"},
+				{ID: "strongest", KnowledgeBaseID: "base"},
+				{ID: "tie-b", KnowledgeBaseID: "base"},
+			}, policies: map[string]domainknowledge.RetrievalPolicy{
+				"base": {LexicalWeight: .5, VectorWeight: .5, MinScore: .5},
+			}}
+			service, principal := policySearchService(t, repo,
+				policyLexicalScores{.6, .4, 1, .8}, policyVectorScores{scores: []float64{.8, .4, .8, .6}})
+			calls := 0
+			service.reranker = policyReranker(func(tied []domainknowledge.SearchHit) ([]domainknowledge.SearchHit, error) {
+				calls++
+				if len(tied) != 2 || tied[0].ChunkID != "tie-a" || tied[1].ChunkID != "tie-b" {
+					t.Fatalf("model should only receive the tied, policy-qualified candidates: %+v", tied)
+				}
+				for i := range tied {
+					tied[i].Score, tied[i].Citation.Score = .01, .01
+				}
+				return []domainknowledge.SearchHit{tied[1], tied[0]}, test.err
+			})
+			result, err := service.Search(t.Context(), principal, domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{"base"}, Query: "query", TopK: 2})
+			if err != nil || calls != 1 || len(result.Hits) != 2 || result.NoAnswer {
+				t.Fatalf("reranked result = %+v, %v, calls=%d", result, err, calls)
+			}
+			if result.Hits[0].ChunkID != "strongest" || result.Hits[0].Score != .9 ||
+				result.Hits[1].ChunkID != test.second || result.Hits[1].Score != .7 ||
+				result.Citations[1].Score != result.Hits[1].Score {
+				t.Fatalf("model changed the policy score or its precedence: %+v", result.Hits)
 			}
 		})
 	}

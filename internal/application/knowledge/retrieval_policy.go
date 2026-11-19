@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"sort"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
@@ -34,14 +35,39 @@ func (s *Service) applyRetrievalPolicies(ctx context.Context, principal domainid
 	return min(topK, maxTopK), nil
 }
 
-func filterRetrievalHits(hits []domainknowledge.SearchHit, policies map[string]domainknowledge.RetrievalPolicy) []domainknowledge.SearchHit {
-	filtered := hits[:0]
-	for _, hit := range hits {
-		if policy, ok := policies[hit.KnowledgeBaseID]; ok && hit.Score >= policy.MinScore {
-			filtered = append(filtered, hit)
+// The model can order tied hits; the policy score controls thresholds, citations and TopK.
+func (s *Service) rerankRetrievalTies(ctx context.Context, principal domainidentity.Principal, query string, hits []domainknowledge.SearchHit) {
+	if s.reranker == nil {
+		return
+	}
+	var tied []domainknowledge.SearchHit
+	for i, hit := range hits {
+		tiesPrevious := i > 0 && hit.Score == hits[i-1].Score
+		tiesNext := i+1 < len(hits) && hit.Score == hits[i+1].Score
+		if tiesPrevious || tiesNext {
+			tied = append(tied, hit)
 		}
 	}
-	return filtered
+	if len(tied) == 0 {
+		return
+	}
+	reranked, err := s.reranker.Rerank(ctx, principal, query, tied)
+	if err != nil {
+		return
+	}
+	ranks := make(map[string]int, len(reranked))
+	for i, hit := range reranked {
+		if ranks[hit.ChunkID] == 0 {
+			ranks[hit.ChunkID] = i + 1
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].Score != hits[j].Score {
+			return hits[i].Score > hits[j].Score
+		}
+		left, right := ranks[hits[i].ChunkID], ranks[hits[j].ChunkID]
+		return left > 0 && (right == 0 || left < right)
+	})
 }
 
 func retrievalNoAnswer(hits []domainknowledge.SearchHit, policies map[string]domainknowledge.RetrievalPolicy) bool {

@@ -223,11 +223,7 @@ func (s *Service) Search(ctx context.Context, principal domainidentity.Principal
 	if len(hits) > topK*2 {
 		hits = hits[:topK*2]
 	}
-	if s.reranker != nil && len(hits) > 0 {
-		if reranked, rerankErr := s.reranker.Rerank(ctx, principal, request.Query, hits); rerankErr == nil {
-			hits = filterRetrievalHits(reranked, request.Policies)
-		}
-	}
+	s.rerankRetrievalTies(ctx, principal, request.Query, hits)
 	if len(hits) > topK {
 		hits = hits[:topK]
 	}
