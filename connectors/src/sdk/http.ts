@@ -371,7 +371,7 @@ async function handleActionRequest<TConfig>(
   }
   const result = credentials
     ? await dispatchCredentialAction(input.connector, actionRequest, credentials, input.response)
-    : await input.connector.dispatchAction(actionRequest);
+    : await dispatchCancellableAction(input.connector, actionRequest, input.response);
   if (input.response.destroyed) return;
   const fields = {
     connectorId: input.connector.id,
@@ -382,6 +382,22 @@ async function handleActionRequest<TConfig>(
   };
   input.logger?.info("connector action handled", credentials ? redactCredentialResult(fields, credentials) as Record<string, unknown> : fields);
   writeJson(input.response, statusForActionResult(result), result);
+}
+
+async function dispatchCancellableAction<TConfig>(
+  connector: Connector<TConfig>, request: ConnectorActionRequest, response: ServerResponse
+): Promise<ConnectorActionResult> {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  response.once("close", abort);
+  if (response.destroyed) controller.abort();
+  request.signal = controller.signal;
+  try {
+    return await connector.dispatchAction(request);
+  } finally {
+    response.removeListener("close", abort);
+    controller.abort();
+  }
 }
 
 async function dispatchCredentialAction<TConfig>(
