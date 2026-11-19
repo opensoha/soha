@@ -513,7 +513,9 @@ test('Ingress events use a bounded precise namespace-kind-name timeline and neve
   await expect(active(page)).not.toContainText('without timestamp')
   state.eventFail = 503
   await active(page).getByRole('button', { name: '刷新 Ingress 事件', exact: true }).click()
-  await expect(active(page)).toContainText('Ingress read failed')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'Ingress read failed',
+  )
   await expect(active(page)).toContainText('certificate pending')
   state.eventFail = 403
   await active(page).getByRole('button', { name: '刷新 Ingress 事件', exact: true }).click()
@@ -541,12 +543,29 @@ test('TLS certificates show public validity metadata without Secret data permiss
   await expect(current.getByRole('link')).toHaveCount(0)
   state.certificateFail = 503
   await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
-  await expect(current).toContainText('正在展示上次读取结果')
+  const notice = page.locator('.soha-read-feedback-notification')
+  await expect(notice).toContainText('部分数据读取失败')
+  await expect(notice.getByText('证书信息读取失败', { exact: true })).toHaveCount(2)
+  await expect(notice).toContainText('已保留可展示的上次结果。')
   await expect(current).toContainText('2027/02/01')
   state.certificateFail = 404
-  await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
-  await expect(current).toContainText('证书信息读取失败')
+  const missingCertificates = Promise.all(
+    ['tls-a', 'tls-b'].map((name) =>
+      page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `${root}/configuration/secrets/${name}/certificate` &&
+          new URL(response.url()).searchParams.get('namespace') === 'monitoring' &&
+          response.status() === 404,
+      ),
+    ),
+  )
+  await notice.getByRole('button', { name: /^重试读取/ }).click()
+  await missingCertificates
+  await expect(notice).toContainText('证书信息读取失败')
   await expect(current).not.toContainText('2027/02/01')
+  await notice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(notice).toHaveCount(0)
   state.certificateFail = 403
   await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
   await expect(current).toContainText('无访问权限')
@@ -554,7 +573,9 @@ test('TLS certificates show public validity metadata without Secret data permiss
   state.certificateFail = 0
   state.certificateMismatch = true
   await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
-  await expect(current).toContainText('Certificate identity does not match')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'Certificate identity does not match',
+  )
   await expect(current).not.toContainText('有效期内')
   verifyBrowserEvidence(evidence)
 })
@@ -772,6 +793,11 @@ test('Ingress refresh retains usable values on 503 and hides protected content o
   await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
   await expect(page.getByRole('switch', { name: /刷新失败/ })).toBeVisible()
   await expect(active(page)).toContainText('a.example.test')
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   state.fail = 403
   await page.getByRole('button', { name: '刷新 Ingress', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'web', exact: true })).toHaveCount(0)

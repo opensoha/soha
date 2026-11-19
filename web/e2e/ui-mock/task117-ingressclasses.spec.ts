@@ -233,6 +233,11 @@ test('refresh retains data on 503 and removes protected content on 403', async (
   await expect(page.getByText('IngressClass read failed', { exact: false }).first()).toBeVisible()
   await expect(page.getByRole('heading', { name: 'nginx', exact: true })).toBeVisible()
   await expect(page.getByRole('switch', { name: /刷新失败/ })).toBeVisible({ timeout: 15_000 })
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   state.fail = 403
   await page.getByRole('button', { name: '刷新 IngressClass', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'nginx', exact: true })).toHaveCount(0)

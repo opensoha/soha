@@ -545,7 +545,9 @@ test('StatefulSet: foreign revision template and zero replicas do not masquerade
   state.wrongRevision = true
   await page.getByRole('tab', { name: '版本历史', exact: true }).click()
   await page.getByRole('button', { name: '查看版本 4 模板与差异', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('ControllerRevision identity does not match')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'ControllerRevision identity does not match',
+  )
   await expect(page.getByRole('dialog').locator('.soha-yaml-diff')).toHaveCount(0)
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)

@@ -89,7 +89,9 @@ for (const width of [1440, 390])
       /ant-btn-loading/,
     )
     await preview.getByRole('button', { name: /预览准入$/ }).click()
-    await expect(preview.getByText('准入预览失败', { exact: true })).toBeVisible()
+    await expect(
+      page.locator('.soha-operation-feedback').getByText('准入预览：操作请求失败', { exact: true }),
+    ).toBeVisible()
     await expect(preview.getByText('当前策略拒绝接入', { exact: true })).toHaveCount(0)
     verifyBrowserEvidence(evidence)
   })

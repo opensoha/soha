@@ -154,6 +154,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
     failedPath: '',
     readStatus: 200,
     writeStatus: 503,
+    writeGate: undefined as Promise<void> | undefined,
     writes: [] as string[],
     reads: [] as string[],
     deleted: [] as string[],
@@ -213,7 +214,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
     'platform.helm.releases.delete',
     'platform.helm.charts.view',
   ]
-  const evidence = await installMocks(context, page, (url, method, request) => {
+  const evidence = await installMocks(context, page, async (url, method, request) => {
     const path = url.pathname
     if (path === '/api/v1/auth/stream-ticket' && method === 'POST') return failure(403)
     if (path === '/api/v1/access/permission-snapshot')
@@ -359,6 +360,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
     }
     if (path === root + '/configuration/hpas/autoscale-api/yaml' && method === 'PUT') {
       state.writes.push(path)
+      if (state.writeGate) await state.writeGate
       if (state.writeStatus !== 200) return failure(state.writeStatus)
       return { body: { data: { content: request.postDataJSON().content } } }
     }
@@ -486,11 +488,14 @@ for (const item of lists)
     state.failedPath = root + item.path
     state.readStatus = 503
     await refresh.click()
-    await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
+    const readNotice = page.locator('.soha-read-feedback-notification')
+    await expect(readNotice).toContainText('未更新，正在展示上次读取结果')
     await expect(page.getByText(item.name, { exact: true })).toBeVisible()
     state.readStatus = 403
-    await refresh.click()
-    await expect(page.getByText('列表无访问权限')).toBeVisible()
+    await readNotice.getByRole('button', { name: /^重试读取/ }).click()
+    await expect(page.getByRole('alert', { name: '列表读取状态', exact: true })).toContainText(
+      '无访问权限',
+    )
     await expect(page.getByText(item.name, { exact: true })).toHaveCount(0)
     expect(state.writes).toEqual([])
     verifyBrowserEvidence(evidence)
@@ -513,13 +518,19 @@ for (const mode of ['light', 'dark', 'narrow'] as const)
     state.failedPath = root + '/configuration/configmaps'
     state.readStatus = 503
     const refresh = page.getByRole('button', { name: configMapRefresh, exact: true })
+    await verifyGeometry(page, refresh)
     await refresh.press('Enter')
-    await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
-    await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
+    const readNotice = page.locator('.soha-read-feedback-notification')
+    await expect(readNotice).toContainText('列表未更新，正在展示上次读取结果')
+    await expect(page.locator('.ant-notification-notice')).toHaveCount(1)
     if (mode === 'dark')
       await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark')
-    await verifyGeometry(page, refresh)
+    const dismiss = readNotice.getByRole('button', { name: '关闭', exact: true })
+    await verifyGeometry(page, dismiss)
     await page.screenshot({ path: info.outputPath(`platform-${mode}.png`), fullPage: true })
+    await dismiss.click()
+    await expect(readNotice).toHaveCount(0)
+    await verifyGeometry(page, refresh)
     verifyBrowserEvidence(evidence)
   })
 
@@ -561,16 +572,25 @@ test('Platform edit keeps its exact draft and confirmation locked after an unkno
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const { state, evidence } = await platformMocks(context, page)
   const { editor, plan } = await openHPAEditor(page)
-  await plan.getByRole('button', { name: '确认更新', exact: true }).click()
-  await expect(plan.getByText('更新资源：请求结果不明')).toBeVisible()
+  let releaseWrite = () => {}
+  state.writeGate = new Promise<void>((resolve) => {
+    releaseWrite = resolve
+  })
+  const notice = page.locator('.soha-operation-feedback')
+  try {
+    await plan.getByRole('button', { name: '确认更新', exact: true }).click()
+    const pending = notice.locator('.soha-feedback-live-dot')
+    await expect(pending).toBeVisible()
+    await expect(pending).toHaveAttribute('data-motion-disabled', 'true')
+  } finally {
+    releaseWrite()
+  }
+  await expect(notice.filter({ hasText: '更新资源：请求结果不明' })).toBeVisible()
   await expect(plan.getByRole('button', { name: '确认更新', exact: true })).toBeDisabled()
   await expect(editor.getByLabel('最小副本数', { exact: true })).toHaveValue('3')
   await page.keyboard.press('Escape')
   await expect(plan).toBeVisible()
   expect(state.writes).toHaveLength(1)
-  await expect(
-    plan.locator('.soha-operation-feedback').filter({ hasText: '更新资源：请求结果不明' }),
-  ).toHaveAttribute('data-motion-disabled', 'true')
   await verifyGeometry(page, plan.getByRole('button', { name: /取\s*消/ }))
   await page.screenshot({ path: info.outputPath('platform-unknown.png'), fullPage: true })
   verifyBrowserEvidence(evidence)
@@ -584,17 +604,21 @@ test('Platform known rejection retains values and successful correction stays on
   state.writeStatus = 409
   const { editor, plan } = await openHPAEditor(page)
   await plan.getByRole('button', { name: '确认更新', exact: true }).click()
-  await expect(plan.getByText('更新资源：操作请求失败')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').filter({ hasText: '更新资源：操作请求失败' }),
+  ).toBeVisible()
   await expect(editor.getByLabel('最小副本数', { exact: true })).toHaveValue('3')
   state.writeStatus = 200
   await plan.getByRole('button', { name: '确认更新', exact: true }).click()
   await expect(plan).toHaveCount(0)
-  await expect(page.getByRole('dialog').getByText('更新资源：请求已返回')).toBeVisible()
+  const receipt = page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '更新资源：请求已返回' })
+  await expect(receipt).toContainText('cluster-a / monitoring / autoscale-api')
+  const finish = editor.getByRole('button', { name: /完\s*成/ })
+  await expect(finish).toBeVisible()
   await page.screenshot({ path: info.outputPath('platform-receipt.png'), fullPage: true })
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /完\s*成/ })
-    .click()
+  await finish.click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(state.writes).toHaveLength(2)
   verifyBrowserEvidence(evidence)
@@ -640,6 +664,11 @@ test('Deployment unknown batch restart also blocks the row restart and other wri
     .getByRole('menuitem', { name: '批量重启', exact: true })
     .click()
   await expect(page.getByText('批量重启 Deployment：请求结果不明', { exact: true })).toBeVisible()
+  const notice = page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '批量重启 Deployment：请求结果不明' })
+  await notice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(notice).toHaveCount(0)
   await row.getByRole('button', { name: '更多操作：api', exact: true }).click()
   const actions = page.getByRole('menu', { name: 'Deployment 操作：api', exact: true })
   await expect(actions.getByRole('menuitem', { name: '重启', exact: true })).toHaveAttribute(
