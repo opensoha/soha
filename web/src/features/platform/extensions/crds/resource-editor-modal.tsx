@@ -1,13 +1,13 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, requestErrorMessage, useInlineApiError } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
 import { hasAllowedAction } from '@/features/auth'
 import {
   platformResourceTarget,
   usePlatformMutation,
 } from '@/features/platform/shared/use-platform-mutation'
-import { useI18n } from '@/i18n'
+import { localeText, useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -85,6 +85,7 @@ export function CRDResourceEditor({
     label: ['应用自定义资源', 'Apply custom resource'],
     target: platformResourceTarget,
   })
+  useInlineApiError(applyMutation.outcomeUnknown ? applyMutation.error : null)
   const platformWriteBlocked = applyMutation.blocked
 
   const yamlState = useYamlDraft(
@@ -152,7 +153,26 @@ export function CRDResourceEditor({
     <>
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
-      {applyMutation.feedback}
+      {applyMutation.outcomeUnknown ? (
+        <ContextFeedback
+          type="warning"
+          title={localeText(localeCode, '应用结果待核对', 'Apply outcome needs verification')}
+          description={
+            <>
+              <div>{requestErrorMessage(applyMutation.error, localeCode)}</div>
+              <div>
+                {localeText(
+                  localeCode,
+                  '请核对集群中该资源的实际状态，核对前请勿重复提交。',
+                  'Check the resource in the cluster before submitting again.',
+                )}
+              </div>
+            </>
+          }
+        />
+      ) : (
+        applyMutation.feedback
+      )}
 
       {!clusterId ? (
         <ManagementState
