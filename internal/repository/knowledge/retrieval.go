@@ -88,11 +88,25 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	if err != nil {
 		return nil, err
 	}
+	vectorScore, scoreArgs, err := knowledgeShortlistedVectorScore(batch)
+	if err != nil {
+		return nil, err
+	}
+	// Preserve known channel RRF; only missing lexical scores use the bounded shortlist's RRF.
 	query += `, vector_candidates AS MATERIALIZED (` + vectorQuery + `), vectors AS (
 		SELECT * FROM vector_candidates UNION ALL (` + exactQuery + `)
+	), candidate_ids AS MATERIALIZED (
+		SELECT id FROM lexical UNION SELECT id FROM vectors
+	), candidate_rows AS MATERIALIZED (
+		SELECT c.* FROM authorized c JOIN candidate_ids candidate ON candidate.id=c.id
+	), shortlisted_lexical_raw AS (
+		SELECT id,ts_rank_cd(search_vector,websearch_to_tsquery('simple',?))+similarity(content,?) AS relevance
+		FROM candidate_rows WHERE search_vector @@ websearch_to_tsquery('simple',?) OR content ILIKE ?
+	), shortlisted_lexical AS (
+		SELECT id,61.0/(60+row_number() OVER (ORDER BY relevance DESC,id)) AS lexical_score FROM shortlisted_lexical_raw
 	), scores AS (
-		SELECT id,max(lexical_score) AS lexical_score,max(vector_score) AS vector_score FROM
-		(SELECT * FROM lexical UNION ALL SELECT * FROM vectors) ranked GROUP BY id
+		SELECT c.id,coalesce(original.lexical_score,l.lexical_score,0.0) AS lexical_score,` + vectorScore + ` AS vector_score
+		FROM candidate_rows c LEFT JOIN lexical original ON original.id=c.id LEFT JOIN shortlisted_lexical l ON l.id=c.id
 	)
 	SELECT c.id,c.knowledge_base_id,c.document_id,c.document_title,c.ordinal,c.content,c.content_hash,c.location,c.token_count,c.acl,c.created_at,c.document_version_id,c.index_revision_id,s.lexical_score,s.vector_score,c.embedding_model,c.embedding_route,coalesce(c.embedding_dimension,0),
 		c.embedding_upstream_id,c.embedding_provider_kind,c.embedding_upstream_model,a.knowledge_base_id IS NOT NULL
@@ -102,6 +116,8 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	WHERE ranking.score>=p.min_score ORDER BY ranking.score DESC,c.id LIMIT ?`
 	args = append(args, vectorArgs...)
 	args = append(args, exactArgs...)
+	args = append(args, request.Query, request.Query, request.Query, pattern)
+	args = append(args, scoreArgs...)
 	args = append(args, limit)
 	items := []domainknowledge.Chunk{}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -146,13 +162,7 @@ func knowledgeVectorCandidates(batch domainknowledge.EmbeddingBatch, limit int, 
 		return "", nil, err
 	}
 	dimension := len(batch.Vectors[0])
-	distance := `embedding <=> ?::vector`
-	if dimension == 1536 {
-		distance = `embedding::vector(1536) <=> ?::vector(1536)`
-	}
-	if dimension == 3072 {
-		distance = `embedding::halfvec(3072) <=> ?::halfvec(3072)`
-	}
+	distance := knowledgeVectorDistance(dimension)
 	// The legacy UNION has no embeddings and prevents an ordered HNSW scan.
 	filter, order := "", distance
 	args := []any{vector, dimension, batch.Model, batch.Route, batch.Source.UpstreamID, batch.Source.ProviderKind, batch.Source.UpstreamModel}
@@ -171,6 +181,35 @@ func knowledgeVectorCandidates(batch domainknowledge.EmbeddingBatch, limit int, 
 	query := `SELECT c.id,0.0 AS lexical_score,greatest(0.0,1-(` + distance + `)) AS vector_score FROM authorized_current c` + join + `
 		WHERE embedding_dimension=? AND embedding_model=? AND embedding_route=? AND embedding_upstream_id=? AND embedding_provider_kind=? AND embedding_upstream_model=?` + filter + ` ORDER BY ` + order + ` LIMIT ?`
 	return query, append(args, vector, limit), nil
+}
+
+func knowledgeShortlistedVectorScore(batch domainknowledge.EmbeddingBatch) (string, []any, error) {
+	if len(batch.Vectors) == 0 || !batch.Source.Known() {
+		return `0.0`, nil, nil
+	}
+	if len(batch.Vectors) != 1 || batch.Model == "" {
+		return "", nil, fmt.Errorf("invalid retrieval embedding batch")
+	}
+	vector, err := knowledgeVector(batch.Vectors[0])
+	if err != nil {
+		return "", nil, err
+	}
+	dimension := len(batch.Vectors[0])
+	score := `CASE WHEN c.embedding IS NOT NULL AND c.embedding_dimension=? AND c.embedding_model=? AND c.embedding_route=?
+		AND c.embedding_upstream_id=? AND c.embedding_provider_kind=? AND c.embedding_upstream_model=?
+		THEN greatest(0.0,1-(` + knowledgeVectorDistance(dimension) + `)) ELSE 0.0 END`
+	return score, []any{dimension, batch.Model, batch.Route, batch.Source.UpstreamID, batch.Source.ProviderKind, batch.Source.UpstreamModel, vector}, nil
+}
+
+func knowledgeVectorDistance(dimension int) string {
+	switch dimension {
+	case 1536:
+		return `c.embedding::vector(1536) <=> ?::vector(1536)`
+	case 3072:
+		return `c.embedding::halfvec(3072) <=> ?::halfvec(3072)`
+	default:
+		return `c.embedding <=> ?::vector`
+	}
 }
 
 // ValidateCitations reloads current ACL and the exact current content before another model call.
