@@ -1360,7 +1360,7 @@ async function renderWithProviders(
       expect(
         container.querySelector(
           '[data-testid="release-flow-dag-editor"], .soha-read-feedback, .soha-management-state.is-not-found',
-        ),
+        ) || document.querySelector('.soha-read-feedback-notification'),
       ).not.toBeNull()
     })
   }
@@ -2647,7 +2647,10 @@ describe('ApplicationDetailPage workbench', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
       if (retryService) {
-        expect(editor.textContent).toContain('部分配置已保存')
+        expect(editor.textContent).toContain('服务配置检查点已保留')
+        expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+          '服务保存被拒绝',
+        )
         expect(editor.querySelector<HTMLInputElement>('#buildSource_name')?.value).toBe(
           'Source API build',
         )

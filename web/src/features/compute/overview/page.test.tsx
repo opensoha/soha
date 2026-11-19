@@ -202,7 +202,7 @@ describe('compute overview page', () => {
     )
 
     expect(retry).not.toBeNull()
-    act(() => retry?.click())
+    await act(async () => retry?.click())
     expect(refetch).toHaveBeenCalledTimes(1)
   })
 
@@ -554,7 +554,7 @@ describe('compute overview page', () => {
     expect(
       container.querySelector('.soha-overview-metric-card.soha-compute-metric-hosts')?.textContent,
     ).toContain('运行时主机2')
-    act(() =>
+    await act(async () =>
       document.body
         .querySelector<HTMLButtonElement>('button[aria-label="重试读取计算资源总览"]')
         ?.click(),

@@ -2343,10 +2343,12 @@ describe('ApplicationsPage workspace layout', () => {
         }),
       )
       await clickButton(findButton(view, '刷新执行记录'))
-      await waitForText(view, 'req-history-read')
+      await waitForText(document.body, 'req-history-read')
       if (status === 503) {
         expect(view.textContent).toContain('build-release-main')
-        expect(view.textContent).toContain('上次读取结果')
+        expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+          '上次读取结果',
+        )
       } else expect(view.textContent).not.toContain('build-release-main')
     },
   )
@@ -2509,11 +2511,17 @@ describe('ApplicationsPage workspace layout', () => {
     testState.workflowsError = true
     const failed = await renderWithProviders(<ExecutionHistoryPage />, '/execution-history')
 
-    expect(failed.textContent).toContain('执行记录读取失败')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      '执行记录读取失败',
+    )
     expect(failed.textContent).not.toContain('暂无匹配的执行记录')
 
     testState.workflowsError = false
-    await clickButton(failed.querySelector('[aria-label="重试读取执行记录"]') as HTMLButtonElement)
+    await clickButton(
+      document.querySelector(
+        '.soha-read-feedback-notification [aria-label="重试读取执行记录"]',
+      ) as HTMLButtonElement,
+    )
     expect(failed.textContent).toContain('build-release-main')
 
     testState.workflowsEmpty = true

@@ -270,7 +270,11 @@ it('does not turn a failed manifest read into a successful zero total', async ()
   await vi.waitFor(() =>
     expect(container.querySelector('[role="status"]')?.textContent).toBe('清单未加载'),
   )
-  expect(container.textContent).toContain('Manifest service unavailable')
+  await vi.waitFor(() =>
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'Manifest service unavailable',
+    ),
+  )
 })
 
 it('keeps unobserved inventory and drift distinct from confirmed zero observations', async () => {
