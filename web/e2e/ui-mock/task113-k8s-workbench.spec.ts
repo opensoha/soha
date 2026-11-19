@@ -897,7 +897,8 @@ for (const mode of ['pdb', 'unavailable', 'state-denied'] as const) {
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('spinbutton', { name: '排水超时（秒）' }).fill('30')
     await dialog.getByRole('button', { name: '确认排空', exact: true }).click()
-    await expect(dialog).toContainText('drain-request-1')
+    const failure = page.locator('.soha-operation-feedback')
+    await expect(failure).toContainText('drain-request-1')
     if (mode === 'state-denied') {
       await expect(dialog).toContainText('排水后的节点状态无访问权限')
       await expect(dialog).not.toContainText('当前绑定 Pod：')
@@ -912,7 +913,7 @@ for (const mode of ['pdb', 'unavailable', 'state-denied'] as const) {
     }
     if (mode === 'unavailable')
       await expect(dialog.getByRole('button', { name: /^(?:loading )?确认排空$/ })).toBeDisabled()
-    else await expect(dialog).toContainText('PodDisruptionBudget 阻止了驱逐，排水未完成。')
+    else await expect(failure).toContainText('PodDisruptionBudget 阻止了驱逐，排水未完成。')
     expect(writes).toHaveLength(1)
     expect(new URL(writes[0]).pathname).toMatch(/\/drain$/)
     await expect(
@@ -1406,7 +1407,9 @@ test('monitoring denial does not reveal cached capacity', async ({ context, page
   await page.getByRole('button', { name: 'Refresh resource monitoring', exact: true }).click()
   for (const label of ['CPU', 'Overview', 'Memory', 'Conntrack', 'Pod capacity']) {
     await page.getByRole('tab', { name: label, exact: true }).click()
-    await expect(active.getByText('Monitoring access denied', { exact: false })).toBeVisible()
+    const denial = active.locator('.soha-read-feedback[role="alert"]')
+    await expect(denial.getByText(/: access denied$/)).toBeVisible()
+    await expect(denial).toContainText('Monitoring access denied')
     await expect(active.getByRole('link', { name: 'cluster-a-worker', exact: true })).toHaveCount(0)
     await expect(
       active.locator('.soha-monitoring-chart, .soha-monitoring-summary-card'),
@@ -1464,14 +1467,15 @@ for (const width of [320, 1238, 1275]) {
         name: 'task113-production-healthy-worker-with-a-long-resource-name-09',
         exact: true,
       })
-      expect(await longName.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe(
+      const longNameText = longName.locator('.soha-table-cell-text')
+      expect(await longNameText.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe(
         'nowrap',
       )
-      expect(await longName.evaluate((element) => getComputedStyle(element).textOverflow)).toBe(
+      expect(await longNameText.evaluate((element) => getComputedStyle(element).textOverflow)).toBe(
         'ellipsis',
       )
       expect(
-        await longName.evaluate((element) => element.scrollWidth - element.clientWidth),
+        await longNameText.evaluate((element) => element.scrollWidth - element.clientWidth),
       ).toBeGreaterThan(1)
       const assertExpandAlignment = async () => {
         const deltas = await content.locator('.ant-table-row-expand-icon').evaluateAll((buttons) =>
@@ -1492,26 +1496,29 @@ for (const width of [320, 1238, 1275]) {
         }
       }
       await assertExpandAlignment()
-      await longName.hover()
-      await expect(
-        page.getByRole('tooltip', {
-          name: 'task113-production-healthy-worker-with-a-long-resource-name-09',
-          exact: true,
-        }),
-      ).toBeVisible()
+      const tooltip = page.getByRole('tooltip', {
+        name: 'task113-production-healthy-worker-with-a-long-resource-name-09',
+        exact: true,
+      })
       await page.mouse.move(0, 0)
+      await expect(tooltip).toBeHidden()
       const healthy = content
         .locator('.ant-table-row[data-row-key]')
         .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' })
-      await healthy.getByRole('button', { name: '展开行', exact: true }).press('Tab')
+      const expand = healthy.getByRole('button', { name: '展开行', exact: true })
+      await expand.press('Tab')
       await expect(longName).toBeFocused()
-      await expect(
-        page.getByRole('tooltip', {
-          name: 'task113-production-healthy-worker-with-a-long-resource-name-09',
-          exact: true,
-        }),
-      ).toBeVisible()
-      await healthy.getByRole('button', { name: '展开行', exact: true }).press('Enter')
+      await expect(tooltip).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(tooltip).toBeHidden()
+      await expect(longName).toBeFocused()
+      await expand.press('Tab')
+      await expect(tooltip).toBeVisible()
+      await expand.focus()
+      await expect(tooltip).toBeHidden()
+      await longNameText.hover()
+      await expect(tooltip).toBeVisible()
+      await expand.press('Enter')
       await expect(healthy.getByRole('button', { name: '关闭行', exact: true })).toHaveAttribute(
         'aria-expanded',
         'true',
@@ -1560,7 +1567,7 @@ test('flat network menus and topology editing keep resource scope', async ({
   const evidence = await setup(context, page, { resourceEdit: true, flatNetwork: true })
   await page.goto('/network/topology?view=table')
   await page.getByRole('button', { name: '展开侧栏', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'menu 网络', exact: true }).click()
+  await page.getByRole('menuitem', { name: '网络', exact: true }).click()
   const leaves = page.getByRole('complementary').locator('.ant-menu-sub .ant-menu-item')
   await expect(leaves).toHaveCount(2)
   await expect(leaves.filter({ hasText: 'Services' })).toBeVisible()

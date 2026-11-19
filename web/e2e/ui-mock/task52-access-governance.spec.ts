@@ -8,6 +8,7 @@ async function governanceMocks(context: BrowserContext, page: Page) {
     failedPath: '',
     revokedPermissions: [] as string[],
     writeStatus: 503,
+    writeGate: undefined as Promise<void> | undefined,
     previewStatus: 200,
     writes: 0,
     syncWrites: 0,
@@ -74,7 +75,7 @@ async function governanceMocks(context: BrowserContext, page: Page) {
       missingObjectPolicy: 'archive',
     },
   }
-  const evidence = await installMocks(context, page, (url, method) => {
+  const evidence = await installMocks(context, page, async (url, method) => {
     const path = url.pathname
     if (path === '/api/v1/access/permission-snapshot')
       return {
@@ -270,6 +271,7 @@ async function governanceMocks(context: BrowserContext, page: Page) {
         return { body: { data: { valid: true, message: '连接验证通过' } } }
       if (method !== 'GET') {
         state.writes++
+        if (state.writeGate) await state.writeGate
         if (path.endsWith('/sync')) state.syncWrites++
         return state.writeStatus === 200
           ? {
@@ -313,10 +315,17 @@ for (const mode of ['light', 'dark', 'narrow'] as const) {
     await keyword.fill('operations')
     state.readStatus = 503
     await page.getByRole('button', { name: '刷新用户', exact: true }).click()
-    await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
+    const readNotice = page.locator('.soha-read-feedback-notification')
+    await expect(readNotice).toHaveCount(1)
+    await expect(readNotice.getByText('部分数据读取失败', { exact: true })).toBeVisible()
+    for (const label of ['列表', '角色目录', '组织目录'])
+      await expect(readNotice.getByText(`${label}读取失败`, { exact: true })).toBeVisible()
+    await expect(readNotice.getByText('已保留可展示的上次结果。', { exact: true })).toBeVisible()
     await expect(keyword).toHaveValue('operations')
     await expect(page.getByText('平台值班员', { exact: true })).toBeVisible()
     await page.screenshot({ path: info.outputPath(`b4-users-${mode}.png`), fullPage: true })
+    await readNotice.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(readNotice).toHaveCount(0)
     await verifyGeometry(page, page.getByRole('button', { name: '刷新用户', exact: true }))
     state.readStatus = 403
     await page.getByRole('button', { name: '刷新用户', exact: true }).click()
@@ -337,8 +346,14 @@ test('B4 role draft survives uncertain save and reopen without another write', a
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('角色名称', { exact: true }).fill('生产巡检角色草稿')
   await dialog.getByRole('button', { name: '创建', exact: true }).click()
-  await expect(dialog.getByText('保存：请求结果不明')).toBeVisible()
-  await expect(dialog.getByText('b4-request-original', { exact: false })).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('保存：请求结果不明', { exact: true }),
+  ).toBeVisible()
+  const feedback = page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '保存：请求结果不明' })
+  await feedback.getByText('查看详情', { exact: true }).click()
+  await expect(feedback.getByText('b4-request-original', { exact: false })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '创建', exact: true })).toBeDisabled()
   await expect
     .poll(() =>
@@ -349,11 +364,29 @@ test('B4 role draft survives uncertain save and reopen without another write', a
     )
     .toBe(0)
   await page.screenshot({ path: info.outputPath('b4-role-draft.png'), fullPage: true })
+  const rolesRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/v1/access/roles',
+  )
+  await feedback.getByRole('button', { name: '核对列表记录', exact: true }).click()
+  const rolesResponse = await rolesRead
+  expect(rolesResponse.status()).toBe(200)
+  expect((await rolesResponse.json()).data).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'role-ops' })]),
+  )
+  await expect.poll(() => state.reads).toBeGreaterThan(1)
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await feedback.getByRole('button', { name: '关闭', exact: true }).click()
+  await page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '创建角色：请求结果不明' })
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-operation-feedback')).toHaveCount(0)
   await page.getByRole('button', { name: '查看待核对草稿', exact: true }).click()
   await expect(dialog.getByLabel('角色名称', { exact: true })).toHaveValue('生产巡检角色草稿')
-  await dialog.getByRole('button', { name: '核对列表记录', exact: true }).click()
-  await expect.poll(() => state.reads).toBeGreaterThan(1)
+  await expect(dialog.getByRole('button', { name: '创建', exact: true })).toBeDisabled()
   expect(state.writes).toBe(1)
   verifyBrowserEvidence(evidence)
 })
@@ -388,9 +421,26 @@ test('B4 scope editor retains the draft and uses only reads to check an unknown 
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
   await editor.getByRole('button', { name: '更新', exact: true }).click()
-  await expect(editor.getByText('保存：请求结果不明')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('保存：请求结果不明', { exact: true }),
+  ).toBeVisible()
   await expect(editor.getByRole('button', { name: '更新', exact: true })).toBeDisabled()
-  await editor.getByRole('button', { name: '核对列表记录', exact: true }).click()
+  const grantsRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/v1/access/users/user-ops/scope-grants',
+  )
+  await page
+    .locator('.soha-operation-feedback')
+    .getByRole('button', { name: '核对列表记录', exact: true })
+    .click()
+  const grantsResponse = await grantsRead
+  expect(grantsResponse.status()).toBe(200)
+  expect((await grantsResponse.json()).data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'grant-platform', subjectId: 'user-ops' }),
+    ]),
+  )
   expect(state.writes).toBe(1)
   verifyBrowserEvidence(evidence)
 })
@@ -404,7 +454,9 @@ test('B4 directory preview retries reads, then exposes the returned running evid
   state.previewStatus = 503
   await page.getByRole('button', { name: '预览变更', exact: true }).click()
   const preview = page.getByRole('dialog')
-  await expect(preview.getByText('读取同步预览：操作请求失败')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('读取同步预览：操作请求失败'),
+  ).toBeVisible()
   expect(state.writes).toBe(0)
   state.previewStatus = 200
   await preview.getByRole('button', { name: '重试读取预览', exact: true }).click()
@@ -415,15 +467,28 @@ test('B4 directory preview retries reads, then exposes the returned running evid
     name: '企业通讯录 · 组织与人员 · 运行与事件',
     exact: true,
   })
-  await expect(runtime.getByText('已返回同步运行记录')).toBeVisible()
-  await expect(runtime.getByText('run-directory-1', { exact: true })).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('已返回同步运行记录'),
+  ).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('run-directory-1', { exact: true }),
+  ).toBeVisible()
   await expect(runtime.getByText('同步已完成，组织数据已更新')).toHaveCount(0)
   await expect(runtime.getByRole('tab', { name: '运行历史' })).toHaveAttribute(
     'aria-selected',
     'true',
   )
   await runtime.getByRole('tab', { name: '实时事件' }).click()
-  await runtime.getByRole('button', { name: '查看运行记录', exact: true }).click()
+  await expect(
+    runtime
+      .getByRole('tabpanel', { name: '实时事件' })
+      .getByText('department.updated', { exact: true }),
+  ).toBeVisible()
+  await page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '已返回同步运行记录' })
+    .getByRole('button', { name: '查看运行记录', exact: true })
+    .click()
   await expect(runtime.getByRole('tab', { name: '运行历史' })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -497,18 +562,30 @@ test('B4 role editor supports keyboard submission and reduced motion on narrow s
   await dialog.getByLabel('角色名称', { exact: true }).fill('键盘编辑草稿')
   const createRole = dialog.getByRole('button', { name: '创建', exact: true })
   await expect(createRole).toBeEnabled()
-  await createRole.press('Enter')
-  await expect(dialog.getByText('保存：请求结果不明')).toBeVisible()
-  await expect(dialog.locator('.soha-operation-feedback')).toHaveAttribute(
-    'data-motion-disabled',
-    'true',
-  )
+  let releaseWrite = () => {}
+  state.writeGate = new Promise<void>((resolve) => {
+    releaseWrite = resolve
+  })
+  try {
+    await createRole.press('Enter')
+    const pending = page
+      .locator('.soha-operation-feedback')
+      .filter({ hasText: '保存：正在提交请求' })
+      .locator('.soha-feedback-live-dot')
+    await expect(pending).toBeVisible()
+    await expect(pending).toHaveAttribute('data-motion-disabled', 'true')
+  } finally {
+    releaseWrite()
+  }
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('保存：请求结果不明', { exact: true }),
+  ).toBeVisible()
   await verifyGeometry(page, dialog.getByRole('button', { name: '取消', exact: true }))
   expect(state.writes).toBe(1)
   verifyBrowserEvidence(evidence)
 })
 
-test('B4 cached grant read failure is visible inside the editor and blocks saving', async ({
+test('B4 global grant read failure locks the editor until recovery without losing its draft', async ({
   context,
   page,
 }) => {
@@ -519,13 +596,26 @@ test('B4 cached grant read failure is visible inside the editor and blocks savin
   state.failedPath = '/scope-grants'
   state.readStatus = 503
   await page.getByRole('button', { name: '刷新授权记录', exact: true }).click()
-  await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText('列表未更新，正在展示上次读取结果'),
+  ).toBeVisible()
   await page.getByRole('button', { name: '编辑授权项', exact: true }).click()
   const editor = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
-  await expect(editor.getByText('授权记录未更新，正在展示上次读取结果')).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText(/未更新，正在展示上次读取结果/),
+  ).toBeVisible()
   await expect(editor.getByRole('button', { name: '更新', exact: true })).toBeDisabled()
+  await expect(editor.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+  state.readStatus = 200
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /重试读取/ })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: '更新', exact: true })).toBeEnabled()
+  await expect(editor.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
   expect(state.writes).toBe(0)
   verifyBrowserEvidence(evidence)
 })
@@ -543,7 +633,9 @@ test('B4 a known grant rejection preserves the edited switch and permits correct
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
   await editor.getByRole('switch').click()
   await editor.getByRole('button', { name: '更新', exact: true }).click()
-  await expect(editor.getByText('保存：操作请求失败')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('保存：操作请求失败', { exact: true }),
+  ).toBeVisible()
   await expect(editor.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
   await expect(editor.getByRole('button', { name: '更新', exact: true })).toBeEnabled()
   expect(state.writes).toBe(1)
@@ -568,19 +660,27 @@ test('B4 directory credential draft stays private and reopens its original unkno
   await editor.getByLabel('Base DN', { exact: true }).fill('dc=example,dc=test')
   await editor.getByLabel('Bind Password', { exact: true }).fill('synthetic-secret-canary')
   await editor.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(editor.getByText('保存目录连接：请求结果不明')).toBeVisible()
-  await expect(editor.locator('.soha-operation-feedback')).not.toContainText(
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('创建目录连接：请求结果不明'),
+  ).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback')).not.toContainText(
     'synthetic-secret-canary',
   )
   await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
   await editor.getByRole('button', { name: '取消', exact: true }).click()
+  await page
+    .locator('.soha-operation-feedback')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-operation-feedback')).toHaveCount(0)
   await page.getByRole('button', { name: '查看待核对草稿', exact: true }).click()
   await expect(editor.getByLabel('连接名称', { exact: true })).toHaveValue('LDAP 连接草稿')
+  await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
   expect(state.writes).toBe(1)
   verifyBrowserEvidence(evidence)
 })
 
-test('B4 stale directory records explain why saving is paused inside the connection editor', async ({
+test('B4 global directory read failure locks the editor until recovery without losing its draft', async ({
   context,
   page,
 }) => {
@@ -590,11 +690,28 @@ test('B4 stale directory records explain why saving is paused inside the connect
   state.readStatus = 503
   state.failedPath = '/directory-connections'
   await page.getByRole('button', { name: '刷新目录同步', exact: true }).click()
-  await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText('列表未更新，正在展示上次读取结果'),
+  ).toBeVisible()
   await page.getByRole('button', { name: '编辑目录连接', exact: true }).click()
   const editor = page.getByRole('dialog')
-  await expect(editor.getByText('目录连接未更新，正在展示上次读取结果')).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText(/未更新，正在展示上次读取结果/),
+  ).toBeVisible()
   await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+  await expect(editor.getByLabel('连接名称', { exact: true })).toHaveValue(
+    '企业通讯录 · 组织与人员',
+  )
+  state.readStatus = 200
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /重试读取/ })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  await expect(editor.getByLabel('连接名称', { exact: true })).toHaveValue(
+    '企业通讯录 · 组织与人员',
+  )
   expect(state.writes).toBe(0)
   verifyBrowserEvidence(evidence)
 })

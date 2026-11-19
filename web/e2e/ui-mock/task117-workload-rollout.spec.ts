@@ -189,7 +189,9 @@ for (const [kind, label] of kinds)
     await page.getByRole('menuitem', { name: '删除', exact: true }).click()
     state.fail = true
     await dialog.getByRole('button', { name: /^删\s*除$/ }).click()
-    await expect(dialog).toContainText('Synthetic deletion rejected')
+    await expect(page.locator('.soha-operation-feedback')).toContainText(
+      'Synthetic deletion rejected',
+    )
     state.fail = false
     await dialog.getByRole('button', { name: /^删\s*除$/ }).click()
     await expect(dialog).toHaveCount(0)
@@ -214,7 +216,7 @@ for (const [kind, label] of kinds)
     verifyBrowserEvidence(evidence)
   })
 for (const [kind, label] of kinds)
-  test(`${label}: shared automatic refresh pauses, preserves position and stops after failure`, async ({
+  test(`${label}: shared automatic refresh pauses, preserves position and separates failure retries`, async ({
     context,
     page,
   }) => {
@@ -256,9 +258,15 @@ for (const [kind, label] of kinds)
     await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
     await expect(toggle.locator('.ant-badge-status-error')).toHaveCount(1)
     await expect(page.getByRole('status').filter({ hasText: `120 个 ${label}` })).toBeVisible()
-    await expect(
-      page.getByText('Synthetic workload unavailable', { exact: false }).first(),
-    ).toBeVisible()
+    const notice = page.locator('.soha-read-feedback-notification')
+    await notice.getByText('查看详情', { exact: true }).click()
+    await expect(notice.getByText(/Synthetic workload unavailable/)).toBeVisible()
+    before = state.reads
+    await page.clock.fastForward(15_100)
+    await expect.poll(() => state.reads).toBeGreaterThan(before)
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
+    await notice.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(notice).toHaveCount(0)
     before = state.reads
     await page.clock.fastForward(60_100)
     expect(state.reads).toBe(before)

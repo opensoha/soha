@@ -466,7 +466,11 @@ test('power request tracks task and record, preserves evidence and stops termina
   })
   state.detailFails = true
   await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByText('记录未更新，正在展示上次读取结果')).toBeVisible()
+  await expect(
+    page
+      .locator('.soha-read-feedback-notification')
+      .getByText('虚拟机详情未更新，正在展示上次读取结果'),
+  ).toBeVisible()
   await expect(page.locator('.soha-vm-task-log')).toBeVisible()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.waitForTimeout(900)
@@ -592,6 +596,9 @@ test('unknown request outcome has persistent feedback and no automatic duplicate
   await expect(page.getByRole('button', { name: '启动', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '核对任务历史' }).click()
   await expect(page.getByRole('tab', { name: '任务历史' })).toHaveAttribute('aria-selected', 'true')
+  await page.locator('.ant-notification-notice-close').click()
+  await expect(page.getByText('请求结果不明，请先核对任务和资源记录')).toBeVisible()
+  await expect(page.getByRole('button', { name: '启动', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   expect(state.writes).toEqual(['start'])
   await page.screenshot({

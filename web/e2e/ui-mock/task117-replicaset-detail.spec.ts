@@ -376,17 +376,22 @@ test('ReplicaSet readonly and template errors preserve truthful state on narrow 
   state.failConfig = true
   await page.setViewportSize({ width: 980, height: 1000 })
   await page.goto(path)
-  await expect(page.getByText('Template read failed', { exact: false }).first()).toBeVisible()
+  const notice = page.locator('.soha-read-feedback-notification')
+  await notice.getByText('查看详情', { exact: true }).click()
+  await expect(notice.getByText(/Template read failed/)).toBeVisible()
   await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await expect(page.getByRole('link', { name: '查看 Deployment 版本历史' })).toHaveCount(0)
   expect(state.reads.some((p) => p.includes('/deployments/report/rollouts'))).toBe(false)
+  await notice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(notice).toHaveCount(0)
   await page.getByRole('button', { name: '切换到深色模式', exact: true }).click()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   )
   state.failDetail = true
   await page.reload()
-  await expect(page.getByText('ReplicaSet read failed', { exact: false }).first()).toBeVisible()
+  await notice.getByText('查看详情', { exact: true }).click()
+  await expect(notice.getByText(/ReplicaSet read failed/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'report-abc', exact: true })).toHaveCount(0)
   await verifyBrowserEvidence(evidence)
 })

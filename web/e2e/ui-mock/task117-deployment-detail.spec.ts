@@ -532,11 +532,16 @@ test('Deployment delivery reads exact binding, selects latest records and preser
   )
   state.failDelivery = true
   await page.getByRole('button', { name: '刷新 Deployment', exact: true }).click()
-  await expect(panel).toContainText('Synthetic builds unavailable')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'Synthetic builds unavailable',
+  )
   await expect(panel).toContainText('builds-latest')
   state.failDelivery = false
-  await panel.getByRole('button', { name: '重试读取构建记录', exact: true }).click()
-  await expect(panel).not.toContainText('Synthetic builds unavailable')
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /^重试读取/ })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })
@@ -555,7 +560,7 @@ test('Deployment mutations keep target confirmations, failure feedback and exact
   await page.getByRole('spinbutton', { name: '期望副本数', exact: true }).fill('4')
   state.failScale = true
   await page.getByRole('dialog').getByRole('button', { name: '扩缩容', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('Synthetic scale rejection')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('Synthetic scale rejection')
   expect(state.writes).toEqual([
     {
       path: '/clusters/cluster-a/workloads/deployments/scale',
@@ -690,11 +695,15 @@ test('Deployment revision templates load on demand, compare real retained templa
   await expect(drawer).toContainText('Upgrade to v11')
   state.failTemplate = true
   await drawer.getByRole('button', { name: '刷新模板', exact: true }).click()
-  await expect(drawer).toContainText('Synthetic template unavailable')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'Synthetic template unavailable',
+  )
   state.failTemplate = false
-  await drawer.getByRole('button', { name: '重试读取所选版本模板', exact: true }).click()
-  await drawer.getByRole('button', { name: '重试读取对比版本模板', exact: true }).click()
-  await expect(drawer).not.toContainText('Synthetic template unavailable')
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /^重试读取/ })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   await expect(drawer).toContainText('Upgrade to v11')
   await drawer.getByRole('button', { name: /Close|关闭/ }).click()
   await page.getByLabel('切换到深色模式').click()
@@ -729,7 +738,9 @@ test('Deployment revision templates reject cross-namespace data', async ({ conte
   state.wrongTemplate = true
   await page.goto(`${path}&tab=revisions`)
   await page.getByRole('button', { name: '查看版本 11 模板与差异', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('identity or revision does not match')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    'identity or revision does not match',
+  )
   await expect(page.getByRole('dialog')).not.toContainText('Upgrade to v11')
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)

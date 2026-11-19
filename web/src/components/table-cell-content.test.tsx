@@ -113,6 +113,51 @@ describe('table cell content', () => {
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('long-value')
   })
 
+  it('shows a truncated link name on first focus and dismisses it on Escape or blur', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.textContent === 'long-resource-name' ? 200 : 20
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100)
+    const container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    await act(async () =>
+      root.render(
+        <>
+          <a href="#long">
+            <TableCellText value="long-resource-name" />
+          </a>
+          <a href="#short">
+            <TableCellText value="short" />
+          </a>
+        </>,
+      ),
+    )
+    const [longLink, shortLink] = container.querySelectorAll('a')
+    await act(async () => longLink.focus())
+    expect(document.activeElement).toBe(longLink)
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('long-resource-name')
+    await act(async () => {
+      longLink.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(longLink)
+    expect(
+      longLink.querySelector('.soha-table-cell-text')?.getAttribute('aria-describedby'),
+    ).toBeNull()
+    await act(async () => shortLink.focus())
+    await act(async () => longLink.focus())
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('long-resource-name')
+    await act(async () => shortLink.focus())
+    expect(
+      longLink.querySelector('.soha-table-cell-text')?.getAttribute('aria-describedby'),
+    ).toBeNull()
+    expect(
+      shortLink.querySelector('.soha-table-cell-text')?.getAttribute('aria-describedby'),
+    ).toBeNull()
+  })
+
   it('keeps a fully visible name link clickable without a tooltip', async () => {
     const onClick = vi.fn()
     const container = await renderCell(

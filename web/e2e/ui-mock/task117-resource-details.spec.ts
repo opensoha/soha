@@ -574,6 +574,14 @@ test('detail summary auto refresh has truthful colors, pause, failure retry and 
   await expect(toggle).toHaveAttribute('data-refresh-state', 'failed', { timeout: 10_000 })
   await expect(header.locator('.ant-badge-status-error')).toHaveCount(1)
   await expect(header.locator('.soha-status-tag')).toHaveText('健康')
+  const notice = page.locator('.soha-read-feedback-notification')
+  await expect(notice).toContainText('Synthetic refresh failure')
+  before = detailReads
+  await page.clock.fastForward(15_100)
+  await expect.poll(() => detailReads).toBeGreaterThan(before)
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
+  await notice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(notice).toHaveCount(0)
   before = detailReads
   await page.clock.fastForward(60_100)
   expect(detailReads).toBe(before)
