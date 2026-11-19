@@ -121,6 +121,7 @@ type Chunk struct {
 	Embedding          []float64       `json:"embedding,omitempty"`
 	LexicalScore       float64         `json:"-"`
 	VectorScore        float64         `json:"-"`
+	VectorAvailable    bool            `json:"-"`
 	ID                 string          `json:"id"`
 	KnowledgeBaseID    string          `json:"knowledgeBaseId"`
 	DocumentID         string          `json:"documentId"`
@@ -178,6 +179,8 @@ type SearchRequest struct {
 	Query            string        `json:"query"`
 	TopK             int           `json:"topK,omitempty"`
 	Filters          SearchFilters `json:"filters,omitempty"`
+	// Policies is populated from the selected, authorized active bases by the application.
+	Policies map[string]RetrievalPolicy `json:"-"`
 }
 
 type Citation struct {

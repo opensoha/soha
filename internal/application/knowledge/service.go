@@ -209,20 +209,23 @@ func (s *Service) Search(ctx context.Context, principal domainidentity.Principal
 	if request.Query == "" || len(request.KnowledgeBaseIDs) == 0 {
 		return domainknowledge.SearchResult{}, fmt.Errorf("%w: query and knowledgeBaseIds are required", apperrors.ErrInvalidArgument)
 	}
-	topK := min(max(request.TopK, 5), 50)
+	topK, err := s.applyRetrievalPolicies(ctx, principal, &request)
+	if err != nil {
+		return domainknowledge.SearchResult{}, err
+	}
 	candidateLimit := min(max(topK*10, 50), maxCandidates)
 	candidates, err := s.searchCandidates(ctx, principal, request, candidateLimit)
 	if err != nil {
 		return domainknowledge.SearchResult{}, err
 	}
-	hits := buildHits(candidates.chunks, candidates.lexical, candidates.vector)
+	hits := buildHits(candidates, request.Policies)
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	if len(hits) > topK*2 {
 		hits = hits[:topK*2]
 	}
 	if s.reranker != nil && len(hits) > 0 {
 		if reranked, rerankErr := s.reranker.Rerank(ctx, principal, request.Query, hits); rerankErr == nil {
-			hits = reranked
+			hits = filterRetrievalHits(reranked, request.Policies)
 		}
 	}
 	if len(hits) > topK {
@@ -240,14 +243,24 @@ func (s *Service) Search(ctx context.Context, principal domainidentity.Principal
 	if traceID == "" {
 		traceID = uuid.NewString()
 	}
-	return domainknowledge.SearchResult{RetrievalMode: candidates.mode, DegradationReason: candidates.degradation, Query: request.Query, Hits: hits, Citations: citations, CandidateN: len(candidates.chunks), TimingMS: s.now().Sub(started).Milliseconds(), NoAnswer: len(hits) == 0 || hits[0].Score < 0.05, TraceID: traceID}, nil
+	return domainknowledge.SearchResult{RetrievalMode: candidates.mode, DegradationReason: candidates.degradation, Query: request.Query, Hits: hits, Citations: citations, CandidateN: len(candidates.chunks), TimingMS: s.now().Sub(started).Milliseconds(), NoAnswer: retrievalNoAnswer(hits, request.Policies), TraceID: traceID}, nil
 }
 
-func buildHits(chunks []domainknowledge.Chunk, lexical, vector []float64) []domainknowledge.SearchHit {
-	hits := make([]domainknowledge.SearchHit, 0, len(chunks))
-	for i, chunk := range chunks {
-		lexicalScore, vectorScore := scoreAt(lexical, i), scoreAt(vector, i)
-		score := 0.45*lexicalScore + 0.55*vectorScore
+func buildHits(candidates retrievalCandidates, policies map[string]domainknowledge.RetrievalPolicy) []domainknowledge.SearchHit {
+	hits := make([]domainknowledge.SearchHit, 0, len(candidates.chunks))
+	for i, chunk := range candidates.chunks {
+		policy, ok := policies[chunk.KnowledgeBaseID]
+		if !ok {
+			continue
+		}
+		lexicalScore, vectorScore := scoreAt(candidates.lexical, i), scoreAt(candidates.vector, i)
+		score := lexicalScore
+		if candidates.vectorAvailable[chunk.KnowledgeBaseID] {
+			score = policy.LexicalWeight*lexicalScore + policy.VectorWeight*vectorScore
+		}
+		if score < policy.MinScore {
+			continue
+		}
 		citation := domainknowledge.Citation{DocumentVersionID: chunk.DocumentVersionID, IndexRevisionID: chunk.IndexRevisionID, ID: "citation:" + chunk.ID, KnowledgeBaseID: chunk.KnowledgeBaseID, DocumentID: chunk.DocumentID, DocumentTitle: chunk.DocumentTitle, ChunkID: chunk.ID, Location: chunk.Location, URI: chunk.Location.URI, Score: score, ContentHash: chunk.ContentHash}
 		hits = append(hits, domainknowledge.SearchHit{ChunkID: chunk.ID, DocumentID: chunk.DocumentID, KnowledgeBaseID: chunk.KnowledgeBaseID, Title: chunk.DocumentTitle, Content: chunk.Content, Score: score, LexicalScore: lexicalScore, VectorScore: vectorScore, Citation: citation})
 	}

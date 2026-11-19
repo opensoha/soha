@@ -24,6 +24,8 @@ import (
 
 func TestKnowledgeRetrievalWithPostgres(t *testing.T) {
 	repo, store, ctx := newKnowledgePostgresRepository(t)
+	t.Run("weighted_retrieval_policy", func(t *testing.T) { knowledgeRetrievalUsesPolicy(t, repo, ctx) })
+	t.Run("weighted_candidate_window", func(t *testing.T) { knowledgeRetrievalWeightedWindow(t, repo, ctx) })
 	t.Run("candidate_window", func(t *testing.T) { knowledgeRetrievalCandidateWindow(t, repo, store, ctx) })
 	t.Run("acl_revoke_delete", func(t *testing.T) { knowledgeRetrievalACLRevokeDelete(t, repo, store, ctx) })
 	t.Run("external_import_scope", func(t *testing.T) { knowledgeExternalImportScope(t, repo, store, ctx) })

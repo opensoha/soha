@@ -13,9 +13,13 @@ type retrievalCandidates struct {
 	chunks            []domainknowledge.Chunk
 	lexical, vector   []float64
 	mode, degradation string
+	vectorAvailable   map[string]bool
 }
 
 func (s *Service) searchCandidates(ctx context.Context, p domainidentity.Principal, request domainknowledge.SearchRequest, limit int) (retrievalCandidates, error) {
+	if len(request.KnowledgeBaseIDs) == 0 {
+		return retrievalCandidates{mode: "lexical", degradation: "embedding_unavailable"}, nil
+	}
 	if persistent, ok := s.repo.(PersistentRetrieval); ok {
 		batch := domainknowledge.EmbeddingBatch{}
 		mode, degradation := "lexical", "embedding_unavailable"
@@ -32,13 +36,17 @@ func (s *Service) searchCandidates(ctx context.Context, p domainidentity.Princip
 		}
 		chunks, err := persistent.SearchAuthorizedChunks(ctx, principalScope(p), request, batch, limit)
 		lexical, vector := make([]float64, len(chunks)), make([]float64, len(chunks))
+		available := make(map[string]bool)
+		hybrid := false
 		for i, chunk := range chunks {
 			lexical[i], vector[i] = chunk.LexicalScore, chunk.VectorScore
+			available[chunk.KnowledgeBaseID] = chunk.VectorAvailable
+			hybrid = hybrid || chunk.VectorAvailable
 		}
-		if mode == "hybrid" && !compatibleIndexedEmbedding(chunks, batch) {
+		if mode == "hybrid" && !hybrid {
 			mode, degradation = "lexical", "embedding_missing_or_mismatched"
 		}
-		return retrievalCandidates{chunks, lexical, vector, mode, degradation}, err
+		return retrievalCandidates{chunks, lexical, vector, mode, degradation, available}, err
 	}
 	chunks, err := s.repo.ListAuthorizedChunks(ctx, principalScope(p), request, limit)
 	if err != nil {
@@ -50,19 +58,11 @@ func (s *Service) searchCandidates(ctx context.Context, p domainidentity.Princip
 		vector = make([]float64, len(chunks))
 		mode, degradation = "lexical", "embedding_unavailable"
 	}
-	return retrievalCandidates{chunks, s.lexical.Score(request.Query, chunks), vector, mode, degradation}, nil
-}
-
-func compatibleIndexedEmbedding(chunks []domainknowledge.Chunk, batch domainknowledge.EmbeddingBatch) bool {
-	if len(batch.Vectors) != 1 {
-		return false
-	}
+	available := make(map[string]bool)
 	for _, chunk := range chunks {
-		if batch.MatchesChunk(chunk) && chunk.EmbeddingDimension == len(batch.Vectors[0]) {
-			return true
-		}
+		available[chunk.KnowledgeBaseID] = vectorErr == nil
 	}
-	return false
+	return retrievalCandidates{chunks, s.lexical.Score(request.Query, chunks), vector, mode, degradation, available}, nil
 }
 
 func (s *Service) ValidateCitations(ctx context.Context, p domainidentity.Principal, citations []domainknowledge.Citation) error {

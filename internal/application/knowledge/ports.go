@@ -10,6 +10,7 @@ import (
 )
 
 type Repository interface {
+	ListRetrievalPolicies(context.Context, domainknowledge.PrincipalScope, []string) (map[string]domainknowledge.RetrievalPolicy, error)
 	ListBases(context.Context, domainknowledge.PrincipalScope) ([]domainknowledge.KnowledgeBase, error)
 	GetBase(context.Context, domainknowledge.PrincipalScope, string) (domainknowledge.KnowledgeBase, error)
 	CreateBase(context.Context, domainknowledge.KnowledgeBase) (domainknowledge.KnowledgeBase, error)
