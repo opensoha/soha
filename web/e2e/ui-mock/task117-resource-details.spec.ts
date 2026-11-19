@@ -577,8 +577,18 @@ test('detail summary auto refresh has truthful colors, pause, failure retry and 
   const notice = page.locator('.soha-read-feedback-notification')
   await expect(notice).toContainText('Synthetic refresh failure')
   before = detailReads
+  const retryResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `${root}/workloads/daemonsets/sample/detail` &&
+      response.status() === 500 &&
+      detailReads === before + 2,
+  )
   await page.clock.fastForward(15_100)
   await expect.poll(() => detailReads).toBeGreaterThan(before)
+  // The global Query client retries once; wait for both responses and the shared retry to settle.
+  await (await retryResponse).finished()
+  await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
+  await expect(notice).toContainText(/(?:2\d|3[01]) 秒后自动重试/)
   await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
   await notice.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(notice).toHaveCount(0)
@@ -589,7 +599,7 @@ test('detail summary auto refresh has truthful colors, pause, failure retry and 
   await manual.click()
   await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
   before = detailReads
-  await page.clock.fastForward(15_100)
+  await page.clock.runFor(15_100)
   await expect.poll(() => detailReads).toBeGreaterThan(before)
   expect(
     reads.some(
