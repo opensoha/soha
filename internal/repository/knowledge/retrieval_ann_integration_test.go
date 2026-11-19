@@ -130,11 +130,11 @@ func knowledgePartialANNRecall(t *testing.T, repo *Repository, store *dbstore.St
 		}
 		// Cap only the actual ANN stage; graph traversal limits are nondeterministic.
 		sql := *query
-		begin, end := strings.Index(sql, ", vector_candidates AS MATERIALIZED ("), strings.Index(sql, ", vectors AS (")
+		begin, end := strings.Index(sql, ", vector_candidates AS MATERIALIZED ("), strings.Index(sql, ", vector_exact_candidates AS MATERIALIZED (")
 		if begin < 0 || end <= begin {
 			t.Fatal("actual ANN stage was not captured")
 		}
-		match := regexp.MustCompile(`LIMIT \$(\d+)\s*\)$`).FindStringSubmatch(sql[begin:end])
+		match := regexp.MustCompile(`LIMIT \$(\d+)\s*\)\s*matches\s*\)$`).FindStringSubmatch(sql[begin:end])
 		if len(match) != 2 {
 			t.Fatal("actual ANN candidate bound is missing")
 		}
