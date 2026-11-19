@@ -9,6 +9,7 @@ import (
 
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -90,7 +91,7 @@ func (r *Repository) Get(ctx context.Context, id string) (domainrelease.Record, 
 }
 
 func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainrelease.Record, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, project_id, cluster_id, namespace, release_name, status, metadata, deployed_at, created_at
 		FROM deploy_records
 		WHERE metadata ->> 'executionTaskId' = ?
@@ -105,12 +106,16 @@ func (r *Repository) Update(ctx context.Context, record domainrelease.Record) (d
 	if err != nil {
 		return domainrelease.Record{}, fmt.Errorf("marshal release metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE deploy_records
 		SET status = ?, metadata = ?, deployed_at = ?
 		WHERE id = ?
-	`, record.Status, string(payload), record.DeployedAt, record.ID).Error; err != nil {
-		return domainrelease.Record{}, fmt.Errorf("update release record: %w", err)
+	`, record.Status, string(payload), record.DeployedAt, record.ID)
+	if result.Error != nil {
+		return domainrelease.Record{}, fmt.Errorf("update release record: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domainrelease.Record{}, apperrors.ErrNotFound
 	}
 	return record, nil
 }

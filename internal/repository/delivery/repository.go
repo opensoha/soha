@@ -492,13 +492,27 @@ func (r *Repository) ListReleaseBundles(ctx context.Context, filter domaindelive
 }
 
 func (r *Repository) GetReleaseBundle(ctx context.Context, id string) (domaindelivery.ReleaseBundle, error) {
-	row := dbtx.DB(ctx, r.db).Raw(`
+	return r.getReleaseBundle(ctx, id, false)
+}
+
+func (r *Repository) GetReleaseBundleForUpdate(ctx context.Context, id string) (domaindelivery.ReleaseBundle, error) {
+	if _, ok := dbtx.Bound(ctx, r.db); !ok {
+		return domaindelivery.ReleaseBundle{}, fmt.Errorf("release bundle update requires a transaction")
+	}
+	return r.getReleaseBundle(ctx, id, true)
+}
+
+func (r *Repository) getReleaseBundle(ctx context.Context, id string, lock bool) (domaindelivery.ReleaseBundle, error) {
+	query := `
 		SELECT id, application_id, application_environment_id, version, source_type, status, artifact_ref, artifact_digest, metadata, created_at, updated_at
 		FROM release_bundles
 		WHERE id = ?
 		LIMIT 1
-	`, strings.TrimSpace(id)).Row()
-	return scanReleaseBundleRow(row)
+	`
+	if lock {
+		query += " FOR UPDATE"
+	}
+	return scanReleaseBundleRow(dbtx.DB(ctx, r.db).Raw(query, strings.TrimSpace(id)).Row())
 }
 
 func (r *Repository) CreateReleaseBundle(ctx context.Context, item domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error) {
@@ -615,14 +629,21 @@ func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindel
 }
 
 func (r *Repository) GetExecutionTaskByCallbackToken(ctx context.Context, token string) (domaindelivery.ExecutionTask, error) {
-	row := dbtx.DB(ctx, r.db).Raw(`
+	return r.getExecutionTaskByCallbackToken(ctx, token, false)
+}
+
+func (r *Repository) getExecutionTaskByCallbackToken(ctx context.Context, token string, lock bool) (domaindelivery.ExecutionTask, error) {
+	query := `
 		SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE callback_token = ?
 		LIMIT 1
-	`, strings.TrimSpace(token)).Row()
-	return scanExecutionTaskRow(row)
+	`
+	if lock {
+		query += " FOR UPDATE"
+	}
+	return scanExecutionTaskRow(dbtx.DB(ctx, r.db).Raw(query, strings.TrimSpace(token)).Row())
 }
 
 func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []string, agentID, runtimeEndpoint string) (domaindelivery.ExecutionTask, error) {
@@ -783,7 +804,7 @@ func (r *Repository) UpdateExecutionTask(ctx context.Context, item domaindeliver
 	if item.TaskKind == "vm_ssh_command" {
 		var updated domaindelivery.ExecutionTask
 		err := dbtx.Within(ctx, r.db, func(txCtx context.Context) error {
-			if err := dbtx.DB(txCtx, r.db).Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?,0))`, "vm-ssh-command/"+item.ID).Error; err != nil {
+			if err := r.lockSSHExecutionTask(txCtx, item.ID); err != nil {
 				return err
 			}
 			current, err := r.GetExecutionTask(txCtx, item.ID)
@@ -999,7 +1020,7 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 	if err != nil {
 		return domaindelivery.ExecutionArtifact{}, fmt.Errorf("marshal execution artifact metadata: %w", err)
 	}
-	if err := dbtx.DB(ctx, r.db).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_artifacts (id, execution_task_id, release_bundle_id, workflow_run_id, workflow_node_id, application_id, application_environment_id, artifact_kind, name, ref, digest, path, status, size_bytes, metadata, retention_until, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
@@ -1019,8 +1040,13 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 			metadata = EXCLUDED.metadata,
 			retention_until = EXCLUDED.retention_until,
 			updated_at = EXCLUDED.updated_at
-	`, item.ID, nullableString(item.ExecutionTaskID), nullableString(item.ReleaseBundleID), nullableString(item.WorkflowRunID), nullableString(item.WorkflowNodeID), nullableString(item.ApplicationID), nullableString(item.ApplicationEnvironmentID), item.Kind, nullableString(item.Name), nullableString(item.Ref), nullableString(item.Digest), nullableString(item.Path), nullableString(item.Status), item.SizeBytes, string(payload), nullableTime(item.RetentionUntil), item.CreatedAt, item.UpdatedAt).Error; err != nil {
-		return domaindelivery.ExecutionArtifact{}, fmt.Errorf("upsert execution artifact: %w", err)
+		WHERE execution_artifacts.execution_task_id IS NOT DISTINCT FROM EXCLUDED.execution_task_id
+	`, item.ID, nullableString(item.ExecutionTaskID), nullableString(item.ReleaseBundleID), nullableString(item.WorkflowRunID), nullableString(item.WorkflowNodeID), nullableString(item.ApplicationID), nullableString(item.ApplicationEnvironmentID), item.Kind, nullableString(item.Name), nullableString(item.Ref), nullableString(item.Digest), nullableString(item.Path), nullableString(item.Status), item.SizeBytes, string(payload), nullableTime(item.RetentionUntil), item.CreatedAt, item.UpdatedAt)
+	if result.Error != nil {
+		return domaindelivery.ExecutionArtifact{}, fmt.Errorf("upsert execution artifact: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaindelivery.ExecutionArtifact{}, fmt.Errorf("%w: execution artifact belongs to another task", apperrors.ErrConflict)
 	}
 	return item, nil
 }
@@ -1501,7 +1527,7 @@ func scanExecutionLog(rows *sql.Rows) (domaindelivery.ExecutionLog, error) {
 	return item, nil
 }
 
-func scanExecutionArtifact(rows *sql.Rows) (domaindelivery.ExecutionArtifact, error) {
+func scanExecutionArtifact(rows interface{ Scan(...any) error }) (domaindelivery.ExecutionArtifact, error) {
 	var item domaindelivery.ExecutionArtifact
 	var executionTaskID sql.NullString
 	var releaseBundleID sql.NullString

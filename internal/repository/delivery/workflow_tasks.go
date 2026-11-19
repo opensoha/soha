@@ -11,6 +11,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
@@ -88,7 +89,7 @@ func (r *Repository) rejectUnscopedDeliveryTask(ctx context.Context, item domain
 
 func (r *Repository) updateDeliveryTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
 	var stored domaindelivery.ExecutionTask
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		var id string
 		if err := tx.Raw(`SELECT id FROM execution_tasks WHERE id = ? FOR UPDATE`, item.ID).Row().Scan(&id); err != nil {
 			return err
