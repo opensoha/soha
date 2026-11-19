@@ -38,7 +38,10 @@ class AuthApiError extends Error {
 export type AuthRefreshStatus = 'authenticated' | 'unauthenticated' | 'unavailable' | 'superseded'
 
 let pendingSessionChange: AuthSessionOwner | undefined
-let refreshInFlight: { owner: AuthSessionOwner; promise: Promise<AuthRefreshStatus> } | undefined
+let loginInFlight: { owner: AuthSessionOwner; result: Promise<AuthResult> } | undefined
+let refreshInFlight:
+  | { owner: AuthSessionOwner; result: Promise<AuthResult>; promise: Promise<AuthRefreshStatus> }
+  | undefined
 let rejectedRefresh: { owner: AuthSessionOwner; clearedOwner: AuthSessionOwner } | undefined
 
 export function authSessionChangePending(owner: AuthSessionOwner) {
@@ -92,11 +95,11 @@ async function parseJsonSafely<T>(response: Response): Promise<T | undefined> {
   }
 }
 
-async function fetchAuthJSON<T>(
+function sendAuthRequest(
   path: string,
-  options: AuthFetchOptions = {},
-  owner: AuthSessionOwner | null = captureAuthSession(),
-): Promise<T> {
+  options: AuthFetchOptions,
+  owner: AuthSessionOwner | null,
+): Promise<Response> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
@@ -105,14 +108,15 @@ async function fetchAuthJSON<T>(
     headers.set('Authorization', `Bearer ${options.accessToken}`)
   }
 
-  const response = await withAuthCookieRequest(path, options.method ?? 'GET', () => {
-    if (owner) assertAuthSession(owner)
-    return fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      credentials: options.credentials ?? 'include',
-      headers,
-    })
+  if (owner) assertAuthSession(owner)
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    credentials: options.credentials ?? 'include',
+    headers,
   })
+}
+
+async function readAuthJSON<T>(response: Response, owner: AuthSessionOwner | null): Promise<T> {
   if (owner) assertAuthSession(owner, response)
 
   if (!response.ok) {
@@ -128,6 +132,26 @@ async function fetchAuthJSON<T>(
   const body = (await response.json()) as T
   if (owner) assertAuthSession(owner)
   return body
+}
+
+async function fetchAuthJSON<T>(
+  path: string,
+  options: AuthFetchOptions = {},
+  owner: AuthSessionOwner | null = captureAuthSession(),
+): Promise<T> {
+  const response = await withAuthCookieRequest(path, options.method ?? 'GET', () =>
+    sendAuthRequest(path, options, owner),
+  )
+  return readAuthJSON<T>(response, owner)
+}
+
+function requestAuthResult(path: string, options: AuthFetchOptions, owner: AuthSessionOwner) {
+  return withAuthCookieRequest(path, options.method ?? 'POST', () =>
+    sendAuthRequest(path, options, owner),
+  ).then(async (response) => {
+    // A queued logout may need these credentials even after the local owner is signed out.
+    return (await readAuthJSON<ApiResponse<AuthResult>>(response, null)).data
+  })
 }
 
 export function getStoredAccessToken() {
@@ -151,11 +175,20 @@ export function clearAuthSession() {
 }
 
 export async function logoutAuthSession() {
+  const originalOwner = captureAuthSession()
   const accessToken = getStoredAccessToken()
-  const response = fetchAuthJSON<{ status?: string }>(
-    '/auth/logout',
-    { method: 'POST', accessToken },
-    null,
+  const userId = useAuthStore.getState().user?.userId
+  const sameOwner = (candidate: AuthSessionOwner) =>
+    candidate.generation === originalOwner.generation &&
+    candidate.revision === originalOwner.revision
+  const preceding =
+    loginInFlight && sameOwner(loginInFlight.owner)
+      ? { result: loginInFlight.result, login: true }
+      : refreshInFlight && sameOwner(refreshInFlight.owner)
+        ? { result: refreshInFlight.result, login: false }
+        : undefined
+  const response = withAuthCookieRequest('/auth/logout', 'POST', () =>
+    revokeBrowserSession(accessToken, userId, preceding),
   )
   const owner = clearAuthSession()
   if (isCurrentAuthSession(owner)) pendingSessionChange = owner
@@ -168,20 +201,68 @@ export async function logoutAuthSession() {
   }
 }
 
+async function revokeBrowserSession(
+  capturedToken: string | null,
+  userId: string | undefined,
+  preceding: { result: Promise<AuthResult>; login: boolean } | undefined,
+) {
+  const refreshed = await preceding?.result.catch(() => undefined)
+  const expectedUserId = refreshed && preceding?.login ? refreshed.user.userId : userId
+  const tokenFor = (result: AuthResult) => {
+    if (expectedUserId && result.user.userId !== expectedUserId)
+      throw new DOMException(
+        'Authentication context changed; this session was not revoked.',
+        'AbortError',
+      )
+    return result.tokens.accessToken
+  }
+  const sendLogout = async (accessToken: string, refreshToken?: string) =>
+    readAuthJSON(
+      await sendAuthRequest(
+        '/auth/logout',
+        {
+          method: 'POST',
+          accessToken,
+          body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
+        },
+        null,
+      ),
+      null,
+    )
+  const accessToken = refreshed ? tokenFor(refreshed) : capturedToken
+  if (accessToken) {
+    try {
+      await sendLogout(accessToken, refreshed?.tokens.refreshToken)
+      return
+    } catch (error) {
+      if (!(error instanceof AuthApiError) || error.status !== 401) throw error
+    }
+  }
+  // Already inside the logout cookie slot: recovery must not enqueue behind itself.
+  const response = await readAuthJSON<ApiResponse<AuthResult>>(
+    await sendAuthRequest('/auth/refresh', { method: 'POST' }, null),
+    null,
+  )
+  await sendLogout(tokenFor(response.data), response.data.tokens.refreshToken)
+}
+
 async function requestNewSession(path: string, body: unknown) {
   const owner = advanceAuthSession()
   pendingSessionChange = owner
+  const result = requestAuthResult(path, { method: 'POST', body: JSON.stringify(body) }, owner)
+  const request = { owner, result }
+  loginInFlight = request
   try {
-    const response = await fetchAuthJSON<ApiResponse<AuthResult>>(
-      path,
-      { method: 'POST', body: JSON.stringify(body) },
-      owner,
-    )
+    const authResult = await result
     assertAuthSession(owner)
-    commitAuthResult(response.data)
-    return response.data
+    commitAuthResult(authResult)
+    return authResult
+  } catch (error) {
+    assertAuthSession(owner)
+    throw error
   } finally {
     if (pendingSessionChange === owner) pendingSessionChange = undefined
+    if (loginInFlight === request) loginInFlight = undefined
   }
 }
 
@@ -215,15 +296,13 @@ export async function fetchPermissionSnapshot() {
   return response.data
 }
 
-async function restoreOwnedSession(owner: AuthSessionOwner): Promise<AuthRefreshStatus> {
+async function restoreOwnedSession(
+  owner: AuthSessionOwner,
+  refreshResult: Promise<AuthResult>,
+): Promise<AuthRefreshStatus> {
   try {
-    const response = await fetchAuthJSON<ApiResponse<AuthResult>>(
-      '/auth/refresh',
-      { method: 'POST' },
-      owner,
-    )
+    const result = await refreshResult
     assertAuthSession(owner)
-    const result = response.data
     useAuthStore.setState((state) => ({
       accessToken: result.tokens.accessToken,
       user: result.user,
@@ -254,10 +333,11 @@ export function restoreAuthSession(owner = captureAuthSession()): Promise<AuthRe
     refreshInFlight.owner.revision === owner.revision
   )
     return refreshInFlight.promise
-  const promise = restoreOwnedSession(owner).finally(() => {
+  const result = requestAuthResult('/auth/refresh', { method: 'POST' }, owner)
+  const promise = restoreOwnedSession(owner, result).finally(() => {
     if (refreshInFlight?.promise === promise) refreshInFlight = undefined
   })
-  refreshInFlight = { owner, promise }
+  refreshInFlight = { owner, result, promise }
   return promise
 }
 

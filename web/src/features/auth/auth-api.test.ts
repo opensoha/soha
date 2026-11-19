@@ -29,7 +29,7 @@ function authResult(userId = 'user-1', accessToken = 'access-token'): AuthResult
     user: { ...user, userId },
     tokens: {
       accessToken,
-      refreshToken: 'synthetic-refresh',
+      refreshToken: `synthetic-refresh-${userId}`,
       tokenType: 'Bearer',
       expiresIn: 3600,
       expiresAt: '2026-11-19T12:00:00Z',
@@ -53,6 +53,76 @@ function jsonResponse(body: unknown, init: ResponseInit) {
       ...init.headers,
     },
   })
+}
+
+function browserSessionServer() {
+  const state = {
+    active: true,
+    cookiePresent: true,
+    userId: 'user-1',
+    accessToken: 'server-valid-token',
+    refreshStatus: 200,
+    refreshGate: undefined as Promise<void> | undefined,
+    loginGate: undefined as Promise<void> | undefined,
+  }
+  const paths: string[] = []
+  const logoutTokens: Array<string | null> = []
+  const logoutRefreshTokens: Array<string | undefined> = []
+  const logoutStatuses: number[] = []
+  const logoutCredentials: Array<RequestCredentials | undefined> = []
+  const revoked: string[] = []
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    const path = new URL(String(input), 'https://example.test').pathname
+    paths.push(path)
+    if (path.endsWith('/auth/refresh')) {
+      await state.refreshGate
+      const status = state.active && state.cookiePresent ? state.refreshStatus : 401
+      if (status !== 200) return jsonResponse({ error: { code: 'unauthorized' } }, { status })
+      state.accessToken = `refreshed-${state.userId}`
+      return jsonResponse({ data: authResult(state.userId, state.accessToken) }, { status: 200 })
+    }
+    if (path.endsWith('/auth/login')) {
+      await state.loginGate
+      state.active = true
+      state.cookiePresent = true
+      state.userId = 'user-2'
+      state.accessToken = 'new-login-token'
+      return jsonResponse({ data: authResult(state.userId, state.accessToken) }, { status: 200 })
+    }
+    if (path.endsWith('/auth/logout')) {
+      const token = new Headers(options?.headers).get('Authorization')
+      logoutTokens.push(token)
+      logoutCredentials.push(options?.credentials)
+      const refreshToken = options?.body
+        ? (JSON.parse(String(options.body)) as { refreshToken?: string }).refreshToken
+        : undefined
+      logoutRefreshTokens.push(refreshToken)
+      const status =
+        state.active &&
+        token === `Bearer ${state.accessToken}` &&
+        (!refreshToken || refreshToken === `synthetic-refresh-${state.userId}`)
+          ? 200
+          : 401
+      logoutStatuses.push(status)
+      if (status === 200) {
+        revoked.push(state.userId)
+        state.active = false
+        if (options?.credentials === 'include') state.cookiePresent = false
+      }
+      return jsonResponse({}, { status })
+    }
+    throw new Error(`Unexpected synthetic auth path: ${path}`)
+  })
+  return {
+    state,
+    paths,
+    logoutTokens,
+    logoutRefreshTokens,
+    logoutCredentials,
+    logoutStatuses,
+    revoked,
+    fetchMock,
+  }
 }
 
 describe('auth session restore', () => {
@@ -325,6 +395,157 @@ describe('auth session restore', () => {
     response.resolve(jsonResponse({}, { status: 401 }))
     await expect(ticket).rejects.toMatchObject({ name: 'AbortError' })
     expect(fetchMock).toHaveBeenCalledOnce()
+    expect(useAuthStore.getState().accessToken).toBe('new-session')
+  })
+
+  it.each(['in-flight', 'expired', 'missing'] as const)(
+    'revokes the browser session with %s local credentials and cannot restore it afterward',
+    async (credentials) => {
+      const server = browserSessionServer()
+      vi.stubGlobal('fetch', server.fetchMock)
+      if (credentials === 'missing') useAuthStore.getState().setUser(user)
+      else commitAuthResult(authResult('user-1', 'expired-token'))
+      const refreshGate = deferred<void>()
+      let restoring: Promise<unknown> | undefined
+      if (credentials === 'in-flight') {
+        server.state.refreshGate = refreshGate.promise
+        restoring = restoreAuthSession()
+        await vi.waitFor(() => expect(server.fetchMock).toHaveBeenCalledOnce())
+      }
+      const observed: Array<string | null> = []
+      const unsubscribe = useAuthStore.subscribe((state) => observed.push(state.accessToken))
+      try {
+        const loggedOut = logoutAuthSession()
+        expect(useAuthStore.getState().accessToken).toBeNull()
+        refreshGate.resolve()
+        await loggedOut
+        if (restoring) await expect(restoring).resolves.toBe('superseded')
+        expect(server.logoutStatuses).toEqual(credentials === 'expired' ? [401, 200] : [200])
+        expect(server.logoutTokens.at(-1)).toBe('Bearer refreshed-user-1')
+        expect(server.logoutRefreshTokens.at(-1)).toBe('synthetic-refresh-user-1')
+        expect(server.revoked).toEqual(['user-1'])
+        expect(server.state.active).toBe(false)
+        expect(server.state.cookiePresent).toBe(false)
+        expect(observed.every((token) => token === null)).toBe(true)
+        await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+        expect(useAuthStore.getState().accessToken).toBeNull()
+      } finally {
+        unsubscribe()
+      }
+    },
+  )
+
+  it.each([401, 503])(
+    'uses the captured valid bearer if the in-flight refresh fails with %s',
+    async (status) => {
+      const server = browserSessionServer()
+      commitAuthResult(authResult('user-1', server.state.accessToken))
+      const refreshGate = deferred<void>()
+      server.state.refreshGate = refreshGate.promise
+      server.state.refreshStatus = status
+      vi.stubGlobal('fetch', server.fetchMock)
+      const restoring = restoreAuthSession()
+      await vi.waitFor(() => expect(server.fetchMock).toHaveBeenCalledOnce())
+      const loggedOut = logoutAuthSession()
+      refreshGate.resolve()
+      await loggedOut
+      await expect(restoring).resolves.toBe('superseded')
+      expect(server.logoutStatuses).toEqual([200])
+      expect(server.logoutCredentials).toEqual(['include'])
+      expect(server.revoked).toEqual(['user-1'])
+      await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+    },
+  )
+
+  it('keeps a later login behind recovery and revocation of the captured session', async () => {
+    const server = browserSessionServer()
+    commitAuthResult(authResult('user-1', 'expired-token'))
+    const refreshGate = deferred<void>()
+    server.state.refreshGate = refreshGate.promise
+    vi.stubGlobal('fetch', server.fetchMock)
+    const restoring = restoreAuthSession()
+    await vi.waitFor(() => expect(server.fetchMock).toHaveBeenCalledOnce())
+    const loggedOut = logoutAuthSession()
+    const signedIn = loginWithPassword('synthetic-user', 'synthetic-password')
+    refreshGate.resolve()
+    await loggedOut
+    await signedIn
+    await expect(restoring).resolves.toBe('superseded')
+    expect(server.paths).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/logout',
+      '/api/v1/auth/login',
+    ])
+    expect(server.revoked).toEqual(['user-1'])
+    expect(server.logoutTokens).toEqual(['Bearer refreshed-user-1'])
+    expect(server.logoutRefreshTokens).toEqual(['synthetic-refresh-user-1'])
+    expect(server.logoutCredentials).toEqual(['include'])
+    expect(useAuthStore.getState().accessToken).toBe('new-login-token')
+    expect(server.state.active).toBe(true)
+  })
+
+  it.each([false, true])(
+    'revokes an earlier pending login without committing it over an existing session %s',
+    async (established) => {
+      const server = browserSessionServer()
+      if (established) commitAuthResult(authResult('user-1', server.state.accessToken))
+      const loginGate = deferred<void>()
+      server.state.loginGate = loginGate.promise
+      vi.stubGlobal('fetch', server.fetchMock)
+      const signedIn = loginWithPassword('synthetic-user', 'synthetic-password')
+      await vi.waitFor(() => expect(server.fetchMock).toHaveBeenCalledOnce())
+      const loggedOut = logoutAuthSession()
+      loginGate.resolve()
+      await expect(signedIn).rejects.toMatchObject({ name: 'AbortError' })
+      await loggedOut
+      expect(server.revoked).toEqual(['user-2'])
+      expect(server.paths).toEqual(['/api/v1/auth/login', '/api/v1/auth/logout'])
+      expect(server.logoutTokens).toEqual(['Bearer new-login-token'])
+      expect(server.logoutRefreshTokens).toEqual(['synthetic-refresh-user-2'])
+      expect(server.logoutCredentials).toEqual(['include'])
+      await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+      expect(useAuthStore.getState().accessToken).toBeNull()
+    },
+  )
+
+  it('does not borrow a different cookie identity when recovering from a logout 401', async () => {
+    const server = browserSessionServer()
+    server.state.userId = 'user-2'
+    commitAuthResult(authResult('user-1', 'expired-token'))
+    vi.stubGlobal('fetch', server.fetchMock)
+    await logoutAuthSession()
+    expect(server.logoutStatuses).toEqual([401])
+    expect(server.logoutTokens).toEqual(['Bearer expired-token'])
+    expect(server.revoked).toEqual([])
+    expect(server.state.active).toBe(true)
+    expect(useAuthStore.getState().accessToken).toBeNull()
+  })
+
+  it('preserves cookie clearing for an ordinary logout with a valid captured bearer', async () => {
+    const server = browserSessionServer()
+    commitAuthResult(authResult('user-1', server.state.accessToken))
+    vi.stubGlobal('fetch', server.fetchMock)
+    await logoutAuthSession()
+    expect(server.paths).toEqual(['/api/v1/auth/logout'])
+    expect(server.logoutStatuses).toEqual([200])
+    expect(server.logoutCredentials).toEqual(['include'])
+    expect(server.state.cookiePresent).toBe(false)
+    expect(server.revoked).toEqual(['user-1'])
+    await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+  })
+
+  it.each([
+    { login: () => loginWithPassword('synthetic-user', 'synthetic-password'), status: 401 },
+    { login: () => exchangeOIDCCode('synthetic-code'), status: 503 },
+  ])('fences a superseded login rejection with status $status', async ({ login, status }) => {
+    const response = deferred<Response>()
+    const fetchMock = vi.fn(() => response.promise)
+    vi.stubGlobal('fetch', fetchMock)
+    const signingIn = login()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    commitAuthResult(authResult('user-2', 'new-session'))
+    response.resolve(jsonResponse({ error: { message: 'Synthetic failure' } }, { status }))
+    await expect(signingIn).rejects.toMatchObject({ name: 'AbortError' })
     expect(useAuthStore.getState().accessToken).toBe('new-session')
   })
 })
