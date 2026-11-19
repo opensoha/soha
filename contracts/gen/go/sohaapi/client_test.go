@@ -3,6 +3,7 @@ package sohaapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -131,6 +132,73 @@ func TestSystemHealthAndReadinessUsePublicRequests(t *testing.T) {
 			}
 			if got := result["status"]; got != "ok" {
 				t.Fatalf("%s status = %v, want ok", tt.name, got)
+			}
+		})
+	}
+}
+
+func TestJSONResponseSizeBoundary(t *testing.T) {
+	const payload = `{"status":"ok"}`
+	for _, test := range []struct {
+		name   string
+		bytes  int
+		status int
+	}{
+		{name: "exact limit", bytes: maxJSONResponseBytes, status: http.StatusOK},
+		{name: "oversized success", bytes: maxJSONResponseBytes + 1, status: http.StatusOK},
+		{name: "oversized error", bytes: maxJSONResponseBytes + 1, status: http.StatusBadGateway},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Request-ID", "size-fixture")
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, payload+strings.Repeat(" ", test.bytes-len(payload)))
+			})
+			result, err := client.GetHealthz(t.Context())
+			if test.bytes == maxJSONResponseBytes {
+				if err != nil || result["status"] != "ok" {
+					t.Fatalf("exact limit response = %v, %v", result, err)
+				}
+				return
+			}
+			var oversized *ResponseTooLargeError
+			if result != nil || !errors.As(err, &oversized) || oversized.StatusCode != test.status ||
+				oversized.Limit != maxJSONResponseBytes || oversized.RequestID != "size-fixture" {
+				t.Fatalf("oversized response = %v, %v", result, err)
+			}
+		})
+	}
+}
+
+func TestStreamComputeTaskErrorSizeBoundary(t *testing.T) {
+	const payload = `{"error":{"code":"UPSTREAM_FAILED","message":"stream unavailable"}}`
+	for _, test := range []struct {
+		name  string
+		bytes int
+	}{
+		{name: "bounded error", bytes: len(payload)},
+		{name: "oversized error", bytes: maxStreamErrorBytes + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-Request-ID", "stream-fixture")
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = io.WriteString(w, payload+strings.Repeat(" ", test.bytes-len(payload)))
+			})
+			err := client.StreamComputeTask(t.Context(), ComputeTaskDomainVirtualization, "test", func(ComputeTaskStreamEvent) error {
+				t.Fatal("error response invoked the stream handler")
+				return nil
+			})
+			if test.bytes <= maxStreamErrorBytes {
+				if err == nil || !strings.Contains(err.Error(), "UPSTREAM_FAILED: stream unavailable") {
+					t.Fatalf("bounded response error = %v", err)
+				}
+				return
+			}
+			var oversized *ResponseTooLargeError
+			if !errors.As(err, &oversized) || oversized.StatusCode != http.StatusBadGateway ||
+				oversized.Limit != maxStreamErrorBytes || oversized.RequestID != "stream-fixture" {
+				t.Fatalf("oversized stream response error = %v", err)
 			}
 		})
 	}
