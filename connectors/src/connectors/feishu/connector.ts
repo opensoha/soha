@@ -13,13 +13,13 @@ import {
   RetryableConnectorError,
   type DeadLetterEntry,
   type DeadLetterQueue,
-  type IdempotencyStore,
   type RetryQueue,
   type RetryQueueEntry
 } from "../../sdk/reliability.js";
 import type {
   ConnectorActionRequest,
   ConnectorActionResult,
+  ConnectorEvent,
   ConnectorHealth,
   ConnectorWebhookRequest,
   ConnectorWebhookResponse
@@ -60,7 +60,8 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
   readonly id = "feishu";
   readonly manifest = feishuManifest;
   private auth?: FeishuAuthClient;
-  private idempotencyStore: IdempotencyStore = new MemoryIdempotencyStore();
+  private idempotencyStore: MemoryIdempotencyStore | FileIdempotencyStore = new MemoryIdempotencyStore();
+  private readonly inFlightWebhooks = new Map<string, Promise<ConnectorWebhookResponse>>();
   private rateLimiter?: FixedWindowRateLimiter;
   private deadLetters: DeadLetterQueue = new MemoryDeadLetterQueue();
   private retryQueue: RetryQueue | undefined;
@@ -148,25 +149,43 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
 
     const event = normalizeFeishuEvent(payload, this.now());
     const idempotencyKey = `event:${event.id}`;
-    if (!this.idempotencyStore.checkAndRecord(idempotencyKey, this.config.reliability.idempotencyTtlMs, this.now())) {
-      this.metrics.webhookDuplicates += 1;
-      this.context?.logger?.info("duplicate Feishu webhook event ignored", {
-        connectorId: this.id,
-        eventId: event.id,
-        eventType: event.type
-      });
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          duplicate: true,
-          eventCount: 0,
-          actionCount: 0
-        },
-        events: [],
-        actions: []
-      };
+    const pending = this.inFlightWebhooks.get(idempotencyKey);
+    if (pending) {
+      await pending;
+      return this.duplicateWebhookResponse(event);
     }
+    if (this.idempotencyStore.has(idempotencyKey, this.now())) {
+      return this.duplicateWebhookResponse(event);
+    }
+
+    const processing = this.processWebhook(event, request.deliverEvents);
+    this.inFlightWebhooks.set(idempotencyKey, processing);
+    try {
+      return await processing;
+    } finally {
+      this.inFlightWebhooks.delete(idempotencyKey);
+    }
+  }
+
+  private duplicateWebhookResponse(event: ConnectorEvent): ConnectorWebhookResponse {
+    this.metrics.webhookDuplicates += 1;
+    this.context?.logger?.info("duplicate Feishu webhook event ignored", {
+      connectorId: this.id,
+      eventId: event.id,
+      eventType: event.type
+    });
+    return {
+      status: 200,
+      body: { ok: true, duplicate: true, eventCount: 0, actionCount: 0 },
+      events: [],
+      actions: []
+    };
+  }
+
+  private async processWebhook(event: ConnectorEvent, deliverEvents: ConnectorWebhookRequest["deliverEvents"]): Promise<ConnectorWebhookResponse> {
+    this.ensureConfigured();
+    await deliverEvents?.([event]);
+    this.idempotencyStore.checkAndRecord(`event:${event.id}`, this.config.reliability.idempotencyTtlMs, this.now());
 
     const actions = [];
 

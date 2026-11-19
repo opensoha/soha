@@ -166,6 +166,16 @@ event/action query, hosted runtime storage, and Soha audit writes remain
 integration responsibilities for Soha core, a managed runtime, or a future
 shared connector runtime service.
 
-Current caveat: Feishu webhook idempotency can record an event before event sink
-delivery succeeds. If the sink fails and the provider retries, the retry may be
-treated as a duplicate and not forwarded to the sink again.
+Feishu commits its completed-event TTL only after the configured sink accepts
+delivery. Concurrent requests for the same event await the same delivery; a sink
+failure returns retryable `503` to all of them and leaves the event available for
+redelivery. Automatic replies run after sink delivery and the deduplication
+commit, so a sink retry does not repeat an earlier automatic reply. Without a
+sink, direct webhook handling retains the existing local deduplication behavior.
+
+Delivery is at least once, not an atomic transaction with the sink. A crash or
+lost response after sink acceptance but before the local TTL commit can cause
+redelivery; the sink must deduplicate by connector and event ID. A crash after
+the TTL commit but before an automatic reply may omit that reply. In-flight
+coalescing is process-local; file-backed deduplication supports a single runtime
+writer and completed events across restarts, not coordination between replicas.

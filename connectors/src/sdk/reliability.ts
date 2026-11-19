@@ -64,6 +64,11 @@ export interface IdempotencyStore {
 export class MemoryIdempotencyStore implements IdempotencyStore {
   private readonly entries = new Map<string, number>();
 
+  has(key: string, now: Date = new Date()): boolean {
+    const expiresAt = this.entries.get(key);
+    return expiresAt !== undefined && expiresAt > now.getTime();
+  }
+
   checkAndRecord(key: string, ttlMs: number, now: Date = new Date()): boolean {
     const nowMs = now.getTime();
     this.prune(nowMs);
@@ -89,6 +94,11 @@ export class FileIdempotencyStore implements IdempotencyStore {
 
   constructor(private readonly filePath: string) {
     this.load();
+  }
+
+  has(key: string, now: Date = new Date()): boolean {
+    const expiresAt = this.entries.get(key);
+    return expiresAt !== undefined && expiresAt > now.getTime();
   }
 
   checkAndRecord(key: string, ttlMs: number, now: Date = new Date()): boolean {
