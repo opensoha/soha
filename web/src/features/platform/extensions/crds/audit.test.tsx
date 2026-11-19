@@ -707,13 +707,19 @@ describe('CRD target and navigation audit', () => {
     await render()
     await dirtyEditor()
     await button('Audit apply')
-    await vi.waitFor(() => expect(container.textContent).toContain('audit-unknown-request'))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        'audit-unknown-request',
+      ),
+    )
     await clickCatalogBack()
     await act(async () => usePlatformScopeStore.getState().setClusterId('cluster-b'))
     await settle()
     expect(router.state.location.pathname).toBe(detail)
     expect(usePlatformScopeStore.getState().clusterId).toBe('cluster-a')
-    expect(container.textContent).toContain('audit-unknown-request')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'audit-unknown-request',
+    )
     expect(document.querySelector('textarea')?.value).toContain('unsaved-audit-draft')
     expect(fixtures.writes).toHaveLength(1)
   })

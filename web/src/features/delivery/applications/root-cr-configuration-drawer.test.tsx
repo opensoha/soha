@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act } from 'react'
+import { App } from 'antd'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -99,11 +100,14 @@ beforeEach(() => {
   root = createRoot(host)
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
-  client.clear()
-  document.body.innerHTML = ''
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
+  try {
+    await act(async () => root.unmount())
+  } finally {
+    client.clear()
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  }
 })
 async function tick() {
   await act(async () => {
@@ -114,12 +118,14 @@ async function render(binding = rootEnvironment) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <RootCRConfigurationDrawer
-          workload={rootWorkload}
-          binding={binding}
-          onClose={() => {}}
-          onOpenPlan={onPlan}
-        />
+        <App>
+          <RootCRConfigurationDrawer
+            workload={rootWorkload}
+            binding={binding}
+            onClose={() => {}}
+            onOpenPlan={onPlan}
+          />
+        </App>
       </QueryClientProvider>,
     ),
   )
