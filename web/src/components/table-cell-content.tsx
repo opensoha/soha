@@ -36,7 +36,8 @@ export const TableCellText = memo(function TableCellText({
     const focusTarget = textRef.current?.closest<HTMLElement>('a[href], button')
     if (!focusTarget) return
     const showOnFocus = () => {
-      if (hasOverflow()) activate()
+      // A pointer click must reach the original text while the tooltip is still deferred.
+      if (focusTarget.matches(':focus-visible') && hasOverflow()) activate()
     }
     const hideOnBlur = () => setOpen(false)
     focusTarget.addEventListener('focus', showOnFocus)

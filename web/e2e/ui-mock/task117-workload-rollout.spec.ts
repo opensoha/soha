@@ -274,7 +274,8 @@ for (const [kind, label] of kinds)
     await manual.click()
     await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
     before = state.reads
-    await page.clock.fastForward(15_100)
+    // Settle queued observer updates at their deadlines before the recovered interval fires.
+    await page.clock.runFor(15_100)
     await expect.poll(() => state.reads).toBeGreaterThan(before)
     await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(top)
     expect(state.writes).toEqual([])

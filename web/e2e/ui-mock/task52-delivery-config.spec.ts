@@ -153,12 +153,18 @@ test('workflow configuration retries an initial dependency failure', async ({ co
   const { state, evidence } = await designerMocks(context, page)
   state.readFailure = true
   await page.goto(route)
-  const feedback = page.locator('.soha-read-feedback')
+  const feedback = page.locator('.soha-read-feedback-notification')
+  await expect(feedback).toBeVisible()
   await expect(feedback).toContainText('应用环境读取失败')
+  await expect(page.locator('.ant-notification-notice')).toHaveCount(1)
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
+  const reads = state.reads
   state.readFailure = false
-  await page.getByRole('button', { name: '重试读取应用环境', exact: true }).click()
+  await feedback.getByRole('button', { name: '重试读取应用环境', exact: true }).click()
+  await expect.poll(() => state.reads).toBe(reads + 1)
   await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
+  expect(state.reads).toBe(reads + 1)
   expect(state.writes).toBe(0)
   verifyBrowserEvidence(evidence)
 })
