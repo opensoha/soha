@@ -125,7 +125,6 @@ type Service struct {
 
 	scheduler          dagScheduler
 	executorSettings   dagExecutorSettings
-	runState           runStateStore
 	capabilityRuntime  CapabilityRuntime
 	nativeTaskGuard    NativeTaskGuard
 	deliveryRuntime    DeliveryRuntime
@@ -845,16 +844,7 @@ func (s *Service) updateRun(ctx context.Context, run domainworkflow.Run) domainw
 	if err != nil {
 		return run
 	}
-	s.publishRunUpdate(updated)
 	return updated
-}
-
-func (s *Service) publishRunUpdate(run domainworkflow.Run) {
-	s.runState.publish(run)
-}
-
-func (s *Service) waitForRunStatus(ctx context.Context, runID string, statuses ...string) (domainworkflow.Run, error) {
-	return s.runState.wait(ctx, runID, statuses...)
 }
 
 func (s *Service) queueDepth() int {

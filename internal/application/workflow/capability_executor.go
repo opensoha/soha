@@ -78,10 +78,7 @@ func (s *Service) runCapabilityTick(parent context.Context, run domainworkflow.R
 	}
 	run.Status = capabilityRunStatus(run, intent.Input.Plan)
 	run.Metadata["capabilityNextPollAt"] = time.Now().UTC().Add(2 * time.Second).Format(time.RFC3339Nano)
-	updated, err := repo.SaveManagedRun(ctx, run, true)
-	if err == nil {
-		s.publishRunUpdate(updated)
-	}
+	_, _ = repo.SaveManagedRun(ctx, run, true)
 }
 
 func capabilityRunDeadline(intent domainworkflow.CapabilityIntent, run domainworkflow.Run) time.Time {

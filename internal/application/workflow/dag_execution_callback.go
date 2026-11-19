@@ -54,7 +54,6 @@ func (s *Service) RecordExecutionTaskResult(ctx context.Context, task domaindeli
 	if err != nil {
 		return err
 	}
-	s.publishRunUpdate(updated)
 	continuation.run = updated
 	if err := s.enqueueDAGRun(ctx, continuation); err != nil {
 		s.failRun(context.Background(), updated, definition, fmt.Sprintf("workflow runner enqueue failed after execution task callback: %v", err))
@@ -167,7 +166,6 @@ func (e *dagRunExecutor) resumeIfExternalTaskFinished(ctx context.Context, state
 	state.app = continuation.app
 	state.input = continuation.input
 	state.binding = continuation.binding
-	e.delivery.publishRunUpdate(updated)
 	return true
 }
 
