@@ -9,6 +9,7 @@ import (
 
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -110,15 +111,29 @@ func (r *Repository) UpsertInstalled(ctx context.Context, item domainplugin.Inst
 	return r.GetInstalled(ctx, item.ID)
 }
 
-func (r *Repository) DeleteInstalled(ctx context.Context, pluginID string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM installed_plugins WHERE id = ?`, pluginID)
-	if result.Error != nil {
-		return result.Error
+func (r *Repository) RemoveInstalled(ctx context.Context, pluginID string, retire func(context.Context, domainplugin.InstalledPlugin) error) (domainplugin.InstalledPlugin, error) {
+	var item domainplugin.InstalledPlugin
+	err := dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		row := dbtx.DB(ctx, r.db).Raw(`
+			DELETE FROM installed_plugins WHERE id = ?
+			RETURNING id, name, version, publisher, type, status, source, manifest, checksum_status, signature_status,
+			          requested_permissions, configured_secret_refs, installed_by, installed_at, updated_at,
+			          enabled_at, disabled_at, metadata
+		`, pluginID).Row()
+		removed, err := scanInstalledPlugin(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: plugin not found", apperrors.ErrNotFound)
+		}
+		if err != nil {
+			return err
+		}
+		item = removed
+		return retire(ctx, item)
+	})
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: plugin not found", apperrors.ErrNotFound)
-	}
-	return nil
+	return item, nil
 }
 
 type scanner interface {

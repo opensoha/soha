@@ -64,5 +64,5 @@ type Repository interface {
 	ListInstalled(context.Context) ([]InstalledPlugin, error)
 	GetInstalled(context.Context, string) (InstalledPlugin, error)
 	UpsertInstalled(context.Context, InstalledPlugin) (InstalledPlugin, error)
-	DeleteInstalled(context.Context, string) error
+	RemoveInstalled(context.Context, string, func(context.Context, InstalledPlugin) error) (InstalledPlugin, error)
 }
