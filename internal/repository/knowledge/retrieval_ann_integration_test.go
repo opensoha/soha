@@ -437,7 +437,7 @@ func captureKnowledgeSearchQuery(t *testing.T, repo *Repository) (*string, *[]an
 	args := []any{}
 	const callback = "knowledge:ann-test-query"
 	if err := repo.db.Callback().Row().Before("gorm:row").Register(callback, func(db *gorm.DB) {
-		if strings.HasPrefix(db.Statement.SQL.String(), "WITH authorized") && strings.Contains(db.Statement.SQL.String(), ", lexical_raw AS (") {
+		if strings.HasPrefix(db.Statement.SQL.String(), "WITH authorized") && strings.Contains(db.Statement.SQL.String(), ", lexical_raw AS") {
 			query = db.Statement.SQL.String()
 			args = append([]any(nil), db.Statement.Vars...)
 		}

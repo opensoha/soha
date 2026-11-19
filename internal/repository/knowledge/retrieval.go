@@ -58,7 +58,7 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	}
 	limit = min(max(limit, 10), 500)
 	query, args := authorizedKnowledgeCTE(p, request)
-	policyQuery, policyArgs, weightedVector, err := r.retrievalPolicyQuery(ctx, p, request)
+	policyQuery, policyArgs, err := r.retrievalPolicyQuery(ctx, p, request)
 	if err != nil {
 		return nil, err
 	}
@@ -68,23 +68,31 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	query += `, vector_availability AS (` + availabilityQuery + `)`
 	args = append(args, availabilityArgs...)
 	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(request.Query) + "%"
+	// Mixed-weight RRF ranks a bounded pool: at most 500 raw matches per group.
 	query += `, lexical_weights AS (
 		SELECT p.knowledge_base_id,CASE WHEN a.knowledge_base_id IS NULL THEN 1.0 ELSE p.lexical_weight END AS weight
 		FROM retrieval_policies p LEFT JOIN vector_availability a ON a.knowledge_base_id=p.knowledge_base_id
-	), lexical_raw AS (
-		SELECT id,ts_rank_cd(search_vector,websearch_to_tsquery('simple',?))+similarity(content,?) AS relevance
-		FROM authorized WHERE search_vector @@ websearch_to_tsquery('simple',?) OR content ILIKE ?
-		ORDER BY relevance DESC,id LIMIT (SELECT CASE WHEN min(weight)=max(weight) THEN ?::bigint ELSE NULL END FROM lexical_weights)
+	), lexical_groups AS (
+		SELECT weight,array_agg(knowledge_base_id) AS base_ids FROM lexical_weights GROUP BY weight
+	), vector_groups AS (
+		SELECT p.vector_weight AS weight,array_agg(p.knowledge_base_id) AS base_ids FROM retrieval_policies p
+		JOIN vector_availability a ON a.knowledge_base_id=p.knowledge_base_id GROUP BY p.vector_weight
+	), lexical_raw AS MATERIALIZED (
+		SELECT matches.id,matches.relevance FROM lexical_groups weights CROSS JOIN LATERAL (
+			SELECT c.id,ts_rank_cd(search_vector,websearch_to_tsquery('simple',?))+similarity(content,?) AS relevance
+			FROM authorized c WHERE c.knowledge_base_id=ANY(weights.base_ids) AND (search_vector @@ websearch_to_tsquery('simple',?) OR content ILIKE ?)
+			ORDER BY relevance DESC,c.id LIMIT (SELECT CASE WHEN count(*)=1 THEN ?::bigint ELSE 500 END FROM lexical_groups)
+		) matches
 	), lexical_ranked AS (SELECT id,61.0/(60+row_number() OVER (ORDER BY relevance DESC,id)) AS lexical_score FROM lexical_raw), lexical AS (
 		SELECT l.id,l.lexical_score,0.0 AS vector_score FROM lexical_ranked l
 		JOIN authorized c ON c.id=l.id JOIN lexical_weights w ON w.knowledge_base_id=c.knowledge_base_id
 		ORDER BY (l.lexical_score*w.weight) DESC,l.id LIMIT ?)`
 	args = append(args, request.Query, request.Query, request.Query, pattern, limit, limit)
-	vectorQuery, vectorArgs, err := knowledgeVectorCandidates(batch, limit, false, weightedVector)
+	vectorQuery, vectorArgs, err := knowledgeVectorCandidates(batch, limit, false)
 	if err != nil {
 		return nil, err
 	}
-	exactQuery, exactArgs, err := knowledgeVectorCandidates(batch, limit, true, weightedVector)
+	exactQuery, exactArgs, err := knowledgeVectorCandidates(batch, limit, true)
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +101,10 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 		return nil, err
 	}
 	// Preserve known channel RRF; only missing lexical scores use the bounded shortlist's RRF.
-	query += `, vector_candidates AS MATERIALIZED (` + vectorQuery + `), vectors AS (
-		SELECT * FROM vector_candidates UNION ALL (` + exactQuery + `)
+	query += `, vector_candidates AS MATERIALIZED (` + vectorQuery + `), vector_exact_candidates AS MATERIALIZED (` + exactQuery + `), vectors AS (
+		SELECT id,0.0 AS lexical_score,max(vector_score) AS vector_score FROM (
+			SELECT * FROM vector_candidates UNION ALL SELECT * FROM vector_exact_candidates
+		) grouped GROUP BY id ORDER BY max(vector_score*weight) DESC,id LIMIT ?
 	), candidate_ids AS MATERIALIZED (
 		SELECT id FROM lexical UNION SELECT id FROM vectors
 	), candidate_rows AS MATERIALIZED (
@@ -116,6 +126,7 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	WHERE ranking.score>=p.min_score ORDER BY ranking.score DESC,c.id LIMIT ?`
 	args = append(args, vectorArgs...)
 	args = append(args, exactArgs...)
+	args = append(args, limit)
 	args = append(args, request.Query, request.Query, request.Query, pattern)
 	args = append(args, scoreArgs...)
 	args = append(args, limit)
@@ -150,9 +161,9 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 	return items, err
 }
 
-func knowledgeVectorCandidates(batch domainknowledge.EmbeddingBatch, limit int, exact, weighted bool) (string, []any, error) {
-	if len(batch.Vectors) == 0 || !batch.Source.Known() || weighted && exact {
-		return `SELECT ''::text AS id,0.0 AS lexical_score,0.0 AS vector_score WHERE false`, nil, nil
+func knowledgeVectorCandidates(batch domainknowledge.EmbeddingBatch, limit int, exact bool) (string, []any, error) {
+	if len(batch.Vectors) == 0 || !batch.Source.Known() {
+		return `SELECT 0.0::float8 AS weight,''::text AS id,0.0 AS lexical_score,0.0 AS vector_score WHERE false`, nil, nil
 	}
 	if len(batch.Vectors) != 1 || batch.Model == "" {
 		return "", nil, fmt.Errorf("invalid retrieval embedding batch")
@@ -168,18 +179,15 @@ func knowledgeVectorCandidates(batch domainknowledge.EmbeddingBatch, limit int, 
 	args := []any{vector, dimension, batch.Model, batch.Route, batch.Source.UpstreamID, batch.Source.ProviderKind, batch.Source.UpstreamModel}
 	if exact {
 		// Filtered ANN can exhaust its scan after returning only some authorized rows.
-		filter = ` AND (SELECT count(*) FROM vector_candidates) < ?`
+		filter = ` AND (SELECT count(*) FROM vector_candidates ann WHERE ann.weight=weights.weight) < ?`
 		args = append(args, limit)
 		order = `(` + distance + `)+0`
 	}
-	join := ""
-	if weighted {
-		// Cross-base weights break distance ordering; retain ANN when weights agree.
-		join = ` JOIN retrieval_policies p ON p.knowledge_base_id=c.knowledge_base_id`
-		order = `greatest(0.0,1-(` + distance + `))*p.vector_weight DESC,c.id`
-	}
-	query := `SELECT c.id,0.0 AS lexical_score,greatest(0.0,1-(` + distance + `)) AS vector_score FROM authorized_current c` + join + `
-		WHERE embedding_dimension=? AND embedding_model=? AND embedding_route=? AND embedding_upstream_id=? AND embedding_provider_kind=? AND embedding_upstream_model=?` + filter + ` ORDER BY ` + order + ` LIMIT ?`
+	// Keep the group KNN order as pure distance; apply policy weights only outside its window.
+	query := `SELECT weights.weight, matches.id,0.0 AS lexical_score,matches.vector_score FROM vector_groups weights CROSS JOIN LATERAL (
+		SELECT c.id,greatest(0.0,1-(` + distance + `)) AS vector_score FROM authorized_current c
+		WHERE c.knowledge_base_id=ANY(weights.base_ids) AND embedding_dimension=? AND embedding_model=? AND embedding_route=? AND embedding_upstream_id=? AND embedding_provider_kind=? AND embedding_upstream_model=?` + filter + ` ORDER BY ` + order + ` LIMIT ?
+	) matches`
 	return query, append(args, vector, limit), nil
 }
 

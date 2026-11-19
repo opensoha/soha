@@ -62,27 +62,19 @@ func retrievalPolicyValues(policies map[string]domainknowledge.RetrievalPolicy) 
 	return `SELECT * FROM jsonb_to_recordset(?::jsonb) AS p(knowledge_base_id text,lexical_weight float8,vector_weight float8,min_score float8)`, []any{string(encoded)}, err
 }
 
-func (r *Repository) retrievalPolicyQuery(ctx context.Context, p domainknowledge.PrincipalScope, request domainknowledge.SearchRequest) (string, []any, bool, error) {
+func (r *Repository) retrievalPolicyQuery(ctx context.Context, p domainknowledge.PrincipalScope, request domainknowledge.SearchRequest) (string, []any, error) {
 	policies := request.Policies
 	if policies == nil {
 		var err error
 		policies, err = r.ListRetrievalPolicies(ctx, p, request.KnowledgeBaseIDs)
 		if err != nil {
-			return "", nil, false, err
+			return "", nil, err
 		}
 		for id, policy := range policies {
 			policies[id] = domainknowledge.EffectiveRetrievalPolicy(policy)
 		}
 	}
-	weight, weighted := -1.0, false
-	for _, policy := range policies {
-		if weight >= 0 && weight != policy.VectorWeight {
-			weighted = true
-		}
-		weight = policy.VectorWeight
-	}
-	query, args, err := retrievalPolicyValues(policies)
-	return query, args, weighted, err
+	return retrievalPolicyValues(policies)
 }
 
 func knowledgeVectorAvailability(batch domainknowledge.EmbeddingBatch) (string, []any) {
