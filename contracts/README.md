@@ -181,11 +181,11 @@ Public Go module and npm package identities remain unchanged during this transit
 npm run check:consumers --workspace contracts -- --internal-source --out /path/to/internal-source.json
 ```
 
-This checks Core at the root with the exact root `go.work`, and Web through the
-local npm workspace SDK link. It does not install packages, rewrite manifests or
-prove that an SDK version has been published. Reports label this `internal-source`
-and bind the source revision plus workspace input digests. Use `--consumer soha`
-or `--consumer soha-web` to select one; `--declared` cannot be combined with this mode.
+This checks Core, CLI and Agent with the exact root `go.work`, Web through the
+local npm workspace SDK link, and Skills against the same-source schemas. It does
+not install packages, rewrite manifests or prove that an SDK version has been published. Reports label this `internal-source`
+and bind the source revision plus workspace input digests. Use `--consumer <name>`
+to select one of those five consumers; `--declared` cannot be combined with this mode.
 The executable workflow is [root Contracts CI](../.github/workflows/contracts-ci.yml).
 Nested legacy publishing workflows are inert. Root owns publishing; completed
 legacy retirement is recorded in the Root `.github/legacy-retirement.json` manifest.
@@ -198,8 +198,20 @@ use the local consumer matrix below: it packs this checkout for Web/App and
 supplies an isolated Go workspace. After publishing, update consumer versions
 and lockfiles and verify them without the local override.
 
-The external compatibility gate retains all six consumers in two separate modes.
-Place their checkouts outside the source npm workspace and set `SOHA_CONSUMER_ROOT`.
+The compatibility gate retains declared checks for all six pinned consumers. Candidate
+checks use the following sources; the historical consumer ID alone does not identify
+the checked-out source or guarantee unchanged legacy Go imports accept the new SDK.
+
+| Consumers | Declared report | Candidate report |
+| --- | --- | --- |
+| Core, CLI, Agent | Pinned external source and original SDK (`declared`) | Migrated Root source and same-commit SDK (`internal-source`) |
+| Web, App, Skills | Pinned external source and original dependencies (`declared`) | Same pinned external source with candidate SDK/schemas (`candidate-source`) |
+
+The separate five-consumer `internal-source` job checks Core/Web/CLI/Agent/Skills
+together. Neither its result nor the Go candidate rows prove that a fixed legacy
+Go consumer can upgrade to the new module identity without changing imports.
+Place pinned external checkouts outside the source npm workspace and set
+`SOHA_CONSUMER_ROOT` for external checks.
 The reviewed commit pins remain unchanged. Core, Web, CLI, Agent and Skills are
 checked out from Root, with historical commits retained under `archive/consumer/`
 refs; App remains in `opensoha/soha-app`. This is still an external historical
@@ -219,16 +231,18 @@ The following component commands run from `contracts/`; CI sets `SOHA_CONSUMER_R
 to its isolated checkout group and uses the strict form:
 
 ```sh
-npm run check:consumers -- --consumer soha --require-all
+env -u SOHA_CONSUMER_ROOT npm run check:consumers -- --internal-source --consumer soha --require-all
 npm run check:consumers -- --consumer soha-web --require-all
 npm run check:consumers -- --consumer soha-app --require-all
-npm run check:consumers -- --consumer soha-cli --require-all
-npm run check:consumers -- --consumer soha-agent --require-all
+env -u SOHA_CONSUMER_ROOT npm run check:consumers -- --internal-source --consumer soha-cli --require-all
+env -u SOHA_CONSUMER_ROOT npm run check:consumers -- --internal-source --consumer soha-agent --require-all
 npm run check:consumers -- --consumer soha-skills --require-all
 ```
 
-Go consumers run in a temporary `go.work` that replaces the contracts module
-with this checkout. For npm consumers, the checker packs this checkout, temporarily
+Local external Go candidate checks use a temporary `go.work` and require a consumer
+that already imports the candidate module identity; they do not migrate legacy imports.
+CI instead uses migrated Root Core/CLI/Agent with `--internal-source`. For npm
+consumers, the checker packs this checkout, temporarily
 resolves the SDK tarball into `package.json` and `package-lock.json` with
 `npm install --package-lock-only --ignore-scripts`, then runs `npm ci` and the
 consumer build. Both files are restored byte-for-byte on success or failure.
@@ -281,10 +295,12 @@ optional `contracts_sha` accepts only a full commit SHA; leaving it empty select
 the workflow event's SHA, never a floating Contracts branch. Both verification and
 consumer jobs check out that SHA. CI retains the fixed consumer revision manifest
 and currently exposes only `consumer_mode=pinned`. Each consumer job runs declared
-dependencies and candidate source separately: a declared failure still permits the
-candidate diagnostic, while either failure keeps the job failed. Step outcomes and
-separate `declared.json`/`candidate.json` artifacts remain visible. Setup failure or
-cancellation cannot count as a passed consumer run. This workflow has read-only
+dependencies and its candidate source separately, using the modes in the table
+above: a declared failure still permits the candidate diagnostic, while either
+failure keeps the job failed. Step outcomes, the actual candidate mode in the summary, and
+separate `declared.json`/`candidate.json` artifacts remain visible. Report merging
+requires the correct dependency mode for each consumer; filenames do not define
+the mode. Setup failure or cancellation cannot count as a passed consumer run. This workflow has read-only
 repository permissions and does not load release secrets.
 
 Candidate source validation proves that exact source combination only. Declared

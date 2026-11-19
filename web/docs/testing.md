@@ -140,7 +140,7 @@ mock fixture 限制到本地 origin。两个场景只操作合成页面（只读
 原始 AI/认证/trace/HAR 不上传公共artifact。
 本地报告按7天保留约定人工清理，不能当正式设计基线。CI只上传原有构建manifest。
 
-真实环境可由 Core 的 [quality-lab 入口](../../soha/docs/testing.md) 准备，并由该脚本从私有文件
+真实环境可由 Core 的 [quality-lab 入口](../../docs/testing.md) 准备，并由该脚本从私有文件
 传入账号和 target。四个用户分别限定 direct/Agent 和只读/写入；真实 API 列表使用 `items`。
 UI 登录按当前页面完成滑块验证，未预注入认证。logout 后访问401、无权删除403、错UID409、
 同名重建后的旧UI确认409、客户端传输失败后合法重试及最终对象消失均独立校验。

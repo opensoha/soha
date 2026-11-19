@@ -7,9 +7,8 @@ import io
 import ipaddress
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
-import shlex
 import signal
 import stat
 import subprocess
@@ -22,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'golang:1.27.4'
 SDK = 'github.com/opensoha/soha/contracts'
 PACKAGE = 'github.com/opensoha/soha/internal/networkproxyruntime'
+NATIVE_PACKAGE = './internal/networkproxyruntime'
+NATIVE_FLAGS = ('-race', '-tags', 'soha_native_integration')
+COMPILER_SUFFIXES = {'.go', '.c', '.cc', '.cpp', '.cxx', '.m', '.h', '.hh', '.hpp', '.hxx',
+                     '.f', '.F', '.for', '.f90', '.s', '.S', '.sx', '.swig', '.swigcxx', '.syso'}
 PURPOSE = 'proxy-native-race'
 LABEL = 'soha.test.run'
 SOURCE_MODULES = {'.': 'github.com/opensoha/soha', 'contracts': SDK,
@@ -72,9 +75,11 @@ def load(name):
     return module
 
 
-def command(args, **kwargs):
+def command(args, error_log=None, **kwargs):
     result = subprocess.run(args, capture_output=True, timeout=kwargs.pop('timeout', 120), **kwargs)
     if result.returncode:
+        if error_log is not None:
+            error_log.write(result.stderr.encode() if isinstance(result.stderr, str) else result.stderr)
         raise RuntimeError('Command failed: ' + args[0] + ' ' + args[1])
     return result.stdout
 
@@ -117,6 +122,30 @@ def source_workspace_config(workspace):
             'Replace': replacements}
 
 
+def declared_sdk_version(text):
+    # Native source preflight runs before the Go test container starts.
+    required = []
+    in_require = False
+    for original in text.splitlines():
+        line = original.split("//", 1)[0].strip()
+        if line == "require (":
+            in_require = True
+            continue
+        if line == ")":
+            in_require = False
+            continue
+        fields = line.split()
+        if fields[:1] == ["require"]:
+            fields = fields[1:]
+        elif not in_require:
+            continue
+        if fields[:1] == [SDK] and len(fields) == 2:
+            required.append(fields[1])
+    if len(required) != 1:
+        raise ValueError("each consumer must require exactly one SDK version")
+    return required[0]
+
+
 def sdk_input(root, mode):
     root = root.resolve(strict=True)
 
@@ -142,16 +171,22 @@ def sdk_input(root, mode):
         workspace = read('go.work')
         config = source_workspace_config(workspace)
         modules = identity['sourceModules'] = {}
+        versions = set()
         for folder, module in SOURCE_MODULES.items():
             content = core if folder == '.' else read(folder + '/go.mod')
+            manifest = root / folder / 'go.mod'
+            if (root / folder).resolve() != root / folder or (module != SDK and manifest.is_symlink()):
+                raise ValueError('Native source SDK aliases require confined manifests')
             if not re.search(r'^module ' + re.escape(module) + r'\s*$', content, re.M):
                 raise ValueError('Incorrect native source module identity: ' + module)
             if re.search(r'^\s*replace\b', content, re.M):
                 raise ValueError('Native source gate forbids module replacements')
+            if module != SDK:
+                versions.add(declared_sdk_version(content))
             modules[module] = {'Dir': '/src' if folder == '.' else '/src/' + folder,
                                'goModSHA256': hashlib.sha256(content.encode()).hexdigest()}
         policy = load('source-workspace')
-        identity['sourceSDKAliasVersions'] = sorted(policy.validate_sdk_aliases(config, root))
+        identity['sourceSDKAliasVersions'] = sorted(policy.validate_sdk_aliases(config, versions))
         identity['sourcePolicySHA256'] = hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest()
         identity['contractsGoModSHA256'] = modules[SDK]['goModSHA256']
         identity['goWorkSHA256'] = hashlib.sha256(workspace.encode()).hexdigest()
@@ -181,51 +216,143 @@ def source_file(name, mode):
     return bool(parts) and parts[0] in ('cmd', 'internal', 'pkg', 'migrations')
 
 
+def add_source_file(archive, name, data, mode):
+    info = tarfile.TarInfo('src/' + name)
+    info.size, info.mode = len(data), mode & 0o777
+    archive.addfile(info, io.BytesIO(data))
+
+
 def source_archive(root, mode):
     root = root.resolve(strict=True)
     names = command(['git', '-C', str(root), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')
-    selected = sorted(name for name in set(names) - {''} if source_file(name, mode))
-    embedded = set()
-    for name in selected:
-        path = root / name
-        path.resolve().relative_to(root)
-        if not name.endswith('.go') or not path.is_file():
-            continue
-        for directive in re.findall(r'^[ \t]*//go:embed[ \t]+(.+)$', path.read_text(), re.M):
-            for pattern in shlex.split(directive):
-                pattern = pattern.removeprefix('all:')
-                if Path(pattern).is_absolute() or '..' in Path(pattern).parts:
-                    raise ValueError('Unconfined embed pattern')
-                for match in path.parent.glob(pattern):
-                    match.resolve().relative_to(root)
-                    if match.is_dir():
-                        embedded.update(str(p.relative_to(root)) for p in match.rglob('*') if p.is_file())
-                    else:
-                        embedded.add(str(match.relative_to(root)))
     stream, hashes = io.BytesIO(), {}
     with tarfile.open(fileobj=stream, mode='w') as archive:
-        for name in sorted(set(selected) | embedded):
+        for name in sorted(set(names) - {''}):
             if not source_file(name, mode):
                 continue
-            if (Path(name).suffix != '.go' and Path(name).name not in ('go.mod', 'go.sum', 'go.work', 'go.work.sum')
-                    and '/testdata/' not in name and not name.startswith('migrations/') and name not in embedded):
-                continue
             path = root / name
+            if (path.suffix != '.go' and path.name not in ('go.mod', 'go.sum', 'go.work', 'go.work.sum')
+                    and '/testdata/' not in name and not name.startswith('migrations/')):
+                continue
             if not path.exists() and not path.is_symlink():
                 continue
-            path.resolve(strict=True).relative_to(root)
-            # Materialize confined links so archive extraction cannot redirect later entries.
-            if not path.is_file():
-                if path.is_dir():
+            if path.resolve(strict=True) != path or not stat.S_ISREG(path.lstat().st_mode):
+                raise ValueError('Native source entry must be a confined regular file: ' + name)
+            data = path.read_bytes()
+            hashes[name] = hashlib.sha256(data).hexdigest()
+            add_source_file(archive, name, data, path.stat().st_mode)
+    return stream.getvalue(), source_digest(hashes)
+
+
+def source_digest(hashes):
+    return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+
+
+def embed_catalog(root, mode, base_archive, package_paths):
+    """Present the Go tool with names and file types without copying resource bytes."""
+    with tarfile.open(fileobj=io.BytesIO(base_archive)) as base:
+        existing = {entry.name.removeprefix('src/') for entry in base}
+    package_dirs = {root / name for name in package_paths}
+    pending = sorted(package_dirs)
+    visited = set()
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode='w') as archive:
+        while pending:
+            directory = pending.pop()
+            if directory in visited:
+                continue
+            visited.add(directory)
+            if directory.resolve(strict=True) != directory:
+                raise ValueError('Native embed directory must not redirect')
+            for path in sorted(directory.iterdir()):
+                name = path.relative_to(root).as_posix()
+                if name in existing or not source_file(name, mode):
                     continue
-                raise ValueError('Unsupported source entry')
-            raw = path.read_bytes()
-            hashes[name] = hashlib.sha256(raw).hexdigest()
-            info = tarfile.TarInfo('src/' + name)
-            info.size, info.mode = len(raw), path.stat().st_mode & 0o777
-            archive.addfile(info, io.BytesIO(raw))
-    content_hash = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
-    return stream.getvalue(), content_hash
+                kind = path.lstat().st_mode
+                # Resource subdirectories can contain Go templates. At a package root,
+                # keep unselected source and object files out of the compiler's view.
+                if (directory in package_dirs and stat.S_ISREG(kind)
+                        and path.suffix in COMPILER_SUFFIXES and not path.name.startswith(('.', '_'))):
+                    continue
+                info = tarfile.TarInfo('src/' + name)
+                if stat.S_ISDIR(kind):
+                    info.type, info.mode = tarfile.DIRTYPE, 0o755
+                    pending.append(path)
+                elif not stat.S_ISREG(kind):
+                    # A self-link exposes a nonregular leaf to Go without exposing its target.
+                    info.type, info.linkname = tarfile.SYMTYPE, path.name
+                archive.addfile(info)
+    return stream.getvalue()
+
+
+def local_packages(output, source='/src'):
+    root = PurePosixPath(source)
+    decoder = json.JSONDecoder()
+    nonspace = re.compile(r'\S')
+    position = 0
+    found_local = False
+    while (start := nonspace.search(output, position)) is not None:
+        package, position = decoder.raw_decode(output, start.start())
+        directory = PurePosixPath(package.get('Dir') or '.')
+        if not directory.is_relative_to(root):
+            continue
+        relative = directory.relative_to(root)
+        if '..' in relative.parts:
+            raise ValueError('Go package directory escapes the native archive')
+        found_local = True
+        yield relative, package
+    if not found_local:
+        raise ValueError('Go returned no local native package metadata')
+
+
+def local_embed_files(output, mode, source='/src'):
+    files = set()
+    for directory, package in local_packages(output, source):
+        for key in ('EmbedFiles', 'TestEmbedFiles', 'XTestEmbedFiles'):
+            for value in package.get(key) or []:
+                filename = PurePosixPath(value)
+                name = (directory / filename).as_posix()
+                if filename.is_absolute() or not source_file(name, mode):
+                    raise ValueError('Go selected a file outside the native archive policy: ' + name)
+                files.add(name)
+    return files
+
+
+def add_embeds(root, mode, base_archive, names):
+    stream, hashes = io.BytesIO(), {}
+    with tarfile.open(fileobj=io.BytesIO(base_archive)) as base, tarfile.open(fileobj=stream, mode='w') as archive:
+        for entry in base:
+            data = base.extractfile(entry).read()
+            name = entry.name.removeprefix('src/')
+            hashes[name] = hashlib.sha256(data).hexdigest()
+            archive.addfile(entry, io.BytesIO(data))
+        for name in sorted(names):
+            path = root / name
+            if (not source_file(name, mode) or path.resolve(strict=True) != path
+                    or not stat.S_ISREG(path.lstat().st_mode)):
+                raise ValueError('Go embed must be a confined regular file: ' + name)
+            if name in hashes:
+                continue
+            data = path.read_bytes()
+            hashes[name] = hashlib.sha256(data).hexdigest()
+            add_source_file(archive, name, data, path.stat().st_mode)
+    return stream.getvalue(), source_digest(hashes)
+
+
+def install_native_source(resources, prep, root, mode, base_archive, error_log=None):
+    list_command = ['exec', prep, 'go', 'list', '-deps', '-test', *NATIVE_FLAGS]
+    # Before assets exist, allow incomplete packages only to discover their directories.
+    directories = resources.call([*list_command, '-e', '-json=Dir', NATIVE_PACKAGE],
+                                 text=True, timeout=600, error_log=error_log)
+    package_paths = {directory.as_posix() for directory, _ in local_packages(directories)}
+    resources.call(['cp', '-', prep + ':/'], input=embed_catalog(root, mode, base_archive, package_paths))
+    metadata = resources.call([*list_command, '-json=Dir,EmbedFiles,TestEmbedFiles,XTestEmbedFiles', NATIVE_PACKAGE],
+                              text=True, timeout=600, error_log=error_log)
+    names = local_embed_files(metadata, mode)
+    archive, tree_hash = add_embeds(root, mode, base_archive, names)
+    resources.call(['exec', prep, 'rm', '-rf', '/src'])
+    resources.call(['cp', '-', prep + ':/'], input=archive)
+    return archive, tree_hash
 
 
 def write_input_identity(report):
@@ -467,9 +594,9 @@ def execute(args, report):
     if top != ROOT:
         raise ValueError('Native source must be the owning Core Git checkout')
     identity = sdk_input(ROOT, args.sdk_mode)
-    archive, tree_hash = source_archive(ROOT, args.sdk_mode)
+    base_archive, _ = source_archive(ROOT, args.sdk_mode)
     report.update(sdk=identity, head=command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
-                  workingTreeSHA256=tree_hash, sourceArchiveSHA256=hashlib.sha256(archive).hexdigest())
+                  sourceBaseArchiveSHA256=hashlib.sha256(base_archive).hexdigest())
     endpoint = docker_endpoint(os.environ, args.allow_remote_docker)
     docker = ['docker', '--host', endpoint]
     report['dockerEndpoint'] = endpoint
@@ -500,6 +627,7 @@ def execute(args, report):
         prep = resources.create('container', prep_name, ['create', '--name', prep_name, *labels(run),
             *budget, '--platform', 'linux/amd64', '--network', 'bridge', '--workdir', '/src',
             '--env', 'GOTOOLCHAIN=local', '--env', 'CGO_ENABLED=1', '--env', 'GOMAXPROCS=2',
+            '--env', 'GODEBUG=embedfollowsymlinks=0',
             '--env', 'GOFLAGS=-mod=readonly -p=2', '--env', 'GOWORK=' + ('/src/go.work' if args.sdk_mode == 'source' else 'off'),
             base['Id'], 'sleep', '3600'], base['Id'], 'bridge')
         resources.call(['start', prep])
@@ -507,7 +635,7 @@ def execute(args, report):
         if version != 'go version go1.27.4 linux/amd64':
             raise ValueError('Native Go toolchain mismatch')
         report['toolchain'] = version
-        resources.call(['cp', '-', prep + ':/'], input=archive)
+        resources.call(['cp', '-', prep + ':/'], input=base_archive)
         with tempfile.TemporaryDirectory(prefix='proxy-native-', dir=os.environ.get('OPENSOHA_VERIFY_DIR')) as tmp:
             engines = Path(tmp) / 'engines'
             report['kernels'] = load('prepare-proxy-test-engines').prepare(engines, 'linux-amd64', json.loads((ROOT / 'scripts/proxy-test-engines.json').read_text()))
@@ -534,14 +662,17 @@ def execute(args, report):
             identity['downloadDirHash'] = resources.call(['exec', prep, 'cat', ziphash], text=True).strip()
             if identity['downloadDirHash'] != identity['expectedSum']:
                 raise ValueError('Downloaded SDK directory checksum mismatch')
-        identity['actualGoSumSHA256'] = resources.call(['exec', prep, 'sha256sum', '/src/go.sum'], text=True).split()[0]
         install_kernel_metadata(resources, prep, report['kernels']['engines'])
         # Compilation/dependency network access ends before either acceptance container starts.
         preparation = args.out.with_name(args.out.stem + '.preparation.log')
         report['preparationLog'] = str(preparation)
         with preparation.open('xb') as log:
-            for invocation in (['go', 'mod', 'verify'], ['go', 'test', '-race', '-tags', 'soha_native_integration', '-c',
-                    '-o', '/gate/native.test', './internal/networkproxyruntime'], ['go', 'build', '-o', '/gate/test2json', 'cmd/test2json']):
+            archive, tree_hash = install_native_source(resources, prep, ROOT, args.sdk_mode, base_archive, log)
+            report.update(workingTreeSHA256=tree_hash, sourceArchiveSHA256=hashlib.sha256(archive).hexdigest())
+            persist(report)
+            identity['actualGoSumSHA256'] = resources.call(['exec', prep, 'sha256sum', '/src/go.sum'], text=True).split()[0]
+            for invocation in (['go', 'mod', 'verify'], ['go', 'test', *NATIVE_FLAGS, '-c',
+                    '-o', '/gate/native.test', NATIVE_PACKAGE], ['go', 'build', '-o', '/gate/test2json', 'cmd/test2json']):
                 resources.checkpoint('native-preparation', prep)
                 result = subprocess.run([*docker, 'exec', prep, *invocation], stdout=log, stderr=log, timeout=1800)
                 report['lastAction']['exitCode'] = result.returncode

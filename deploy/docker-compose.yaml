@@ -86,6 +86,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      args:
+        SOHA_BUILD_VERSION: ${SOHA_BUILD_VERSION:-0.1.13}
     image: ${SOHA_IMAGE:-ghcr.io/opensoha/soha:local}
     depends_on:
       postgres:
@@ -537,10 +539,8 @@ services:
     profiles:
       - hermes
     build:
-      context: ${SOHA_AGENT_DIR:-../../soha-agent}
-      dockerfile: deploy/Dockerfile.hermes-agent-runner
-      additional_contexts:
-        contracts: ${SOHA_CONTRACTS_DIR:-../contracts}
+      context: ..
+      dockerfile: agent/deploy/Dockerfile.hermes-agent-runner
     image: ${SOHA_HERMES_IMAGE:-ghcr.io/opensoha/soha-hermes-agent:local}
     container_name: ${SOHA_HERMES_CONTAINER_NAME:-soha-hermes-agent-runner}
     restart: unless-stopped

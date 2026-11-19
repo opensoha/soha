@@ -54,27 +54,7 @@ Apply this reference to production Go changes in the `soha` repository. Reposito
 
 ## Test and Build Gate
 
-Run focused package tests during development. Documentation-only edits need metadata, link, and consistency checks rather than Go builds. Before completing an architecture, dependency, security, concurrency, configuration, module, or release code change, run the applicable Core gate from the `soha/` repository root. Versions and exact CI commands are owned by [active Core CI](../../../../.github/workflows/ci.yml) and [Core release](../../../../.github/workflows/release.yml); local execution follows the workspace verification wrapper and output isolation rules.
-
-For incremental lint, set `SOHA_LINT_BASE_REF` to the verified PR target or actual configured upstream; an arbitrary feature-branch tracking ref is not a substitute for the integration target.
-
-From the `soha/` repository root:
-
-```bash
-export GOWORK="$PWD/go.work"
-python3 scripts/source-workspace.py tidy
-go mod verify
-go test ./...
-go test -race ./...
-go vet ./...
-make complexity-check
-: "${SOHA_LINT_BASE_REF:?set the verified PR base or upstream ref}"
-BASE_REV="$(git merge-base HEAD "$SOHA_LINT_BASE_REF")"
-golangci-lint run --new-from-rev="$BASE_REV" ./...
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
-git diff --check
-```
+Run focused package and boundary tests during development. For a local lint reproduction, set `SOHA_LINT_BASE_REF` to the verified PR target or configured upstream. [Core CI](../../../../.github/workflows/ci.yml) and [Core release](../../../../.github/workflows/release.yml) own tool versions and the applicable full regression, audit and build gates.
 
 - Internal source hygiene uses a temporary modfile with the local SDK, and preserves checked-in manifests. External declared-dependency/publication checks use `GOWORK=off` without local replacements; source success cannot certify a published version.
 - Do not accept a `go mod tidy` diff accidentally. Review dependency and checksum changes before keeping them. CI must run tidy on a clean checkout and fail if it produces a diff.

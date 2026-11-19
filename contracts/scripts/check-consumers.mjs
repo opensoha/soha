@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { archivedGoProxy } from "./archived-go-sdk.mjs";
 
@@ -109,6 +109,7 @@ for (const target of targets) {
   let packageDir;
   let ownedGoWorkspace;
   let ownedNativeDirectory;
+  let ownedNpmMirror;
   let manifests;
   let entry;
   try {
@@ -198,6 +199,19 @@ for (const target of targets) {
       }
     }
     if (declaredSDK && consumer.kind === "go") verifyDeclaredGoSDK(dir, env);
+    if (declaredSDK && archivedDeclaredSDK && consumer.kind === "npm") {
+      const archived = await archivedNpmEnv(dir, env);
+      ownedNpmMirror = archived.directory;
+      env = archived.env;
+      if (archived.sdk) {
+        entry.declaredSDK = archived.sdk;
+        run("git", ["init", "--bare", "--initial-branch=archived-sdk"], ownedNpmMirror, process.env);
+        run("git", ["fetch", "--depth=1", "--no-tags", archived.sdk.mirrorRepository,
+          `${archived.sdk.revision}:refs/heads/archived-sdk`], ownedNpmMirror, process.env);
+        const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ownedNpmMirror, env: process.env, encoding: "utf8" });
+        if (head.status !== 0 || head.stdout.trim() !== archived.sdk.revision) throw new Error("Archived npm mirror commit mismatch");
+      }
+    }
     packageDir = consumer.kind === "npm" && !declaredSDK && !internalSource ? await packContracts() : undefined;
     if (packageDir) manifests = ["package.json", "package-lock.json"].map((name) => ({ path: join(dir, name), contents: readFileSync(join(dir, name)) }));
     for (const [command, commandArgs] of consumer.commands) {
@@ -260,6 +274,7 @@ for (const target of targets) {
     failed += 1;
   } finally {
     if (manifests) for (const file of manifests) writeFileSync(file.path, file.contents);
+    if (ownedNpmMirror) await rm(ownedNpmMirror, { recursive: true, force: true });
     if (ownedNativeDirectory) {
       const qualification = entry.nativeQualification;
       const confirmed = qualification.status === "passed" && confirmedNativeCleanup(qualification.receipt);
@@ -495,6 +510,37 @@ function declaredSDKRequirement(consumerDir) {
     .map(([name, version]) => ({ name, version }));
   if (paths.length !== 1) throw new Error("consumer must declare exactly one supported contracts module");
   return paths[0];
+}
+
+async function archivedNpmEnv(dir, inherited) {
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(join(dir, "package-lock.json"), "utf8"));
+  const declared = "git+https://github.com/opensoha/soha-contracts.git#4aef3ea31f6a892c36473e58908652b571cc2813";
+  const sdk = lock.packages?.["node_modules/@opensoha/contracts"];
+  if (![manifest.dependencies?.["@opensoha/contracts"], lock.packages?.[""]?.dependencies?.["@opensoha/contracts"], sdk?.resolved]
+    .some(value => typeof value === "string" && /github\.com[:/]opensoha\/soha-contracts(?:[.#/]|$)/.test(value))) return { env: inherited };
+  if (manifest.dependencies?.["@opensoha/contracts"] !== declared
+      || lock.packages?.[""]?.dependencies?.["@opensoha/contracts"] !== declared
+      || sdk?.resolved !== declared || sdk.version !== "0.1.29"
+      || sdk.integrity !== "sha512-vTMIG6wW3xAXpScHku4FfpKpQvYlHafJEg5uAuXmNtVhTW/4j3YzRsuPkyylR6CAqkdUV6N6QyhHzIkmq4S6mQ==") {
+    throw new Error("Declared npm SDK does not match the archived commit and integrity");
+  }
+  const count = inherited.GIT_CONFIG_COUNT ?? "0";
+  const urls = ["https://github.com/opensoha/soha-contracts.git",
+    "ssh://git@github.com/opensoha/soha-contracts.git", "git@github.com:opensoha/soha-contracts.git"];
+  if (!/^\d+$/.test(count) || !Number.isSafeInteger(Number(count) + urls.length)
+      || Number(count) + urls.length > 2147483647) throw new Error("Invalid inherited GIT_CONFIG_COUNT");
+  const directory = await mkdtemp(join(tmpdir(), "opensoha-declared-sdk-"));
+  const mirror = pathToFileURL(directory).href;
+  const env = { ...inherited, GIT_CONFIG_COUNT: String(Number(count) + urls.length) };
+  // The unchanged Git object lives in Root history; only its transport changes, never the lock.
+  for (const [offset, url] of urls.entries()) {
+    const index = Number(count) + offset;
+    env[`GIT_CONFIG_KEY_${index}`] = `url.${mirror}.insteadOf`;
+    env[`GIT_CONFIG_VALUE_${index}`] = url;
+  }
+  return { directory, env, sdk: { name: "@opensoha/contracts", version: sdk.version, resolved: sdk.resolved,
+    revision: declared.split("#")[1], integrity: sdk.integrity, mirrorRepository: "https://github.com/opensoha/soha.git" } };
 }
 
 function declaredSDKModule(consumerDir) {

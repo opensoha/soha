@@ -75,16 +75,10 @@ from Root with its shared lockfile, or invoke scripts with `--workspace web`.
 - Check shared table and column APIs, then verify the actual page integration: permission gates,
   query reset, pagination/sort requests, actions, loading, empty and persistent error feedback.
   Shared theme tests do not establish that a new page is wired correctly.
-- `scripts/check-table-boundaries.mjs` inventories production table imports and rejects additions.
-  `--base <reviewed-ref>` or `TABLE_BOUNDARY_BASE_REF` identifies the base before HEAD; CI supplies the PR
-  base or pre-push commit. Missing history fails instead of silently comparing against HEAD.
-- The guard blocks new raw Table imports/re-exports, deep table entries and opaque whole-Antd
-  namespace/dynamic imports. Import other controls by name; type-only imports remain valid.
-  Only `src/components/admin-table.tsx` is the shared implementation exemption. Historical
-  occurrences are counted at the Git baseline, not silently rewritten or blanket-exempted.
-- Run `npm test -- scripts/check-table-boundaries.test.mjs` when changing this guard, and include
-  negative cases. A necessary new exception needs an explicitly reviewed scope, reason and test;
-  do not evade the rule with another wrapper or reset the baseline to make CI green.
+- Use the [table import guard](../../../web/scripts/check-table-boundaries.mjs) and its
+  [positive and negative examples](../../../web/scripts/check-table-boundaries.test.mjs).
+  Type-only imports remain valid; a necessary new exception needs a reviewed scope, reason and test.
+  Do not evade the guard with another wrapper or reset its baseline to make CI green.
 - This import guard does not prove CSS, accessibility, pagination or visual compliance. Keep
   targeted component/page tests and actual visual review; preserve current accepted layouts.
 

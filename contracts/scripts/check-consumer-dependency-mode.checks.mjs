@@ -60,6 +60,104 @@ test("declared npm mode retains npm ci/build and omits the candidate tarball ins
   for (const entry of report.results) assert.deepEqual(entry.commands, [["npm", ["ci"]], ["npm", ["run", "build"]]]);
   assert.equal(existsSync(join(root, "soha/keep.txt")), true);
 });
+
+function archivedNpmFixture(root, consumer) {
+  const dir = join(root, consumer === "soha-app" ? "soha-app/frontend" : "soha-web");
+  const resolved = "git+https://github.com/opensoha/soha-contracts.git#4aef3ea31f6a892c36473e58908652b571cc2813";
+  const dependencies = { "@opensoha/contracts": resolved };
+  const sdk = { version: "0.1.29", resolved, integrity: "sha512-vTMIG6wW3xAXpScHku4FfpKpQvYlHafJEg5uAuXmNtVhTW/4j3YzRsuPkyylR6CAqkdUV6N6QyhHzIkmq4S6mQ==" };
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies }));
+  writeFileSync(join(dir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": { dependencies }, "node_modules/@opensoha/contracts": sdk } }));
+  const files = ["package.json", "package-lock.json"].map(name => ({ path: join(dir, name), bytes: readFileSync(join(dir, name)) }));
+  const preload = join(root, "archived-npm-preload.mjs");
+  writeFileSync(preload, `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import assert from "node:assert/strict";
+import { appendFileSync } from "node:fs";
+const original = childProcess.spawnSync;
+childProcess.spawnSync = (command, args, options) => {
+  if (command === "git" && options.cwd?.includes("opensoha-declared-sdk-")) {
+    appendFileSync(${JSON.stringify(join(root, "mirror-path"))}, options.cwd + "\\n");
+    if (args[0] === "rev-parse") return { status: 0, stdout: process.env.WRONG_MIRROR ? "wrong\\n" : "4aef3ea31f6a892c36473e58908652b571cc2813\\n" };
+    assert.ok(args[0] === "init" || args[0] === "fetch");
+    if (args[0] === "fetch") assert.deepEqual(args.slice(1), ["--depth=1", "--no-tags", "https://github.com/opensoha/soha.git", "4aef3ea31f6a892c36473e58908652b571cc2813:refs/heads/archived-sdk"]);
+    return { status: process.env.FAIL_FETCH && args[0] === "fetch" ? 17 : 0 };
+  }
+  if (command !== "npm") return original(command, args, options);
+  assert.equal(options.env.GIT_CONFIG_COUNT, process.env.NORMAL_REGISTRY ? "1" : "4");
+  assert.equal(options.env.GIT_CONFIG_KEY_0, "test.preserved");
+  assert.equal(options.env.GIT_CONFIG_VALUE_0, "original");
+  if (!process.env.NORMAL_REGISTRY) {
+    for (const index of [1, 2, 3]) assert.match(options.env["GIT_CONFIG_KEY_" + index], /^url.file:.*opensoha-declared-sdk-.*\\.insteadOf$/);
+    assert.equal(options.env.GIT_CONFIG_VALUE_2, "ssh://git@github.com/opensoha/soha-contracts.git");
+  }
+  assert.ok(args[0] === "ci" || (args[0] === "run" && args[1] === "build"));
+  return { status: process.env.FAIL_NPM === args[0] ? 17 : 0 };
+};
+syncBuiltinESMExports();
+`);
+  return { dir, files, env: { NODE_OPTIONS: "--import=" + pathToFileURL(preload).href,
+    GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "test.preserved", GIT_CONFIG_VALUE_0: "original" } };
+}
+test("archived declared npm leaves an ordinary registry dependency unchanged", (t) => {
+  const root = fixture(t);
+  const f = archivedNpmFixture(root, "soha-web");
+  const dependencies = { "@opensoha/contracts": "0.2.0" };
+  writeFileSync(join(f.dir, "package.json"), JSON.stringify({ dependencies }));
+  writeFileSync(join(f.dir, "package-lock.json"), JSON.stringify({ packages: { "": { dependencies },
+    "node_modules/@opensoha/contracts": { version: "0.2.0", resolved: "https://registry.npmjs.org/@opensoha/contracts/-/contracts-0.2.0.tgz" } } }));
+  const originals = f.files.map(file => readFileSync(file.path));
+  const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha-web"], { ...f.env, NORMAL_REGISTRY: "1" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(root, "mirror-path")), false);
+  assert.equal(JSON.parse(readFileSync(join(root, "result.json"))).results[0].declaredSDK, undefined);
+  for (const [index, file] of f.files.entries()) assert.deepEqual(readFileSync(file.path), originals[index]);
+});
+test("archived declared npm rejects a registry manifest with a retired repository lock", (t) => {
+  const root = fixture(t);
+  const f = archivedNpmFixture(root, "soha-web");
+  writeFileSync(join(f.dir, "package.json"), JSON.stringify({ dependencies: { "@opensoha/contracts": "0.2.0" } }));
+  const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha-web"], f.env);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /archived commit and integrity/);
+  assert.equal(existsSync(join(root, "mirror-path")), false);
+});
+for (const consumer of ["soha-web", "soha-app"]) {
+  for (const failure of ["", "ci", "run"]) test(`archived declared ${consumer} keeps exact manifests and integrity after ${failure || "success"}`, (t) => {
+    const root = fixture(t);
+    const f = archivedNpmFixture(root, consumer);
+    const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", consumer], { ...f.env, FAIL_NPM: failure });
+    assert.equal(result.status, failure ? 1 : 0, result.stderr);
+    for (const file of f.files) assert.deepEqual(readFileSync(file.path), file.bytes);
+    for (const path of readFileSync(join(root, "mirror-path"), "utf8").trim().split("\n")) assert.equal(existsSync(path), false);
+    const report = JSON.parse(readFileSync(join(root, "result.json")));
+    assert.equal(report.dependencyMode, "declared");
+    assert.equal(report.results[0].declaredSDK.mirrorRepository, "https://github.com/opensoha/soha.git");
+    assert.equal(report.results[0].declaredSDK.resolved, JSON.parse(f.files[0].bytes).dependencies["@opensoha/contracts"]);
+  });
+}
+for (const field of ["resolved", "integrity", "version"]) test(`archived declared npm rejects changed ${field} before npm`, (t) => {
+  const root = fixture(t);
+  const f = archivedNpmFixture(root, "soha-web");
+  const lock = JSON.parse(readFileSync(join(f.dir, "package-lock.json")));
+  lock.packages["node_modules/@opensoha/contracts"][field] += "changed";
+  writeFileSync(join(f.dir, "package-lock.json"), JSON.stringify(lock));
+  const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha-web"], f.env);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /archived commit and integrity/);
+});
+for (const invalid of [{ FAIL_FETCH: "1" }, { WRONG_MIRROR: "1" }, { GIT_CONFIG_COUNT: "2147483645" }]) {
+  test(`archived declared npm fails closed for ${Object.keys(invalid)[0]}`, (t) => {
+    const root = fixture(t);
+    const f = archivedNpmFixture(root, "soha-web");
+    const result = run(root, ["--declared", "--archived-declared-sdk", "--consumer", "soha-web"], { ...f.env, ...invalid });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /status 17|mirror commit mismatch|Invalid inherited GIT_CONFIG_COUNT/);
+    for (const file of f.files) assert.deepEqual(readFileSync(file.path), file.bytes);
+    if (existsSync(join(root, "mirror-path"))) for (const path of readFileSync(join(root, "mirror-path"), "utf8").trim().split("\n")) assert.equal(existsSync(path), false);
+  });
+}
 test("candidate source binding remains the explicit default with its SDK tarball", (t) => {
   const root = fixture(t); const result = run(root, ["--dry-run", "--consumer", "soha-web"]);
   assert.equal(result.status, 0, result.stderr);

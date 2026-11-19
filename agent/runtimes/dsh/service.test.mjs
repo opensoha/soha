@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
-import { mkdir, mkdtemp, realpath, rename, rm, readFile, writeFile, readdir, stat } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, realpath, rename, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRuntime, configFromEnv, effectiveRunDeadline } from './service.mjs';
 import { VERSION, sha, stable } from './protocol.mjs';
 import { createOrderedToolBridge } from './worker.mjs';
@@ -12,6 +12,7 @@ import { writeHookOutcome } from './assembly-plugin.mjs';
 const token = 'service-secret-'.repeat(4),
   pat = 'gateway-secret-'.repeat(4),
   grant = 'grant-secret-'.repeat(4);
+const schemaPath = fileURLToPath(new URL('../../../contracts/agent/dsh-runtime.schema.json', import.meta.url));
 const tool = {
   name: 'knowledge.search',
   description: 'Search authorized knowledge',
@@ -83,7 +84,7 @@ async function config() {
     dataDir: await mkdtemp(
       join(process.env.OPENSOHA_VERIFY_DIR || tmpdir(), 'task123-dsh-service-'),
     ),
-    schemaPath: fileURLToPath(new URL('../../../contracts/agent/dsh-runtime.schema.json', import.meta.url)),
+    schemaPath,
     capacity: 1,
     maxRunMs: 25000,
     maxTokens: 512,
@@ -97,6 +98,62 @@ async function api(base, path, body, auth = token) {
   });
   return { code: r.status, body: await r.json() };
 }
+test('runtime schema uses the same-checkout default and rejects missing or wrong paths', async (t) => {
+  const dir = await realpath(await mkdtemp(join(process.env.OPENSOHA_VERIFY_DIR || tmpdir(), 'dsh-schema-')));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const tokenFile = join(dir, 'token');
+  await writeFile(tokenFile, token, { mode: 0o600 });
+  const env = {
+    SOHA_DSH_SERVICE_TOKEN_FILE: tokenFile,
+    SOHA_DSH_GATEWAY_URL: 'http://127.0.0.1:1',
+    SOHA_DSH_CORE_CALLBACK_URL: 'http://127.0.0.1:1',
+    SOHA_DSH_MODELS: 'loopback-model',
+    SOHA_DSH_DATA_DIR: join(dir, 'state'),
+  };
+
+  await t.test('loads the default schema and validates requests', async () => {
+    const c = await configFromEnv(env);
+    assert.equal(c.schemaPath, schemaPath);
+    const runtime = await createRuntime(c);
+    try {
+      const base = await listen(runtime.server);
+      const health = await api(base, '/v1/health');
+      assert.equal(health.code, 200);
+      assert.equal(health.body.ready, true);
+      assert.deepEqual(await api(base, '/v1/runs', { kind: 'start' }), {
+        code: 400, body: { error: 'runtime_request_rejected' },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  await t.test('rejects an absent default schema', async () => {
+    // Relocate the entry point without removing the checkout's schema or duplicating its dependencies.
+    const source = new URL('./', import.meta.url);
+    const runtimeDir = join(dir, 'agent', 'runtimes', 'dsh');
+    await mkdir(runtimeDir, { recursive: true });
+    const service = join(runtimeDir, 'service.mjs');
+    await copyFile(new URL('service.mjs', source), service);
+    for (const name of ['protocol.mjs', 'worker.mjs', 'mcp-assets.mjs']) {
+      await symlink(fileURLToPath(new URL(name, source)), join(runtimeDir, name));
+    }
+    const relocated = await import(pathToFileURL(service).href);
+    const c = await relocated.configFromEnv(env);
+    await assert.rejects(async () => (await relocated.createRuntime(c)).close(), {
+      code: 'ENOENT', path: join(dir, 'contracts', 'agent', 'dsh-runtime.schema.json'),
+    });
+  });
+
+  await t.test('rejects explicit paths without falling back to the default', async () => {
+    const missing = join(dir, 'missing.json');
+    const missingConfig = await configFromEnv({ ...env, SOHA_DSH_SCHEMA_PATH: missing });
+    await assert.rejects(async () => (await createRuntime(missingConfig)).close(), { code: 'ENOENT', path: missing });
+    const directoryConfig = await configFromEnv({ ...env, SOHA_DSH_SCHEMA_PATH: dir });
+    await assert.rejects(async () => (await createRuntime(directoryConfig)).close(), { code: 'EISDIR' });
+  });
+});
+
 test('asset inventory is redacted and MCP probe only discovers and closes', async (t) => {
   let closeStatus = 204, loseInitialize = false;
   const methods = [];

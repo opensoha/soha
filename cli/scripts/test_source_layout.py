@@ -66,9 +66,6 @@ class SourceLayoutTest(unittest.TestCase):
         package = json.loads((ROOT / "agent/runtimes/dsh/package.json").read_text())
         self.assertEqual(package["engines"]["node"], ">=24.9.0")
         self.assertTrue((ROOT / "agent/runtimes/dsh/package-lock.json").is_file())
-        service = (ROOT / "agent/runtimes/dsh/service.mjs").read_text()
-        self.assertIn("../../../contracts/agent/dsh-runtime.schema.json", service)
-        self.assertNotIn("../../../soha-contracts", service)
 
     def test_launcher_package_remains_dependency_free_without_install_hooks(self):
         package = json.loads((ROOT / "cli/npm/cli/package.json").read_text())

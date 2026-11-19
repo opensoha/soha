@@ -247,6 +247,18 @@ Soha 每个容器只运行一个进程。默认进程提供管理 API 和内嵌 
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): 独立的 network-control、ingest、ingest PostgreSQL 与 WireGuard gateway 工作负载
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
 
+### 原生 Linux 安装
+
+使用提供安装包的 release 中的 `soha-linux-amd64.tar.gz`，核对对应 `.sha256`
+后解压到新目录。安装包包含二进制、全部 PostgreSQL 迁移 SQL 和公开配置示例，
+按[原生安装说明](deploy/native/README.md)配置数据库并从解压目录启动。
+原 `soha-linux-amd64` 附件继续保留，供已具备匹配迁移文件的安装使用；
+单独下载该文件不足以完成全新安装。
+
+原生 Kubernetes 与 Helm 使用 TCP liveness、`/readyz` startup/readiness。
+数据库故障会使 Core 退出就绪状态，不会仅因该依赖故障而反复重启。
+启动窗口为五分钟；已有库迁移耗时更长时，需要按环境增大该窗口。
+
 ### 远程 Kubernetes 开发
 
 `ops.popicorns.com` 直接作为共享开发环境，不再使用独立的
@@ -274,14 +286,21 @@ make remote-dev-down
 
 这是共享数据的开发环境，迁移和应用写操作会直接影响现有 `soha` 数据库。
 
+### Docker Compose
+
 ```bash
 make deploy-image
-docker compose -f deploy/docker-compose.yaml up -d --build
+docker compose -f deploy/docker-compose.yaml up -d --no-build
 ```
 
 Compose 默认使用仓库中的 `configs/config.example.yaml`。如需沿用私有的
 `configs/config.yaml`，请在 shell 或 Compose 环境文件中设置
 `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`。相对路径以 `deploy/` 为基准。
+
+`make deploy-image` 从 Core 的 `v*` 标签推导插件兼容版本。直接使用 Compose
+构建时默认 `SOHA_BUILD_VERSION=0.1.13`，构建其他 Core 版本时请显式设置，
+例如 `SOHA_BUILD_VERSION=0.1.13 docker compose -f deploy/docker-compose.yaml build soha`。
+可选 Hermes 镜像使用同一主仓的 `agent/` 和 `contracts/`，不依赖旧仓目录。
 
 使用支持 dsh 的 Core 运行新 Chat 和 Heya 时，部署配套的 dsh 镜像并启用受保护的检查点存储。
 已有安装升级前请按 [运行时部署与切换说明](deploy/dsh-hindsight/README-cn.md) 执行。

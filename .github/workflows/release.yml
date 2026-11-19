@@ -188,6 +188,11 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o ../soha-linux-amd64 ./cmd/server
           cd ..
           sha256sum soha-linux-amd64 > soha-linux-amd64.sha256
+      - name: Package complete native installation
+        working-directory: soha
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_package_native.py'
+          python3 scripts/package-native.py --binary ../soha-linux-amd64 --output ../soha-linux-amd64.tar.gz
       - name: Set up QEMU
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-qemu-action@v3
@@ -283,6 +288,7 @@ jobs:
         run: |
           set -euo pipefail
           binary_sha256="$(cut -d ' ' -f1 soha-linux-amd64.sha256)"
+          bundle_sha256="$(cut -d ' ' -f1 soha-linux-amd64.tar.gz.sha256)"
           contracts_module="$(cat soha-contracts-module.txt)"
           web_sha256="$(cat soha-web-dist.sha256)"
           generated_at="$(date -u -d "@$SOURCE_DATE_EPOCH" +"%Y-%m-%dT%H:%M:%SZ")"
@@ -300,6 +306,10 @@ jobs:
               "goos": "linux",
               "goarch": "amd64",
               "sha256": "${binary_sha256}"
+            },
+            "installationBundle": {
+              "name": "soha-linux-amd64.tar.gz",
+              "sha256": "${bundle_sha256}"
             }
           }
           EOF
@@ -310,6 +320,8 @@ jobs:
           path: |
             soha-linux-amd64
             soha-linux-amd64.sha256
+            soha-linux-amd64.tar.gz
+            soha-linux-amd64.tar.gz.sha256
             soha-contracts-module.txt
             soha-release-manifest.json
             soha-web-dist.sha256
@@ -322,7 +334,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 soha/scripts/publish-release-assets.py --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --latest --title "soha $RELEASE_VERSION" --files soha-linux-amd64 soha-linux-amd64.sha256 soha-release-manifest.json
+          python3 soha/scripts/publish-release-assets.py --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --latest --title "soha $RELEASE_VERSION" --files soha-linux-amd64 soha-linux-amd64.sha256 soha-linux-amd64.tar.gz soha-linux-amd64.tar.gz.sha256 soha-release-manifest.json
       - name: Download published release assets and verify
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -334,6 +346,8 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --pattern "soha-linux-amd64" \
             --pattern "soha-linux-amd64.sha256" \
+            --pattern "soha-linux-amd64.tar.gz" \
+            --pattern "soha-linux-amd64.tar.gz.sha256" \
             --pattern "soha-release-manifest.json" \
             --dir downloaded-release \
             --clobber
@@ -341,5 +355,8 @@ jobs:
           test -s downloaded-release/soha-linux-amd64.sha256
           test -s downloaded-release/soha-release-manifest.json
           (cd downloaded-release && sha256sum -c soha-linux-amd64.sha256)
+          (cd downloaded-release && sha256sum -c soha-linux-amd64.tar.gz.sha256)
+          tar -tzf downloaded-release/soha-linux-amd64.tar.gz > downloaded-release/bundle-files.txt
+          grep -q '^soha/migrations/postgres/0001_init.sql$' downloaded-release/bundle-files.txt
           grep -q '"webSha256"' downloaded-release/soha-release-manifest.json
           grep -q '"contractsModule"' downloaded-release/soha-release-manifest.json

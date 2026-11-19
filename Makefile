@@ -16,7 +16,7 @@ ROOT_COMPOSE_FILE ?= $(DEPLOY_DIR)/docker-compose.yaml
 APP_DOCKERFILE ?= $(DEPLOY_DIR)/Dockerfile
 IMAGE_REPOSITORY ?= ghcr.io/opensoha/soha
 IMAGE_TAG ?= local
-SOHA_BUILD_VERSION ?= $(shell (git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0) | sed s/^v//)
+SOHA_BUILD_VERSION ?= $(shell (git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || echo v0.1.0) | sed s/^v//)
 SOHA_VERSION_LDFLAGS = -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=$(SOHA_BUILD_VERSION)
 GOPROXY ?= https://proxy.golang.org,direct
 SOHA_WEB_DIR ?= web

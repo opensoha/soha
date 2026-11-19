@@ -73,7 +73,7 @@ for (const failures of [[true, false], [false, true], [true, true], [false, fals
     const outcomes = results.map((result) => result.status === 0 ? "success" : "failure");
     const result = spawnSync("bash", ["-e", "-c", summary.run], { env: { ...env, GITHUB_STEP_SUMMARY: report, DECLARED_RESULT: outcomes[0], CANDIDATE_RESULT: outcomes[1] } });
     assert.equal(result.status, 0);
-    assert.equal(readFileSync(report, "utf8"), `Declared dependency: \`${outcomes[0]}\`\nCandidate source: \`${outcomes[1]}\`\n`);
+    assert.equal(readFileSync(report, "utf8"), `Declared dependency (pinned): \`${outcomes[0]}\`\nCandidate (candidate-source): \`${outcomes[1]}\`\n`);
   });
 }
 
@@ -93,6 +93,29 @@ test("external baselines are outside the workspace and internal-source is a sepa
   assert.ok(workflow.jobs["internal-source"].steps.some((step) => step.run?.includes("--internal-source --require-all")));
   assert.equal(workflow.jobs["internal-source"]["continue-on-error"], undefined);
 });
+
+for (const consumer of ["soha", "soha-web", "soha-app", "soha-cli", "soha-agent", "soha-skills"]) {
+  test(`candidate command and summary identify the actual dependency mode for ${consumer}`, (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "consumer-ci-mode-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const trace = join(directory, "trace");
+    const report = join(directory, "summary");
+    writeFileSync(join(directory, "npm"), '#!/bin/sh\nprintf "%s\\n" "$*" "$SOHA_CONSUMER_ROOT" >> "$TRACE"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${directory}:${process.env.PATH}`, TRACE: trace, CONSUMER: consumer,
+      CONTRACTS_SHA: "a".repeat(40), GITHUB_WORKSPACE: directory, RECOVERY_CONTROL_SHA: "",
+      SOHA_CONSUMER_ROOT: join(directory, "consumers"), GITHUB_STEP_SUMMARY: report,
+      DECLARED_RESULT: "success", CANDIDATE_RESULT: "success" };
+    const result = spawnSync("bash", ["-e", "-c", candidate.run], { env });
+    assert.equal(result.status, 0, result.stderr?.toString());
+    const [command, consumerRoot] = readFileSync(trace, "utf8").trim().split("\n");
+    const internal = ["soha", "soha-cli", "soha-agent"].includes(consumer);
+    assert.equal(command.includes("--internal-source"), internal);
+    assert.equal(consumerRoot, join(directory, internal ? "source" : "consumers"));
+    assert.ok(command.includes(`--consumer ${consumer} --require-all --contracts-sha ${env.CONTRACTS_SHA}`));
+    assert.equal(spawnSync("bash", ["-e", "-c", summary.run], { env }).status, 0);
+    assert.ok(readFileSync(report, "utf8").includes(`Candidate (${internal ? "internal-source" : "candidate-source"}):`));
+  });
+}
 
 test("active router waits for every selected workflow and preserves the original gates", () => {
   const readWorkflow = (name) => YAML.parse(readFileSync(join(root, `../.github/workflows/${name}.yml`), "utf8"));

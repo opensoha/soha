@@ -321,15 +321,21 @@ test('empty and failed workload reads remain distinguishable', async ({ context,
   const { state, evidence } = await setup(context, page, 'jobs')
   state.rows = []
   await page.goto('/workloads/jobs')
-  await expect(page.getByRole('status').filter({ hasText: '0 个 Jobs' })).toBeVisible()
+  const empty = page.getByRole('status').filter({ hasText: '0 个 Jobs' })
+  await expect(empty).toBeVisible()
   state.readStatus = 503
   await page.reload()
   await expect(page.getByRole('status').filter({ hasText: 'Jobs 未加载' })).toBeVisible()
+  await expect(empty).toHaveCount(0)
+  const notice = page.locator('.soha-read-feedback-notification')
+  await expect(notice).toBeVisible()
+  await notice.getByText('查看详情', { exact: true }).click()
   await expect(
-    page.getByText('Synthetic workload unavailable', { exact: false }).first(),
+    notice.getByText('列表: Synthetic workload unavailable', { exact: true }),
   ).toBeVisible()
   state.readStatus = 200
-  await page.getByRole('button', { name: /^重试读取/ }).click()
-  await expect(page.getByRole('status').filter({ hasText: '0 个 Jobs' })).toBeVisible()
+  await notice.getByRole('button', { name: /^重试读取/ }).click()
+  await expect(empty).toBeVisible()
+  await expect(notice).toHaveCount(0)
   verifyBrowserEvidence(evidence)
 })

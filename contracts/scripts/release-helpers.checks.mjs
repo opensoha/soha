@@ -43,6 +43,33 @@ test("consumer report merger requires declared, candidate and internal evidence 
   assert.notEqual(run().status, 0);
 });
 
+for (const consumer of ["soha", "soha-web", "soha-app", "soha-cli", "soha-agent", "soha-skills"]) {
+  test(`consumer report merger rejects the wrong candidate mode for ${consumer}`, (t) => {
+    const f = fixture(t);
+    const cwd = join(f.directory, "contracts");
+    const expected = ["soha", "soha-cli", "soha-agent"].includes(consumer) ? "internal-source" : "candidate-source";
+    f.write("contracts/package.json", '{"version":"0.2.0"}');
+    f.write(".github/workflows/contracts-ci.yml", `jobs:\n  consumers:\n    strategy:\n      matrix:\n        consumer: [${consumer}]\n`);
+    const report = { contractsVersion: "0.2.0", contractsRevision: { head: sha }, requireAll: true, dryRun: false,
+      status: "passed", skipped: 0, failed: 0, checked: 1, results: [{ consumer, status: "passed" }] };
+    const candidatePath = `contracts/reports/consumer-${consumer}-reports/candidate.json`;
+    f.write(`contracts/reports/consumer-${consumer}-reports/declared.json`, JSON.stringify({ ...report, dependencyMode: "declared" }));
+    f.write("contracts/reports/internal-source-report/internal-source-report.json", JSON.stringify({ ...report, dependencyMode: "internal-source" }));
+    f.write(candidatePath, JSON.stringify({ ...report, dependencyMode: expected }));
+    const run = () => spawnSync(process.execPath, [script("merge-release-reports.mjs"), "reports", "matrix.json"],
+      { cwd, encoding: "utf8", env: { ...process.env, RELEASE_SHA: sha } });
+    assert.equal(run().status, 0);
+    const matrix = JSON.parse(readFileSync(join(cwd, "matrix.json")));
+    assert.equal(matrix.results[1].dependencyMode, expected);
+    for (const wrong of ["declared", expected === "internal-source" ? "candidate-source" : "internal-source"]) {
+      f.write(candidatePath, JSON.stringify({ ...report, dependencyMode: wrong }));
+      const result = run();
+      assert.notEqual(result.status, 0, wrong);
+      assert.ok(result.stderr.includes(`${consumer}/candidate.json must use ${expected}`), result.stderr);
+    }
+  });
+}
+
 for (const mode of ["success", "bytes", "no-provenance", "workflow", "tag", "source", "go-failure", "go-replace", "audit-failure"]) {
   test(`public verification ${mode} uses downloaded bytes, signed source and normal Go sumDB`, (t) => {
     const f = fixture(t);

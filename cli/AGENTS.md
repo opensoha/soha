@@ -100,38 +100,11 @@ the workflow or documentation is stale, then update both in the same change.
 | HTTP or contracts usage | `httptest.Server` request/response tests and `GOWORK=off` compatibility checks |
 | MCP, setup, skills, or plugins | stdio/config fixtures, idempotency, `--dry-run`, `--check`, path safety, and integrity tests |
 | npm launcher or release download | `npm test`, `npm pack --dry-run`, checksum/cache/tamper tests, and real tagged `npx` smoke |
-| Dockerfile, module, CI, or release workflow | the complete CI gate plus a real Docker or corresponding successful Actions job |
+| Dockerfile, module, CI, or release workflow | focused validation of the changed input; GitHub CLI CI builds the real image |
 
-## Complete CI Gate
+## Local and GitHub checks
 
-Use the change-to-validation matrix during iteration. This full gate applies
-to the changes that require it and to CI/release verification, not every edit.
-
-Use Root Go `1.27.4`, Node.js `22.x`, `govulncheck v1.8.0`, and
-`golangci-lint v2.14.0`. Run each module explicitly in the four-module Root
-workspace; Root `go test ./...` does not discover this nested module:
-
-Run this block from `cli/`; npm installation still starts at Root.
-
-```bash
-export GOWORK="$(git rev-parse --show-toplevel)/go.work"
-python3 ../scripts/source-workspace.py check-go
-go mod verify
-go test ./...
-go test -race ./...
-go vet ./...
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-golangci-lint run --timeout=5m
-make build
-(cd .. && npm test --workspace @opensoha/cli && npm pack --workspace @opensoha/cli --dry-run)
-make verify-image
-git diff --check
-```
-
-Do not report a missing local tool or Docker daemon as a pass. For release work,
-use the successful matching GitHub Actions job to complete verification. Root active CI must retain the complete original gate through the Docker build;
-external declared-SDK checks use `GOWORK=off` separately;
-`git diff --check` is an additional mandatory local pre-submit check.
+Run focused tests from `cli/` with the Root Go workspace and run `git diff --check` before committing. The [CLI workflow](../.github/workflows/cli-ci.yml) owns tool versions, full tests, vulnerability scanning and the Docker build. The [release workflow](../.github/workflows/cli-release.yml) separately qualifies the declared public SDK with `GOWORK=off`.
 
 ## Release Contract
 

@@ -7,6 +7,8 @@ import re
 import subprocess
 import sys
 
+from check_dev_guidance import GUIDANCE_PATHS
+
 JOBS = ("core", "web", "contracts", "cli", "agent", "connectors", "skills", "deletion")
 
 
@@ -42,12 +44,17 @@ def select(data):
     result = dict.fromkeys(JOBS, False)
     for status, path in entries:
         parts = path.split("/")
+        if path == "cli/docs/commands.md":
+            result["cli"] = True
+            continue
+        if path in GUIDANCE_PATHS:
+            continue
         # DSH is an independent Node24 runtime, outside the Root npm workspace.
         if path in {"agent/runtimes/dsh/package.json", "agent/runtimes/dsh/package-lock.json"}:
             result["agent"] = True
             continue
         # Shared tooling and public contracts can affect every consumer.
-        if path.startswith((".github/", "scripts/", "contracts/", "deploy/", ".agents/")) or ".github" in parts or parts[-1] in {
+        if path.startswith((".github/", "scripts/", "contracts/", "deploy/", ".agents/")) or ".github" in parts or ".agents" in parts or parts[-1] in {
             "go.mod", "go.sum", "go.work", "go.work.sum", "package.json", "package-lock.json", "Makefile", "Dockerfile",
             "npm-shrinkwrap.json",
         } or path in {
