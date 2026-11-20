@@ -7,12 +7,20 @@ import {
   loginWithPassword,
   restoreAuthSession,
 } from '@/features/auth/auth-api'
+import { completeBrowserHandoff } from '@/features/auth/browser-handoff-api'
 import { useAuthStore } from '@/stores/auth-store'
 import type { AuthResult } from '@/types'
 import { api } from './api-client'
 import { API_ERROR_EVENT, type ApiErrorEventDetail } from './api-error'
 
-function session(userId = 'user-a', accessToken = 'old-token'): AuthResult {
+function browserAccessToken(label: string, sessionId = 'session-a') {
+  const payload = btoa(JSON.stringify({ sid: sessionId })).replace(/=+$/, '')
+  return `eyJhbGciOiJIUzI1NiJ9.${payload}.${label}`
+}
+
+const freshAccessToken = browserAccessToken('fresh-token')
+
+function session(userId = 'user-a', accessToken = browserAccessToken('old-token')): AuthResult {
   return {
     user: { userId, userName: userId, email: '', roles: [], teams: [], projects: [], tags: [] },
     tokens: {
@@ -57,6 +65,7 @@ describe('API session ownership', () => {
 
   afterEach(() => {
     window.removeEventListener(API_ERROR_EVENT, listener)
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     clearAuthSession()
@@ -88,7 +97,7 @@ describe('API session ownership', () => {
     const request = api.post('/synthetic-resource', { value: 'draft' })
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     commitAuthResult(session('user-b', 'new-session'))
-    refresh.resolve(json({ data: session('user-a', 'fresh-token') }))
+    refresh.resolve(json({ data: session('user-a', freshAccessToken) }))
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(useAuthStore.getState().accessToken).toBe('new-session')
@@ -120,7 +129,7 @@ describe('API session ownership', () => {
     let resourceCalls = 0
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (String(input).endsWith('/auth/refresh'))
-        return Promise.resolve(json({ data: session('user-a', 'fresh-token') }))
+        return Promise.resolve(json({ data: session('user-a', freshAccessToken) }))
       resourceCalls += 1
       return resourceCalls === 1 ? Promise.resolve(json({}, 401)) : replay.promise
     })
@@ -144,7 +153,7 @@ describe('API session ownership', () => {
       const token = new Headers(options?.headers).get('Authorization')
       calls.push({ url, token })
       if (url.endsWith('/auth/refresh')) return refresh.promise
-      if (token === 'Bearer fresh-token') return Promise.resolve(json({ data: url }))
+      if (token === `Bearer ${freshAccessToken}`) return Promise.resolve(json({ data: url }))
       return url.endsWith('/late') ? late.promise : Promise.resolve(json({}, 401))
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -154,13 +163,35 @@ describe('API session ownership', () => {
     await vi.waitFor(() =>
       expect(calls.filter((call) => call.url.endsWith('/auth/refresh'))).toHaveLength(1),
     )
-    refresh.resolve(json({ data: session('user-a', 'fresh-token') }))
+    refresh.resolve(json({ data: session('user-a', freshAccessToken) }))
     await Promise.all([first, second])
     late.resolve(json({}, 401))
     await third
     expect(calls.filter((call) => call.url.endsWith('/auth/refresh'))).toHaveLength(1)
-    expect(calls.filter((call) => call.token === 'Bearer fresh-token')).toHaveLength(3)
+    expect(calls.filter((call) => call.token === `Bearer ${freshAccessToken}`)).toHaveLength(3)
     expect(useAuthStore.getState().sessionGeneration).toBe(generation)
+  })
+
+  it('does not replay a write when the shared cookie belongs to a new session of the same user', async () => {
+    const generation = useAuthStore.getState().sessionGeneration
+    const accessToken = browserAccessToken('fresh-token', 'session-b')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith('/auth/refresh')
+        ? json({ data: session('user-a', accessToken) })
+        : json({}, 401),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.post('/synthetic-resource', { value: 'draft' })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(useAuthStore.getState()).toMatchObject({
+      accessToken,
+      sessionGeneration: generation + 1,
+    })
+    expect(events).toEqual([])
   })
 
   it('rejects a decoded result if its originating session changed while the body was read', async () => {
@@ -187,7 +218,10 @@ describe('API session ownership', () => {
         format === 'json'
           ? vi.spyOn(response, 'json').mockImplementation(() => body.promise)
           : vi.spyOn(response, 'text').mockImplementation(() => body.promise)
-      vi.stubGlobal('fetch', vi.fn(async () => response))
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => response),
+      )
 
       const request =
         format === 'json' ? api.get('/synthetic-resource') : api.getText('/synthetic-resource')
@@ -203,7 +237,10 @@ describe('API session ownership', () => {
 
   it('still reports invalid JSON for the current session', async () => {
     const response = new Response('{', { headers: { 'x-request-id': 'current-request' } })
-    vi.stubGlobal('fetch', vi.fn(async () => response))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response),
+    )
 
     await expect(api.get('/synthetic-resource')).rejects.toMatchObject({
       name: 'ApiError',
@@ -270,15 +307,45 @@ describe('API session ownership', () => {
     )
     const restoring = restoreAuthSession()
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    const completion = api.post('/auth/browser-handoffs/synthetic-handoff/complete')
+    const completion = completeBrowserHandoff('synthetic-handoff')
     await Promise.resolve()
     expect(calls).toHaveLength(1)
-    refresh.resolve(json({ data: session('user-a', 'fresh-token') }))
+    refresh.resolve(json({ data: session('user-a', freshAccessToken) }))
     await restoring
     await completion
     expect(calls.map((url) => new URL(url, 'https://example.test').pathname)).toEqual([
       '/api/v1/auth/refresh',
       '/api/v1/auth/browser-handoffs/synthetic-handoff/complete',
     ])
+  })
+
+  it('aborts a stalled handoff response body before a queued login can send', async () => {
+    vi.useFakeTimers()
+    const lateBody = deferred<ArrayBuffer>()
+    const handoff = json({ data: { destinationUrl: '/' } })
+    const read = vi.spyOn(handoff, 'arrayBuffer').mockImplementation(() => lateBody.promise)
+    const loginResult = session('user-b', 'new-session')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) =>
+      String(input).endsWith('/complete') ? handoff : json({ data: loginResult }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const completion = completeBrowserHandoff('synthetic-handoff')
+    const result = expect(completion).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(0)
+    const handoffSignal = fetchMock.mock.calls[0][1]?.signal
+    expect(read).toHaveBeenCalledOnce()
+    const login = loginWithPassword('synthetic-user', 'synthetic-password')
+    try {
+      await vi.advanceTimersByTimeAsync(14_999)
+      expect(fetchMock).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(handoffSignal?.reason).toMatchObject({ name: 'TimeoutError' })
+      await result
+      await expect(login).resolves.toEqual(loginResult)
+      expect(events).toEqual([])
+    } finally {
+      lateBody.resolve(new TextEncoder().encode('{"data":{"destinationUrl":"/"}}').buffer)
+    }
   })
 })

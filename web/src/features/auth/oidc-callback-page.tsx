@@ -77,7 +77,7 @@ export function OIDCCallbackPage() {
   const handleBackToLogin = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
     await logoutAuthSession()
-    navigate('/login', { replace: true })
+    navigate('/login', { replace: true, state: { skipSessionRestore: true } })
   }
 
   return (

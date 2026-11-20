@@ -381,12 +381,18 @@ export function LoginPage() {
   const { message } = App.useApp()
   const accessToken = useAuthStore((state) => state.accessToken)
   const isAuthenticated = Boolean(accessToken)
+  const navigation = location.state as
+    | { from?: { hash?: string; pathname?: string; search?: string }; skipSessionRestore?: boolean }
+    | undefined
+  const skipSessionRestore = navigation?.skipSessionRestore === true
   const [loginError, setLoginError] = useState<Error | null>(null)
   useInlineApiError(loginError)
   const loginFence = useRef(false)
   const [loading, setLoading] = useState(false)
   const [providerLoadingKey, setProviderLoadingKey] = useState<string | null>(null)
-  const [checkingExistingSession, setCheckingExistingSession] = useState(!isAuthenticated)
+  const [checkingExistingSession, setCheckingExistingSession] = useState(
+    !isAuthenticated && !skipSessionRestore,
+  )
   const [sessionRestoreUnavailable, setSessionRestoreUnavailable] = useState(false)
   const [sliderValue, setSliderValue] = useState(0)
   const [sliderVerified, setSliderVerified] = useState(false)
@@ -394,21 +400,7 @@ export function LoginPage() {
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
 
   const storedBranding = readStoredBrandingSettings()
-  const stateReturnTo = normalizeLocalReturnTo(
-    routeLocationPath(
-      (
-        location.state as
-          | {
-              from?: {
-                hash?: string
-                pathname?: string
-                search?: string
-              }
-            }
-          | undefined
-      )?.from,
-    ),
-  )
+  const stateReturnTo = normalizeLocalReturnTo(routeLocationPath(navigation?.from))
   const queryReturnTo = normalizeLocalReturnTo(
     new URLSearchParams(location.search).get('return_to'),
   )
@@ -471,6 +463,12 @@ export function LoginPage() {
   )
 
   useEffect(() => {
+    if (skipSessionRestore && !accessToken) {
+      setCheckingExistingSession(false)
+      setSessionRestoreUnavailable(false)
+      return
+    }
+
     let cancelled = false
     let retryTimer: number | undefined
 
@@ -527,7 +525,7 @@ export function LoginPage() {
         window.clearTimeout(retryTimer)
       }
     }
-  }, [accessToken, completeLoginNavigation, resolvePostLoginPath, returnTo])
+  }, [accessToken, completeLoginNavigation, resolvePostLoginPath, returnTo, skipSessionRestore])
 
   const resetSliderVerification = () => {
     setSliderValue(0)
