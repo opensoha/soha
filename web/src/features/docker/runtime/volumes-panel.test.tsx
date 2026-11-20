@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { App } from 'antd'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,14 +29,16 @@ function render(files: object, props: Partial<DockerRuntimePanelProps> = {}) {
   act(() =>
     root.render(
       <QueryClientProvider client={client}>
-        <DockerProjectVolumesPanel
-          enabled
-          projectId="project"
-          serviceName="service"
-          serviceOptions={[{ label: 'service', value: 'service' }]}
-          onServiceChange={() => {}}
-          {...props}
-        />
+        <App>
+          <DockerProjectVolumesPanel
+            enabled
+            projectId="project"
+            serviceName="service"
+            serviceOptions={[{ label: 'service', value: 'service' }]}
+            onServiceChange={() => {}}
+            {...props}
+          />
+        </App>
       </QueryClientProvider>,
     ),
   )
@@ -74,9 +77,14 @@ describe('volume directory read evidence', () => {
       expect(container.textContent).not.toContain('没有可浏览的卷')
       expect(container.querySelector('.ant-select-disabled')).not.toBeNull()
       expect(container.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true)
-      expect(vi.mocked(useQuery).mock.calls.every(([options]) => options.enabled === false)).toBe(
-        true,
-      )
+      const volumeQueries = vi
+        .mocked(useQuery)
+        .mock.calls.filter(
+          ([options]) =>
+            options.queryKey.includes('volumes') || options.queryKey.includes('volume-files'),
+        )
+      expect(volumeQueries.length).toBeGreaterThan(0)
+      expect(volumeQueries.every(([options]) => options.enabled === false)).toBe(true)
     },
   )
   it('keeps cached directory contents visible during refresh and hides denied content', () => {

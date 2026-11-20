@@ -703,7 +703,7 @@ for (const route of ['/plugins/marketplace', '/plugins/marketplace/qa-plugin']) 
     await page.getByRole('button', { name: /安\s*装$/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('button', { name: /安\s*装/ }).click()
-    await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+    await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
     await expect(dialog.getByRole('button', { name: /安\s*装/ })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: /取.*消/ })).toBeDisabled()
     await expect(dialog).toContainText(plugin.name)
@@ -731,13 +731,13 @@ test('code source refresh preserves private draft and original expectedVersion',
   state.version = 5
   await dialog.getByRole('button', { name: '刷新当前代码源连接' }).click()
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  await expect(dialog.getByText(/操作请求失败/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/操作请求失败/)).toBeVisible()
   await expect(token).toHaveValue('synthetic-private-draft')
   expect(state.writes).toHaveLength(1)
   expect(state.writes[0].body.expectedVersion).toBe(4)
-  expect(
-    (await dialog.locator('.soha-operation-feedback').allTextContents()).join(''),
-  ).not.toContain('synthetic-private-draft')
+  expect((await page.locator('.soha-operation-feedback').allTextContents()).join('')).not.toContain(
+    'synthetic-private-draft',
+  )
   await page.screenshot({
     path: info.outputPath('source-draft-feedback.png'),
     fullPage: true,
@@ -761,7 +761,7 @@ test('runtime snapshot refresh preserves draft, original version and frozen appl
   await page.getByRole('button', { name: /应用 1 项/ }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: '应用配置' }).click()
-  await expect(dialog.getByText(/操作请求失败/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/操作请求失败/)).toBeVisible()
   expect(state.writes.map((w) => w.path)).toEqual(['/settings/runtime-config/validate'])
   expect(state.writes.every((w) => w.body.expectedVersion === 4)).toBe(true)
   await expect(dialog.getByRole('button', { name: '应用配置' })).toBeEnabled()
@@ -798,7 +798,7 @@ test('source unknown writes block Escape, close and repeat submission', async ({
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel(/访问令牌/).fill('synthetic-unknown-draft')
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('.ant-modal-close')).toHaveCount(0)
@@ -844,7 +844,7 @@ for (const status of [403, 503]) {
       await expect(page.locator('input[type="password"]')).toHaveCount(0)
       await expect(page.locator('.soha-operation-feedback')).toContainText('操作请求失败')
     } else {
-      await expect(dialog.locator('.soha-operation-feedback')).toContainText('请求结果不明')
+      await expect(page.locator('.soha-operation-feedback')).toContainText('请求结果不明')
       await expect(secret).toHaveValue('synthetic-login-private-draft')
       await page.keyboard.press('Escape')
       await expect(dialog).toBeVisible()
@@ -865,7 +865,7 @@ test('plugin configuration keeps its draft after an unknown result', async ({ co
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('服务地址', { exact: true }).fill('https://draft.example.test')
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
-  await expect(dialog.locator('.soha-operation-feedback')).toContainText('请求结果不明')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('请求结果不明')
   await expect(dialog.getByLabel('服务地址', { exact: true })).toHaveValue(
     'https://draft.example.test',
   )
@@ -884,7 +884,7 @@ test('runtime unknown apply retains a frozen confirmation and prevents duplicate
   await page.getByRole('button', { name: /应用 1 项/ }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: '应用配置' }).click()
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await expect(dialog.getByRole('button', { name: '应用配置' })).toBeDisabled()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
@@ -910,7 +910,7 @@ for (const status of ['failed', 'partially_applied']) {
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('button', { name: '应用配置' }).click()
     await expect(
-      dialog.locator('.soha-operation-feedback').filter({ hasText: '应用运行时配置' }),
+      page.locator('.soha-operation-feedback').filter({ hasText: '应用运行时配置' }),
     ).toContainText(`配置应用状态：${status}`)
     await expect(dialog.getByRole('button', { name: '应用配置' })).toBeDisabled()
     await expect(editor).toHaveValue('failed-runtime-draft')
@@ -936,7 +936,7 @@ test('rollback failure keeps its reviewed version and the returned application r
   await page.getByRole('button', { name: /回滚到此版本/ }).click()
   const dialog = page.getByRole('dialog', { name: '回滚到版本 v3？', exact: true })
   await dialog.getByRole('button', { name: '确认回滚', exact: true }).click()
-  await expect(dialog.locator('.soha-operation-feedback')).toContainText('配置应用状态：failed')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('配置应用状态：failed')
   try {
     // The exiting loading icon can still contribute to the button's accessible name.
     await expect(dialog.getByRole('button').filter({ hasText: /^确认回滚$/ })).toBeDisabled()
@@ -999,13 +999,14 @@ test('returned configuration application polls its actual ID and pauses failed r
   state.failedPath = '/settings/runtime-config/applications/application-5'
   state.status = 503
   await record.getByRole('button', { name: '刷新配置应用记录', exact: true }).click()
-  await expect(record).toContainText('未更新，正在展示上次读取结果')
+  const readNotice = page.locator('.soha-read-feedback-notification')
+  await expect(readNotice).toContainText('未更新，正在展示上次读取结果')
   const reads = state.applicationReads
   await page.clock.fastForward(6000)
   expect(state.applicationReads).toBe(reads)
   state.status = 200
   state.applicationStatus = 'applied'
-  await record.getByRole('button', { name: /重试读取/ }).click()
+  await readNotice.getByRole('button', { name: /重试读取/ }).click()
   await expect(record).toContainText('applied')
   const completedReads = state.applicationReads
   await page.clock.fastForward(6000)
@@ -1043,7 +1044,7 @@ test('announcement unknown save preserves editor and locks close and repeat acti
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('标题', { exact: true }).fill('维护通知草稿')
   await dialog.getByRole('button', { name: /更\s*新/ }).click()
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await expect(dialog.getByLabel('标题', { exact: true })).toHaveValue('维护通知草稿')
   await expect(dialog.getByRole('button', { name: /取.*消/ })).toBeDisabled()
   expect(state.writes).toHaveLength(1)

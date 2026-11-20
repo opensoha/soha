@@ -619,12 +619,15 @@ test('ResourceQuota read error stays visible and explicit retry recovers the sam
   const owner = owners[2]
   const { evidence, state } = await setup(context, page, { fail: owner.kind })
   await page.goto(detailURL(owner))
-  await expect(page.getByRole('alert').filter({ hasText: '读取失败' })).toContainText(
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
     'Synthetic configuration read unavailable',
   )
   await expect(page.getByRole('heading', { name: sampleName, exact: true })).toHaveCount(0)
   state.fail = undefined
-  await page.getByRole('button', { name: /重试/ }).click()
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /^重试读取/ })
+    .click()
   await expect(page.getByRole('heading', { name: sampleName, exact: true })).toBeVisible()
   await expect(page.getByText('synthetic-priority', { exact: false })).toBeVisible()
   expect(state.writes).toEqual([])

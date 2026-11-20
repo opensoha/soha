@@ -338,7 +338,9 @@ describe('login page', () => {
       await vi.advanceTimersByTimeAsync(10)
     })
 
-    expect(container.textContent).toContain('重试')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      '重试',
+    )
     expect(
       container.querySelector<HTMLInputElement>('input[autocomplete="username"]')?.disabled,
     ).toBe(true)

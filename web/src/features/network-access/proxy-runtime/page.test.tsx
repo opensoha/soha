@@ -157,7 +157,11 @@ describe('proxy runtime pages', () => {
     apiMocks.getTraffic.mockRejectedValue(new Error('offline'))
     await renderPage('overview')
     await act(async () =>
-      vi.waitFor(() => expect(container.textContent).toContain('代理流量暂不可用')),
+      vi.waitFor(() =>
+        expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+          '流量采样读取失败',
+        ),
+      ),
     )
   })
 

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ConfigProvider } from 'antd'
+import { App, ConfigProvider } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -90,7 +90,9 @@ it.each([true, false])(
                   '?metadataKey=runtime.build.id&metadataValue=build-first',
               ]}
             >
-              <Destination audit={audit} />
+              <App>
+                <Destination audit={audit} />
+              </App>
             </MemoryRouter>
           </QueryClientProvider>
         </ConfigProvider>,
@@ -112,8 +114,9 @@ it.each([true, false])(
       await client.refetchQueries()
     })
     await settle()
-    expect(document.body.textContent).toContain('上次读取结果')
-    expect(document.body.textContent).toContain('req-logs-503')
+    const staleNotice = document.querySelector('.soha-read-feedback-notification')
+    expect(staleNotice?.textContent).toContain('上次读取结果')
+    expect(staleNotice?.textContent).toContain('req-logs-503')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       'protected build evidence',
     )

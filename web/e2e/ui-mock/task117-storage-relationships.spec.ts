@@ -404,9 +404,12 @@ test('partial graph failures keep a recoverable read state and forbidden respons
   await panel(page).locator('.react-flow__node[data-id="root"]').click()
   fixture.state.graphStatus = 500
   await panel(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
-  await expect(panel(page).getByRole('alert')).toContainText('正在展示上次读取结果', {
-    timeout: 15_000,
-  })
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    '正在展示上次读取结果',
+    {
+      timeout: 15_000,
+    },
+  )
   await expect(inspector(page)).toContainText('绑定到')
 
   fixture.state.graphStatus = 403

@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act } from 'react'
+import { App } from 'antd'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, it, vi } from 'vitest'
@@ -27,12 +28,14 @@ it('shows metadata suggestions only for the requested directory and preserves ma
   const render = (applicationId: string) =>
     root.render(
       <QueryClientProvider client={client}>
-        <input aria-label="已选构建方式" defaultValue="平台构建模板" />
-        <RepositoryAnalysis
-          key={applicationId}
-          applicationId={applicationId}
-          repositories={[repository]}
-        />
+        <App>
+          <input aria-label="已选构建方式" defaultValue="平台构建模板" />
+          <RepositoryAnalysis
+            key={applicationId}
+            applicationId={applicationId}
+            repositories={[repository]}
+          />
+        </App>
       </QueryClientProvider>,
     )
   try {

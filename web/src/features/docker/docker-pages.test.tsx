@@ -928,12 +928,12 @@ describe('docker pages', () => {
       '/docker/templates',
       expect.objectContaining({ name: 'template-first' }),
     )
-    expect(document.querySelector('.ant-modal')?.textContent).toContain('template save rejected')
+    const templateFeedback = () =>
+      document.querySelector('.soha-operation-feedback')?.textContent ?? ''
+    await vi.waitFor(() => expect(templateFeedback()).toContain('template save rejected'))
     await act(async () => document.querySelector<HTMLButtonElement>('.ant-modal-close')?.click())
     await clickButton('新增模板')
-    expect(document.querySelector('.ant-modal')?.textContent).not.toContain(
-      'template save rejected',
-    )
+    await vi.waitFor(() => expect(templateFeedback()).not.toContain('template save rejected'))
     expect(document.querySelector<HTMLInputElement>('.ant-modal #name')?.value).toBe('')
   })
 

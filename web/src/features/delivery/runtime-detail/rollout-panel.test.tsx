@@ -177,7 +177,9 @@ it('hides controls without trigger permission and blocks writes after an observa
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
   })
-  expect(container.textContent).toContain('原生状态冲突')
+  expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+    '原生状态冲突',
+  )
   expect(button('暂停发布').disabled).toBe(true)
   expect(button('提升阶段').disabled).toBe(true)
   expect(mocks.post).not.toHaveBeenCalled()
