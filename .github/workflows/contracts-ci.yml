@@ -114,6 +114,9 @@ jobs:
       - name: Verify staged release workflow
         run: node --test scripts/release-workflow.checks.mjs scripts/release-helpers.checks.mjs
       - name: Verify consumer CI independence and candidate selection
+        env:
+          # The shell fixtures stub npm and exercise the ordinary consumer path.
+          RECOVERY_CONTROL_SHA: ""
         run: node --test scripts/ci-consumer-workflow.checks.mjs
       - run: npm test
         env:
