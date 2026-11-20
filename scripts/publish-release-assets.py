@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from time import sleep
 from urllib.parse import quote
 
 SPEC = importlib.util.spec_from_file_location("release_control", Path(__file__).with_name("release-control.py"))
@@ -26,16 +27,23 @@ def gh(*args):
 
 def release_metadata(repo, tag, release_id=None, expected_content=None):
     # The by-tag REST endpoint does not expose drafts; discover them with authenticated pagination.
-    response = subprocess.run(["gh", "api", "--method", "GET", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"], capture_output=True, text=True, timeout=60)
-    if response.returncode:
-        raise ValueError("Cannot establish release state")
-    pages = json.loads(response.stdout)
-    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
-        raise ValueError("Unexpected release listing")
-    rows = [row for page in pages for row in page]
-    if any(not isinstance(row, dict) or not isinstance(row.get("tag_name"), str) for row in rows):
-        raise ValueError("Unexpected release identity in listing")
-    matches = [row for row in rows if row["tag_name"] == tag]
+    # A newly created draft can take time to appear in the list.
+    delays = (0, 1, 2, 4, 8) if release_id is not None else (0,)
+    for delay in delays:
+        if delay:
+            sleep(delay)
+        response = subprocess.run(["gh", "api", "--method", "GET", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"], capture_output=True, text=True, timeout=60)
+        if response.returncode:
+            raise ValueError("Cannot establish release state")
+        pages = json.loads(response.stdout)
+        if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+            raise ValueError("Unexpected release listing")
+        rows = [row for page in pages for row in page]
+        if any(not isinstance(row, dict) or not isinstance(row.get("tag_name"), str) for row in rows):
+            raise ValueError("Unexpected release identity in listing")
+        matches = [row for row in rows if row["tag_name"] == tag]
+        if matches:
+            break
     if len(matches) > 1:
         raise ValueError("Ambiguous releases for the exact tag")
     if not matches:

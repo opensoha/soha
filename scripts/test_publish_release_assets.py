@@ -18,6 +18,7 @@ class GitHubFixture:
         self.releases = [{"id": 42, "tag_name": tag, "draft": True, "prerelease": False, "assets": assets}]
         self.payloads = {asset["id"]: b"\x00accepted\xff" for asset in assets}
         self.calls, self.writes, self.downloads = [], [], []
+        self.stale_listings_after_create = 0
         self.before_request = lambda method, endpoint: None
         self.after_upload = lambda: None
         self.latest = 7
@@ -35,6 +36,9 @@ class GitHubFixture:
             self.writes.append((method, endpoint, tuple(args)))
         if method == "GET" and endpoint.endswith("?per_page=100"):
             assert "--paginate" in args and "--slurp" in args
+            if self.stale_listings_after_create and self.releases:
+                self.stale_listings_after_create -= 1
+                return json.dumps([[]])
             return json.dumps([[], self.releases])
         if method == "POST" and endpoint == "repos/opensoha/soha/releases":
             assert fields["draft"] == "true" and fields["make_latest"] == "false"
@@ -102,6 +106,7 @@ class PublisherTestCase(unittest.TestCase):
         self.release = {"component": "skills", "repository": "opensoha/soha", "tag": "skills/v0.1.4", "sha": "a" * 40}
         self.api = GitHubFixture(self.release["tag"], [{"id": 101, "name": self.file.name}])
         self.guard = self.enterContext(patch.object(publisher.control, "verify"))
+        self.sleep = self.enterContext(patch.object(publisher, "sleep"))
         self.enterContext(patch.object(publisher.subprocess, "run", side_effect=self.api.run))
         self.enterContext(patch.object(publisher.subprocess, "check_output", side_effect=self.api.check_output))
 
@@ -249,6 +254,22 @@ class DraftReleaseTest(PublisherTestCase):
         self.assertIn("make_latest=true", self.api.writes[-1][2])
         self.assertEqual(self.api.latest, 42)
         self.assertEqual(self.guard.call_count, 3)
+
+    def test_new_draft_waits_for_listing_before_uploading(self):
+        self.api.releases.clear()
+        self.api.stale_listings_after_create = 1
+        publisher.publish(self.release, [self.file], "Skills")
+        self.sleep.assert_called_once_with(1)
+        self.assertEqual([row[0] for row in self.api.writes], ["POST", "POST", "PATCH"])
+        self.assertIn("/releases/42/assets?", self.api.writes[1][1])
+
+    def test_unlisted_draft_never_uploads_or_creates_again(self):
+        self.api.releases.clear()
+        self.api.stale_listings_after_create = 5
+        with self.assertRaisesRegex(ValueError, "disappeared"):
+            publisher.publish(self.release, [self.file], "Skills")
+        self.assertEqual([call.args for call in self.sleep.call_args_list], [(1,), (2,), (4,), (8,)])
+        self.assertEqual([(row[0], row[1]) for row in self.api.writes], [("POST", "repos/opensoha/soha/releases")])
 
     def test_drift_before_upload_or_publication_never_switches_objects(self):
         original = copy.deepcopy(self.api.releases[0])
