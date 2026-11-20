@@ -39,6 +39,8 @@ class GitHubFixture:
         if method == "POST" and endpoint == "repos/opensoha/soha/releases":
             assert fields["draft"] == "true" and fields["make_latest"] == "false"
             created = {"id": 42, "tag_name": fields["tag_name"], "draft": True, "prerelease": False, "assets": []}
+            if "body" in fields:
+                created.update(body=fields["body"], name=fields["name"])
             self.releases.append(created)
             return json.dumps(created)
         if method == "GET" and "/releases/assets/" in endpoint:
@@ -309,6 +311,63 @@ class DraftReleaseTest(PublisherTestCase):
         with self.assertRaisesRegex(ValueError, "replaced"):
             publisher.publish(self.release, [self.file], "Skills")
         self.assertEqual([(row[0], row[1]) for row in self.api.writes], [("POST", "repos/opensoha/soha/releases")])
+
+
+class ReleaseNotesTest(PublisherTestCase):
+    title = "Soha v0.1.14 · Reliability update"
+    notes = "## English\n\nText with = and @.\n\n## 简体中文\n\n发布说明。\n"
+
+    def setUp(self):
+        super().setUp()
+        self.release.update(component="core", tag="v0.1.14")
+        self.api.releases[0].update(tag_name=self.release["tag"], name=self.title, body=self.notes)
+
+    def test_utf8_notes_file_is_set_at_draft_creation_only(self):
+        self.api.releases.clear()
+        notes_file = self.directory / "notes.md"
+        notes_file.write_text(self.notes, encoding="utf-8")
+        arguments = ["publisher", "--component", "core", "--tag", self.release["tag"],
+                     "--sha", self.release["sha"], "--latest", "--title", self.title,
+                     "--notes-file", str(notes_file), "--files", str(self.file)]
+        with patch("sys.argv", arguments), patch.object(publisher.control, "identity", return_value=self.release):
+            publisher.main()
+        self.assertEqual([row[0] for row in self.api.writes], ["POST", "POST", "PATCH"])
+        self.assertIn(f"name={self.title}", self.api.writes[0][2])
+        self.assertIn(f"body={self.notes}", self.api.writes[0][2])
+        self.assertFalse(any(arg.startswith(("name=", "body=")) for arg in self.api.writes[-1][2]))
+        self.assertEqual(self.api.releases[0]["body"], self.notes)
+        self.assertEqual(self.api.latest, 42)
+
+    def test_matching_notes_allow_draft_recovery_and_read_only_published_retry(self):
+        publisher.publish(self.release, [self.file], self.title, notes=self.notes)
+        self.assertEqual([row[0] for row in self.api.writes], ["PATCH"])
+        self.api.writes.clear()
+        publisher.publish(self.release, [self.file], self.title, notes=self.notes)
+        self.assertEqual(self.api.writes, [])
+        self.api.releases[0]["assets"] = []
+        with self.assertRaisesRegex(ValueError, "Published release is missing approved assets"):
+            publisher.publish(self.release, [self.file], self.title, notes=self.notes)
+        self.assertEqual(self.api.writes, [])
+
+    def test_mismatched_draft_or_published_content_blocks_writes(self):
+        approved = {"name": self.title, "body": self.notes}
+        for draft in (True, False):
+            for field in approved:
+                with self.subTest(draft=draft, field=field):
+                    self.api.releases[0].update(draft=draft, **{**approved, field: "Different"})
+                    with self.assertRaisesRegex(ValueError, f"Release {field} differs"):
+                        publisher.publish(self.release, [self.file], self.title, notes=self.notes)
+                    self.assertEqual(self.api.writes, [])
+
+    def test_notes_drift_before_publication_blocks_patch(self):
+        def change_notes(_):
+            if self.guard.call_count == 3:
+                self.api.releases[0]["body"] = "Different release notes"
+
+        self.guard.side_effect = change_notes
+        with self.assertRaisesRegex(ValueError, "Release body differs"):
+            publisher.publish(self.release, [self.file], self.title, notes=self.notes)
+        self.assertEqual(self.api.writes, [])
 
 
 if __name__ == "__main__":

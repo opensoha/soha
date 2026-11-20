@@ -77,6 +77,22 @@ jobs:
           fi
           grep -Fx -A 1 '  - name: ghcr.io/opensoha/soha' deploy/kustomization.yaml | grep -Fx "    newTag: ${RELEASE_VERSION}"
           grep -Fx "          image: ghcr.io/opensoha/soha:${RELEASE_VERSION}" deploy/deployment.yaml
+          notes="docs/releases/${RELEASE_VERSION}.md"
+          test -f "$notes"
+          test ! -L "$notes"
+          git show "$RELEASE_SHA:$notes" > "$RUNNER_TEMP/soha-release-notes-source.md"
+          {
+            IFS= read -r heading || exit 1
+            IFS= read -r separator || exit 1
+            if [[ -n "$separator" ||
+                  ( "$heading" != "# Soha $RELEASE_VERSION" && "$heading" != "# Soha $RELEASE_VERSION "* ) ]]; then
+              echo "Expected a versioned Core release heading followed by a blank line." >&2
+              exit 1
+            fi
+            printf '%s\n' "${heading#\# }" > "$RUNNER_TEMP/soha-release-title.txt"
+            cat > "$RUNNER_TEMP/soha-release-notes.md"
+          } < "$RUNNER_TEMP/soha-release-notes-source.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/soha-release-notes.md"
       - name: Resolve runtime version
         working-directory: soha
         run: |
@@ -334,7 +350,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 soha/scripts/publish-release-assets.py --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --latest --title "soha $RELEASE_VERSION" --files soha-linux-amd64 soha-linux-amd64.sha256 soha-linux-amd64.tar.gz soha-linux-amd64.tar.gz.sha256 soha-release-manifest.json
+          title="$(cat "$RUNNER_TEMP/soha-release-title.txt")"
+          test -n "$title"
+          python3 soha/scripts/publish-release-assets.py \
+            --component core --tag "$RELEASE_VERSION" --sha "$RELEASE_SHA" --latest \
+            --title "$title" --notes-file "$RUNNER_TEMP/soha-release-notes.md" \
+            --files soha-linux-amd64 soha-linux-amd64.sha256 soha-linux-amd64.tar.gz soha-linux-amd64.tar.gz.sha256 soha-release-manifest.json
       - name: Download published release assets and verify
         if: startsWith(github.ref, 'refs/tags/v')
         env:
