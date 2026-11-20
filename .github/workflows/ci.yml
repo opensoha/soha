@@ -112,7 +112,9 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/prepare-pr-lint-patch.sh "$LINT_BASE_SHA" "${RUNNER_TEMP}/soha-pr-lint.patch"
+        run: |
+          bash scripts/prepare-pr-lint-patch.sh "$LINT_BASE_SHA" "${RUNNER_TEMP}/soha-pr-lint.patch"
+          bash scripts/check-pr-go-format.sh "$LINT_BASE_SHA"
       - name: Golangci-lint
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9
