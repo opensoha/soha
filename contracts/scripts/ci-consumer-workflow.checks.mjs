@@ -179,6 +179,9 @@ test("native proxy gate is mandatory in Core, both release SDK modes and interna
 test("recovery controls require the exact owning main caller before any checkout", () => {
   assert.equal(workflow.on.workflow_call.inputs.recovery_control_sha.type, "string");
   assert.equal(workflow.on.workflow_dispatch.inputs.recovery_control_sha, undefined);
+  assert.equal(workflow.on.workflow_call.inputs.publish_mode.type, "string");
+  assert.equal(workflow.on.workflow_dispatch.inputs.publish_mode, undefined);
+  assert.equal(workflow.env.NPM_PUBLISH_MODE, "${{ inputs.publish_mode }}");
   assert.equal(workflow.env.RECOVERY_CONTROL_SHA, "${{ inputs.recovery_control_sha }}");
   assert.equal(workflow.env.CONTRACTS_TOOL_ROOT, "${{ github.workspace }}/${{ inputs.recovery_control_sha && 'control' || 'source' }}");
   const sha = "b".repeat(40);
