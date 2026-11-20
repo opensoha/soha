@@ -618,14 +618,21 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 }
 
 func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindelivery.ExecutionTask, error) {
-	row := dbtx.DB(ctx, r.db).Raw(`
+	return r.getExecutionTask(ctx, id, false)
+}
+
+func (r *Repository) getExecutionTask(ctx context.Context, id string, lock bool) (domaindelivery.ExecutionTask, error) {
+	query := `
 		SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE id = ?
 		LIMIT 1
-	`, strings.TrimSpace(id)).Row()
-	return scanExecutionTaskRow(row)
+	`
+	if lock {
+		query += " FOR UPDATE"
+	}
+	return scanExecutionTaskRow(dbtx.DB(ctx, r.db).Raw(query, strings.TrimSpace(id)).Row())
 }
 
 func (r *Repository) GetExecutionTaskByCallbackToken(ctx context.Context, token string) (domaindelivery.ExecutionTask, error) {

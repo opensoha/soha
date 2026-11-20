@@ -12,10 +12,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	appbuild "github.com/opensoha/soha/internal/application/build"
+	"github.com/opensoha/soha/internal/application/execution"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/infrastructure/config"
@@ -52,13 +55,19 @@ func TestDeliveryNodeTaskIdentityFencingAndLateCallbackWithPostgres(t *testing.T
 	repo, workflows, builds := repodelivery.New(store.DB()), repoworkflow.New(store.DB()), repobuild.New(store.DB())
 	now := time.Now().UTC()
 	applicationID := uuid.NewString()
-	if _, err := repoapp.New(store.DB()).Create(ctx, domainapp.UpsertInput{ID: applicationID, Key: applicationID, Name: "Delivery task check", Enabled: true}); err != nil {
+	apps := repoapp.New(store.DB())
+	if _, err := apps.Create(ctx, domainapp.UpsertInput{
+		ID: applicationID, Key: applicationID, Name: "Delivery task check", Enabled: true,
+		BuildImage: "registry.example/publication", DefaultTag: "v1",
+		BuildSources: []domainapp.BuildSourceInput{{ID: uuid.NewString(), Name: "Source", Type: domainapp.BuildSourceTypeRepoDockerfile, Enabled: true, Config: map[string]any{"providerKind": "ci_agent_runner"}}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.DB().Exec(`DELETE FROM applications WHERE id = ?`, applicationID).Error })
 	target := domainworkflow.DeliveryTargetInput{ID: "web", ApplicationID: applicationID, ServiceID: "web", Action: "build"}
 	batch := domainworkflow.DeliveryBatch{ID: uuid.NewString(), RootRunID: "workflow:" + uuid.NewString(), CreatedBy: "delivery-task-check", CreatedAt: now, UpdatedAt: now, Definition: domainworkflow.DeliveryWorkflowDefinition{Name: "task check", Targets: []domainworkflow.DeliveryTargetInput{target}}, Targets: []domainworkflow.DeliveryTargetSnapshot{{Target: target}}}
 	run := domainworkflow.Run{ID: batch.RootRunID, Scope: domainworkflow.ScopeDeliveryBatch, DeliveryBatchID: batch.ID, WorkflowName: "task check", Status: "running", Steps: []domainworkflow.Step{}, NodeRuns: []domainworkflow.NodeRun{{NodeID: "web:build", TargetID: "web", Stage: "build", Status: "running"}, {NodeID: "web:plan", TargetID: "web", Stage: "plan", Status: "running"}, {NodeID: "web:deploy", TargetID: "web", Stage: "deploy", Status: "running"}}, CreatedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}
+	run.NodeRuns = append(run.NodeRuns, domainworkflow.NodeRun{NodeID: "web:build-projection", TargetID: "web", Stage: "build", Status: "running"})
 	_, _, err = workflows.CreateDeliveryBatch(ctx, batch, run, uuid.NewString(), "sha256:"+strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
@@ -77,10 +86,93 @@ func TestDeliveryNodeTaskIdentityFencingAndLateCallbackWithPostgres(t *testing.T
 	}
 	t.Run("final plan identity and approval CAS", func(t *testing.T) { verifyBatchPlanPersistence(t, ctx, repo, run, target) })
 	t.Run("Docker domain queue fencing and claim", func(t *testing.T) { verifyDockerBatchQueue(t, ctx, store, run, target) })
+	t.Run("build projection retry and reuse", func(t *testing.T) { verifyWorkflowBuildPublication(t, ctx, apps, builds, repo, run, applicationID) })
 	input := verifyDeliveryTaskIdentity(t, ctx, repo, builds, run, target, now)
 	recovered, task := verifyDeliveryTaskFencing(t, ctx, store, repo, workflows, run, input)
 	legacy := verifyDeliveryTaskStopping(t, ctx, repo, workflows, run, recovered, input, task)
 	verifyManifestOperationReplay(t, ctx, store, repo, applicationID, legacy, now)
+}
+
+type scopedPublicationRepo struct {
+	*repodelivery.Repository
+	withFence func(context.Context) context.Context
+}
+
+func (r scopedPublicationRepo) WithExecutionTaskForUpdate(ctx context.Context, id string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
+	return r.Repository.WithExecutionTaskForUpdate(ctx, id, func(ctx context.Context, task domaindelivery.ExecutionTask) error {
+		return apply(r.withFence(ctx), task)
+	})
+}
+
+func verifyWorkflowBuildPublication(t *testing.T, ctx context.Context, apps *repoapp.Repository, builds *repobuild.Repository, repo *repodelivery.Repository, run domainworkflow.Run, applicationID string) {
+	t.Helper()
+	nodeCtx := domainworkflow.WithNodeExecution(ctx, run, run.NodeRuns[3])
+	node, _ := domainworkflow.NodeExecutionFrom(nodeCtx)
+	reject, staleFence := true, false
+	var beforeFailure func()
+	service := execution.New(scopedPublicationRepo{repo, func(ctx context.Context) context.Context {
+		if staleFence {
+			stale := run
+			stale.FencingToken--
+			return domainworkflow.WithNodeExecution(ctx, stale, run.NodeRuns[3])
+		}
+		return ctx
+	}}, builds, nil, nil, "", "", "", "", 0, "", nil)
+	build := appbuild.New(buildPublicationRepo{Repository: builds, checkWrite: func() error {
+		if reject {
+			return errCallbackProjectionTest
+		}
+		return nil
+	}, beforeFailure: func() {
+		if beforeFailure != nil {
+			beforeFailure()
+		}
+	}}, apps, nil, service, nil, nil, nil, nil)
+	input := domainbuild.TriggerInput{ApplicationID: applicationID, RefType: "branch", RefName: "main"}
+	failed, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
+	if !errors.Is(err, errCallbackProjectionTest) || failed.ID != node.ResourceID("build") || failed.Status != "failed" || failed.FinishedAt == nil {
+		t.Fatalf("expected durable failed preparation: record=%+v err=%v", failed, err)
+	}
+	if _, err := repo.GetExecutionTask(ctx, node.ResourceID("task")); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("failed scoped projection left a task: %v", err)
+	}
+	reject = false
+	for range 2 {
+		record, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
+		if err != nil || record.ID != failed.ID || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.StartedAt != nil || record.FinishedAt != nil || record.Metadata["failureStage"] != nil {
+			t.Fatalf("recovered build projection retained stale preparation state: record=%+v err=%v", record, err)
+		}
+	}
+	missing, err := builds.Get(ctx, failed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(missing.Metadata, "executionTaskId")
+	if _, err := builds.Update(ctx, missing); err != nil {
+		t.Fatal(err)
+	}
+	staleFence = true
+	if _, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("repair accepted a stale workflow fence: %v", err)
+	}
+	if record, err := builds.Get(ctx, failed.ID); err != nil || record.Metadata["executionTaskId"] != nil || record.Status != "queued" {
+		t.Fatalf("stale repair modified the stored record: %+v err=%v", record, err)
+	}
+	staleFence, reject = false, true
+	beforeFailure = func() {
+		beforeFailure = nil
+		reject = false
+		record, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
+		if err != nil || record.Metadata["executionTaskId"] != node.ResourceID("task") {
+			t.Fatalf("competing repair could not restore the association: %+v err=%v", record, err)
+		}
+	}
+	if _, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input); !errors.Is(err, errCallbackProjectionTest) {
+		t.Fatalf("expected original association failure, got %v", err)
+	}
+	if record, err := builds.Get(ctx, failed.ID); err != nil || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.FinishedAt != nil {
+		t.Fatalf("stale error write overwrote the committed association: %+v err=%v", record, err)
+	}
 }
 
 func verifyDockerBatchQueue(t *testing.T, ctx context.Context, store *dbstore.Store, run domainworkflow.Run, target domainworkflow.DeliveryTargetInput) {
