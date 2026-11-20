@@ -1,5 +1,4 @@
 import {
-  commitAuthResult,
   exchangeOIDCCode,
   fetchPermissionSnapshot,
   logoutAuthSession,
@@ -42,7 +41,6 @@ export function OIDCCallbackPage() {
       try {
         const returnTo = normalizeLocalReturnTo(searchParams.get('return_to'))
         const authResult = await exchangeOIDCCode(authCode)
-        commitAuthResult(authResult)
         const snapshot = returnTo ? null : await fetchPermissionSnapshot().catch(() => null)
         const nextPath =
           returnTo ??
@@ -79,7 +77,7 @@ export function OIDCCallbackPage() {
   const handleBackToLogin = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
     await logoutAuthSession()
-    navigate('/login', { replace: true })
+    navigate('/login', { replace: true, state: { skipSessionRestore: true } })
   }
 
   return (

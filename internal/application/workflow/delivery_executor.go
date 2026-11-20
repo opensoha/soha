@@ -137,7 +137,6 @@ func (e *dagRunExecutor) persistDeliveryRun(ctx context.Context, repo DeliveryRe
 		return err
 	}
 	state.run = updated
-	e.delivery.publishRunUpdate(updated)
 	return nil
 }
 

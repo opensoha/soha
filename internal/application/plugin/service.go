@@ -519,17 +519,14 @@ func (s *Service) Remove(ctx context.Context, principal domainidentity.Principal
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginRemove); err != nil {
 		return err
 	}
-	item, err := s.repo.GetInstalled(ctx, pluginID)
+	item, err := s.repo.RemoveInstalled(ctx, pluginID, func(ctx context.Context, item domainplugin.InstalledPlugin) error {
+		if item.Type == "companion-pack" && s.companions != nil {
+			return s.companions.Remove(ctx, item.ID)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
-	}
-	if err := s.repo.DeleteInstalled(ctx, pluginID); err != nil {
-		return err
-	}
-	if item.Type == "companion-pack" && s.companions != nil {
-		if err := s.companions.Remove(ctx, pluginID); err != nil {
-			return err
-		}
 	}
 	s.extensions.UnregisterPlugin(pluginID)
 	s.recordAudit(ctx, principal, "remove", item, "removed plugin")

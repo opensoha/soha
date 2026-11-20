@@ -44,6 +44,7 @@ func TestTemplateVersionsWithPostgres(t *testing.T) {
 	t.Run("migration-declarations-preserve-legacy-writers", func(t *testing.T) { verifyMigrationDeclarations(t, ctx, repo) })
 	t.Run("deployment-template-and-service-cas", func(t *testing.T) { verifyDeploymentTemplateVersions(t, ctx, repo) })
 	t.Run("binding-keeps-published-workflow", func(t *testing.T) { verifyWorkflowTemplateBinding(t, ctx, repo) })
+	t.Run("application-environment-batch", func(t *testing.T) { verifyApplicationEnvironmentBatch(t, ctx, repo) })
 	t.Run("relation-rules-persistence-and-cas", func(t *testing.T) { verifyRelationRulesPersistence(t, ctx, repo) })
 	t.Run("service-deployment-configuration", func(t *testing.T) { verifyServiceDeploymentConfiguration(t, ctx, repo) })
 	t.Run("docker-target-without-cluster", func(t *testing.T) { verifyDockerTargetPersistence(t, ctx, repo) })

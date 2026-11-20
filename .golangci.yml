@@ -20,6 +20,7 @@ linters:
     - ineffassign
     - revive
     - testifylint
+    - nolintlint
     - cyclop
     - dupl
     - funlen
@@ -37,6 +38,9 @@ linters:
       threshold: 150
     errcheck:
       check-type-assertions: true
+    nolintlint:
+      require-specific: true
+      require-explanation: true
     funlen:
       lines: 100
       statements: 60
@@ -46,3 +50,7 @@ linters:
       rules:
         - name: exported
           disabled: true
+
+formatters:
+  enable:
+    - gofmt

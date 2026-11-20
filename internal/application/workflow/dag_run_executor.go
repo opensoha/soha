@@ -265,7 +265,6 @@ func (e *dagRunExecutor) persistPause(ctx context.Context, state *dagRunState, s
 		return false
 	}
 	state.run = updated
-	e.delivery.publishRunUpdate(updated)
 	return true
 }
 

@@ -53,6 +53,7 @@ func (r *stubWorkflowRepository) Create(_ context.Context, item domainworkflow.R
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.createCalls++
+	r.items = append(r.items, cloneWorkflowRun(item))
 	return cloneWorkflowRun(item), nil
 }
 
@@ -433,14 +434,22 @@ func waitForWorkflowStatus(t *testing.T, service *Service, runID string, status 
 	t.Helper()
 	waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	run, err := service.waitForRunStatus(waitCtx, runID, status)
-	if err != nil {
-		t.Fatalf("waitForRunStatus(%q) error = %v", status, err)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		run, err := service.repo.Get(waitCtx, runID)
+		if err != nil {
+			t.Fatalf("read workflow %q: %v", runID, err)
+		}
+		if run.Status == status {
+			return run
+		}
+		select {
+		case <-ticker.C:
+		case <-waitCtx.Done():
+			t.Fatalf("workflow %q remained %q, want %q: %v", runID, run.Status, status, waitCtx.Err())
+		}
 	}
-	if run.Status != status {
-		t.Fatalf("waitForRunStatus(%q) = %q", status, run.Status)
-	}
-	return run
 }
 
 func TestListPrunesStaleApplications(t *testing.T) {

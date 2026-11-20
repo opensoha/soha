@@ -25,12 +25,15 @@ import (
 type Repository interface {
 	ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, string) (domaindelivery.ReleaseBundle, error)
+	GetReleaseBundleForUpdate(context.Context, string) (domaindelivery.ReleaseBundle, error)
 	CreateReleaseBundle(context.Context, domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error)
 	UpdateReleaseBundle(context.Context, domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error)
 
 	ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error)
 	GetExecutionTask(context.Context, string) (domaindelivery.ExecutionTask, error)
-	GetExecutionTaskByCallbackToken(context.Context, string) (domaindelivery.ExecutionTask, error)
+	WithExecutionCreation(context.Context, func(context.Context) error) error
+	WithExecutionTaskForUpdate(context.Context, string, func(context.Context, domaindelivery.ExecutionTask) error) error
+	WithExecutionCallback(context.Context, string, func(context.Context, domaindelivery.ExecutionTask) error) error
 	ClaimExecutionTask(context.Context, []string, string, string) (domaindelivery.ExecutionTask, error)
 	CreateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
 	UpdateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
@@ -39,6 +42,7 @@ type Repository interface {
 	CreateExecutionCallback(context.Context, domaindelivery.ExecutionCallback) error
 	ListExecutionArtifacts(context.Context, string) ([]domaindelivery.ExecutionArtifact, error)
 	ListExecutionArtifactsByBundle(context.Context, string) ([]domaindelivery.ExecutionArtifact, error)
+	FindExecutionCallbackArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error)
 	UpsertExecutionArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error)
 }
 
@@ -200,6 +204,7 @@ type BuildPlan struct {
 	TargetKind               string
 	ArtifactRef              string
 	Metadata                 map[string]any
+	AssociateProjection      ProjectionAssociation
 }
 
 type ReleasePlan struct {
@@ -212,7 +217,11 @@ type ReleasePlan struct {
 	TargetKind               string
 	ArtifactRef              string
 	Metadata                 map[string]any
+	AssociateProjection      ProjectionAssociation
 }
+
+// ProjectionAssociation persists the owning record before a runner can see the task.
+type ProjectionAssociation func(context.Context, domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask) error
 
 func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string, agentID, runtimeEndpoint string) (domaindelivery.ExecutionTask, error) {
 	if strings.TrimSpace(agentID) == "" {
@@ -432,24 +441,7 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	if reason == "" {
 		reason = "retry requested from control plane"
 	}
-	previousStatus := task.Status
-	previousResult := task.Result
-	task.Status = "queued"
-	task.MaxRetries = maxInt(task.MaxRetries, task.AttemptCount+1)
-	task.CallbackToken = uuid.NewString()
-	task.StartedAt = nil
-	task.LastHeartbeatAt = nil
-	task.FinishedAt = nil
-	task.Result = map[string]any{
-		"previousStatus":      previousStatus,
-		"previousResult":      previousResult,
-		"retryRequestedAt":    now.Format(time.RFC3339),
-		"retryReason":         reason,
-		"executionTaskStatus": "queued",
-	}
-	task.UpdatedAt = now
-	_ = s.stopK8sJobExecution(ctx, task, "retry")
-	updated, err := s.updateExecutionTask(ctx, task)
+	updated, err := s.requeueExecutionTask(ctx, task, reason, now)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -462,29 +454,68 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 		LogLevel:        "info",
 		Message:         fmt.Sprintf("execution task re-queued: %s", reason),
 		Metadata: map[string]any{
-			"previousStatus": previousStatus,
+			"previousStatus": task.Status,
 			"retryReason":    reason,
 		},
 		CreatedAt: now,
 	})
-	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-		bundle, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			prepareBundleForRetry(&bundle, updated, reason, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundle)
-		}
-	}
 	dispatched, dispatchErr := s.dispatchExecutionTask(ctx, updated)
 	if dispatchErr == nil {
 		updated = dispatched
 	}
-	switch updated.TaskKind {
-	case "build":
-		_ = s.syncBuildRecord(ctx, updated)
-	case "release":
-		_ = s.syncReleaseRecord(ctx, updated)
-	}
+	_ = s.syncCurrentExecutionRecord(ctx, updated)
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func (s *Service) requeueExecutionTask(ctx context.Context, task domaindelivery.ExecutionTask, reason string, now time.Time) (domaindelivery.ExecutionTask, error) {
+	var updated domaindelivery.ExecutionTask
+	err := s.repo.WithExecutionTaskForUpdate(ctx, task.ID, func(ctx context.Context, current domaindelivery.ExecutionTask) error {
+		if current.CallbackToken != task.CallbackToken || current.AttemptCount != task.AttemptCount || current.Status != task.Status {
+			return fmt.Errorf("%w: execution attempt changed before retry", apperrors.ErrConflict)
+		}
+		current.Result = map[string]any{
+			"previousStatus":      current.Status,
+			"previousResult":      current.Result,
+			"retryRequestedAt":    now.Format(time.RFC3339),
+			"retryReason":         reason,
+			"executionTaskStatus": "queued",
+		}
+		current.Status = "queued"
+		current.MaxRetries = maxInt(current.MaxRetries, current.AttemptCount+1)
+		current.CallbackToken = uuid.NewString()
+		current.StartedAt, current.LastHeartbeatAt, current.FinishedAt = nil, nil, nil
+		current.UpdatedAt = now
+		var err error
+		updated, err = s.updateExecutionTask(ctx, current)
+		if err != nil {
+			return err
+		}
+		if err := s.resetRetryBundle(ctx, updated, reason, now); err != nil {
+			return err
+		}
+		switch updated.TaskKind {
+		case "build":
+			return s.syncBuildRecord(ctx, updated)
+		case "release":
+			return s.syncReleaseRecord(ctx, updated)
+		default:
+			return nil
+		}
+	})
+	return updated, err
+}
+
+func (s *Service) resetRetryBundle(ctx context.Context, task domaindelivery.ExecutionTask, reason string, now time.Time) error {
+	if strings.TrimSpace(task.ReleaseBundleID) == "" {
+		return nil
+	}
+	bundle, err := s.repo.GetReleaseBundleForUpdate(ctx, task.ReleaseBundleID)
+	if err != nil {
+		return err
+	}
+	prepareBundleForRetry(&bundle, task, reason, now)
+	_, err = s.repo.UpdateReleaseBundle(ctx, bundle)
+	return err
 }
 
 func buildExecutionTimeout(plan BuildPlan) int {
@@ -498,6 +529,12 @@ func buildExecutionTimeout(plan BuildPlan) int {
 }
 
 func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+	return s.startExecution(ctx, plan.AssociateProjection, func(ctx context.Context, token string) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+		return s.createBuildExecution(ctx, plan, token)
+	})
+}
+
+func (s *Service) createBuildExecution(ctx context.Context, plan BuildPlan, token string) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
 	bundle, err := s.repo.CreateReleaseBundle(ctx, domaindelivery.ReleaseBundle{
 		ID:                       "bundle:" + uuid.NewString(),
 		ApplicationID:            strings.TrimSpace(plan.ApplicationID),
@@ -527,20 +564,13 @@ func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (doma
 		MaxRetries:               1,
 		AttemptCount:             0,
 		TimeoutSeconds:           buildExecutionTimeout(plan),
-		CallbackToken:            uuid.NewString(),
+		CallbackToken:            token,
 		Payload:                  ensureMap(plan.Metadata),
 		Result:                   map[string]any{},
 		CreatedAt:                time.Now().UTC(),
 		UpdatedAt:                time.Now().UTC(),
 	})
-	if err != nil {
-		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
-	}
-	dispatched, dispatchErr := s.dispatchExecutionTask(ctx, task)
-	if dispatchErr == nil {
-		task = dispatched
-	}
-	return bundle, domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+	return bundle, task, err
 }
 
 func (s *Service) CompleteBuildExecution(ctx context.Context, bundleID, taskID, artifactRef, artifactDigest string, result map[string]any) error {
@@ -557,6 +587,12 @@ func (s *Service) CompleteBuildExecution(ctx context.Context, bundleID, taskID, 
 }
 
 func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+	return s.startExecution(ctx, plan.AssociateProjection, func(ctx context.Context, token string) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+		return s.createReleaseExecution(ctx, plan, token)
+	})
+}
+
+func (s *Service) createReleaseExecution(ctx context.Context, plan ReleasePlan, token string) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
 	if strings.TrimSpace(plan.ReleaseBundleID) == "" {
 		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, fmt.Errorf("%w: releaseBundleId referencing a completed build is required", apperrors.ErrInvalidArgument)
 	}
@@ -581,20 +617,72 @@ func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (
 		MaxRetries:               1,
 		AttemptCount:             0,
 		TimeoutSeconds:           300,
-		CallbackToken:            uuid.NewString(),
+		CallbackToken:            token,
 		Payload:                  ensureMap(plan.Metadata),
 		Result:                   map[string]any{},
 		CreatedAt:                time.Now().UTC(),
 		UpdatedAt:                time.Now().UTC(),
 	})
+	return bundle, task, err
+}
+
+func (s *Service) startExecution(ctx context.Context, associate ProjectionAssociation, create func(context.Context, string) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error)) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+	var bundle domaindelivery.ReleaseBundle
+	var task domaindelivery.ExecutionTask
+	token := uuid.NewString()
+	prepare := func(ctx context.Context) error {
+		var err error
+		bundle, task, err = create(ctx, token)
+		if err != nil || associate == nil || task.CallbackToken != token {
+			return err
+		}
+		return associate(ctx, bundle, task)
+	}
+	var err error
+	if associate == nil {
+		err = prepare(ctx)
+	} else {
+		err = s.repo.WithExecutionCreation(ctx, prepare)
+	}
 	if err != nil {
 		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
 	}
-	dispatched, dispatchErr := s.dispatchExecutionTask(ctx, task)
-	if dispatchErr == nil {
+	if associate != nil && task.CallbackToken != token {
+		// A workflow can return an existing task. Take its row lock only after
+		// the creation transaction has released the run lock, then recheck the fence.
+		err = s.repo.WithExecutionTaskForUpdate(ctx, task.ID, func(ctx context.Context, current domaindelivery.ExecutionTask) error {
+			var err error
+			bundle, _, err = create(ctx, token)
+			if err != nil {
+				return err
+			}
+			task = current
+			return associate(ctx, bundle, current)
+		})
+		if err != nil {
+			return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
+		}
+	}
+	if dispatched, err := s.dispatchExecutionTask(ctx, task); err == nil {
 		task = dispatched
+		if associate != nil && task.Status != "queued" {
+			_ = s.syncCurrentExecutionRecord(ctx, task)
+		}
 	}
 	return bundle, domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) syncCurrentExecutionRecord(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	if task.TaskKind != "build" && task.TaskKind != "release" {
+		return nil
+	}
+	// A runner can finish while dispatch still holds an earlier snapshot.
+	return s.repo.WithExecutionCallback(ctx, task.CallbackToken, func(ctx context.Context, current domaindelivery.ExecutionTask) error {
+		if current.TaskKind == "build" {
+			return s.syncBuildRecordResult(ctx, current, true)
+		}
+		return s.syncReleaseRecordResult(ctx, current, true)
+	})
 }
 
 var immutableDigestPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+._-]*:[a-fA-F0-9]{32,}$`)
@@ -651,39 +739,71 @@ func (s *Service) CompleteReleaseExecution(ctx context.Context, bundleID, taskID
 }
 
 func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error) {
-	task, err := s.repo.GetExecutionTaskByCallbackToken(ctx, strings.TrimSpace(input.CallbackToken))
+	var updated domaindelivery.ExecutionTask
+	var replay bool
+	err := s.repo.WithExecutionCallback(ctx, strings.TrimSpace(input.CallbackToken), func(ctx context.Context, task domaindelivery.ExecutionTask) error {
+		var err error
+		input, err = validateExecutionCallback(ctx, task, input)
+		if err != nil {
+			return err
+		}
+		replay = isStrictTerminalTaskStatus(task.Status)
+		updated, err = s.recordExecutionCallback(ctx, task, input)
+		return err
+	})
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	if err := domaindelivery.AuthorizePrivateRuntimeTask(ctx, task); err != nil {
+	if replay {
+		s.logLateExecutionCallback(ctx, updated, input.Status)
+	} else {
+		s.recordExecutionCallbackLogs(ctx, updated.ID, input.Payload)
+	}
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	if task.ProviderKind == domainbuild.ExternalPipelineProvider {
-		return task, fmt.Errorf("%w: external CI tasks are reconciled through their source connection", apperrors.ErrAccessDenied)
-	}
-	input, err = normalizeHelmCallback(task, input)
-	if err != nil {
+	if err := s.notifyExecutionTaskSinks(ctx, updated); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	input, err = normalizeSSHCallback(task, input)
-	if err != nil {
-		return domaindelivery.ExecutionTask{}, err
-	}
-	callback := domaindelivery.ExecutionCallback{
+	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func (s *Service) recordExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error) {
+	if err := s.repo.CreateExecutionCallback(ctx, domaindelivery.ExecutionCallback{
 		ID:              uuid.NewString(),
 		ExecutionTaskID: task.ID,
 		ProviderKind:    task.ProviderKind,
 		Status:          strings.TrimSpace(input.Status),
 		Payload:         ensureMap(input.Payload),
 		CreatedAt:       time.Now().UTC(),
-	}
-	if err := s.repo.CreateExecutionCallback(ctx, callback); err != nil {
+	}); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if isStrictTerminalTaskStatus(task.Status) {
-		return s.recordLateExecutionCallback(ctx, task, input.Status)
+		return task, s.persistCallbackResult(ctx, task, true)
 	}
-	s.recordExecutionCallbackLogs(ctx, task.ID, input.Payload)
+	updated, err := s.applyExecutionCallback(ctx, task, input)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	return updated, s.persistCallbackResult(ctx, updated, false)
+}
+
+func validateExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionCallbackInput, error) {
+	if err := domaindelivery.AuthorizePrivateRuntimeTask(ctx, task); err != nil {
+		return domaindelivery.ExecutionCallbackInput{}, err
+	}
+	if task.ProviderKind == domainbuild.ExternalPipelineProvider {
+		return domaindelivery.ExecutionCallbackInput{}, fmt.Errorf("%w: external CI tasks are reconciled through their source connection", apperrors.ErrAccessDenied)
+	}
+	input, err := normalizeHelmCallback(task, input)
+	if err != nil {
+		return domaindelivery.ExecutionCallbackInput{}, err
+	}
+	return normalizeSSHCallback(task, input)
+}
+
+func (s *Service) applyExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error) {
 	now := time.Now().UTC()
 	if strings.TrimSpace(task.Status) == "queued" || strings.TrimSpace(task.Status) == "dispatching" {
 		task.StartedAt = &now
@@ -700,26 +820,91 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	if strings.TrimSpace(updated.ReleaseBundleID) != "" && isStrictTerminalTaskStatus(updated.Status) {
-		_ = s.updateTaskReleaseBundle(ctx, updated, now)
-	}
-	_ = s.persistArtifacts(ctx, updated)
-	switch updated.TaskKind {
-	case "build":
-		_ = s.syncBuildRecord(ctx, updated)
-	case "release":
-		_ = s.syncReleaseRecord(ctx, updated)
-	}
-	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
-		return domaindelivery.ExecutionTask{}, err
-	}
-	if err := s.notifyExecutionTaskSinks(ctx, updated); err != nil {
-		return domaindelivery.ExecutionTask{}, err
-	}
-	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
+	// The repository derives artifacts from the persisted result.
+	return s.repo.GetExecutionTask(ctx, updated.ID)
 }
 
-func (s *Service) recordLateExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, callbackStatus string) (domaindelivery.ExecutionTask, error) {
+func (s *Service) persistCallbackResult(ctx context.Context, task domaindelivery.ExecutionTask, replay bool) error {
+	if isStrictTerminalTaskStatus(task.Status) && task.ReleaseBundleID != "" && !strings.HasPrefix(task.TaskKind, "helm_") {
+		if err := s.syncCallbackBundle(ctx, task, replay); err != nil {
+			return fmt.Errorf("backfill callback release bundle: %w", err)
+		}
+	}
+	if err := s.persistCallbackArtifacts(ctx, task, replay); err != nil {
+		return fmt.Errorf("backfill callback artifacts: %w", err)
+	}
+	switch task.TaskKind {
+	case "build":
+		if err := s.syncBuildRecordResult(ctx, task, replay); err != nil {
+			return fmt.Errorf("backfill callback build record: %w", err)
+		}
+	case "release":
+		if err := s.syncReleaseRecordResult(ctx, task, replay); err != nil {
+			return fmt.Errorf("backfill callback release record: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) syncCallbackBundle(ctx context.Context, task domaindelivery.ExecutionTask, replay bool) error {
+	bundle, err := s.repo.GetReleaseBundleForUpdate(ctx, task.ReleaseBundleID)
+	if err != nil {
+		return err
+	}
+	// A terminal replay can repair an older projection while preserving writes
+	// from a later release or retry that also used this bundle.
+	if replay && !bundle.UpdatedAt.Before(task.UpdatedAt) {
+		return nil
+	}
+	if replay {
+		latest, err := s.repo.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{
+			ReleaseBundleID: bundle.ID, TaskKinds: []string{"build", "release"}, Limit: 1,
+		})
+		if err != nil {
+			return err
+		}
+		if len(latest) != 0 && latest[0].CreatedAt.After(task.CreatedAt) {
+			return nil
+		}
+	}
+	if !applyTaskResultToBundle(&bundle, task, task.UpdatedAt) {
+		return nil
+	}
+	_, err = s.repo.UpdateReleaseBundle(ctx, bundle)
+	return err
+}
+
+func (s *Service) persistCallbackArtifacts(ctx context.Context, task domaindelivery.ExecutionTask, replay bool) error {
+	for _, item := range task.Artifacts {
+		artifact := executionArtifactForTask(task, item)
+		artifact.WorkflowRunID = valueAsString(task.Payload["workflowRunId"])
+		artifact.WorkflowNodeID = valueAsString(task.Payload["workflowNodeId"])
+		existing, err := s.repo.FindExecutionCallbackArtifact(ctx, artifact)
+		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+			return err
+		}
+		if err == nil {
+			if replay && (existing.Status == artifact.Status || !existing.UpdatedAt.Before(task.UpdatedAt)) {
+				continue
+			}
+			artifact.ID = existing.ID
+			artifact.WorkflowRunID = firstNonEmpty(existing.WorkflowRunID, artifact.WorkflowRunID)
+			artifact.WorkflowNodeID = firstNonEmpty(existing.WorkflowNodeID, artifact.WorkflowNodeID)
+		}
+		// Older artifact rows have random IDs. Reuse their IDs when found.
+		// New id-less results get a stable task-scoped ID for repeated callbacks.
+		if artifact.ID == "" {
+			key := fmt.Sprintf("%q:%q:%q:%q:%q:%q", task.ID, artifact.Kind, artifact.Name, artifact.Ref, artifact.Digest, artifact.Path)
+			artifact.ID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String()
+		}
+		if _, err := s.repo.UpsertExecutionArtifact(ctx, artifact); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) logLateExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, callbackStatus string) {
 	now := time.Now().UTC()
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 		ID:              uuid.NewString(),
@@ -731,13 +916,6 @@ func (s *Service) recordLateExecutionCallback(ctx context.Context, task domainde
 		},
 		CreatedAt: now,
 	})
-	if err := s.notifyWorkflowExecutionTaskResult(ctx, task); err != nil {
-		return domaindelivery.ExecutionTask{}, err
-	}
-	if err := s.notifyExecutionTaskSinks(ctx, task); err != nil {
-		return domaindelivery.ExecutionTask{}, err
-	}
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) recordExecutionCallbackLogs(ctx context.Context, taskID string, payload map[string]any) {
@@ -957,19 +1135,22 @@ func (s *Service) persistArtifacts(ctx context.Context, task domaindelivery.Exec
 		return nil
 	}
 	for _, item := range task.Artifacts {
-		artifact := item
-		artifact.ExecutionTaskID = task.ID
-		artifact.ReleaseBundleID = task.ReleaseBundleID
-		artifact.ApplicationID = task.ApplicationID
-		artifact.ApplicationEnvironmentID = task.ApplicationEnvironmentID
-		if task.TaskKind == "build" || strings.TrimSpace(artifact.Status) == "" {
-			artifact.Status = task.Status
-		}
-		if _, err := s.repo.UpsertExecutionArtifact(ctx, artifact); err != nil {
+		if _, err := s.repo.UpsertExecutionArtifact(ctx, executionArtifactForTask(task, item)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func executionArtifactForTask(task domaindelivery.ExecutionTask, artifact domaindelivery.ExecutionArtifact) domaindelivery.ExecutionArtifact {
+	artifact.ExecutionTaskID = task.ID
+	artifact.ReleaseBundleID = task.ReleaseBundleID
+	artifact.ApplicationID = task.ApplicationID
+	artifact.ApplicationEnvironmentID = task.ApplicationEnvironmentID
+	if task.TaskKind == "build" || strings.TrimSpace(artifact.Status) == "" {
+		artifact.Status = task.Status
+	}
+	return artifact
 }
 
 func resolveVersion(value string) string {
@@ -1389,11 +1570,21 @@ func valueAsMap(raw any) map[string]any {
 }
 
 func (s *Service) syncBuildRecord(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	return s.syncBuildRecordResult(ctx, task, false)
+}
+
+func (s *Service) syncBuildRecordResult(ctx context.Context, task domaindelivery.ExecutionTask, replay bool) error {
 	if s.builds == nil {
 		return nil
 	}
 	record, err := s.builds.GetByExecutionTaskID(ctx, task.ID)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
+		return err
+	}
+	if replay && record.Metadata["executionTaskStatus"] == task.Status {
 		return nil
 	}
 	record.Status = mapTaskStatusToBuildStatus(task.Status)
@@ -1408,22 +1599,27 @@ func (s *Service) syncBuildRecord(ctx context.Context, task domaindelivery.Execu
 	if task.LastHeartbeatAt != nil {
 		record.Metadata["lastHeartbeatAt"] = task.LastHeartbeatAt.UTC().Format(time.RFC3339)
 	}
-	if task.StartedAt != nil {
-		record.StartedAt = task.StartedAt
-	}
-	if (task.Status == "completed" || task.Status == "failed") && task.FinishedAt != nil {
-		record.FinishedAt = task.FinishedAt
-	}
+	record.StartedAt, record.FinishedAt = task.StartedAt, task.FinishedAt
 	_, err = s.builds.Update(ctx, record)
 	return err
 }
 
 func (s *Service) syncReleaseRecord(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	return s.syncReleaseRecordResult(ctx, task, false)
+}
+
+func (s *Service) syncReleaseRecordResult(ctx context.Context, task domaindelivery.ExecutionTask, replay bool) error {
 	if s.releases == nil {
 		return nil
 	}
 	record, err := s.releases.GetByExecutionTaskID(ctx, task.ID)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
+		return err
+	}
+	if replay && record.Metadata["executionTaskStatus"] == task.Status {
 		return nil
 	}
 	record.Status = mapTaskStatusToReleaseStatus(task.Status)

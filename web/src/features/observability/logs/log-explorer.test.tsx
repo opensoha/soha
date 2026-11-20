@@ -4,7 +4,7 @@ import { ApiError } from '@/services/api-error'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import dayjs from 'dayjs'
-import { act, useState } from 'react'
+import { act, useLayoutEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,6 +48,21 @@ class WebSocketMock {
 }
 
 const roots: Root[] = []
+const clients: QueryClient[] = []
+
+function sendEntry(socket: WebSocketMock, message: string) {
+  socket.onmessage?.({
+    data: JSON.stringify({
+      type: 'entry',
+      entry: {
+        timestamp: '2026-11-19T00:00:00Z',
+        message,
+        source: { domain: 'kubernetes', podName: 'api-0', containerName: 'api' },
+        sourceMode: 'runtime',
+      },
+    }),
+  })
+}
 
 function LocationProbe() {
   const location = useLocation()
@@ -107,6 +122,8 @@ afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount()
   })
+  for (const client of clients.splice(0)) client.clear()
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
@@ -116,6 +133,7 @@ async function renderExplorer(element: React.ReactNode, initialEntry = '/') {
   const root = createRoot(container)
   roots.push(root)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.push(client)
   await act(async () => {
     root.render(
       <AntdApp>
@@ -172,6 +190,7 @@ describe('LogExplorer', () => {
           },
         }),
       })
+      await new Promise((resolve) => setTimeout(resolve, 40))
     })
     expect(container.textContent).toContain('new authorized event')
   })
@@ -213,7 +232,7 @@ describe('LogExplorer', () => {
           },
         }),
       })
-      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 40))
     })
     expect(container.textContent).toContain('request handled')
 
@@ -784,6 +803,169 @@ describe('LogExplorer', () => {
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
       '/monitoring-workbench/logs?source=docker&dockerProject=project-1&dockerService=api',
     )
+  })
+
+  it('batches live entries until the count or timer bound', async () => {
+    const container = await renderExplorer(
+      <LogExplorer autoStart clusterId="cluster-a" embedded namespace="apps" />,
+    )
+    vi.useFakeTimers()
+    const socket = WebSocketMock.instances[0]
+    await act(async () => {
+      for (let i = 0; i < 127; i += 1) sendEntry(socket, `batched-entry-${i}`)
+    })
+    expect(container.querySelectorAll('.soha-aggregate-log-row')).toHaveLength(1)
+    await act(async () => sendEntry(socket, 'batched-entry-127'))
+    expect(container.querySelectorAll('.soha-aggregate-log-row')).toHaveLength(129)
+    await act(async () => sendEntry(socket, 'timer-entry'))
+    await act(async () => vi.advanceTimersByTimeAsync(31))
+    expect(container.textContent).not.toContain('timer-entry')
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(container.textContent).toContain('timer-entry')
+  })
+
+  it.each(['end', 'close'] as const)(
+    'flushes valid queued entries on server %s and ignores later messages',
+    async (event) => {
+      const container = await renderExplorer(
+        <LogExplorer autoStart clusterId="cluster-a" embedded namespace="apps" />,
+      )
+      vi.useFakeTimers()
+      const socket = WebSocketMock.instances[0]
+      await act(async () => {
+        sendEntry(socket, 'received-before-end')
+        if (event === 'end') socket.onmessage?.({ data: JSON.stringify({ type: 'end' }) })
+        else socket.onclose?.()
+      })
+      expect(container.textContent).toContain('received-before-end')
+      await act(async () => {
+        sendEntry(socket, 'obsolete-after-close')
+        await vi.advanceTimersByTimeAsync(32)
+      })
+      expect(container.textContent).not.toContain('obsolete-after-close')
+      expect(container.querySelectorAll('.soha-aggregate-log-row')).toHaveLength(2)
+      if (event === 'close') {
+        await act(async () => vi.advanceTimersByTimeAsync(1000))
+        expect(WebSocketMock.instances).toHaveLength(2)
+        expect(container.textContent).toContain('received-before-end')
+        await act(async () => {
+          sendEntry(WebSocketMock.instances[1], 'received-after-reconnect')
+          await vi.advanceTimersByTimeAsync(32)
+        })
+        expect(container.textContent).toContain('received-after-reconnect')
+        expect(container.textContent).toContain('received-before-end')
+      } else {
+        await act(async () => vi.advanceTimersByTimeAsync(15000))
+        expect(WebSocketMock.instances).toHaveLength(1)
+      }
+    },
+  )
+
+  it('discards pending entries on clear without stopping future live entries', async () => {
+    const container = await renderExplorer(
+      <LogExplorer autoStart clusterId="cluster-a" embedded namespace="apps" />,
+    )
+    vi.useFakeTimers()
+    const socket = WebSocketMock.instances[0]
+    await act(async () => {
+      sendEntry(socket, 'discard-before-clear')
+      container.querySelector<HTMLButtonElement>('[aria-label="清空日志"]')?.click()
+      await vi.advanceTimersByTimeAsync(32)
+    })
+    expect(container.textContent).not.toContain('discard-before-clear')
+    expect(container.textContent).not.toContain('server ready')
+    await act(async () => {
+      sendEntry(socket, 'received-after-clear')
+      await vi.advanceTimersByTimeAsync(32)
+    })
+    expect(container.textContent).toContain('received-after-clear')
+    expect(container.querySelectorAll('.soha-aggregate-log-row')).toHaveLength(1)
+    expect(WebSocketMock.instances).toHaveLength(1)
+  })
+
+  it.each(['stop', 'query', 'denial'] as const)(
+    'discards old queued entries on %s',
+    async (action) => {
+      const container = await renderExplorer(
+        <LogExplorer autoStart clusterId="cluster-a" embedded namespace="apps" />,
+      )
+      vi.useFakeTimers()
+      const socket = WebSocketMock.instances[0]
+      await act(async () => sendEntry(socket, 'discard-on-transition'))
+      await act(async () => {
+        if (action === 'stop')
+          container.querySelector<HTMLButtonElement>('[aria-label="停止实时日志"]')?.click()
+        else if (action === 'query')
+          container.querySelector<HTMLFormElement>('form')?.requestSubmit()
+        else {
+          apiMocks.queryLogs.mockRejectedValueOnce(
+            new ApiError(403, 'Snapshot refused', { method: 'POST' }),
+          )
+          await clients.at(-1)!.refetchQueries()
+          await vi.advanceTimersByTimeAsync(0)
+        }
+      })
+      await act(async () => {
+        sendEntry(socket, 'obsolete-transition-event')
+        await vi.advanceTimersByTimeAsync(32)
+      })
+      expect(container.textContent).not.toContain('discard-on-transition')
+      expect(container.textContent).not.toContain('obsolete-transition-event')
+      if (action === 'stop') {
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label="重新连接实时日志"]')?.click(),
+        )
+        expect(WebSocketMock.instances).toHaveLength(2)
+        await act(async () => {
+          sendEntry(WebSocketMock.instances[1], 'new-manual-connection')
+          await vi.advanceTimersByTimeAsync(32)
+        })
+        expect(container.textContent).toContain('new-manual-connection')
+        expect(container.textContent).not.toContain('discard-on-transition')
+      }
+    },
+  )
+
+  it('hides the previous scope before passive cleanup and discards its queued entries', async () => {
+    let visibleDuringSwitch: string[] = []
+    function Harness() {
+      const [namespace, setNamespace] = useState('apps')
+      useLayoutEffect(() => {
+        if (namespace === 'other')
+          visibleDuringSwitch = Array.from(
+            document.querySelectorAll('.soha-aggregate-log-message'),
+            (node) => node.textContent ?? '',
+          )
+      }, [namespace])
+      return (
+        <>
+          <button onClick={() => setNamespace('other')}>Switch log scope</button>
+          <LogExplorer autoStart clusterId="cluster-a" embedded namespace={namespace} />
+        </>
+      )
+    }
+    const container = await renderExplorer(<Harness />)
+    vi.useFakeTimers()
+    const socket = WebSocketMock.instances[0]
+    await act(async () => {
+      sendEntry(socket, 'old-visible-scope')
+      await vi.advanceTimersByTimeAsync(32)
+      sendEntry(socket, 'old-pending-scope')
+    })
+    await act(async () =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Switch log scope')
+        ?.click(),
+    )
+    expect(visibleDuringSwitch).not.toContain('old-visible-scope')
+    await act(async () => {
+      sendEntry(socket, 'obsolete-scope-event')
+      await vi.advanceTimersByTimeAsync(32)
+    })
+    expect(container.textContent).not.toContain('old-visible-scope')
+    expect(container.textContent).not.toContain('old-pending-scope')
+    expect(container.textContent).not.toContain('obsolete-scope-event')
+    expect(WebSocketMock.instances).toHaveLength(2)
   })
 
   it('queries delivery history without forcing the default namespace', async () => {

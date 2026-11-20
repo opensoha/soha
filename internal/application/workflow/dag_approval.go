@@ -93,7 +93,6 @@ func (s *Service) applyDAGApprovalDecision(ctx context.Context, principal domain
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	s.publishRunUpdate(updated)
 	if action == "approved" {
 		continuation.run = updated
 		if err := s.enqueueDAGRun(ctx, continuation); err != nil {

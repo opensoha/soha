@@ -119,6 +119,8 @@ export interface ConnectorActionResult<Output = Record<string, unknown>> {
 export interface ConnectorWebhookRequest {
   headers: Record<string, string | string[] | undefined>;
   rawBody: string | Uint8Array;
+  // Await delivery before committing provider-side deduplication state.
+  deliverEvents?: (events: ConnectorEvent[]) => Promise<void>;
 }
 
 export interface ConnectorWebhookResponse {

@@ -29,6 +29,7 @@ jobs:
       - name: Impact selector and summary counterexamples
         run: |
           python3 -m unittest discover -s scripts -p 'test_ci_impact.py'
+          python3 -m unittest discover -s scripts -p 'test_prepare_pr_lint_patch.py'
           python3 -m unittest discover -s scripts -p 'test_check_dev_guidance.py'
       - name: Development guidance local links and skill metadata
         run: python3 scripts/check_dev_guidance.py
@@ -112,12 +113,8 @@ jobs:
         env:
           LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          set -euo pipefail
-          [[ "$LINT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git cat-file -e "${LINT_BASE_SHA}^{commit}"
-          git merge-base --is-ancestor "$LINT_BASE_SHA" HEAD
-          git diff --no-ext-diff --no-textconv --no-color --binary "$LINT_BASE_SHA" HEAD > "${RUNNER_TEMP}/soha-pr-lint.patch"
-          test -s "${RUNNER_TEMP}/soha-pr-lint.patch"
+          bash scripts/prepare-pr-lint-patch.sh "$LINT_BASE_SHA" "${RUNNER_TEMP}/soha-pr-lint.patch"
+          bash scripts/check-pr-go-format.sh "$LINT_BASE_SHA"
       - name: Golangci-lint
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9

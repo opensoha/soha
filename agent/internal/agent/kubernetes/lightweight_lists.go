@@ -518,7 +518,7 @@ func tableRatio(row metav1.TableRow, column int) (int32, int32, error) {
 		return 0, 0, fmt.Errorf("table column %d is not a ratio", column)
 	}
 	// ParseInt with bitSize 32 guarantees these conversions cannot overflow.
-	return int32(readyValue), int32(desiredValue), nil //nolint:gosec
+	return int32(readyValue), int32(desiredValue), nil
 }
 
 func tableInt32(row metav1.TableRow, column int) (int32, error) {

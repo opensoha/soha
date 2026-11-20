@@ -11,6 +11,7 @@ import (
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
@@ -110,7 +111,7 @@ func (r *Repository) create(ctx context.Context, input domainbuild.TriggerInput,
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (domainbuild.Record, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
 		FROM build_records
 		WHERE id = ?
@@ -120,7 +121,7 @@ func (r *Repository) Get(ctx context.Context, id string) (domainbuild.Record, er
 }
 
 func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainbuild.Record, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
 		FROM build_records
 		WHERE metadata ->> 'executionTaskId' = ?
@@ -131,16 +132,35 @@ func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID s
 }
 
 func (r *Repository) Update(ctx context.Context, record domainbuild.Record) (domainbuild.Record, error) {
+	return r.update(ctx, record, false)
+}
+
+func (r *Repository) UpdateUnlinked(ctx context.Context, record domainbuild.Record) (domainbuild.Record, error) {
+	return r.update(ctx, record, true)
+}
+
+func (r *Repository) update(ctx context.Context, record domainbuild.Record, unlinked bool) (domainbuild.Record, error) {
 	payload, err := json.Marshal(record.Metadata)
 	if err != nil {
 		return domainbuild.Record{}, fmt.Errorf("marshal build metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	query := `
 		UPDATE build_records
 		SET status = ?, metadata = ?, started_at = ?, finished_at = ?, updated_at = ?
 		WHERE id = ?
-	`, record.Status, string(payload), record.StartedAt, record.FinishedAt, time.Now().UTC(), record.ID).Error; err != nil {
-		return domainbuild.Record{}, fmt.Errorf("update build record: %w", err)
+	`
+	if unlinked {
+		query += ` AND COALESCE(metadata ->> 'executionTaskId', '') = ''`
+	}
+	result := dbtx.DB(ctx, r.db).Exec(query, record.Status, string(payload), record.StartedAt, record.FinishedAt, time.Now().UTC(), record.ID)
+	if result.Error != nil {
+		return domainbuild.Record{}, fmt.Errorf("update build record: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		if unlinked {
+			return domainbuild.Record{}, apperrors.ErrConflict
+		}
+		return domainbuild.Record{}, apperrors.ErrNotFound
 	}
 	return record, nil
 }

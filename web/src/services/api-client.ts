@@ -1,10 +1,19 @@
 import {
   API_BASE_URL,
+  authSessionChangePending,
   clearAuthSession,
   getStoredAccessToken,
+  refreshRejectionOwner,
   restoreAuthSession,
 } from '@/features/auth/auth-api'
 import type { AuthRefreshStatus } from '@/features/auth/auth-api'
+import {
+  assertAuthSession,
+  captureAuthSession,
+  isCurrentAuthSession,
+  withAuthCookieRequest,
+  type AuthSessionOwner,
+} from '@/features/auth/auth-session'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import type { ErrorEnvelope } from '@/types'
@@ -22,8 +31,8 @@ function normalizeResponseBody<T>(body: unknown): T {
   return body as T
 }
 
-async function refreshToken(): Promise<AuthRefreshStatus> {
-  return restoreAuthSession()
+async function refreshToken(owner: AuthSessionOwner): Promise<AuthRefreshStatus> {
+  return restoreAuthSession(owner)
 }
 
 async function throwRefreshUnavailableError(
@@ -73,17 +82,38 @@ function buildRequestHeaders(options: RequestInit, accessToken: string | null) {
   return headers
 }
 
-async function fetchApi(path: string, options: RequestInit, accessToken: string | null) {
+async function fetchApi(
+  path: string,
+  options: RequestInit,
+  accessToken: string | null,
+  owner: AuthSessionOwner | null = captureAuthSession(),
+) {
   const headers = buildRequestHeaders(options, accessToken)
   const method = getRequestMethod(options)
 
   try {
-    return await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      credentials: options.credentials ?? 'include',
-      headers,
-    })
+    const response = await withAuthCookieRequest(
+      path,
+      method,
+      async (cookieSignal) => {
+        if (owner) assertAuthSession(owner)
+        const response = await fetch(`${API_BASE_URL}${path}`, {
+          ...options,
+          credentials: options.credentials ?? 'include',
+          headers,
+          signal: cookieSignal ?? options.signal,
+        })
+        // Cookie-changing JSON endpoints finish reading the body before releasing their slot.
+        return cookieSignal && response.body
+          ? new Response(await response.arrayBuffer(), response)
+          : response
+      },
+      options.signal,
+    )
+    if (owner) assertAuthSession(owner, response)
+    return response
   } catch (cause) {
+    if (owner) assertAuthSession(owner)
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
     const error = createNetworkApiError(path, method, cause)
     emitApiError(error)
@@ -108,10 +138,16 @@ function responseRequestId(response: Response) {
   )
 }
 
-async function parseJsonStrictly<T>(response: Response, path: string, method: string): Promise<T> {
+async function parseJsonStrictly<T>(
+  response: Response,
+  path: string,
+  method: string,
+  owner: AuthSessionOwner,
+): Promise<T> {
   try {
     return (await response.json()) as T
   } catch (cause) {
+    assertAuthSession(owner)
     const reason = cause instanceof Error && cause.message ? `: ${cause.message}` : ''
     const error = new ApiError(response.status, `Invalid JSON response${reason}`, {
       cause,
@@ -128,34 +164,54 @@ async function throwApiError(
   response: Response,
   path: string,
   method: string,
+  owner: AuthSessionOwner,
   prefetched?: { body: ErrorEnvelope | undefined },
+  clearSession = true,
 ): Promise<never> {
   const body = prefetched ? prefetched.body : await parseJsonSafely<ErrorEnvelope>(response)
+  assertAuthSession(owner)
   const error = createApiErrorFromResponse(response, body, { method, path })
-  if (error.kind === 'auth') {
+  if (error.kind === 'auth' && clearSession) {
     clearAuthSession()
   }
   emitApiError(error)
   throw error
 }
 
-async function requestResponse(path: string, options: RequestInit): Promise<Response> {
+async function requestResponse(
+  path: string,
+  options: RequestInit,
+  owner = captureAuthSession(),
+): Promise<Response> {
   const accessToken = getStoredAccessToken()
   const method = getRequestMethod(options)
 
-  let res = await fetchApi(path, options, accessToken)
+  let res = await fetchApi(path, options, accessToken, owner)
 
   let rejected: { body: ErrorEnvelope | undefined } | undefined
   if (res.status === 401) rejected = { body: await parseJsonSafely<ErrorEnvelope>(res) }
+  assertAuthSession(owner)
+  if (res.status === 401 && authSessionChangePending(owner))
+    throw new DOMException(
+      'Authentication is changing; this request was not replayed.',
+      'AbortError',
+    )
   if (
     res.status === 401 &&
     accessToken &&
     rejected?.body?.error?.code !== 'mfa_verification_failed'
   ) {
-    const refreshStatus = await refreshToken()
+    const refreshStatus =
+      useAuthStore.getState().accessToken !== accessToken
+        ? 'authenticated'
+        : await refreshToken(owner)
+    const clearedOwner =
+      refreshStatus === 'unauthenticated' ? refreshRejectionOwner(owner) : undefined
+    if (clearedOwner) await throwApiError(res, path, method, clearedOwner, rejected, false)
+    assertAuthSession(owner)
     if (refreshStatus === 'authenticated') {
       const { accessToken: newToken } = useAuthStore.getState()
-      res = await fetchApi(path, options, newToken)
+      res = await fetchApi(path, options, newToken, owner)
       rejected = undefined
     } else if (refreshStatus === 'unavailable') {
       await throwRefreshUnavailableError(res, path, method, rejected)
@@ -163,7 +219,7 @@ async function requestResponse(path: string, options: RequestInit): Promise<Resp
   }
 
   if (!res.ok) {
-    await throwApiError(res, path, method, rejected)
+    await throwApiError(res, path, method, owner, rejected)
   }
   return res
 }
@@ -174,10 +230,19 @@ async function request<T>(
   normalizeBody = true,
   responseFormat: 'json' | 'text' = 'json',
 ): Promise<T> {
-  const res = await requestResponse(path, options)
+  const owner = captureAuthSession()
+  const res = await requestResponse(path, options, owner)
   if (res.status === 204) return undefined as T
-  if (responseFormat === 'text') return (await res.text()) as T
-  const body = await parseJsonStrictly<unknown>(res, path, getRequestMethod(options))
+  if (responseFormat === 'text') {
+    const body = await res.text().catch((cause: unknown) => {
+      assertAuthSession(owner)
+      throw cause
+    })
+    assertAuthSession(owner)
+    return body as T
+  }
+  const body = await parseJsonStrictly<unknown>(res, path, getRequestMethod(options), owner)
+  assertAuthSession(owner)
   return normalizeBody ? normalizeResponseBody<T>(body) : (body as T)
 }
 
@@ -189,8 +254,10 @@ async function scopedRequest<T>(
   options: { method?: 'GET' | 'POST' | 'PUT'; body?: unknown } = {},
 ): Promise<T> {
   const accessToken = getStoredAccessToken()
+  const owner = captureAuthSession()
   const method = options.method ?? 'GET'
-  const current = () => useAuthStore.getState().user?.userId === expectedUserId
+  const current = () =>
+    isCurrentAuthSession(owner) && useAuthStore.getState().user?.userId === expectedUserId
   const changed = () =>
     new ApiError(
       method === 'GET' ? 403 : 503,
@@ -211,6 +278,7 @@ async function scopedRequest<T>(
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     },
     accessToken,
+    null,
   )
   if (
     !current() ||
@@ -288,32 +356,11 @@ export const api = {
       method: 'DELETE',
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-  upload: async <T>(path: string, formData: FormData) => {
-    const { accessToken } = useAuthStore.getState()
-    const options: RequestInit = {
+  upload: <T>(path: string, formData: FormData) =>
+    request<T>(path, {
       method: 'POST',
       body: formData,
-    }
-
-    let res = await fetchApi(path, options, accessToken)
-    if (res.status === 401 && accessToken) {
-      const refreshStatus = await refreshToken()
-      if (refreshStatus === 'authenticated') {
-        const { accessToken: newToken } = useAuthStore.getState()
-        res = await fetchApi(path, options, newToken)
-      } else if (refreshStatus === 'unavailable') {
-        await throwRefreshUnavailableError(res, path, 'POST')
-      }
-    }
-
-    if (!res.ok) {
-      await throwApiError(res, path, 'POST')
-    }
-
-    if (res.status === 204) return undefined as T
-    const body = await parseJsonStrictly<unknown>(res, path, 'POST')
-    return normalizeResponseBody<T>(body)
-  },
+    }),
 }
 
 export { ApiError }

@@ -63,6 +63,7 @@ import {
   type RuntimeLogFilters,
 } from './model'
 import { observabilityLogQueries } from './queries'
+import { createLogEntryBuffer } from './stream-buffer'
 import './styles.css'
 
 const { Text } = Typography
@@ -270,6 +271,7 @@ export function LogExplorer({
   const [timePopoverOpen, setTimePopoverOpen] = useState(false)
   const [absoluteTimeOpen, setAbsoluteTimeOpen] = useState(false)
   const [submitted, setSubmitted] = useState<SubmittedLogQuery | null>(null)
+  const submittedTargetIdentity = submitted ? logTargetKey(submitted.target) : null
   const [cachedEntries, setEntries] = useState<LogEntry[]>([])
   const [streamState, setStreamState] = useState('idle')
   const [streamMessage, setStreamMessage] = useState('')
@@ -315,6 +317,14 @@ export function LogExplorer({
   const reconnectAttemptRef = useRef(0)
   const autoStartedRef = useRef('')
   const loadingMoreRef = useRef(false)
+  const liveStreamRef = useRef<{ discard: () => void; stop: () => void } | null>(null)
+  const currentTargetRef = useRef(targetIdentity)
+  currentTargetRef.current = targetIdentity
+
+  function clearLogEntries() {
+    liveStreamRef.current?.discard()
+    setEntries((current) => (current.length ? [] : current))
+  }
 
   useEffect(() => {
     form.setFieldsValue(defaults)
@@ -333,11 +343,15 @@ export function LogExplorer({
 
   const refusedSnapshotAt = useRef<number | null>(null)
   const streamDenied = queryAccessDenied({ error: streamError })
-  const entries = queryAccessDenied(snapshotQuery) || streamDenied ? [] : cachedEntries
+  const entries =
+    queryAccessDenied(snapshotQuery) || streamDenied || submittedTargetIdentity !== targetIdentity
+      ? []
+      : cachedEntries
   useEffect(() => {
     if (!queryAccessDenied(snapshotQuery) && !streamDenied) return
     if (streamDenied) refusedSnapshotAt.current = snapshotQuery.dataUpdatedAt
-    setEntries((current) => (current.length ? [] : current))
+    liveStreamRef.current?.stop()
+    clearLogEntries()
     setStreamEnabled(false)
   }, [snapshotQuery.error, snapshotQuery.dataUpdatedAt, streamDenied])
 
@@ -424,7 +438,8 @@ export function LogExplorer({
                 : resolvedTarget.namespace,
               filters,
             )
-      setEntries([])
+      liveStreamRef.current?.stop()
+      clearLogEntries()
       setSourceErrors(0)
       setStreamMessage('')
       reconnectAttemptRef.current = 0
@@ -489,7 +504,8 @@ export function LogExplorer({
           syncSearch(resolvedFilters)
           return
         }
-        setEntries([])
+        liveStreamRef.current?.stop()
+        clearLogEntries()
         setSourceErrors(0)
         setStreamMessage('')
         setStreamEnabled(false)
@@ -553,6 +569,14 @@ export function LogExplorer({
   }
 
   useEffect(() => {
+    if (submitted && submittedTargetIdentity !== targetIdentity) {
+      liveStreamRef.current?.stop()
+      clearLogEntries()
+      setSubmitted(null)
+      setStreamEnabled(false)
+      setStreamState('idle')
+      autoStartedRef.current = ''
+    }
     if (!autoStart || autoStartedRef.current === targetIdentity || !targetReady || mode !== 'live')
       return
     autoStartedRef.current = targetIdentity
@@ -564,6 +588,7 @@ export function LogExplorer({
     // Reconnecting must not refill the cleared buffer from the refused snapshot.
     if (
       !page ||
+      submittedTargetIdentity !== targetIdentity ||
       streamDenied ||
       (refusedSnapshotAt.current !== null &&
         snapshotQuery.dataUpdatedAt <= refusedSnapshotAt.current)
@@ -578,7 +603,14 @@ export function LogExplorer({
       )
       return mode === 'history' ? merged.reverse() : merged
     })
-  }, [snapshotQuery.data, snapshotQuery.dataUpdatedAt, snapshotQuery.error, streamDenied])
+  }, [
+    snapshotQuery.data,
+    snapshotQuery.dataUpdatedAt,
+    snapshotQuery.error,
+    streamDenied,
+    submittedTargetIdentity,
+    targetIdentity,
+  ])
 
   useEffect(() => {
     if (snapshotQuery.isFetching) return
@@ -593,10 +625,37 @@ export function LogExplorer({
 
   useEffect(() => {
     if (!submitted || submitted.mode !== 'live' || !streamEnabled) return
+    const streamTargetIdentity = logTargetKey(submitted.target)
     let cancelled = false
     let endedByServer = false
+    let closed = false
     let socket: WebSocket | undefined
     let reconnectTimer: number | undefined
+    let bufferGeneration = 0
+    const buffer = createLogEntryBuffer((batch) => {
+      const generation = bufferGeneration
+      setEntries((current) =>
+        cancelled ||
+        generation !== bufferGeneration ||
+        streamTargetIdentity !== currentTargetRef.current
+          ? current
+          : mergeLogEntries(current, batch),
+      )
+    })
+    const control = {
+      discard: () => {
+        bufferGeneration += 1
+        buffer.clear()
+      },
+      stop: () => {
+        cancelled = true
+        control.discard()
+        if (reconnectTimer) window.clearTimeout(reconnectTimer)
+        socket?.close()
+        if (liveStreamRef.current === control) liveStreamRef.current = null
+      },
+    }
+    liveStreamRef.current = control
 
     const scheduleReconnect = () => {
       if (cancelled || endedByServer) return
@@ -622,11 +681,19 @@ export function LogExplorer({
         setStreamError(null)
         socket = new WebSocket(buildLogStreamURL(submitted.target, ticket.ticket))
         socket.onopen = () => {
+          if (cancelled || closed) return
           reconnectAttemptRef.current = 0
           setStreamState('live')
           setStreamMessage('')
         }
         socket.onmessage = (event) => {
+          if (
+            cancelled ||
+            closed ||
+            endedByServer ||
+            streamTargetIdentity !== currentTargetRef.current
+          )
+            return
           let streamEvent: LogStreamEvent
           try {
             streamEvent = JSON.parse(String(event.data)) as LogStreamEvent
@@ -636,7 +703,7 @@ export function LogExplorer({
             return
           }
           if (streamEvent.type === 'entry' && streamEvent.entry) {
-            setEntries((current) => mergeLogEntries(current, [streamEvent.entry as LogEntry]))
+            buffer.add(streamEvent.entry as LogEntry)
           } else if (streamEvent.type === 'source_error') {
             setSourceErrors((value) => value + 1)
             setStreamState('degraded')
@@ -645,6 +712,7 @@ export function LogExplorer({
             setStreamState(streamEvent.status.state)
             setStreamMessage(streamEvent.status.message ?? '')
           } else if (streamEvent.type === 'end') {
+            buffer.flush()
             endedByServer = true
             setStreamState('ended')
             setStreamMessage('实时会话已结束。')
@@ -652,16 +720,23 @@ export function LogExplorer({
           }
         }
         socket.onerror = () => {
+          if (cancelled || closed) return
           setStreamState('degraded')
           setStreamMessage('实时日志连接异常。')
         }
-        socket.onclose = () => scheduleReconnect()
+        socket.onclose = () => {
+          if (cancelled || closed) return
+          buffer.flush()
+          closed = true
+          scheduleReconnect()
+        }
       })
       .catch((error) => {
         if (cancelled) return
         if (error instanceof ApiError && [401, 403].includes(error.status)) {
           endedByServer = true
-          setEntries([])
+          control.stop()
+          clearLogEntries()
           setStreamEnabled(false)
           setStreamState('denied')
           setStreamError(error)
@@ -671,11 +746,7 @@ export function LogExplorer({
         scheduleReconnect()
       })
 
-    return () => {
-      cancelled = true
-      if (reconnectTimer) window.clearTimeout(reconnectTimer)
-      socket?.close()
-    }
+    return control.stop
   }, [streamEnabled, streamGeneration, submitted])
 
   function handleReconnect() {
@@ -683,6 +754,7 @@ export function LogExplorer({
       form.submit()
       return
     }
+    liveStreamRef.current?.stop()
     reconnectAttemptRef.current = 0
     setStreamEnabled(true)
     setStreamGeneration((value) => value + 1)
@@ -1128,7 +1200,7 @@ export function LogExplorer({
               aria-label="清空日志"
               icon={<DeleteOutlined />}
               tooltip="清空日志"
-              onClick={() => setEntries([])}
+              onClick={clearLogEntries}
             />
             <ManagementIconButton
               aria-label="导出当前快照"
@@ -1143,6 +1215,7 @@ export function LogExplorer({
                 icon={<StopOutlined />}
                 tooltip="停止实时日志"
                 onClick={() => {
+                  liveStreamRef.current?.stop()
                   setStreamEnabled(false)
                   setStreamState('ended')
                   setStreamMessage('实时会话已手动停止。')

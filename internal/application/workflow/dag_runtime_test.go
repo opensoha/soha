@@ -2,6 +2,8 @@ package workflow
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -72,27 +74,49 @@ func TestDAGExecutor_CancellationReturnsStableResults(t *testing.T) {
 	}
 }
 
-func TestRunStateStore_PublishesCloneAndObservesCancellation(t *testing.T) {
-	var store runStateStore
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	done := make(chan domainworkflow.Run, 1)
-	go func() {
-		run, _ := store.wait(ctx, "run-1", "completed")
-		done <- run
-	}()
-	run := domainworkflow.Run{ID: "run-1", Status: "completed", Metadata: map[string]any{"value": "original"}}
-	store.publish(run)
-	run.Metadata["value"] = "changed"
-	got := <-done
-	if got.Status != "completed" || got.Metadata["value"] != "original" {
-		t.Fatalf("wait result = %#v", got)
-	}
+type workflowPersistenceContextKey struct{}
 
-	canceled, stop := context.WithCancel(context.Background())
-	stop()
-	if _, err := store.wait(canceled, "missing"); err != context.Canceled {
-		t.Fatalf("wait cancellation error = %v, want context canceled", err)
+type workflowPersistenceRepository struct {
+	Repository
+	result     domainworkflow.Run
+	err        error
+	contextErr error
+	value      any
+}
+
+func (r *workflowPersistenceRepository) Update(ctx context.Context, _ domainworkflow.Run) (domainworkflow.Run, error) {
+	r.contextErr, r.value = ctx.Err(), ctx.Value(workflowPersistenceContextKey{})
+	return r.result, r.err
+}
+
+func TestUpdateRunPreservesPersistenceResultAndContext(t *testing.T) {
+	for _, name := range []string{"success", "failure", "cancelled context", "nil context"} {
+		t.Run(name, func(t *testing.T) {
+			input := domainworkflow.Run{ID: "run", Status: "running", Version: 1}
+			stored := domainworkflow.Run{ID: "run", Status: "completed", Version: 2}
+			repo := &workflowPersistenceRepository{result: stored}
+			service := &Service{repo: repo}
+			ctx := context.WithValue(t.Context(), workflowPersistenceContextKey{}, "request")
+			want := stored
+			if name == "failure" {
+				repo.err = errors.New("database unavailable")
+				want = input
+			}
+			if name == "cancelled context" {
+				cancelled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = cancelled
+			}
+			if name == "nil context" {
+				ctx = nil
+			}
+			if got := service.updateRun(ctx, input); !reflect.DeepEqual(got, want) {
+				t.Fatalf("persisted run = %+v, want %+v", got, want)
+			}
+			if repo.contextErr != nil || (name != "nil context" && repo.value != "request") {
+				t.Fatalf("persistence context lost: error = %v, value = %v", repo.contextErr, repo.value)
+			}
+		})
 	}
 }
 

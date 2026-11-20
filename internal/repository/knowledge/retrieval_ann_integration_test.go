@@ -130,11 +130,11 @@ func knowledgePartialANNRecall(t *testing.T, repo *Repository, store *dbstore.St
 		}
 		// Cap only the actual ANN stage; graph traversal limits are nondeterministic.
 		sql := *query
-		begin, end := strings.Index(sql, ", vector_candidates AS MATERIALIZED ("), strings.Index(sql, ", vectors AS (")
+		begin, end := strings.Index(sql, ", vector_candidates AS MATERIALIZED ("), strings.Index(sql, ", vector_exact_candidates AS MATERIALIZED (")
 		if begin < 0 || end <= begin {
 			t.Fatal("actual ANN stage was not captured")
 		}
-		match := regexp.MustCompile(`LIMIT \$(\d+)\s*\)$`).FindStringSubmatch(sql[begin:end])
+		match := regexp.MustCompile(`LIMIT \$(\d+)\s*\)\s*matches\s*\)$`).FindStringSubmatch(sql[begin:end])
 		if len(match) != 2 {
 			t.Fatal("actual ANN candidate bound is missing")
 		}
@@ -437,7 +437,7 @@ func captureKnowledgeSearchQuery(t *testing.T, repo *Repository) (*string, *[]an
 	args := []any{}
 	const callback = "knowledge:ann-test-query"
 	if err := repo.db.Callback().Row().Before("gorm:row").Register(callback, func(db *gorm.DB) {
-		if strings.HasPrefix(db.Statement.SQL.String(), "WITH authorized") && strings.Contains(db.Statement.SQL.String(), ", lexical_raw AS (") {
+		if strings.HasPrefix(db.Statement.SQL.String(), "WITH authorized") && strings.Contains(db.Statement.SQL.String(), ", lexical_raw AS") {
 			query = db.Statement.SQL.String()
 			args = append([]any(nil), db.Statement.Vars...)
 		}

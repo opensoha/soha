@@ -1,4 +1,5 @@
 import path from "node:path";
+import timers from "node:timers/promises";
 
 import { BaseConnector } from "../../sdk/runtime.js";
 import {
@@ -13,18 +14,18 @@ import {
   RetryableConnectorError,
   type DeadLetterEntry,
   type DeadLetterQueue,
-  type IdempotencyStore,
   type RetryQueue,
   type RetryQueueEntry
 } from "../../sdk/reliability.js";
 import type {
   ConnectorActionRequest,
   ConnectorActionResult,
+  ConnectorEvent,
   ConnectorHealth,
   ConnectorWebhookRequest,
   ConnectorWebhookResponse
 } from "../../sdk/types.js";
-import { FeishuAuthClient } from "./auth.js";
+import { FeishuAuthClient, runFeishuOperation } from "./auth.js";
 import type { FeishuConnectorConfig, NormalizedFeishuConfig } from "./config.js";
 import { normalizeFeishuConfig } from "./config.js";
 import { feishuManifest } from "./manifest.js";
@@ -60,7 +61,8 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
   readonly id = "feishu";
   readonly manifest = feishuManifest;
   private auth?: FeishuAuthClient;
-  private idempotencyStore: IdempotencyStore = new MemoryIdempotencyStore();
+  private idempotencyStore: MemoryIdempotencyStore | FileIdempotencyStore = new MemoryIdempotencyStore();
+  private readonly inFlightWebhooks = new Map<string, Promise<ConnectorWebhookResponse>>();
   private rateLimiter?: FixedWindowRateLimiter;
   private deadLetters: DeadLetterQueue = new MemoryDeadLetterQueue();
   private retryQueue: RetryQueue | undefined;
@@ -148,25 +150,43 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
 
     const event = normalizeFeishuEvent(payload, this.now());
     const idempotencyKey = `event:${event.id}`;
-    if (!this.idempotencyStore.checkAndRecord(idempotencyKey, this.config.reliability.idempotencyTtlMs, this.now())) {
-      this.metrics.webhookDuplicates += 1;
-      this.context?.logger?.info("duplicate Feishu webhook event ignored", {
-        connectorId: this.id,
-        eventId: event.id,
-        eventType: event.type
-      });
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          duplicate: true,
-          eventCount: 0,
-          actionCount: 0
-        },
-        events: [],
-        actions: []
-      };
+    const pending = this.inFlightWebhooks.get(idempotencyKey);
+    if (pending) {
+      await pending;
+      return this.duplicateWebhookResponse(event);
     }
+    if (this.idempotencyStore.has(idempotencyKey, this.now())) {
+      return this.duplicateWebhookResponse(event);
+    }
+
+    const processing = this.processWebhook(event, request.deliverEvents);
+    this.inFlightWebhooks.set(idempotencyKey, processing);
+    try {
+      return await processing;
+    } finally {
+      this.inFlightWebhooks.delete(idempotencyKey);
+    }
+  }
+
+  private duplicateWebhookResponse(event: ConnectorEvent): ConnectorWebhookResponse {
+    this.metrics.webhookDuplicates += 1;
+    this.context?.logger?.info("duplicate Feishu webhook event ignored", {
+      connectorId: this.id,
+      eventId: event.id,
+      eventType: event.type
+    });
+    return {
+      status: 200,
+      body: { ok: true, duplicate: true, eventCount: 0, actionCount: 0 },
+      events: [],
+      actions: []
+    };
+  }
+
+  private async processWebhook(event: ConnectorEvent, deliverEvents: ConnectorWebhookRequest["deliverEvents"]): Promise<ConnectorWebhookResponse> {
+    this.ensureConfigured();
+    await deliverEvents?.([event]);
+    this.idempotencyStore.checkAndRecord(`event:${event.id}`, this.config.reliability.idempotencyTtlMs, this.now());
 
     const actions = [];
 
@@ -202,68 +222,62 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
   async dispatchAction(request: ConnectorActionRequest): Promise<ConnectorActionResult> {
     this.ensureStarted();
     this.ensureConfigured();
-
-    if (request.action !== "feishu.message.send_text") {
-      this.metrics.actionsFailed += 1;
-      return {
-        ok: false,
-        error: {
-          code: "unsupported_action",
-          message: `unsupported Feishu action: ${request.action}`,
-          retryable: false
-        }
-      };
-    }
-
-    let input: SendTextInput;
-    try {
-      input = this.parseSendTextInput(request.input);
-    } catch (error) {
-      this.metrics.actionsFailed += 1;
-      return {
-        ok: false,
-        error: {
-          code: "invalid_action_input",
-          message: (error as Error).message,
-          retryable: false
-        }
-      };
-    }
-
-    const rateLimit = this.rateLimiter?.consume(request.action, this.now());
-    if (rateLimit && !rateLimit.allowed) {
-      this.metrics.actionsFailed += 1;
-      return {
-        ok: false,
-        error: {
-          code: "rate_limited",
-          message: `Feishu connector action rate limit exceeded; retry after ${Math.ceil((rateLimit.retryAfterMs ?? 0) / 1000)}s`,
-          retryable: true
-        }
-      };
-    }
+    const config = this.config;
 
     try {
-      const output = await executeWithRetry(() => this.sendText(input), {
-        maxRetries: this.config.reliability.maxRetries,
-        baseDelayMs: this.config.reliability.retryBackoffMs,
-        onRetry: (attempt, delayMs, error) => {
-          this.context?.logger?.warn("retrying Feishu action", {
-            connectorId: this.id,
-            action: request.action,
-            requestId: request.requestId,
-            attempt,
-            delayMs,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          this.metrics.actionRetries += 1;
+      return await runFeishuOperation(async (signal) => {
+        if (request.action !== "feishu.message.send_text") {
+          this.metrics.actionsFailed += 1;
+          return {
+            ok: false,
+            error: { code: "unsupported_action", message: `unsupported Feishu action: ${request.action}`, retryable: false }
+          };
         }
-      });
-      this.metrics.actionsSucceeded += 1;
-      return {
-        ok: true,
-        output
-      };
+
+        let input: SendTextInput;
+        try {
+          input = this.parseSendTextInput(request.input);
+        } catch (error) {
+          this.metrics.actionsFailed += 1;
+          return {
+            ok: false,
+            error: { code: "invalid_action_input", message: (error as Error).message, retryable: false }
+          };
+        }
+
+        const rateLimit = this.rateLimiter?.consume(request.action, this.now());
+        if (rateLimit && !rateLimit.allowed) {
+          this.metrics.actionsFailed += 1;
+          return {
+            ok: false,
+            error: {
+              code: "rate_limited",
+              message: `Feishu connector action rate limit exceeded; retry after ${Math.ceil((rateLimit.retryAfterMs ?? 0) / 1000)}s`,
+              retryable: true
+            }
+          };
+        }
+
+        const output = await executeWithRetry(() => this.sendText(input, signal), {
+          maxRetries: config.reliability.maxRetries,
+          baseDelayMs: config.reliability.retryBackoffMs,
+          sleep: (delayMs) => timers.setTimeout(Math.min(delayMs, 15_000), undefined, { signal }),
+          onRetry: (attempt, delayMs, error) => {
+            this.context?.logger?.warn("retrying Feishu action", {
+              connectorId: this.id,
+              action: request.action,
+              requestId: request.requestId,
+              attempt,
+              delayMs,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            this.metrics.actionRetries += 1;
+          }
+        });
+        signal.throwIfAborted();
+        this.metrics.actionsSucceeded += 1;
+        return { ok: true, output };
+      }, request.signal);
     } catch (error) {
       const result = actionResultFromError(error);
       this.metrics.actionsFailed += 1;
@@ -281,8 +295,8 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
           action: request.action,
           error: result.error,
           input: request.input,
-          attempts: this.config.reliability.maxRetries + 1,
-          nextAttemptAt: new Date(this.now().getTime() + this.config.reliability.retryBackoffMs).toISOString(),
+          attempts: config.reliability.maxRetries + 1,
+          nextAttemptAt: new Date(this.now().getTime() + config.reliability.retryBackoffMs).toISOString(),
           now: this.now(),
           ...(request.requestId ? { requestId: request.requestId } : {})
         });
@@ -291,19 +305,21 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
     }
   }
 
-  private async sendText(input: SendTextInput): Promise<Record<string, unknown>> {
+  private async sendText(input: SendTextInput, signal: AbortSignal): Promise<Record<string, unknown>> {
     if (!this.auth) {
       throw new Error("Feishu auth client is not configured");
     }
 
     this.ensureConfigured();
     const config = this.config;
-    const token = await this.auth.getTenantAccessToken();
+    const token = await this.auth.getTenantAccessToken(signal);
+    signal.throwIfAborted();
     const url = new URL(`${config.baseUrl}/im/v1/messages`);
     url.searchParams.set("receive_id_type", input.receiveIdType);
 
     const response = await config.fetch(url, {
       method: "POST",
+      signal,
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=utf-8"
@@ -316,6 +332,7 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
         })
       })
     });
+    signal.throwIfAborted();
 
     if (!response.ok) {
       const retryAfter = retryAfterMs(response.headers.get("Retry-After"));
@@ -328,6 +345,7 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
     }
 
     const body = (await response.json()) as FeishuApiResponse;
+    signal.throwIfAborted();
     if (body.code !== 0) {
       throw new RetryableConnectorError({
         code: "feishu_api_error",
@@ -354,6 +372,12 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
     }
     if (typeof text !== "string" || text.trim() === "") {
       throw new Error("text is required");
+    }
+    if (text.length > 4096) {
+      let codePoints = 0;
+      for (const _ of text) {
+        if (++codePoints > 4096) throw new Error("text must not exceed 4096 Unicode characters");
+      }
     }
 
     return {

@@ -105,7 +105,7 @@ type testApps struct {
 	updated  []domainapp.UpsertInput
 }
 
-func (r *testApps) List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error) {
+func (r *testApps) ListAccessible(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error) {
 	return r.items, nil
 }
 func (r *testApps) Get(_ context.Context, _ domainidentity.Principal, id string) (domainapp.App, error) {

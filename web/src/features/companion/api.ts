@@ -1,4 +1,10 @@
-import { API_BASE_URL, getStoredAccessToken, refreshAuthSession } from '@/features/auth'
+import {
+  API_BASE_URL,
+  assertAuthSession,
+  captureAuthSession,
+  getStoredAccessToken,
+  refreshAuthSession,
+} from '@/features/auth'
 import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import type {
@@ -48,12 +54,20 @@ async function requestCompanionAsset(path: string, accessToken: string | null) {
 }
 
 export async function fetchCompanionAsset(pluginId: string, assetPath: string) {
+  const owner = captureAuthSession()
   const encodedPath = assetPath.split('/').map(encodeURIComponent).join('/')
   const path = `/plugins/${encodeURIComponent(pluginId)}/assets/${encodedPath}`
   let response = await requestCompanionAsset(path, getStoredAccessToken())
-  if (response.status === 401 && (await refreshAuthSession())) {
+  assertAuthSession(owner, response)
+  if (response.status === 401 && (await refreshAuthSession(owner))) {
+    assertAuthSession(owner, response)
+    await response.body?.cancel().catch(() => undefined)
+    assertAuthSession(owner)
     response = await requestCompanionAsset(path, getStoredAccessToken())
   }
+  assertAuthSession(owner, response)
   if (!response.ok) throw new Error(`Companion asset request failed (${response.status})`)
-  return response.blob()
+  const blob = await response.blob()
+  assertAuthSession(owner)
+  return blob
 }

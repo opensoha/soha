@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,64 @@ func TestRecordCallbackIgnoresLateTerminalCallback(t *testing.T) {
 	}
 	if len(sink.tasks) != 1 || sink.tasks[0].Status != "canceled" {
 		t.Fatalf("terminal callback sink tasks = %#v, want canceled task replay", sink.tasks)
+	}
+}
+
+func TestRecordCallbackRepairsLegacyTerminalProjectionsFromStoredResult(t *testing.T) {
+	now := time.Date(2026, 6, 4, 10, 30, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, bundleStatus, wantBundleStatus string
+		bundleModified                       time.Time
+		newerTask                            bool
+	}{
+		{"unfinished bundle", "building", "ready", now.Add(-time.Minute), false},
+		{"newer release projection", "deployed", "deployed", now.Add(time.Minute), false},
+		{"newer release task", "ready", "ready", now.Add(-time.Minute), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, builds := newExecutionRepoFake(), newBuildRecordRepoFake()
+			const image = "registry.example/app:stored"
+			digest := "sha256:" + strings.Repeat("a", 64)
+			repo.bundles["bundle"] = domaindelivery.ReleaseBundle{ID: "bundle", Status: tc.bundleStatus, UpdatedAt: tc.bundleModified}
+			repo.tasks["task"] = domaindelivery.ExecutionTask{
+				ID: "task", ReleaseBundleID: "bundle", ApplicationID: "app", TaskKind: "build",
+				Status: "completed", CallbackToken: "token", FinishedAt: &now, UpdatedAt: now,
+				Result: map[string]any{"image": image, "imageDigest": digest},
+				Artifacts: []domaindelivery.ExecutionArtifact{
+					{Kind: "image", Ref: image, Digest: digest},
+					{Kind: "workspace_file", Path: "report"},
+				},
+			}
+			if tc.newerTask {
+				repo.tasks["newer-task"] = domaindelivery.ExecutionTask{
+					ID: "newer-task", ReleaseBundleID: "bundle", TaskKind: "release", Status: "running", CreatedAt: now.Add(time.Minute),
+				}
+			}
+			repo.artifacts = []domaindelivery.ExecutionArtifact{{
+				ID: "legacy-id", ExecutionTaskID: "task", Kind: "image", Ref: image, Digest: digest,
+				Status: "running", UpdatedAt: now.Add(-time.Minute),
+			}}
+			builds.records["task"] = domainbuild.Record{ID: "build", Status: "running"}
+			service := New(repo, builds, nil, nil, "", "", "", "", 0, "", nil)
+			for range 2 {
+				task, err := service.RecordCallback(t.Context(), domaindelivery.ExecutionCallbackInput{
+					CallbackToken: "token", Status: "failed", Payload: map[string]any{"image": "ignored"},
+				})
+				if err != nil || task.Status != "completed" || task.Result["image"] != image || len(repo.updates) != 0 {
+					t.Fatalf("callback replay changed stored task: status=%q result=%v err=%v", task.Status, task.Result, err)
+				}
+			}
+			if bundle := repo.bundles["bundle"]; bundle.Status != tc.wantBundleStatus || tc.newerTask && !bundle.UpdatedAt.Equal(tc.bundleModified) {
+				t.Fatalf("bundle status = %q, want %q", bundle.Status, tc.wantBundleStatus)
+			}
+			if build := builds.records["task"]; build.Status != "completed" || build.FinishedAt == nil {
+				t.Fatalf("build projection was not repaired: %+v", build)
+			}
+			if len(repo.artifacts) != 2 || repo.artifacts[0].ID != "legacy-id" ||
+				repo.artifacts[0].Status != "completed" || repo.artifacts[1].Path != "report" {
+				t.Fatalf("callback replay did not repair missing artifacts exactly once: %+v", repo.artifacts)
+			}
+		})
 	}
 }
 
@@ -607,6 +666,9 @@ func TestRetryExecutionTaskRotatesCallbackTokenAndQueuesRunnerTask(t *testing.T)
 	if !repo.hasLogContaining("waiting for runner claim") {
 		t.Fatalf("runner queue log was not recorded")
 	}
+	if _, err := service.RecordCallback(t.Context(), domaindelivery.ExecutionCallbackInput{CallbackToken: "old-token", Status: "failed"}); err == nil || len(repo.callbacks) != 0 {
+		t.Fatalf("rotated callback token reached the new attempt: receipts=%d err=%v", len(repo.callbacks), err)
+	}
 }
 
 func TestRetryExecutionTaskPreservesDeliveryBatchHistory(t *testing.T) {
@@ -707,6 +769,10 @@ func (r *executionRepoFake) GetReleaseBundle(_ context.Context, id string) (doma
 	return item, nil
 }
 
+func (r *executionRepoFake) GetReleaseBundleForUpdate(ctx context.Context, id string) (domaindelivery.ReleaseBundle, error) {
+	return r.GetReleaseBundle(ctx, id)
+}
+
 func (r *executionRepoFake) CreateReleaseBundle(_ context.Context, item domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error) {
 	r.bundles[item.ID] = item
 	return item, nil
@@ -723,7 +789,17 @@ func (r *executionRepoFake) ListExecutionTasks(_ context.Context, filter domaind
 		if filter.Status != "" && item.Status != filter.Status {
 			continue
 		}
+		if filter.ReleaseBundleID != "" && item.ReleaseBundleID != filter.ReleaseBundleID {
+			continue
+		}
+		if len(filter.TaskKinds) != 0 && !slices.Contains(filter.TaskKinds, item.TaskKind) {
+			continue
+		}
 		items = append(items, item)
+	}
+	slices.SortFunc(items, func(a, b domaindelivery.ExecutionTask) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		items = items[:filter.Limit]
 	}
 	return items, nil
 }
@@ -744,6 +820,26 @@ func (r *executionRepoFake) GetExecutionTaskByCallbackToken(_ context.Context, t
 		}
 	}
 	return domaindelivery.ExecutionTask{}, fmt.Errorf("execution task callback token not found")
+}
+
+func (r *executionRepoFake) WithExecutionCreation(ctx context.Context, apply func(context.Context) error) error {
+	return apply(ctx)
+}
+
+func (r *executionRepoFake) WithExecutionTaskForUpdate(ctx context.Context, id string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
+	task, err := r.GetExecutionTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	return apply(ctx, task)
+}
+
+func (r *executionRepoFake) WithExecutionCallback(ctx context.Context, token string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
+	task, err := r.GetExecutionTaskByCallbackToken(ctx, token)
+	if err != nil {
+		return err
+	}
+	return apply(ctx, task)
 }
 
 func (r *executionRepoFake) ClaimExecutionTask(context.Context, []string, string, string) (domaindelivery.ExecutionTask, error) {
@@ -785,6 +881,25 @@ func (r *executionRepoFake) ListExecutionArtifactsByBundle(context.Context, stri
 
 func (r *executionRepoFake) ListArtifacts(context.Context, domaindelivery.ArtifactFilter) ([]domaindelivery.ExecutionArtifact, error) {
 	return append([]domaindelivery.ExecutionArtifact(nil), r.artifacts...), nil
+}
+
+func (r *executionRepoFake) FindExecutionCallbackArtifact(_ context.Context, artifact domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
+	for _, item := range r.artifacts {
+		if item.ExecutionTaskID != artifact.ExecutionTaskID {
+			continue
+		}
+		if artifact.ID != "" {
+			if item.ID == artifact.ID {
+				return item, nil
+			}
+			continue
+		}
+		if item.Kind == artifact.Kind && item.Name == artifact.Name && item.Ref == artifact.Ref &&
+			item.Digest == artifact.Digest && item.Path == artifact.Path {
+			return item, nil
+		}
+	}
+	return domaindelivery.ExecutionArtifact{}, apperrors.ErrNotFound
 }
 
 func (r *executionRepoFake) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
@@ -859,7 +974,7 @@ func newBuildRecordRepoFake() *buildRecordRepoFake {
 func (r *buildRecordRepoFake) GetByExecutionTaskID(_ context.Context, taskID string) (domainbuild.Record, error) {
 	item, ok := r.records[strings.TrimSpace(taskID)]
 	if !ok {
-		return domainbuild.Record{}, fmt.Errorf("build record not found")
+		return domainbuild.Record{}, apperrors.ErrNotFound
 	}
 	return item, nil
 }
@@ -887,7 +1002,7 @@ func newReleaseRecordRepoFake() *releaseRecordRepoFake {
 func (r *releaseRecordRepoFake) GetByExecutionTaskID(_ context.Context, taskID string) (domainrelease.Record, error) {
 	item, ok := r.records[strings.TrimSpace(taskID)]
 	if !ok {
-		return domainrelease.Record{}, fmt.Errorf("release record not found")
+		return domainrelease.Record{}, apperrors.ErrNotFound
 	}
 	return item, nil
 }

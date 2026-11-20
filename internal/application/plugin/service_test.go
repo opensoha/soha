@@ -68,14 +68,24 @@ func TestRemoveCompanionRetiresArtifacts(t *testing.T) {
 		ID: "opensoha.orbit", Name: "Orbit", Version: "1.0.0", Publisher: "opensoha",
 		Type: "companion-pack", Status: statusEnabled,
 	}
-	lifecycle := &companionLifecycleStub{}
+	retirementError := errors.New("retire artifacts")
+	lifecycle := &companionLifecycleStub{removeError: retirementError}
 	service := NewWithOptions(repo, appaccess.NewPermissionResolver(stubRolePermissions{
 		"operator": {appaccess.PermPluginRemove},
 	}), nil, WithCompanionArtifacts(lifecycle))
 
-	err := service.Remove(context.Background(), domainidentity.Principal{
+	principal := domainidentity.Principal{
 		UserID: "operator-1", Roles: []string{"operator"},
-	}, "opensoha.orbit")
+	}
+	err := service.Remove(t.Context(), principal, "opensoha.orbit")
+	if !errors.Is(err, retirementError) {
+		t.Fatalf("Remove() with failed retirement = %v", err)
+	}
+	if _, ok := repo.items["opensoha.orbit"]; !ok {
+		t.Fatal("failed retirement removed the installation")
+	}
+	lifecycle.removeError = nil
+	err = service.Remove(t.Context(), principal, "opensoha.orbit")
 	if err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
@@ -94,6 +104,7 @@ type memoryPluginRepo struct {
 type companionLifecycleStub struct {
 	activeVersion string
 	removed       string
+	removeError   error
 	pack          domainplugin.CompanionPackManifest
 }
 
@@ -112,6 +123,9 @@ func (s *companionLifecycleStub) Rollback(_ context.Context, _ string, version s
 }
 
 func (s *companionLifecycleStub) Remove(_ context.Context, pluginID string) error {
+	if s.removeError != nil {
+		return s.removeError
+	}
 	s.removed = pluginID
 	return nil
 }
@@ -163,9 +177,16 @@ func (r *memoryPluginRepo) UpsertInstalled(_ context.Context, item domainplugin.
 	return item, nil
 }
 
-func (r *memoryPluginRepo) DeleteInstalled(_ context.Context, pluginID string) error {
+func (r *memoryPluginRepo) RemoveInstalled(ctx context.Context, pluginID string, retire func(context.Context, domainplugin.InstalledPlugin) error) (domainplugin.InstalledPlugin, error) {
+	item, err := r.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := retire(ctx, item); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
 	delete(r.items, pluginID)
-	return nil
+	return item, nil
 }
 
 func boolPtr(value bool) *bool {

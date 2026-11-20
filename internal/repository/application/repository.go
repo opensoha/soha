@@ -59,10 +59,18 @@ func (r *Repository) list(ctx context.Context, filter domainapp.Filter) ([]domai
 		FROM applications
 	`
 	args := []any{}
+	conditions := []string{}
 	if search := strings.TrimSpace(filter.Search); search != "" {
-		query += ` WHERE LOWER(name) LIKE ? OR LOWER(app_key) LIKE ? OR LOWER(app_group) LIKE ? OR LOWER(repository_path) LIKE ?`
+		conditions = append(conditions, `(LOWER(name) LIKE ? OR LOWER(app_key) LIKE ? OR LOWER(app_group) LIKE ? OR LOWER(repository_path) LIKE ?)`)
 		pattern := "%" + strings.ToLower(search) + "%"
 		args = append(args, pattern, pattern, pattern, pattern)
+	}
+	if filter.After != nil {
+		conditions = append(conditions, `(app_group, name, id) > (?, ?, ?)`)
+		args = append(args, filter.After.Group, filter.After.Name, filter.After.ID)
+	}
+	if len(conditions) > 0 {
+		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
 	query += ` ORDER BY app_group ASC, name ASC, id ASC LIMIT ?`
 	args = append(args, limit)

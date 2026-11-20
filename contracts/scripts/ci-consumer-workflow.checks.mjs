@@ -134,8 +134,13 @@ test("active router waits for every selected workflow and preserves the original
   assert.equal(ci.jobs.core.steps.find((step) => step.name === "Docker build").run.split("\n").filter((line) => line.startsWith("docker build ")).length, 7);
   const web = readWorkflow("web-ci");
   assert.deepEqual(Object.keys(web.on), ["workflow_call"]);
-  for (const name of ["Release workflow guard", "Enhanced workflow trust guard", "E2E typecheck", "Route architecture guard", "Frontend boundary guard", "Shared table import guard", "Lint", "Format check", "Typecheck", "Test", "Coverage", "Build", "Bundle budget", "Browser regression including migrated Kubernetes baseline"])
+  for (const name of ["Release workflow guard", "Enhanced workflow trust guard", "E2E typecheck", "Route architecture guard", "Frontend boundary guard", "Shared table import guard", "Lint", "Format check", "Typecheck", "Build", "Bundle budget", "Browser regression including migrated Kubernetes baseline"])
     assert.ok(web.jobs.verify.steps.some((step) => step.name === name), `missing Web ${name}`);
+  const coverage = web.jobs.verify.steps.find((step) => step.run === "npm run test:coverage");
+  assert.equal(coverage?.["working-directory"], "web", "missing Web test execution with coverage");
+  assert.equal(coverage.if, undefined, "Web coverage must run on every selected verification");
+  const webScripts = JSON.parse(readFileSync(join(root, "../web/package.json"), "utf8")).scripts;
+  assert.equal(webScripts["test:coverage"], "vitest run --coverage");
   const deletion = readWorkflow("deletion-integration");
   assert.deepEqual(Object.keys(deletion.on), ["workflow_call", "workflow_dispatch"]);
   assert.ok(deletion.jobs["postgres-deletion"].services.postgres);

@@ -13,6 +13,7 @@ import (
 
 	domaincompanion "github.com/opensoha/soha/internal/domain/companion"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -254,7 +255,7 @@ func (r *Repository) GetActiveArtifact(ctx context.Context, pluginID string) (do
 }
 
 func (r *Repository) RetireArtifacts(ctx context.Context, pluginID string, now time.Time) error {
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		UPDATE companion_artifacts SET active = false, retired_at = ?
 		WHERE plugin_id = ? AND retired_at IS NULL
 	`, now, pluginID).Error

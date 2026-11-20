@@ -206,21 +206,29 @@ func readTemplateVersions[T any](ctx context.Context, db *gorm.DB, kind, id stri
 		if err := rows.Scan(&data, &digest); err != nil {
 			return nil, err
 		}
-		var item T
-		if err := json.Unmarshal(data, &item); err != nil {
-			return nil, fmt.Errorf("decode template snapshot: %w", err)
-		}
-		switch typed := any(&item).(type) {
-		case *domaincatalog.BuildTemplate:
-			typed.ContentDigest = digest
-		case *domaincatalog.WorkflowTemplate:
-			typed.ContentDigest = digest
-		case *domaincatalog.DeploymentTemplate:
-			typed.ContentDigest = digest
+		item, err := decodeTemplateSnapshot[T](data, digest)
+		if err != nil {
+			return nil, err
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func decodeTemplateSnapshot[T any](data []byte, digest string) (T, error) {
+	var item T
+	if err := json.Unmarshal(data, &item); err != nil {
+		return item, fmt.Errorf("decode template snapshot: %w", err)
+	}
+	switch typed := any(&item).(type) {
+	case *domaincatalog.BuildTemplate:
+		typed.ContentDigest = digest
+	case *domaincatalog.WorkflowTemplate:
+		typed.ContentDigest = digest
+	case *domaincatalog.DeploymentTemplate:
+		typed.ContentDigest = digest
+	}
+	return item, nil
 }
 
 func (r *Repository) ListBuildTemplateVersions(ctx context.Context, id string) ([]domaincatalog.BuildTemplate, error) {

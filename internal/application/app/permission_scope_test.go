@@ -25,6 +25,12 @@ func TestPermissionOnlyApplicationReadPreservesScope(t *testing.T) {
 	repo := &captureAppRepository{items: map[string]domainapp.App{"allowed": {ID: "allowed", BusinessLineID: "retail"}, "outside": {ID: "outside", BusinessLineID: "retail"}}}
 	service := New(repo, nil, auth, nil, nil)
 	principal := domainidentity.Principal{UserID: "reader", Roles: []string{"custom-reader"}}
+	if _, err := service.List(context.Background(), principal, domainapp.Filter{Limit: 501}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("existing collection authorization: %v", err)
+	}
+	if _, err := service.ListAccessible(context.Background(), principal, domainapp.Filter{Limit: 501}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("accessible collection authorization changed: %v", err)
+	}
 	if _, err := service.Get(context.Background(), principal, "allowed"); err != nil {
 		t.Fatal(err)
 	}

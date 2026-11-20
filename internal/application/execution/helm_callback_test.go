@@ -27,12 +27,15 @@ func TestHelmCallbacksPreserveTheirInputBuildBundle(t *testing.T) {
 					result.Revision, result.Status = 0, "preflighted"
 				}
 				service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
-				updated, err := service.RecordCallback(context.Background(), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: status, Payload: map[string]any{"helm": result}})
+				updated, err := service.RecordCallback(context.Background(), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: status, Payload: map[string]any{"helm": result, "logs": []any{"private runner details"}}})
 				if err != nil || updated.Status != status {
 					t.Fatalf("callback = %s, %v", updated.Status, err)
 				}
 				if !reflect.DeepEqual(repo.bundles[bundle.ID], bundle) {
 					t.Fatal("Helm outcome changed the input bundle or its build provenance")
+				}
+				if len(repo.logs) != 0 {
+					t.Fatal("Helm callback logged unnormalized runner contents")
 				}
 			})
 		}

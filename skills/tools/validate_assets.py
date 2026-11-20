@@ -1440,8 +1440,7 @@ def verify_release_package(artifact_path: Path, expected_version: str) -> dict[s
     expected_members.update(f"soha-skills/{item['path']}" for item in manifest["files"])
 
     with tarfile.open(artifact_path, "r:gz") as archive:
-        members = {member.name: member for member in archive.getmembers()}
-        member_names = set(members)
+        member_names = release_member_names(archive, artifact_path)
         missing_members = sorted(expected_members - member_names)
         extra_members = sorted(member_names - expected_members)
         if missing_members:
@@ -1485,6 +1484,15 @@ def verify_release_package(artifact_path: Path, expected_version: str) -> dict[s
         "files": len(manifest["files"]),
         "members": len(expected_members),
     }
+
+
+def release_member_names(archive: tarfile.TarFile, artifact_path: Path) -> set[str]:
+    names: set[str] = set()
+    for member in archive.getmembers():
+        if member.name in names:
+            raise ValidationError(f"{artifact_path}: duplicate release member {member.name!r}")
+        names.add(member.name)
+    return names
 
 
 def read_tar_member(archive: tarfile.TarFile, member_name: str, artifact_path: Path) -> bytes:

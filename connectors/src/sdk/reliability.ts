@@ -64,6 +64,11 @@ export interface IdempotencyStore {
 export class MemoryIdempotencyStore implements IdempotencyStore {
   private readonly entries = new Map<string, number>();
 
+  has(key: string, now: Date = new Date()): boolean {
+    const expiresAt = this.entries.get(key);
+    return expiresAt !== undefined && expiresAt > now.getTime();
+  }
+
   checkAndRecord(key: string, ttlMs: number, now: Date = new Date()): boolean {
     const nowMs = now.getTime();
     this.prune(nowMs);
@@ -85,35 +90,33 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 }
 
 export class FileIdempotencyStore implements IdempotencyStore {
-  private readonly entries = new Map<string, number>();
+  private entries = new Map<string, number>();
 
   constructor(private readonly filePath: string) {
     this.load();
   }
 
-  checkAndRecord(key: string, ttlMs: number, now: Date = new Date()): boolean {
-    const nowMs = now.getTime();
-    this.prune(nowMs);
-    const existing = this.entries.get(key);
-    if (existing && existing > nowMs) {
-      return false;
-    }
-    this.entries.set(key, nowMs + ttlMs);
-    this.persist();
-    return true;
+  has(key: string, now: Date = new Date()): boolean {
+    const expiresAt = this.entries.get(key);
+    return expiresAt !== undefined && expiresAt > now.getTime();
   }
 
-  private prune(nowMs: number): void {
-    let changed = false;
-    for (const [key, expiresAt] of this.entries) {
+  checkAndRecord(key: string, ttlMs: number, now: Date = new Date()): boolean {
+    if (this.has(key, now)) {
+      return false;
+    }
+    const nowMs = now.getTime();
+    const entries = new Map<string, number>();
+    for (const [recordedKey, expiresAt] of this.entries) {
       if (expiresAt <= nowMs) {
-        this.entries.delete(key);
-        changed = true;
+        continue;
       }
+      entries.set(recordedKey, expiresAt);
     }
-    if (changed) {
-      this.persist();
-    }
+    entries.set(key, nowMs + ttlMs);
+    writeJsonFile(this.filePath, { entries: Object.fromEntries(entries) });
+    this.entries = entries;
+    return true;
   }
 
   private load(): void {
@@ -132,11 +135,6 @@ export class FileIdempotencyStore implements IdempotencyStore {
         this.entries.set(key, expiresAt);
       }
     }
-  }
-
-  private persist(): void {
-    const entries = Object.fromEntries([...this.entries].sort(([left], [right]) => left.localeCompare(right)));
-    writeJsonFile(this.filePath, { entries });
   }
 }
 

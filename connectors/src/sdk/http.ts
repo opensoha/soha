@@ -215,6 +215,8 @@ async function routeRequest<TConfig>(input: {
   });
 }
 
+class EventSinkDeliveryError extends Error {}
+
 async function handleWebhookRequest<TConfig>(input: {
   connector: Connector<TConfig>;
   eventSink: ConnectorEventSinkOptions | undefined;
@@ -224,10 +226,31 @@ async function handleWebhookRequest<TConfig>(input: {
   response: ServerResponse;
 }): Promise<void> {
   const rawBody = await readBody(input.request, input.maxBodyBytes);
+  const eventSink = input.eventSink;
+  let eventsDelivered = false;
+  const deliverEvents = eventSink ? async (events: ConnectorEvent[]): Promise<void> => {
+    try {
+      await deliverConnectorEvents({
+        connectorId: input.connector.id,
+        eventSink,
+        events,
+        logger: input.logger
+      });
+      eventsDelivered = true;
+    } catch (error) {
+      input.logger?.error("connector event sink delivery failed", {
+        connectorId: input.connector.id,
+        eventCount: events.length,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw new EventSinkDeliveryError("connector event sink delivery failed");
+    }
+  } : undefined;
   try {
     const result = await input.connector.handleWebhook({
       headers: input.request.headers,
-      rawBody
+      rawBody,
+      ...(deliverEvents ? { deliverEvents } : {})
     });
     input.logger?.info("connector webhook handled", {
       connectorId: input.connector.id,
@@ -235,33 +258,22 @@ async function handleWebhookRequest<TConfig>(input: {
       eventCount: result.events?.length ?? 0,
       actionCount: result.actions?.length ?? 0
     });
-    if (result.events?.length && input.eventSink) {
-      try {
-        await deliverConnectorEvents({
-          connectorId: input.connector.id,
-          eventSink: input.eventSink,
-          events: result.events,
-          logger: input.logger
-        });
-      } catch (error) {
-        input.logger?.error("connector event sink delivery failed", {
-          connectorId: input.connector.id,
-          eventCount: result.events.length,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        writeJson(input.response, 503, {
-          ok: false,
-          error: {
-            code: "connector_event_sink_failed",
-            message: "connector runtime could not deliver normalized events to the configured sink",
-            retryable: true
-          }
-        });
-        return;
-      }
+    if (result.events?.length && deliverEvents && !eventsDelivered) {
+      await deliverEvents(result.events);
     }
     writeConnectorResponse(input.response, result);
   } catch (error) {
+    if (error instanceof EventSinkDeliveryError) {
+      writeJson(input.response, 503, {
+        ok: false,
+        error: {
+          code: "connector_event_sink_failed",
+          message: "connector runtime could not deliver normalized events to the configured sink",
+          retryable: true
+        }
+      });
+      return;
+    }
     input.logger?.warn("connector webhook rejected", {
       connectorId: input.connector.id,
       error: error instanceof Error ? error.message : String(error)
@@ -359,7 +371,7 @@ async function handleActionRequest<TConfig>(
   }
   const result = credentials
     ? await dispatchCredentialAction(input.connector, actionRequest, credentials, input.response)
-    : await input.connector.dispatchAction(actionRequest);
+    : await dispatchCancellableAction(input.connector, actionRequest, input.response);
   if (input.response.destroyed) return;
   const fields = {
     connectorId: input.connector.id,
@@ -370,6 +382,22 @@ async function handleActionRequest<TConfig>(
   };
   input.logger?.info("connector action handled", credentials ? redactCredentialResult(fields, credentials) as Record<string, unknown> : fields);
   writeJson(input.response, statusForActionResult(result), result);
+}
+
+async function dispatchCancellableAction<TConfig>(
+  connector: Connector<TConfig>, request: ConnectorActionRequest, response: ServerResponse
+): Promise<ConnectorActionResult> {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  response.once("close", abort);
+  if (response.destroyed) controller.abort();
+  request.signal = controller.signal;
+  try {
+    return await connector.dispatchAction(request);
+  } finally {
+    response.removeListener("close", abort);
+    controller.abort();
+  }
 }
 
 async function dispatchCredentialAction<TConfig>(

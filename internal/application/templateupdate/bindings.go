@@ -145,11 +145,14 @@ func (s *Service) bindingApplications(ctx context.Context, p domainidentity.Prin
 		app, err := s.deps.Applications.Get(ctx, p, id)
 		return []domainapp.App{app}, err
 	}
-	apps, err := s.deps.Applications.List(ctx, p, domainapp.Filter{Limit: 501})
+	apps, err := s.deps.Applications.ListAccessible(ctx, p, domainapp.Filter{Limit: 501})
+	if err != nil {
+		return nil, err
+	}
 	if len(apps) > 500 {
 		return nil, invalid("more than 500 accessible applications; select an application to narrow the impact preview")
 	}
-	return apps, err
+	return apps, nil
 }
 
 func targetBase(kind sohaapi.TemplateUpdateKind, templateID, identity string, app domainapp.App, env domaincatalog.ApplicationEnvironment) sohaapi.TemplateUpdateTarget {
