@@ -64,43 +64,48 @@ func knowledgeRetrievalCompletesComponents(t *testing.T, repo *Repository, ctx c
 		}
 	})
 	t.Run("incompatible_embedding_identity", func(t *testing.T) {
-		for _, mismatch := range []string{"model", "route", "upstream", "provider", "upstream_model", "dimension"} {
-			t.Run(mismatch, func(t *testing.T) {
-				doc, chunks, reader := seedRetrievalDocument(t, repo, ctx, 11)
-				for i := range chunks {
-					chunks[i].Content, chunks[i].Embedding = "different topic", []float64{1, 0, 0}
-				}
-				target := chunks[0]
-				target.Content = "ancient deployment needle"
-				switch mismatch {
-				case "model":
-					target.EmbeddingModel = "other-model"
-				case "route":
-					target.EmbeddingRoute = "other-route"
-				case "upstream":
-					target.EmbeddingSource.UpstreamID = "other-upstream"
-				case "provider":
-					target.EmbeddingSource.ProviderKind = "other-provider"
-				case "upstream_model":
-					target.EmbeddingSource.UpstreamModel = "other-model"
-				case "dimension":
-					target.Embedding = []float64{1, 0}
-				}
-				publishComponentFixture(t, repo, ctx, &doc, chunks[1:])
-				targetDoc := doc
-				targetDoc.ID, targetDoc.ExternalID = uuid.NewString(), uuid.NewString()
-				target.DocumentID = targetDoc.ID
-				publishComponentFixture(t, repo, ctx, &targetDoc, []domainknowledge.Chunk{target})
-				request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: target.Content,
-					Policies: map[string]domainknowledge.RetrievalPolicy{doc.KnowledgeBaseID: {LexicalWeight: .5, VectorWeight: .5, MinScore: .85}}}
-				batch := domainknowledge.EmbeddingBatch{Model: "fixture", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0, 0}}}
-				rows, err := repo.SearchAuthorizedChunks(ctx, reader, request, batch, 10)
-				if err != nil || len(rows) != 0 {
-					t.Fatalf("incompatible %s contributed a vector score: rows=%d err=%v", mismatch, len(rows), err)
-				}
-			})
-		}
+		assertIncompatibleEmbeddingIdentity(t, repo, ctx)
 	})
+}
+
+func assertIncompatibleEmbeddingIdentity(t *testing.T, repo *Repository, ctx context.Context) {
+	t.Helper()
+	for _, mismatch := range []string{"model", "route", "upstream", "provider", "upstream_model", "dimension"} {
+		t.Run(mismatch, func(t *testing.T) {
+			doc, chunks, reader := seedRetrievalDocument(t, repo, ctx, 11)
+			for i := range chunks {
+				chunks[i].Content, chunks[i].Embedding = "different topic", []float64{1, 0, 0}
+			}
+			target := chunks[0]
+			target.Content = "ancient deployment needle"
+			switch mismatch {
+			case "model":
+				target.EmbeddingModel = "other-model"
+			case "route":
+				target.EmbeddingRoute = "other-route"
+			case "upstream":
+				target.EmbeddingSource.UpstreamID = "other-upstream"
+			case "provider":
+				target.EmbeddingSource.ProviderKind = "other-provider"
+			case "upstream_model":
+				target.EmbeddingSource.UpstreamModel = "other-model"
+			case "dimension":
+				target.Embedding = []float64{1, 0}
+			}
+			publishComponentFixture(t, repo, ctx, &doc, chunks[1:])
+			targetDoc := doc
+			targetDoc.ID, targetDoc.ExternalID = uuid.NewString(), uuid.NewString()
+			target.DocumentID = targetDoc.ID
+			publishComponentFixture(t, repo, ctx, &targetDoc, []domainknowledge.Chunk{target})
+			request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: target.Content,
+				Policies: map[string]domainknowledge.RetrievalPolicy{doc.KnowledgeBaseID: {LexicalWeight: .5, VectorWeight: .5, MinScore: .85}}}
+			batch := domainknowledge.EmbeddingBatch{Model: "fixture", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0, 0}}}
+			rows, err := repo.SearchAuthorizedChunks(ctx, reader, request, batch, 10)
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("incompatible %s contributed a vector score: rows=%d err=%v", mismatch, len(rows), err)
+			}
+		})
+	}
 }
 
 func publishComponentFixture(t *testing.T, repo *Repository, ctx context.Context, document *domainknowledge.Document, chunks []domainknowledge.Chunk) {

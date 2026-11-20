@@ -196,6 +196,33 @@ func validateExecutionPublication(t *testing.T, ctx context.Context, apps *repoa
 	if _, err := trigger(); !errors.Is(err, errCallbackProjectionTest) {
 		t.Fatalf("expected projection write failure, got %v", err)
 	}
+	verifyExecutionPublicationRollback(t, ctx, repo, releases, appID, kind)
+	rejectWrite = false
+	want := "failed"
+	if kind == "release" {
+		want = "deployed"
+	}
+	if state, err := trigger(); err != nil || state != want {
+		t.Fatalf("trigger returned state=%q want=%q err=%v", state, want, err)
+	}
+	if kind == "release" {
+		verifyReleasePublication(t, ctx, releases, service, claimed, digest)
+		return
+	}
+	oldToken := claimed.CallbackToken
+	verifyBuildPublicationRetryRollback(t, ctx, repo, builds, service, claimed.ID, oldToken, accepted.ReleaseBundleID, &rejectReset, &rejectRecordReset)
+	status = "completed"
+	if _, err := service.RetryExecutionTask(ctx, claimed.ID, domaindelivery.ExecutionTaskActionInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RecordCallback(ctx, publicationCallback(oldToken, "failed", digest)); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("old callback token reached the new attempt: %v", err)
+	}
+	assertExecutionCallbackProjection(t, ctx, repo, builds, accepted.ID, accepted.ReleaseBundleID, "completed", "ready", "completed", publicationTestImage)
+}
+
+func verifyExecutionPublicationRollback(t *testing.T, ctx context.Context, repo *repodelivery.Repository, releases *reporelease.Repository, appID, kind string) {
+	t.Helper()
 	if tasks, err := repo.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: appID}); err != nil || len(tasks) != 0 {
 		t.Fatalf("failed projection left tasks: %+v err=%v", tasks, err)
 	}
@@ -206,40 +233,28 @@ func validateExecutionPublication(t *testing.T, ctx context.Context, apps *repoa
 	if records, err := releases.List(ctx, domainrelease.Filter{ApplicationID: appID}); err != nil || len(records) != 0 {
 		t.Fatalf("failed publication left a release record: %+v err=%v", records, err)
 	}
-	rejectWrite = false
-	want := "failed"
-	if kind == "release" {
-		want = "deployed"
+}
+
+func verifyReleasePublication(t *testing.T, ctx context.Context, releases *reporelease.Repository, service *execution.Service, claimed domaindelivery.ExecutionTask, digest string) {
+	t.Helper()
+	if record, err := releases.GetByExecutionTaskID(ctx, claimed.ID); err != nil || record.Status != "deployed" || record.DeployedAt == nil {
+		t.Fatalf("release projection did not observe immediate callback: %+v err=%v", record, err)
 	}
-	if state, err := trigger(); err != nil || state != want {
-		t.Fatalf("trigger returned state=%q want=%q err=%v", state, want, err)
+	if replay, err := service.RecordCallback(ctx, publicationCallback(claimed.CallbackToken, "failed", digest)); err != nil || replay.Status != "completed" {
+		t.Fatalf("terminal replay overwrote release result: status=%s err=%v", replay.Status, err)
 	}
-	if kind == "release" {
-		if record, err := releases.GetByExecutionTaskID(ctx, claimed.ID); err != nil || record.Status != "deployed" || record.DeployedAt == nil {
-			t.Fatalf("release projection did not observe immediate callback: %+v err=%v", record, err)
-		}
-		if replay, err := service.RecordCallback(ctx, publicationCallback(claimed.CallbackToken, "failed", digest)); err != nil || replay.Status != "completed" {
-			t.Fatalf("terminal replay overwrote release result: status=%s err=%v", replay.Status, err)
-		}
-		return
-	}
-	oldToken := claimed.CallbackToken
-	for _, failing := range []*bool{&rejectReset, &rejectRecordReset} {
+}
+
+func verifyBuildPublicationRetryRollback(t *testing.T, ctx context.Context, repo *repodelivery.Repository, builds *repobuild.Repository, service *execution.Service, taskID, oldToken, bundleID string, rejectReset, rejectRecordReset *bool) {
+	t.Helper()
+	for _, failing := range []*bool{rejectReset, rejectRecordReset} {
 		*failing = true
-		if _, err := service.RetryExecutionTask(ctx, claimed.ID, domaindelivery.ExecutionTaskActionInput{}); !errors.Is(err, errCallbackProjectionTest) {
+		if _, err := service.RetryExecutionTask(ctx, taskID, domaindelivery.ExecutionTaskActionInput{}); !errors.Is(err, errCallbackProjectionTest) {
 			t.Fatalf("expected injected retry reset failure, got %v", err)
 		}
-		assertFailedRetryRollback(t, ctx, repo, builds, claimed.ID, oldToken, accepted.ReleaseBundleID)
+		assertFailedRetryRollback(t, ctx, repo, builds, taskID, oldToken, bundleID)
 		*failing = false
 	}
-	status = "completed"
-	if _, err := service.RetryExecutionTask(ctx, claimed.ID, domaindelivery.ExecutionTaskActionInput{}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.RecordCallback(ctx, publicationCallback(oldToken, "failed", digest)); !errors.Is(err, apperrors.ErrNotFound) {
-		t.Fatalf("old callback token reached the new attempt: %v", err)
-	}
-	assertExecutionCallbackProjection(t, ctx, repo, builds, accepted.ID, accepted.ReleaseBundleID, "completed", "ready", "completed", publicationTestImage)
 }
 
 func assertFailedRetryRollback(t *testing.T, ctx context.Context, repo *repodelivery.Repository, builds *repobuild.Repository, taskID, oldToken, bundleID string) {

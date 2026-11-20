@@ -129,35 +129,12 @@ func verifyWorkflowBuildPublication(t *testing.T, ctx context.Context, apps *rep
 		}
 	}}, apps, nil, service, nil, nil, nil, nil)
 	input := domainbuild.TriggerInput{ApplicationID: applicationID, RefType: "branch", RefName: "main"}
-	failed, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
-	if !errors.Is(err, errCallbackProjectionTest) || failed.ID != node.ResourceID("build") || failed.Status != "failed" || failed.FinishedAt == nil {
-		t.Fatalf("expected durable failed preparation: record=%+v err=%v", failed, err)
-	}
-	if _, err := repo.GetExecutionTask(ctx, node.ResourceID("task")); !errors.Is(err, apperrors.ErrNotFound) {
-		t.Fatalf("failed scoped projection left a task: %v", err)
-	}
+	failed := verifyWorkflowBuildPreparation(t, ctx, repo, build, nodeCtx, input, node)
 	reject = false
-	for range 2 {
-		record, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
-		if err != nil || record.ID != failed.ID || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.StartedAt != nil || record.FinishedAt != nil || record.Metadata["failureStage"] != nil {
-			t.Fatalf("recovered build projection retained stale preparation state: record=%+v err=%v", record, err)
-		}
-	}
-	missing, err := builds.Get(ctx, failed.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delete(missing.Metadata, "executionTaskId")
-	if _, err := builds.Update(ctx, missing); err != nil {
-		t.Fatal(err)
-	}
+	verifyWorkflowBuildRecovery(t, build, nodeCtx, input, failed, node)
+	clearWorkflowBuildTaskAssociation(t, ctx, builds, failed.ID)
 	staleFence = true
-	if _, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input); !errors.Is(err, apperrors.ErrConflict) {
-		t.Fatalf("repair accepted a stale workflow fence: %v", err)
-	}
-	if record, err := builds.Get(ctx, failed.ID); err != nil || record.Metadata["executionTaskId"] != nil || record.Status != "queued" {
-		t.Fatalf("stale repair modified the stored record: %+v err=%v", record, err)
-	}
+	verifyWorkflowBuildStaleFence(t, ctx, builds, build, nodeCtx, input, failed.ID)
 	staleFence, reject = false, true
 	beforeFailure = func() {
 		beforeFailure = nil
@@ -167,10 +144,59 @@ func verifyWorkflowBuildPublication(t *testing.T, ctx context.Context, apps *rep
 			t.Fatalf("competing repair could not restore the association: %+v err=%v", record, err)
 		}
 	}
+	verifyWorkflowBuildCompetingRepair(t, ctx, builds, build, nodeCtx, input, failed.ID, node)
+}
+
+func verifyWorkflowBuildPreparation(t *testing.T, ctx context.Context, repo *repodelivery.Repository, build *appbuild.Service, nodeCtx context.Context, input domainbuild.TriggerInput, node domainworkflow.NodeExecution) domainbuild.Record {
+	t.Helper()
+	failed, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
+	if !errors.Is(err, errCallbackProjectionTest) || failed.ID != node.ResourceID("build") || failed.Status != "failed" || failed.FinishedAt == nil {
+		t.Fatalf("expected durable failed preparation: record=%+v err=%v", failed, err)
+	}
+	if _, err := repo.GetExecutionTask(ctx, node.ResourceID("task")); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("failed scoped projection left a task: %v", err)
+	}
+	return failed
+}
+
+func verifyWorkflowBuildRecovery(t *testing.T, build *appbuild.Service, nodeCtx context.Context, input domainbuild.TriggerInput, failed domainbuild.Record, node domainworkflow.NodeExecution) {
+	t.Helper()
+	for range 2 {
+		record, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input)
+		if err != nil || record.ID != failed.ID || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.StartedAt != nil || record.FinishedAt != nil || record.Metadata["failureStage"] != nil {
+			t.Fatalf("recovered build projection retained stale preparation state: record=%+v err=%v", record, err)
+		}
+	}
+}
+
+func clearWorkflowBuildTaskAssociation(t *testing.T, ctx context.Context, builds *repobuild.Repository, recordID string) {
+	t.Helper()
+	missing, err := builds.Get(ctx, recordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(missing.Metadata, "executionTaskId")
+	if _, err := builds.Update(ctx, missing); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func verifyWorkflowBuildStaleFence(t *testing.T, ctx context.Context, builds *repobuild.Repository, build *appbuild.Service, nodeCtx context.Context, input domainbuild.TriggerInput, recordID string) {
+	t.Helper()
+	if _, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("repair accepted a stale workflow fence: %v", err)
+	}
+	if record, err := builds.Get(ctx, recordID); err != nil || record.Metadata["executionTaskId"] != nil || record.Status != "queued" {
+		t.Fatalf("stale repair modified the stored record: %+v err=%v", record, err)
+	}
+}
+
+func verifyWorkflowBuildCompetingRepair(t *testing.T, ctx context.Context, builds *repobuild.Repository, build *appbuild.Service, nodeCtx context.Context, input domainbuild.TriggerInput, recordID string, node domainworkflow.NodeExecution) {
+	t.Helper()
 	if _, err := build.Trigger(nodeCtx, domainidentity.Principal{}, input); !errors.Is(err, errCallbackProjectionTest) {
 		t.Fatalf("expected original association failure, got %v", err)
 	}
-	if record, err := builds.Get(ctx, failed.ID); err != nil || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.FinishedAt != nil {
+	if record, err := builds.Get(ctx, recordID); err != nil || record.Metadata["executionTaskId"] != node.ResourceID("task") || record.Status != "queued" || record.FinishedAt != nil {
 		t.Fatalf("stale error write overwrote the committed association: %+v err=%v", record, err)
 	}
 }
