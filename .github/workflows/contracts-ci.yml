@@ -118,13 +118,24 @@ jobs:
         run: GOWORK=off go vet ./...
       - name: Govulncheck
         run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Prepare PR lint patch
+        if: github.event_name == 'pull_request'
+        id: lint-patch
+        env:
+          LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          patch_path="${RUNNER_TEMP}/soha-pr-lint.patch"
+          bash ../scripts/prepare-pr-lint-patch.sh "$LINT_BASE_SHA" "$patch_path"
+          printf 'args=--new-from-patch="%s"\n' "$patch_path" >> "$GITHUB_OUTPUT"
       - name: Golangci-lint
         uses: golangci/golangci-lint-action@v9
+        env:
+          GOWORK: 'off'
         with:
           version: v2.14.0
           working-directory: source/contracts
-          only-new-issues: true
-          args: --timeout=5m
+          only-new-issues: ${{ github.event_name != 'pull_request' }}
+          args: --timeout=5m ${{ steps.lint-patch.outputs.args }}
 
   consumers:
     runs-on: ubuntu-latest

@@ -20,6 +20,7 @@ linters:
     - ineffassign
     - revive
     - testifylint
+    - nolintlint
   exclusions:
     paths:
       - vendor$
@@ -31,7 +32,14 @@ linters:
   settings:
     errcheck:
       check-type-assertions: true
+    nolintlint:
+      require-specific: true
+      require-explanation: true
     revive:
       rules:
         - name: exported
           disabled: true
+
+formatters:
+  enable:
+    - gofmt
