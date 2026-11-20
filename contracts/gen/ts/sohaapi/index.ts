@@ -705,6 +705,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copilot/assistant-mesh/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAssistantMeshAssets"];
+        put?: never;
+        post: operations["createAssistantMeshAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/assets/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["extractAssistantMeshAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/assets/{assetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAssistantMeshAsset"];
+        put: operations["updateAssistantMeshDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/assets/{assetId}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["actOnAssistantMeshAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ai/assistant-mesh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAssistantMeshSettings"];
+        put: operations["updateAssistantMeshSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/ai/workbench-model": {
         parameters: {
             query?: never;
@@ -19416,6 +19496,143 @@ export interface components {
         AIContextInspectionEnvelope: {
             data: components["schemas"]["AIContextInspection"];
         };
+        AssistantMeshAssetInput: {
+            /** @enum {string} */
+            kind: "skill" | "experience_card" | "mcp";
+            title: string;
+            body: string;
+            applicability?: string;
+            /** @description Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes. */
+            files?: {
+                [key: string]: string;
+            };
+            dependencies?: {
+                id: string;
+                version: string;
+            }[];
+            parameters?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "string" | "integer" | "number" | "boolean";
+                    description?: string;
+                    required?: boolean;
+                };
+            };
+        };
+        AssistantMeshDraftUpdate: {
+            input: components["schemas"]["AssistantMeshAssetInput"];
+            expectedDigest: string;
+        };
+        AssistantMeshAudience: {
+            /** @enum {string} */
+            visibility: "private" | "teams" | "projects" | "organization";
+            teams?: string[];
+            projects?: string[];
+        };
+        AssistantMeshVersion: {
+            input: components["schemas"]["AssistantMeshAssetInput"];
+            digest: string;
+            version: number;
+            audience: components["schemas"]["AssistantMeshAudience"];
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            publishedAt?: string;
+        };
+        AssistantMeshTrial: {
+            runId: string;
+            digest: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed" | "canceled" | "expired";
+        };
+        AssistantMeshPublicationReview: {
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "withdrawn";
+            reason?: string;
+            candidate: components["schemas"]["AssistantMeshVersion"];
+        };
+        AssistantMeshAsset: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ownerUserId: string;
+            /** @enum {string} */
+            kind: "skill" | "experience_card" | "mcp";
+            draft?: components["schemas"]["AssistantMeshAssetInput"];
+            draftDigest?: string;
+            published?: components["schemas"]["AssistantMeshVersion"];
+            review?: components["schemas"]["AssistantMeshPublicationReview"];
+            trial?: components["schemas"]["AssistantMeshTrial"];
+            findings?: string[];
+        };
+        AssistantMeshAssetPage: {
+            publishingDefaults?: {
+                /** @enum {string} */
+                visibility: "private" | "teams" | "projects";
+                lifetimeDays: number;
+                allowPermanentExperienceCards: boolean;
+            };
+            items: components["schemas"]["AssistantMeshAsset"][];
+            nextOffset?: number;
+        };
+        AssistantMeshAssetEnvelope: {
+            data: components["schemas"]["AssistantMeshAsset"];
+        };
+        AssistantMeshExtractRequest: {
+            /** @enum {string} */
+            kind: "skill" | "experience_card";
+            title: string;
+            /** Format: uuid */
+            sessionId: string;
+            messageIds?: string[];
+            runId?: string;
+        };
+        AssistantMeshActionRequest: {
+            /** @description Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke. */
+            expectedDigest?: string;
+            audience?: components["schemas"]["AssistantMeshAudience"];
+            lifetimeDays?: number;
+            permanent?: boolean;
+            reason?: string;
+            /** Format: uuid */
+            sessionId?: string;
+            requestId?: string;
+            prompt?: string;
+            parameters?: {
+                [key: string]: string | number | boolean;
+            };
+            /** Format: uuid */
+            resourceId?: string;
+        };
+        AssistantMeshProjectResult: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            status: string;
+        };
+        AssistantMeshActionResult: {
+            asset: components["schemas"]["AssistantMeshAsset"];
+            runId?: string;
+            project?: components["schemas"]["AssistantMeshProjectResult"];
+        };
+        AssistantMeshActionEnvelope: {
+            data: components["schemas"]["AssistantMeshActionResult"];
+        };
+        AssistantMeshSettings: {
+            enabled: boolean;
+            /** @description Explicit reviewer user IDs. An empty list uses platform administrators. */
+            organizationApproverUserIds: string[];
+            /**
+             * @description The suggested initial audience kind. Specific teams or projects must be selected during publication.
+             * @enum {string}
+             */
+            defaultVisibility: "private" | "teams" | "projects";
+            experienceCardLifetimeDays: number;
+            allowPermanentExperienceCards: boolean;
+        };
+        AssistantMeshSettingsEnvelope: {
+            data: components["schemas"]["AssistantMeshSettings"];
+        };
         AIWorkbenchModelSettings: {
             /** @description Public model name exposed by AI Gateway model routes and used as the Workbench default. */
             defaultPublicModel?: string;
@@ -36429,6 +36646,22 @@ export type KnowledgeSyncRunListEnvelope = components['schemas']['KnowledgeSyncR
 export type KnowledgeIndexRevisionListEnvelope = components['schemas']['KnowledgeIndexRevisionListEnvelope'];
 export type KnowledgeSearchResultEnvelope = components['schemas']['KnowledgeSearchResultEnvelope'];
 export type AIContextInspectionEnvelope = components['schemas']['AIContextInspectionEnvelope'];
+export type AssistantMeshAssetInput = components['schemas']['AssistantMeshAssetInput'];
+export type AssistantMeshDraftUpdate = components['schemas']['AssistantMeshDraftUpdate'];
+export type AssistantMeshAudience = components['schemas']['AssistantMeshAudience'];
+export type AssistantMeshVersion = components['schemas']['AssistantMeshVersion'];
+export type AssistantMeshTrial = components['schemas']['AssistantMeshTrial'];
+export type AssistantMeshPublicationReview = components['schemas']['AssistantMeshPublicationReview'];
+export type AssistantMeshAsset = components['schemas']['AssistantMeshAsset'];
+export type AssistantMeshAssetPage = components['schemas']['AssistantMeshAssetPage'];
+export type AssistantMeshAssetEnvelope = components['schemas']['AssistantMeshAssetEnvelope'];
+export type AssistantMeshExtractRequest = components['schemas']['AssistantMeshExtractRequest'];
+export type AssistantMeshActionRequest = components['schemas']['AssistantMeshActionRequest'];
+export type AssistantMeshProjectResult = components['schemas']['AssistantMeshProjectResult'];
+export type AssistantMeshActionResult = components['schemas']['AssistantMeshActionResult'];
+export type AssistantMeshActionEnvelope = components['schemas']['AssistantMeshActionEnvelope'];
+export type AssistantMeshSettings = components['schemas']['AssistantMeshSettings'];
+export type AssistantMeshSettingsEnvelope = components['schemas']['AssistantMeshSettingsEnvelope'];
 export type AIWorkbenchModelSettings = components['schemas']['AIWorkbenchModelSettings'];
 export type AISkillSettings = components['schemas']['AISkillSettings'];
 export type AISettings = components['schemas']['AISettings'];
@@ -39833,6 +40066,250 @@ export interface operations {
                     "application/json": components["schemas"]["AISettingsEnvelope"];
                 };
             };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    listAssistantMeshAssets: {
+        parameters: {
+            query?: {
+                view?: "mine" | "shared" | "review";
+                kind?: "skill" | "experience_card" | "mcp";
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshAssetPage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    createAssistantMeshAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshAssetInput"];
+            };
+        };
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshAssetEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    extractAssistantMeshAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshExtractRequest"];
+            };
+        };
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshAssetEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getAssistantMeshAsset: {
+        parameters: {
+            query?: {
+                /** @description Select the managed MCP proposal collection. */
+                kind?: "mcp";
+            };
+            header?: never;
+            path: {
+                assetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshAssetEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    updateAssistantMeshDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDraftUpdate"];
+            };
+        };
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshAssetEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    actOnAssistantMeshAsset: {
+        parameters: {
+            query?: {
+                /** @description Select the managed MCP proposal collection. */
+                kind?: "mcp";
+            };
+            header?: never;
+            path: {
+                assetId: string;
+                action: "publish" | "trial" | "run" | "approve" | "reject" | "withdraw" | "revoke" | "invoke";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Heya Assistant Mesh result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshActionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getAssistantMeshSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organization settings for Heya Assistant Mesh. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshSettingsEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    updateAssistantMeshSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved settings. The experience card lifetime applies to future publications. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshSettingsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
         };

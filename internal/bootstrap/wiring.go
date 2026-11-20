@@ -556,6 +556,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
 	settingsService := appsettings.New(repos.settingsRepository, permissionResolver, auditService, operationService)
+	settingsService.SetAssistantMeshSettingsDependencies(repos.settingsRepository, repos.identityRepository)
 	settingsService.SetInstrumentation(infra.logger.Named("settings").With(
 		zap.String("event", "settings.evidence.record_failed"),
 	))
@@ -1516,6 +1517,9 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		DirectorySync:       directorySyncHandler,
 	}
 	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	if cfg.Modules.AI.Enabled {
+		wireAssistantMeshRoutes(&dependencies, infra, repos, core, delivery, gateway)
+	}
 	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
 	return dependencies, nil
 }

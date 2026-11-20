@@ -310,6 +310,13 @@ function setDefaultResponses() {
       ],
     },
     '/settings/ai/workbench-runtime-assets': [],
+    '/settings/ai/assistant-mesh': {
+      enabled: false,
+      organizationApproverUserIds: [],
+      defaultVisibility: 'private',
+      experienceCardLifetimeDays: 90,
+      allowPermanentExperienceCards: true,
+    },
     '/settings/ai/skills': {
       skillsRegistry: [
         {
@@ -1072,6 +1079,52 @@ describe('settings ai page rendering', () => {
     })
   })
 
+  it('saves Assistant Mesh settings through the model settings page', async () => {
+    const previous = useAuthStore.getState().user
+    useAuthStore.getState().setUser({
+      userId: 'mesh-admin',
+      userName: 'Mesh Admin',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
+    })
+    try {
+      const path = '/settings/ai/assistant-mesh'
+      const expected = {
+        enabled: false,
+        organizationApproverUserIds: [],
+        defaultVisibility: 'private',
+        experienceCardLifetimeDays: 90,
+        allowPermanentExperienceCards: true,
+      }
+      apiPutMock.mockResolvedValueOnce({ data: expected })
+      const container = await renderWithProviders(
+        <AISettingsPage embedded />,
+        '/ai-workbench/model-settings',
+      )
+      const findSaveButton = () =>
+        Array.from(container.querySelectorAll('button')).find((candidate) =>
+          candidate.textContent?.includes('保存助手互联设置'),
+        )
+      for (let attempt = 0; attempt < 20 && !findSaveButton(); attempt++) {
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+      }
+      const saveButton = findSaveButton()
+      if (!saveButton) throw new Error('Assistant Mesh save button not shown')
+      await act(async () => {
+        saveButton.click()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      await vi.waitFor(() => expect(apiPutMock).toHaveBeenCalledWith(path, expected))
+    } finally {
+      await act(async () => {
+        useAuthStore.setState({ user: previous })
+      })
+    }
+  })
+
   it('deep-links to immutable runtime profile history without offering publication to a viewer', async () => {
     testState.snapshot.permissionKeys = testState.snapshot.permissionKeys.filter(
       (permission) => permission !== 'settings.ai.update',
@@ -1127,6 +1180,7 @@ describe('settings ai page rendering', () => {
       expect(container.textContent).toContain('需绑定个人环境')
       expect(container.querySelector('button[aria-label="停用 private-mcp @ 1"]')).toBeNull()
       expect(container.textContent).not.toContain('编辑并发布新版本')
+      expect(apiGetMock).not.toHaveBeenCalledWith('/settings/ai/assistant-mesh')
       expect(apiPutMock).not.toHaveBeenCalled()
     } finally {
       await act(async () => roots.pop()?.unmount())

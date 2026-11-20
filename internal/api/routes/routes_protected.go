@@ -43,8 +43,23 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 	registerSoftwareRoutes(protected, deps)
 	registerCompanionRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)
+	registerAssistantMeshRoutes(protected, deps)
 	registerSystemIntegrationRoutes(protected, deps)
 	registerSecretRoutes(protected, deps)
+}
+
+func registerAssistantMeshRoutes(protected gin.IRoutes, deps Dependencies) {
+	h := deps.AssistantMesh
+	if h == nil {
+		return
+	}
+	const assets = "/copilot/assistant-mesh/assets"
+	protected.GET(assets, h.List)
+	protected.POST(assets, h.Create)
+	protected.POST(assets+"/extract", h.Extract)
+	protected.GET(assets+"/:assetId", h.Get)
+	protected.PUT(assets+"/:assetId", h.Update)
+	protected.POST(assets+"/:assetId/actions/:action", h.Act)
 }
 
 func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {

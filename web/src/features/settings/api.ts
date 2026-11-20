@@ -1,5 +1,6 @@
 import { api } from '@/services/api-client'
 import { ApiError } from '@/services/api-error'
+import type { AssistantMeshSettings } from '@opensoha/contracts/gen/ts/sohaapi'
 import type { ApiResponse, BrandingSettings } from '@/types'
 import type { LLMModelRoute, WorkbenchAgentRun, WorkbenchCatalog } from '@/features/copilot'
 import type { WorkbenchRuntimeProfile, WorkbenchRuntimeProfileUpdate } from '@/features/copilot'
@@ -48,6 +49,10 @@ export const settingsApi = {
       api.put<void>('/settings/identity/providers', input.values),
   },
   ai: {
+    assistantMesh: () =>
+      unwrap(api.get<ApiResponse<AssistantMeshSettings>>('/settings/ai/assistant-mesh')),
+    saveAssistantMesh: (values: AssistantMeshSettings) =>
+      unwrap(api.put<ApiResponse<AssistantMeshSettings>>('/settings/ai/assistant-mesh', values)),
     runtimeAssets: async () => {
       const items = await unwrap(api.get<ApiResponse<WorkbenchRuntimeAsset[]>>(runtimeAssetsPath))
       if (!Array.isArray(items)) {

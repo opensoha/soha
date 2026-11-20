@@ -86,6 +86,7 @@ import './assistant.css'
 import { AnimatedIcon } from '@/components/animated-icon'
 import { AssistantAvatar } from './components/assistant-avatar'
 import { AssistantChatResult, UserMessageContent } from './components/assistant-chat-result'
+import { AssistantMesh } from './components/assistant-mesh'
 import { AssistantPanel, type AssistantTab } from './components/assistant-panel'
 import { ChatMemory } from './components/chat-memory'
 import { WorkbenchComposer } from './components/composer'
@@ -2242,62 +2243,69 @@ export function AIWorkbenchController() {
             : undefined
         }
         railActions={
-          personal ? (
-            <>
-              <Tooltip title="动态" placement="right">
-                <Button
-                  type="text"
-                  aria-label="动态"
-                  className="soha-ai-rail-action soha-icon-trigger"
-                  aria-pressed={feedView}
-                  icon={<AnimatedIcon name="tasks" />}
-                  onClick={() => {
-                    setPanel(null)
-                    updateSearchParams({ view: 'feed' })
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="成果" placement="right">
-                <Button
-                  type="text"
-                  aria-label="成果"
-                  className="soha-ai-rail-action soha-icon-trigger"
-                  aria-pressed={panel === 'assistant' && assistantTab === 'results'}
-                  icon={<AnimatedIcon name="results" />}
-                  onClick={() => {
-                    setAssistantTab('results')
-                    setPanel('assistant')
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="即将到来" placement="right">
-                <Button
-                  type="text"
-                  aria-label="即将到来"
-                  className="soha-ai-rail-action soha-icon-trigger"
-                  aria-pressed={panel === 'assistant' && assistantTab === 'upcoming'}
-                  icon={<AnimatedIcon name="calendar" />}
-                  onClick={() => {
-                    setAssistantTab('upcoming')
-                    setPanel('assistant')
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="助手身份" placement="right">
-                <Button
-                  type="text"
-                  aria-label="助手身份"
-                  className="soha-ai-rail-action soha-icon-trigger"
-                  aria-pressed={panel === 'assistant' && assistantTab === 'identity'}
-                  icon={<AnimatedIcon name="identity" />}
-                  onClick={() => {
-                    setAssistantTab('identity')
-                    setPanel('assistant')
-                  }}
-                />
-              </Tooltip>
-            </>
-          ) : undefined
+          <>
+            <AssistantMesh
+              owner={owner}
+              sessions={visibleSessions}
+              sessionId={requestedSessionId}
+            />
+            {personal ? (
+              <>
+                <Tooltip title="动态" placement="right">
+                  <Button
+                    type="text"
+                    aria-label="动态"
+                    className="soha-ai-rail-action soha-icon-trigger"
+                    aria-pressed={feedView}
+                    icon={<AnimatedIcon name="tasks" />}
+                    onClick={() => {
+                      setPanel(null)
+                      updateSearchParams({ view: 'feed' })
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="成果" placement="right">
+                  <Button
+                    type="text"
+                    aria-label="成果"
+                    className="soha-ai-rail-action soha-icon-trigger"
+                    aria-pressed={panel === 'assistant' && assistantTab === 'results'}
+                    icon={<AnimatedIcon name="results" />}
+                    onClick={() => {
+                      setAssistantTab('results')
+                      setPanel('assistant')
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="即将到来" placement="right">
+                  <Button
+                    type="text"
+                    aria-label="即将到来"
+                    className="soha-ai-rail-action soha-icon-trigger"
+                    aria-pressed={panel === 'assistant' && assistantTab === 'upcoming'}
+                    icon={<AnimatedIcon name="calendar" />}
+                    onClick={() => {
+                      setAssistantTab('upcoming')
+                      setPanel('assistant')
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="助手身份" placement="right">
+                  <Button
+                    type="text"
+                    aria-label="助手身份"
+                    className="soha-ai-rail-action soha-icon-trigger"
+                    aria-pressed={panel === 'assistant' && assistantTab === 'identity'}
+                    icon={<AnimatedIcon name="identity" />}
+                    onClick={() => {
+                      setAssistantTab('identity')
+                      setPanel('assistant')
+                    }}
+                  />
+                </Tooltip>
+              </>
+            ) : null}
+          </>
         }
         onClosePanel={() => setPanel(null)}
         sidebar={

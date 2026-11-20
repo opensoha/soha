@@ -261,6 +261,8 @@ type Service struct {
 	nativeAuthorization   NativeAuthorizationReader
 	nativeRuns            NativeRunStore
 	dshRuntime            DSHRuntime
+	assistantMeshSkills   AssistantMeshSkillReader
+	assistantMeshMCP      AssistantMeshMCPReader
 	dshRuns               DSHRunStore
 	dshLocks              sync.Map
 	nativeTaskParents     NativeTaskParentStore

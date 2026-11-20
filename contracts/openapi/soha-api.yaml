@@ -1550,6 +1550,294 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: listAssistantMeshAssets
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - shared
+              - review
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - skill
+              - experience_card
+              - mcp
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - assistant-mesh
+      operationId: createAssistantMeshAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshAssetInput"
+      responses:
+        "201":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/extract:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: extractAssistantMeshAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshExtractRequest"
+      responses:
+        "201":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/{assetId}:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: getAssistantMeshAsset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mcp
+          description: Select the managed MCP proposal collection.
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - assistant-mesh
+      operationId: updateAssistantMeshDraft
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDraftUpdate"
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/{assetId}/actions/{action}:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: actOnAssistantMeshAsset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - publish
+              - trial
+              - run
+              - approve
+              - reject
+              - withdraw
+              - revoke
+              - invoke
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mcp
+          description: Select the managed MCP proposal collection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshActionRequest"
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshActionEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /settings/ai/assistant-mesh:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: getAssistantMeshSettings
+      responses:
+        "200":
+          description: Organization settings for Heya Assistant Mesh.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshSettingsEnvelope" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [ assistant-mesh ]
+      operationId: updateAssistantMeshSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshSettings" }
+      responses:
+        "200":
+          description: Saved settings. The experience card lifetime applies to future publications.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshSettingsEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /settings/ai/workbench-model:
     put:
       tags: [ Settings ]
@@ -36865,6 +37153,399 @@ components:
       required: [ data ]
       properties:
         data: { $ref: "#/components/schemas/AIContextInspection" }
+      additionalProperties: false
+    AssistantMeshAssetInput:
+      type: object
+      required:
+        - kind
+        - title
+        - body
+      properties:
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+            - mcp
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        body:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        applicability:
+          type: string
+          maxLength: 4096
+        files:
+          type: object
+          description: Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes.
+          maxProperties: 31
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 16384
+        dependencies:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - version
+            properties:
+              id:
+                type: string
+                minLength: 1
+                maxLength: 48
+              version:
+                type: string
+                minLength: 1
+                maxLength: 64
+            additionalProperties: false
+          maxItems: 16
+        parameters:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: object
+            required:
+              - type
+            properties:
+              type:
+                type: string
+                enum:
+                  - string
+                  - integer
+                  - number
+                  - boolean
+              description:
+                type: string
+                maxLength: 256
+              required:
+                type: boolean
+            additionalProperties: false
+      additionalProperties: false
+    AssistantMeshDraftUpdate:
+      type: object
+      required:
+        - input
+        - expectedDigest
+      properties:
+        input:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        expectedDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+      additionalProperties: false
+    AssistantMeshAudience:
+      type: object
+      required:
+        - visibility
+      properties:
+        visibility:
+          type: string
+          enum:
+            - private
+            - teams
+            - projects
+            - organization
+        teams:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 100
+        projects:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 100
+      additionalProperties: false
+    AssistantMeshVersion:
+      type: object
+      required:
+        - input
+        - digest
+        - version
+        - audience
+      properties:
+        input:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        version:
+          type: integer
+          minimum: 1
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        expiresAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshTrial:
+      type: object
+      required:
+        - runId
+        - digest
+        - status
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+            - canceled
+            - expired
+      additionalProperties: false
+    AssistantMeshPublicationReview:
+      type: object
+      required:
+        - status
+        - candidate
+      properties:
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+            - withdrawn
+        reason:
+          type: string
+        candidate:
+          $ref: "#/components/schemas/AssistantMeshVersion"
+      additionalProperties: false
+    AssistantMeshAsset:
+      type: object
+      required:
+        - id
+        - ownerUserId
+        - kind
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerUserId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+            - mcp
+        draft:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        draftDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        published:
+          $ref: "#/components/schemas/AssistantMeshVersion"
+        review:
+          $ref: "#/components/schemas/AssistantMeshPublicationReview"
+        trial:
+          $ref: "#/components/schemas/AssistantMeshTrial"
+        findings:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 64
+      additionalProperties: false
+    AssistantMeshAssetPage:
+      type: object
+      required:
+        - items
+      properties:
+        publishingDefaults:
+          type: object
+          required: [visibility, lifetimeDays, allowPermanentExperienceCards]
+          properties:
+            visibility:
+              type: string
+              enum: [private, teams, projects]
+            lifetimeDays:
+              type: integer
+              minimum: 7
+              maximum: 365
+            allowPermanentExperienceCards:
+              type: boolean
+          additionalProperties: false
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshAsset"
+        nextOffset:
+          type: integer
+          minimum: 0
+      additionalProperties: false
+    AssistantMeshAssetEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshAsset"
+      additionalProperties: false
+    AssistantMeshExtractRequest:
+      type: object
+      required:
+        - kind
+        - title
+        - sessionId
+      properties:
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        sessionId:
+          type: string
+          format: uuid
+        messageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 20
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+    AssistantMeshActionRequest:
+      type: object
+      properties:
+        expectedDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+          description: Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke.
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        lifetimeDays:
+          type: integer
+          minimum: 7
+          maximum: 365
+        permanent:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        sessionId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        parameters:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+        resourceId:
+          type: string
+          format: uuid
+      additionalProperties: false
+    AssistantMeshProjectResult:
+      type: object
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        status:
+          type: string
+          minLength: 1
+          maxLength: 80
+      additionalProperties: false
+    AssistantMeshActionResult:
+      type: object
+      required:
+        - asset
+      properties:
+        asset:
+          $ref: "#/components/schemas/AssistantMeshAsset"
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        project:
+          $ref: "#/components/schemas/AssistantMeshProjectResult"
+      additionalProperties: false
+    AssistantMeshActionEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshActionResult"
+      additionalProperties: false
+    AssistantMeshSettings:
+      type: object
+      required: [ enabled, organizationApproverUserIds, defaultVisibility, experienceCardLifetimeDays, allowPermanentExperienceCards ]
+      properties:
+        enabled:
+          type: boolean
+        organizationApproverUserIds:
+          type: array
+          description: Explicit reviewer user IDs. An empty list uses platform administrators.
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid, pattern: '^[0-9a-f-]{36}$' }
+        defaultVisibility:
+          type: string
+          description: The suggested initial audience kind. Specific teams or projects must be selected during publication.
+          enum: [ private, teams, projects ]
+        experienceCardLifetimeDays:
+          type: integer
+          minimum: 7
+          maximum: 365
+        allowPermanentExperienceCards:
+          type: boolean
+      additionalProperties: false
+    AssistantMeshSettingsEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshSettings" }
       additionalProperties: false
     AIWorkbenchModelSettings:
       type: object

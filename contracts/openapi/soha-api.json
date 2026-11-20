@@ -7230,6 +7230,570 @@
         },
         "type": "object"
       },
+      "AssistantMeshActionEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshActionResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshActionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "$ref": "#/components/schemas/AssistantMeshAudience"
+          },
+          "expectedDigest": {
+            "description": "Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke.",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "lifetimeDays": {
+            "maximum": 365,
+            "minimum": 7,
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "type": "object"
+          },
+          "permanent": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "resourceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssistantMeshActionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/AssistantMeshAsset"
+          },
+          "project": {
+            "$ref": "#/components/schemas/AssistantMeshProjectResult"
+          },
+          "runId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshAsset": {
+        "additionalProperties": false,
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/AssistantMeshAssetInput"
+          },
+          "draftDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "skill",
+              "experience_card",
+              "mcp"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "published": {
+            "$ref": "#/components/schemas/AssistantMeshVersion"
+          },
+          "review": {
+            "$ref": "#/components/schemas/AssistantMeshPublicationReview"
+          },
+          "trial": {
+            "$ref": "#/components/schemas/AssistantMeshTrial"
+          }
+        },
+        "required": [
+          "id",
+          "ownerUserId",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshAssetEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshAsset"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshAssetInput": {
+        "additionalProperties": false,
+        "properties": {
+          "applicability": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "body": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "type": "string"
+          },
+          "dependencies": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 48,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "version": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "version"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "files": {
+            "additionalProperties": {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string"
+            },
+            "description": "Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes.",
+            "maxProperties": 31,
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "skill",
+              "experience_card",
+              "mcp"
+            ],
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "enum": [
+                    "string",
+                    "integer",
+                    "number",
+                    "boolean"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            "maxProperties": 32,
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "body"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshAssetPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshAsset"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "publishingDefaults": {
+            "additionalProperties": false,
+            "properties": {
+              "allowPermanentExperienceCards": {
+                "type": "boolean"
+              },
+              "lifetimeDays": {
+                "maximum": 365,
+                "minimum": 7,
+                "type": "integer"
+              },
+              "visibility": {
+                "enum": [
+                  "private",
+                  "teams",
+                  "projects"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "visibility",
+              "lifetimeDays",
+              "allowPermanentExperienceCards"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshAudience": {
+        "additionalProperties": false,
+        "properties": {
+          "projects": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "teams": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "teams",
+              "projects",
+              "organization"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDraftUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/AssistantMeshAssetInput"
+          }
+        },
+        "required": [
+          "input",
+          "expectedDigest"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshExtractRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "skill",
+              "experience_card"
+            ],
+            "type": "string"
+          },
+          "messageIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "runId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshProjectResult": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshPublicationReview": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/AssistantMeshVersion"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "candidate"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allowPermanentExperienceCards": {
+            "type": "boolean"
+          },
+          "defaultVisibility": {
+            "description": "The suggested initial audience kind. Specific teams or projects must be selected during publication.",
+            "enum": [
+              "private",
+              "teams",
+              "projects"
+            ],
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "experienceCardLifetimeDays": {
+            "maximum": 365,
+            "minimum": 7,
+            "type": "integer"
+          },
+          "organizationApproverUserIds": {
+            "description": "Explicit reviewer user IDs. An empty list uses platform administrators.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f-]{36}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "enabled",
+          "organizationApproverUserIds",
+          "defaultVisibility",
+          "experienceCardLifetimeDays",
+          "allowPermanentExperienceCards"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshSettingsEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshSettings"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshTrial": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "runId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "canceled",
+              "expired"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "digest",
+          "status"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "$ref": "#/components/schemas/AssistantMeshAudience"
+          },
+          "digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/AssistantMeshAssetInput"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "digest",
+          "version",
+          "audience"
+        ],
+        "type": "object"
+      },
       "AuditLog": {
         "additionalProperties": false,
         "properties": {
@@ -106832,6 +107396,400 @@
         ]
       }
     },
+    "/copilot/assistant-mesh/assets": {
+      "get": {
+        "operationId": "listAssistantMeshAssets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mine",
+                "shared",
+                "review"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "skill",
+                "experience_card",
+                "mcp"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshAssetPage"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "post": {
+        "operationId": "createAssistantMeshAsset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshAssetInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshAssetEnvelope"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/assets/{assetId}": {
+      "get": {
+        "operationId": "getAssistantMeshAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Select the managed MCP proposal collection.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mcp"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshAssetEnvelope"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "put": {
+        "operationId": "updateAssistantMeshDraft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDraftUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshAssetEnvelope"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/assets/{assetId}/actions/{action}": {
+      "post": {
+        "operationId": "actOnAssistantMeshAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "enum": [
+                "publish",
+                "trial",
+                "run",
+                "approve",
+                "reject",
+                "withdraw",
+                "revoke",
+                "invoke"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Select the managed MCP proposal collection.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "mcp"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshActionEnvelope"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/assets/extract": {
+      "post": {
+        "operationId": "extractAssistantMeshAsset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshAssetEnvelope"
+                }
+              }
+            },
+            "description": "Heya Assistant Mesh result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
     "/copilot/assistant/access": {
       "get": {
         "description": "Current user's activation state. Ordinary chat permission allows viewing and requesting activation, never approves it.",
@@ -133564,6 +134522,69 @@
           "Settings"
         ],
         "x-soha-implementation-status": "implemented"
+      }
+    },
+    "/settings/ai/assistant-mesh": {
+      "get": {
+        "operationId": "getAssistantMeshSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshSettingsEnvelope"
+                }
+              }
+            },
+            "description": "Organization settings for Heya Assistant Mesh."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "put": {
+        "operationId": "updateAssistantMeshSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshSettingsEnvelope"
+                }
+              }
+            },
+            "description": "Saved settings. The experience card lifetime applies to future publications."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
       }
     },
     "/settings/ai/skills": {

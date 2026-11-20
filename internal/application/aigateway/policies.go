@@ -69,6 +69,10 @@ func (s *Service) authorizeToolGrant(ctx context.Context, principal domainidenti
 	if err != nil {
 		return false, err
 	}
+	meshProject := assistantMeshProjectGrantRequired(ctx)
+	if meshProject && (tool.Name != "docker.projects.get" || len(grants) == 0) {
+		return false, apperrors.ErrAccessDenied
+	}
 	if len(grants) == 0 {
 		return false, nil
 	}
@@ -78,6 +82,9 @@ func (s *Service) authorizeToolGrant(ctx context.Context, principal domainidenti
 	}
 	requiresApproval := false
 	for _, scope := range capabilityInvocationScopes(ctx, tool.Name, invocationScope) {
+		if meshProject && !hasAssistantMeshProjectGrant(tool, grants, permissionKeys, scope) {
+			return false, apperrors.ErrAccessDenied
+		}
 		allowed, approval, reason := toolAllowedByGrantsForInvocation(tool, grants, permissionKeys, scope)
 		if !allowed {
 			return false, fmt.Errorf("%w: AI Gateway tool grant rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
@@ -85,6 +92,29 @@ func (s *Service) authorizeToolGrant(ctx context.Context, principal domainidenti
 		requiresApproval = requiresApproval || approval
 	}
 	return requiresApproval, nil
+}
+
+type assistantMeshProjectGrantKey struct{}
+
+func WithAssistantMeshProjectGrant(ctx context.Context) context.Context {
+	return context.WithValue(ctx, assistantMeshProjectGrantKey{}, true)
+}
+
+func assistantMeshProjectGrantRequired(ctx context.Context) bool {
+	required, _ := ctx.Value(assistantMeshProjectGrantKey{}).(bool)
+	return required
+}
+
+func hasAssistantMeshProjectGrant(tool domainaigateway.ToolCapability, grants []domainaigateway.ToolGrant, permissions []string, scope map[string]string) bool {
+	project := scope["projectId"]
+	if project == "" {
+		return false
+	}
+	return slices.ContainsFunc(grants, func(grant domainaigateway.ToolGrant) bool {
+		return grantEffect(grant.Effect) == "allow" && grantMatchesTool(grant.ToolName, tool.Name) &&
+			hasAllPermissions(permissions, grant.PermissionKeys) && gatewayResourceScopeMatches(grant.ResourceScopes, scope) &&
+			slices.Contains(gatewayResourceScopeValues(grant.ResourceScopes, "projectId", "dockerProject"), project)
+	})
 }
 func (s *Service) filterToolsByGrants(ctx context.Context, principal domainidentity.Principal, aiClientID string, tools []domainaigateway.ToolCapability, permissionKeys []string) ([]domainaigateway.ToolCapability, int, error) {
 	grants, err := s.activeToolGrants(ctx, principal, aiClientID)

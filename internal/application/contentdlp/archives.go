@@ -39,6 +39,11 @@ func archiveTexts(ctx context.Context, data []byte) ([]string, string) {
 	return a.texts, status
 }
 
+// TextArchive returns the same bounded text segments used for DLP inspection.
+func TextArchive(ctx context.Context, data []byte) ([]string, string) {
+	return archiveTexts(ctx, data)
+}
+
 func (a *archiveInspection) inspect(data []byte, depth int) string {
 	if a.ctx.Err() != nil {
 		return "timeout"

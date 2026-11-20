@@ -39,6 +39,13 @@ export const settingsQueries = {
       enabled,
     }),
   ai: {
+    assistantMesh: (owner: string) =>
+      queryOptions({
+        queryKey: settingsKeys.ai.assistantMesh(owner),
+        queryFn: settingsApi.ai.assistantMesh,
+        enabled: Boolean(owner),
+        retry: false,
+      }),
     runtimeAssets: (owner: string, enabled = true) =>
       queryOptions({
         queryKey: settingsKeys.ai.runtimeAssets(owner),
