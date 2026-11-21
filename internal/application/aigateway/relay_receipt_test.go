@@ -92,3 +92,40 @@ func TestWorkbenchPartialStreamDoesNotReportSuccess(t *testing.T) {
 		t.Fatal("partial stream was reported as a successful model result")
 	}
 }
+
+func TestWorkbenchSingleAttemptDoesNotReplayToFallback(t *testing.T) {
+	var firstCalls, fallbackCalls atomic.Int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		firstCalls.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("close upstream before headers: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fallbackCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ready\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer second.Close()
+	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, "fixture-key")
+	repo.routes[1].Priority = 2
+	service := newRelayRuntimeTestService(repo)
+	request := WorkbenchRelayRequest{
+		PublicModel: "gpt-public", SingleAttempt: true,
+		Messages: []WorkbenchRelayMessage{{Role: "user", Content: "authorized fixture"}},
+	}
+	_, err := service.InvokeWorkbenchModelStream(t.Context(), relayWorkbenchTestPrincipal(), request, nil)
+	if err == nil || firstCalls.Load() != 1 || fallbackCalls.Load() != 0 {
+		t.Fatalf("single attempt: first=%d fallback=%d err=%v", firstCalls.Load(), fallbackCalls.Load(), err)
+	}
+	request.SingleAttempt = false
+	reply, err := service.InvokeWorkbenchModelStream(t.Context(), relayWorkbenchTestPrincipal(), request, nil)
+	if err != nil || reply.Content != "ready" || fallbackCalls.Load() != 1 {
+		t.Fatalf("default fallback: first=%d fallback=%d err=%v reply=%+v", firstCalls.Load(), fallbackCalls.Load(), err, reply)
+	}
+}

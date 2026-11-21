@@ -126,18 +126,35 @@ func (s *Reception) recheckReception(ctx context.Context, caller identity.Princi
 }
 
 func (s *Reception) tryReceptionAnswer(ctx context.Context, caller identity.Principal, item domain.Inquiry, fact ReceptionFact) (string, error) {
-	visible, err := s.citationVisible(ctx, caller, item.OwnerID, fact.Citation)
-	if err != nil || !visible {
-		return "", err
+	refresh := func(ctx context.Context) (identity.Principal, error) {
+		latest, err := s.store.GetInquiry(ctx, item.CallerID, item.RequestID)
+		if err != nil {
+			return identity.Principal{}, err
+		}
+		if latest.ID != item.ID || latest.Status != domain.InquiryProcessing || !nowUTC().Before(item.DueAt) {
+			return identity.Principal{}, apperrors.ErrConflict
+		}
+		current, err := s.recheckReception(ctx, caller, item.OwnerID)
+		if err != nil {
+			return identity.Principal{}, err
+		}
+		visible, err := s.citationVisible(ctx, current, item.OwnerID, fact.Citation)
+		if err != nil {
+			return identity.Principal{}, err
+		}
+		policy, err := s.assets.InquiryPolicy(ctx)
+		if err != nil {
+			return identity.Principal{}, err
+		}
+		if !visible {
+			return identity.Principal{}, apperrors.ErrNotFound
+		}
+		if _, coverage := receptionScore(item.Question, fact.Citation.Title); coverage < policy.ReceptionMinScore {
+			return identity.Principal{}, apperrors.ErrNotFound
+		}
+		return current, nil
 	}
-	policy, err := s.assets.InquiryPolicy(ctx)
-	if err != nil {
-		return "", err
-	}
-	if _, coverage := receptionScore(item.Question, fact.Citation.Title); coverage < policy.ReceptionMinScore {
-		return "", nil
-	}
-	answer, err := s.model.AnswerReception(ctx, caller, item.Question, fact)
+	answer, err := s.model.AnswerReception(ctx, caller, item.Question, fact, refresh)
 	if err != nil || answer == "" {
 		return "", nil
 	}
@@ -145,7 +162,7 @@ func (s *Reception) tryReceptionAnswer(ctx context.Context, caller identity.Prin
 	if err != nil {
 		return "", err
 	}
-	visible, err = s.citationVisible(ctx, current, item.OwnerID, fact.Citation)
+	visible, err := s.citationVisible(ctx, current, item.OwnerID, fact.Citation)
 	if err != nil || !visible {
 		return "", err
 	}

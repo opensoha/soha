@@ -84,7 +84,12 @@ type receptionTestModel struct {
 	beforeReturn func()
 }
 
-func (m *receptionTestModel) AnswerReception(_ context.Context, _ identity.Principal, _ string, fact ReceptionFact) (string, error) {
+func (m *receptionTestModel) AnswerReception(ctx context.Context, _ identity.Principal, _ string, fact ReceptionFact, refresh func(context.Context) (identity.Principal, error)) (string, error) {
+	if refresh != nil {
+		if _, err := refresh(ctx); err != nil {
+			return "", nil
+		}
+	}
 	m.facts = append(m.facts, fact)
 	if m.beforeReturn != nil {
 		m.beforeReturn()
@@ -274,7 +279,7 @@ func TestReceptionModelHasNoSessionOrToolsAndRequiresExactCitation(t *testing.T)
 	model := GatewayReceptionModel{Gateway: gateway, Settings: receptionModelSettings{}}
 	fact := ReceptionFact{Citation: domain.Citation{AssetID: "card", Version: 2, Title: "订单同步"}, Body: "published text"}
 	gateway.response.Content = `{"assetId":"card","version":2,"answer":"grounded"}`
-	got, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact)
+	got, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact, nil)
 	if err != nil || got != "grounded" {
 		t.Fatalf("valid answer: %q, %v", got, err)
 	}
@@ -285,12 +290,38 @@ func TestReceptionModelHasNoSessionOrToolsAndRequiresExactCitation(t *testing.T)
 	}
 	for _, content := range []string{`{}`, `{"assetId":"hidden","version":2,"answer":"guess"}`, `{"assetId":"card","version":1,"answer":"old"}`} {
 		gateway.response.Content = content
-		if output, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact); err == nil || output != "" {
+		if output, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact, nil); err == nil || output != "" {
 			t.Fatalf("unbound reference accepted: %q", output)
 		}
 	}
 	gateway.response = aigateway.WorkbenchRelayResponse{Content: `{"assetId":"card","version":2,"answer":"grounded"}`, ToolCalls: []aigateway.WorkbenchToolCall{{Name: "invented"}}}
-	if output, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact); !errors.Is(err, apperrors.ErrAccessDenied) || output != "" {
+	if output, err := model.AnswerReception(ctx, employee(receptionCaller), "订单同步", fact, nil); !errors.Is(err, apperrors.ErrAccessDenied) || output != "" {
 		t.Fatalf("unexpected model tool response accepted: %q, %v", output, err)
+	}
+}
+
+type receptionRuntimeFixture struct {
+	calls int
+}
+
+func (r *receptionRuntimeFixture) RunDSHReception(_ context.Context, _ string, _ func(context.Context) (aigateway.WorkbenchRelayResponse, error)) (aigateway.WorkbenchRelayResponse, error) {
+	r.calls++
+	return aigateway.WorkbenchRelayResponse{}, apperrors.ErrAccessDenied
+}
+
+func TestReceptionRuntimeRejectsBeforeGateway(t *testing.T) {
+	gateway, runtime := &receptionGatewayFixture{}, &receptionRuntimeFixture{}
+	model := GatewayReceptionModel{Gateway: gateway, Settings: receptionModelSettings{}, Runtime: runtime}
+	fact := ReceptionFact{Citation: domain.Citation{AssetID: "card", Version: 2, Title: "订单同步"}, Body: "published text"}
+	caller := employee(receptionCaller)
+	if output, err := model.AnswerReception(t.Context(), caller, "订单同步", fact, nil); !errors.Is(err, apperrors.ErrInvalidArgument) || output != "" {
+		t.Fatalf("runtime accepted a nil refresh: %q, %v", output, err)
+	}
+	refresh := func(context.Context) (identity.Principal, error) { return caller, nil }
+	if output, err := model.AnswerReception(t.Context(), caller, "订单同步", fact, refresh); !errors.Is(err, apperrors.ErrAccessDenied) || output != "" {
+		t.Fatalf("runtime rejection was bypassed: %q, %v", output, err)
+	}
+	if runtime.calls != 1 || gateway.request.Mode != "" {
+		t.Fatalf("runtime rejection reached gateway: %d, %+v", runtime.calls, gateway.request)
 	}
 }

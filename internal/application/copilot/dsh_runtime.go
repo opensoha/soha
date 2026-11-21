@@ -71,6 +71,7 @@ func (s *Service) ConfigureDSHRuntime(client DSHRuntime, store DSHRunStore) erro
 		return apperrors.ErrInvalidArgument
 	}
 	s.dshRuntime, s.dshRuns = client, store
+	s.dshReception = &dshReceptionRounds{active: make(map[string]*dshReceptionRound)}
 	return nil
 }
 func dshHash(v any) string {
@@ -636,6 +637,9 @@ func (s *Service) InvokeDSHModelStream(ctx context.Context, grant string, in DSH
 	return s.invokeDSHModel(ctx, grant, in, emit)
 }
 func (s *Service) invokeDSHModel(ctx context.Context, grant string, in DSHModelCall, emit func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error) {
+	if isDSHReception(in.RunID) {
+		return s.invokeDSHReception(ctx, grant, in)
+	}
 	s.dshLock(in.RunID).Lock()
 	defer s.dshLock(in.RunID).Unlock()
 	lease, cp, principal, ctx, err := s.authorizeDSHCallback(ctx, grant, in.DSHIdentity)
@@ -973,6 +977,9 @@ func (d dshGovernedStore) AdvanceNativeRun(ctx context.Context, lease domaincopi
 	return saved, err
 }
 func (s *Service) InvokeDSHTool(ctx context.Context, grant string, in domaincopilot.DSHToolCall) (domaincopilot.DSHToolResult, error) {
+	if isDSHReception(in.RunID) {
+		return domaincopilot.DSHToolResult{}, apperrors.ErrAccessDenied
+	}
 	s.dshLock(in.RunID).Lock()
 	defer s.dshLock(in.RunID).Unlock()
 	id := domaincopilot.DSHIdentity{RunID: in.RunID, Attempt: in.Attempt, Fence: in.Fence}
