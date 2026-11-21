@@ -1,0 +1,5 @@
+{
+  "pluginId": "example.plugin",
+  "version": "0.1.0",
+  "enable": false
+}

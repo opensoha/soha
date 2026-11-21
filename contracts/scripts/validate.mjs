@@ -101,6 +101,10 @@ const requiredJsonSchemas = [
     file: "plugins/marketplace-catalog.schema.json",
     fixtureDir: "fixtures/json-schema/marketplace-catalog",
   },
+  {
+    file: "plugins/marketplace-repositories.schema.json",
+    fixtureDir: "fixtures/json-schema/marketplace-repositories",
+  },
   { file: "events/event-envelope.schema.json", fixtureDir: "fixtures/json-schema/event-envelope" },
   { file: "auth/token-claims.schema.json", fixtureDir: "fixtures/json-schema/token-claims" },
   { file: "auth/permission-catalog.schema.json", fixtureDir: "fixtures/json-schema/permission-catalog" },

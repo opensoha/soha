@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "marketplace.opensoha.io/repositories/v1",
+  "sourceId": "opensoha-official",
+  "repositories": [{
+    "id": "opensoha.example-skill-pack",
+    "name": "Soha Example Skill Pack",
+    "publisher": "OpenSoha",
+    "type": "skill-pack",
+    "repositoryUrl": "https://github.com/opensoha/soha-plugin-example-skill-pack",
+    "versions": [{"version": "0.1.1"}]
+  }]
+}

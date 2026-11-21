@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const defaultUserAgent = "opensoha-contracts/0.2.1"
+const defaultUserAgent = "opensoha-contracts/0.2.2"
 
 const (
 	maxJSONResponseBytes = 10 << 20
