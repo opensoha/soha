@@ -16,6 +16,16 @@ type PluginExtensionPoints = sohaapi.PluginExtensionPoints
 type MarketplacePlugin = sohaapi.MarketplacePlugin
 type MarketplacePluginVersion = sohaapi.MarketplacePluginVersion
 type InstalledPlugin = sohaapi.InstalledPlugin
+type PluginSourceInfo = sohaapi.PluginSourceInfo
+type PluginRepositoryPreviewRequest = sohaapi.PluginRepositoryPreviewRequest
+type PluginRepositoryPreview = sohaapi.PluginRepositoryPreview
+type PluginRepositoryPreviewSource = sohaapi.PluginRepositoryPreviewSource
+type PluginRepositoryInstallRequest = sohaapi.PluginRepositoryInstallRequest
+type PluginRepositoryUpgradeRequest = sohaapi.PluginRepositoryUpgradeRequest
+type PluginRepositoryRefsRequest = sohaapi.PluginRepositoryRefsRequest
+type PluginRepositoryRef = sohaapi.PluginRepositoryRef
+type PluginRepositoryRefList = sohaapi.PluginRepositoryRefList
+type PluginUpdate = sohaapi.PluginUpdate
 type PluginInstallRequest = sohaapi.PluginInstallRequest
 type PluginConfigRequest = sohaapi.PluginConfigRequest
 type PluginPermissionRequest = sohaapi.PluginPermissionRequest
@@ -25,6 +35,12 @@ type PluginArtifactRecord = sohaapi.PluginArtifactRecord
 type CompanionActivationRequest = sohaapi.CompanionActivationRequest
 type CompanionRollbackRequest = sohaapi.CompanionRollbackRequest
 type CompanionPackManifest = sohaapi.CompanionPackManifest
+
+const (
+	SourceKindGitHubRepo     = sohaapi.GithubRepo
+	SourceKindMarketplace    = sohaapi.Marketplace
+	SourceKindDirectManifest = sohaapi.DirectManifest
+)
 
 type MarketplaceFilter struct {
 	Query          string
@@ -63,6 +79,7 @@ type ExtensionRecord struct {
 type Repository interface {
 	ListInstalled(context.Context) ([]InstalledPlugin, error)
 	GetInstalled(context.Context, string) (InstalledPlugin, error)
-	UpsertInstalled(context.Context, InstalledPlugin) (InstalledPlugin, error)
+	CreateInstalled(context.Context, InstalledPlugin, func(context.Context) error) (InstalledPlugin, bool, error)
+	UpdateInstalled(ctx context.Context, expected InstalledPlugin, item InstalledPlugin, beforeUpdate func(context.Context, *InstalledPlugin) error) (InstalledPlugin, error)
 	RemoveInstalled(context.Context, string, func(context.Context, InstalledPlugin) error) (InstalledPlugin, error)
 }

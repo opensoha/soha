@@ -13,6 +13,7 @@ import (
 	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"go.uber.org/zap"
 )
 
 type restartableModule interface {
@@ -65,7 +66,7 @@ func (a moduleLifecycleApplier) Apply(ctx context.Context, _, next appruntimecon
 }
 
 type marketplaceConfigApplier struct {
-	base    cfgpkg.Config
+	base    cfgpkg.PluginMarketplaceConfig
 	plugins *appplugin.Service
 }
 
@@ -156,16 +157,17 @@ func virtualizationRuntimeHandler(lifecycleCtx context.Context, service *appvirt
 }
 
 func (a marketplaceConfigApplier) Handles(key string) bool {
-	return key == appruntimeconfig.KeyMarketplaceURL || key == appruntimeconfig.KeyMarketplaceSourceID
+	return key == appruntimeconfig.KeyMarketplaceURL || key == appruntimeconfig.KeyMarketplaceSourceID || key == appruntimeconfig.KeyMarketplaceThirdPartyURLs
 }
 
 func (a marketplaceConfigApplier) Apply(_ context.Context, _, next appruntimeconfig.Snapshot, keys []string) ([]sohaapi.RuntimeConfigAppliedItem, error) {
-	cfg := a.base
-	cfg.Plugins.Marketplace.URL = next.String(appruntimeconfig.KeyMarketplaceURL, cfgpkg.DefaultMarketplaceURL)
-	cfg.Plugins.Marketplace.SourceID = next.String(appruntimeconfig.KeyMarketplaceSourceID, cfgpkg.DefaultMarketplaceSourceID)
-	provider, err := newMarketplaceProvider(cfg)
+	managed, err := next.ManagedMarketplaceSources()
 	if err == nil {
-		err = a.plugins.ReconfigureMarketplace(provider)
+		var provider appplugin.MarketplaceProvider
+		provider, err = newMarketplaceProvider(runtimeMarketplaceConfig(a.base, next), managed)
+		if err == nil {
+			err = a.plugins.ReconfigureMarketplace(provider)
+		}
 	}
 	items := make([]sohaapi.RuntimeConfigAppliedItem, 0, len(keys))
 	for _, key := range keys {
@@ -180,4 +182,39 @@ func (a marketplaceConfigApplier) Apply(_ context.Context, _, next appruntimecon
 		return items, fmt.Errorf("reconfigure marketplace: %w", err)
 	}
 	return items, nil
+}
+
+func runtimeMarketplaceConfig(base cfgpkg.PluginMarketplaceConfig, snapshot appruntimeconfig.Snapshot) cfgpkg.PluginMarketplaceConfig {
+	base.URL = snapshot.String(appruntimeconfig.KeyMarketplaceURL, cfgpkg.DefaultMarketplaceURL)
+	base.SourceID = snapshot.String(appruntimeconfig.KeyMarketplaceSourceID, cfgpkg.DefaultMarketplaceSourceID)
+	return base
+}
+
+func startupMarketplaceProvider(base cfgpkg.PluginMarketplaceConfig, snapshot appruntimeconfig.Snapshot, logger *zap.Logger) (appplugin.MarketplaceProvider, error) {
+	managed, err := snapshot.ManagedMarketplaceSources()
+	if err != nil {
+		logger.Warn("some stored third-party marketplace sources are inactive", zap.Error(err))
+	}
+	effective := runtimeMarketplaceConfig(base, snapshot)
+	provider, err := newMarketplaceProvider(effective, managed)
+	if err == nil || effective.URL == base.URL {
+		return provider, err
+	}
+	// An older failed apply can leave an invalid primary URL in the desired snapshot.
+	fallback, fallbackErr := newMarketplaceProvider(base, managed)
+	if fallbackErr != nil {
+		return nil, err
+	}
+	logger.Warn("the stored primary marketplace source is inactive")
+	return fallback, nil
+}
+
+func deploymentMarketplaceSources(configured []cfgpkg.PluginMarketplaceSource) []appplugin.MarketplaceSource {
+	sources := make([]appplugin.MarketplaceSource, 0, len(configured))
+	for _, source := range configured {
+		if strings.TrimSpace(source.URL) != "" {
+			sources = append(sources, appplugin.MarketplaceSource{ID: source.ID, URL: source.URL})
+		}
+	}
+	return sources
 }

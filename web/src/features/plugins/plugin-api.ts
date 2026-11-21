@@ -1,6 +1,10 @@
 import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import type {
+  MarketplacePluginListEnvelope,
+  PluginUpdateListEnvelope,
+} from '@opensoha/contracts/gen/ts/sohaapi'
+import type {
   InstalledPlugin,
   MarketplacePlugin,
   PluginConfigRequest,
@@ -8,6 +12,12 @@ import type {
   PluginInstallRequest,
   PluginManifest,
   PluginMarketplaceFilters,
+  PluginRepositoryInstallRequest,
+  PluginRepositoryPreview,
+  PluginRepositoryPreviewRequest,
+  PluginRepositoryRefList,
+  PluginRepositoryRefsRequest,
+  PluginRepositoryUpgradeRequest,
 } from './plugin-model'
 import { normalizePluginMarketplaceFilters } from './plugin-model'
 
@@ -32,6 +42,14 @@ async function unwrap<T>(request: Promise<ApiResponse<T>>): Promise<T> {
 export const pluginApi = {
   marketplace: (filters: PluginMarketplaceFilters = {}) =>
     unwrap(api.get<ApiResponse<MarketplacePlugin[]>>(withQuery('/plugins/marketplace', filters))),
+  marketplaceWithMeta: async (
+    filters: PluginMarketplaceFilters = {},
+  ): Promise<MarketplacePluginListEnvelope> => {
+    const response = await api.getEnvelope<
+      MarketplacePluginListEnvelope | ApiResponse<MarketplacePlugin[]>
+    >(withQuery('/plugins/marketplace', filters))
+    return 'items' in response ? response : { items: response.data }
+  },
   marketplaceDetail: (pluginId: string, filters: PluginMarketplaceFilters = {}) =>
     unwrap(
       api.get<ApiResponse<MarketplacePlugin>>(
@@ -39,6 +57,10 @@ export const pluginApi = {
       ),
     ),
   installed: () => unwrap(api.get<ApiResponse<InstalledPlugin[]>>('/plugins/installed')),
+  updates: async (pluginIds: readonly string[]) => {
+    const params = new URLSearchParams(pluginIds.map((id) => ['pluginId', id]))
+    return (await api.getEnvelope<PluginUpdateListEnvelope>(`/plugins/updates?${params}`)).items
+  },
   installedDetail: (pluginId: string) =>
     unwrap(api.get<ApiResponse<InstalledPlugin>>(`/plugins/${encodeURIComponent(pluginId)}`)),
   manifest: (pluginId: string) =>
@@ -47,6 +69,25 @@ export const pluginApi = {
     ),
   install: (input: PluginInstallRequest) =>
     unwrap(api.post<ApiResponse<InstalledPlugin>>('/plugins/install', input)),
+  repositoryPreview: (input: PluginRepositoryPreviewRequest) =>
+    unwrap(api.post<ApiResponse<PluginRepositoryPreview>>('/plugins/repository/preview', input)),
+  repositoryRefs: (input: PluginRepositoryRefsRequest, signal: AbortSignal) =>
+    unwrap(
+      api.postWithSignal<ApiResponse<PluginRepositoryRefList>>(
+        '/plugins/repository/refs',
+        input,
+        signal,
+      ),
+    ),
+  repositoryInstall: (input: PluginRepositoryInstallRequest) =>
+    unwrap(api.post<ApiResponse<InstalledPlugin>>('/plugins/repository/install', input)),
+  repositoryUpgrade: (pluginId: string, input: PluginRepositoryUpgradeRequest) =>
+    unwrap(
+      api.post<ApiResponse<InstalledPlugin>>(
+        `/plugins/${encodeURIComponent(pluginId)}/repository/upgrade`,
+        input,
+      ),
+    ),
   enable: (pluginId: string) =>
     unwrap(
       api.post<ApiResponse<InstalledPlugin>>(`/plugins/${encodeURIComponent(pluginId)}/enable`),

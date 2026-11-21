@@ -503,9 +503,9 @@ for (const view of [
       await page.locator('h1').evaluate((element) => element.getBoundingClientRect().height),
     ).toBeLessThanOrEqual(1)
     await expect(page.getByRole('heading', { name: item.name, level: 2 })).toBeVisible()
-    await verifyGeometry(page, page.getByRole('button', { name: /安\s*装$/ }).first())
-    await expect(page.getByText('2 个插件', { exact: true })).toBeVisible()
     const card = page.locator('.soha-plugin-market-card').first()
+    await verifyGeometry(page, card.getByRole('button', { name: /安\s*装$/ }))
+    await expect(page.getByText('2 个插件', { exact: true })).toBeVisible()
     await expect(card.getByText('查看详情', { exact: true })).toBeVisible()
     await expect(card.getByText('版本 1.0.0', { exact: true })).toBeVisible()
     await expect(card.getByText(`来源 ${item.sourceId}`, { exact: true })).toBeVisible()
@@ -660,11 +660,16 @@ test('plugin marketplace preserves query, local pagination, installation filters
   await expect(page.locator('.soha-plugin-market-card')).toHaveCount(12)
   state.marketplacePlugins = [{ ...plugin, installed: true }]
   state.installedPlugins = [installed]
+  const beforeRefresh = evidence.requests.length
   await page.getByRole('button', { name: '刷新插件列表' }).click()
   await expect(page.getByText('没有匹配插件', { exact: true })).toBeVisible()
+  await expect
+    .poll(() => evidence.requests.slice(beforeRefresh))
+    .toContain('/api/v1/plugins/installed')
   await page.getByRole('radiogroup').getByText('已安装', { exact: true }).click()
-  await expect(page.getByRole('button', { name: /管\s*理/ })).toBeVisible()
-  await page.getByRole('button', { name: /管\s*理/ }).click()
+  const manage = page.getByRole('link', { name: `管理 ${installed.name}`, exact: true })
+  await expect(manage).toBeVisible()
+  await manage.click()
   await expect(page).toHaveURL(/\/plugins\/installed\/qa-plugin$/)
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
@@ -678,7 +683,8 @@ test('plugin marketplace keeps installation disabled without permission', async 
   state.canInstall = false
   state.installedPlugins = []
   await page.goto('/plugins/marketplace')
-  await expect(page.getByRole('button', { name: /安\s*装$/ })).toBeDisabled()
+  const card = page.locator('.soha-plugin-market-card')
+  await expect(card.getByRole('button', { name: /安\s*装$/ })).toBeDisabled()
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
 })
@@ -700,11 +706,13 @@ for (const route of ['/plugins/marketplace', '/plugins/marketplace/qa-plugin']) 
   }, info) => {
     const { state, evidence } = await mocks(context, page)
     await page.goto(route)
-    await page.getByRole('button', { name: /安\s*装$/ }).click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByRole('button', { name: /安\s*装/ }).click()
+    const entry = route === '/plugins/marketplace' ? page.locator('.soha-plugin-market-card') : page
+    await entry.getByRole('button', { name: /安\s*装$/ }).click()
+    const dialog = page.getByRole('dialog', { name: `安装 ${plugin.name}`, exact: true })
+    const confirm = dialog.getByRole('button', { name: /^安\s*装$/ })
+    await confirm.click()
     await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
-    await expect(dialog.getByRole('button', { name: /安\s*装/ })).toBeDisabled()
+    await expect(confirm).toBeDisabled()
     await expect(dialog.getByRole('button', { name: /取.*消/ })).toBeDisabled()
     await expect(dialog).toContainText(plugin.name)
     expect(state.writes).toHaveLength(1)

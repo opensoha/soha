@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -17,6 +19,10 @@ import (
 type PluginMarketplaceService interface {
 	ListMarketplace(context.Context, domainidentity.Principal, domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error)
 	GetMarketplace(context.Context, domainidentity.Principal, domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error)
+}
+
+type pluginMarketplaceSourceLister interface {
+	ListMarketplaceWithSources(context.Context, domainidentity.Principal, domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error)
 }
 
 type PluginInventoryService interface {
@@ -61,6 +67,7 @@ type PluginHandler struct {
 	extensions  PluginExtensionService
 	companions  PluginCompanionLifecycleService
 	assets      PluginAssetService
+	repository  PluginRepositoryService
 }
 
 func NewPluginHandler(service PluginService) *PluginHandler {
@@ -71,19 +78,30 @@ func NewPluginHandlerWithServices(marketplace PluginMarketplaceService, inventor
 	handler := &PluginHandler{marketplace: marketplace, inventory: inventory, lifecycle: lifecycle, extensions: extensions}
 	handler.companions, _ = lifecycle.(PluginCompanionLifecycleService)
 	handler.assets, _ = inventory.(PluginAssetService)
+	handler.repository, _ = lifecycle.(PluginRepositoryService)
 	return handler
 }
 
 func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.marketplace.ListMarketplace(c.Request.Context(), principal, domainplugin.MarketplaceFilter{
+	filter := domainplugin.MarketplaceFilter{
 		Query:          c.Query("q"),
 		Type:           c.Query("type"),
 		Publisher:      c.Query("publisher"),
 		SourceID:       c.Query("sourceId"),
 		MarketplaceURL: c.Query("marketplaceUrl"),
 		Version:        c.Query("version"),
-	})
+	}
+	if lister, ok := h.marketplace.(pluginMarketplaceSourceLister); ok {
+		result, err := lister.ListMarketplaceWithSources(c.Request.Context(), principal, filter)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.JSON(c, http.StatusOK, result)
+		return
+	}
+	items, err := h.marketplace.ListMarketplace(c.Request.Context(), principal, filter)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -137,13 +155,13 @@ func (h *PluginHandler) GetManifest(c *gin.Context) {
 }
 
 func (h *PluginHandler) Install(c *gin.Context) {
-	var req domainplugin.PluginInstallRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var req legacyPluginRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.PreviewToken != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid plugin install payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.lifecycle.Install(c.Request.Context(), principal, req)
+	item, err := h.lifecycle.Install(c.Request.Context(), principal, req.PluginInstallRequest)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -172,18 +190,23 @@ func (h *PluginHandler) Disable(c *gin.Context) {
 }
 
 func (h *PluginHandler) Upgrade(c *gin.Context) {
-	var req domainplugin.PluginInstallRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	var req legacyPluginRequest
+	if err := c.ShouldBindJSON(&req); (err != nil && !errors.Is(err, io.EOF)) || req.PreviewToken != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid plugin upgrade payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.lifecycle.Upgrade(c.Request.Context(), principal, c.Param("pluginID"), req)
+	item, err := h.lifecycle.Upgrade(c.Request.Context(), principal, c.Param("pluginID"), req.PluginInstallRequest)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+type legacyPluginRequest struct {
+	domainplugin.PluginInstallRequest
+	PreviewToken json.RawMessage `json:"previewToken"`
 }
 
 func (h *PluginHandler) Configure(c *gin.Context) {
