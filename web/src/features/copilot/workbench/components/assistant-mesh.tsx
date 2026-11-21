@@ -74,6 +74,7 @@ const KIND_OPTIONS: { label: string; value: MeshKind }[] = [
 const KIND_LABEL: Record<MeshKind, string> = {
   skill: 'Skill',
   experience_card: '经验卡',
+  work_pulse: '工作进度',
   mcp: 'MCP',
 }
 

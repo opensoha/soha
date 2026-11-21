@@ -9,6 +9,7 @@ import (
 	"errors"
 	"sort"
 	"testing"
+	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/assistantmesh"
@@ -295,6 +296,143 @@ func TestAssistantMeshExperienceCardPublishesWithoutRun(t *testing.T) {
 	request.SessionID, request.Prompt = "session", "run"
 	if _, err := f.service.Act(t.Context(), owner, asset.ID, "run", request); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("experience card entered executable runtime: %v", err)
+	}
+}
+
+func TestWorkPulsePublishesWithBoundedLifetime(t *testing.T) {
+	f := newFixture(t)
+	owner := employee("user-a", "team-1")
+	asset, err := f.service.Create(t.Context(), owner, domain.AssetInput{
+		Kind: domain.KindWorkPulse, Title: "网关迁移", Body: "证书轮换中", WorkStatus: "blocked", BlockerReason: "等待运维窗口",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ActionRequest{ExpectedDigest: asset.DraftDigest, Audience: knowledge.AccessScope{Visibility: "teams", Teams: []string{"team-1"}}}
+	result, err := f.service.Act(t.Context(), owner, asset.ID, "publish", request)
+	if err != nil || result.Asset.Published == nil || result.Asset.Published.ExpiresAt == nil {
+		t.Fatalf("publish work pulse: %+v, %v", result, err)
+	}
+	published := result.Asset.Published
+	if published.Input.WorkStatus != "blocked" || published.Input.BlockerReason != "等待运维窗口" ||
+		published.ExpiresAt.Sub(published.PublishedAt) != 24*time.Hour {
+		t.Fatalf("work pulse version = %+v", published)
+	}
+	shared, err := f.service.Get(t.Context(), employee("user-b", "team-1"), asset.ID)
+	if err != nil || shared.Published == nil || shared.Published.Input.WorkStatus != "blocked" {
+		t.Fatalf("shared work pulse = %+v, %v", shared, err)
+	}
+}
+
+func TestWorkPulseLifetimeRules(t *testing.T) {
+	now := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	settings := domainsettings.DefaultAssistantMeshSettings()
+	for _, tc := range []struct {
+		name    string
+		kind    string
+		request ActionRequest
+		want    time.Duration
+		wantErr bool
+	}{
+		{"default", domain.KindWorkPulse, ActionRequest{}, 24 * time.Hour, false},
+		{"minimum", domain.KindWorkPulse, ActionRequest{LifetimeHours: 1}, time.Hour, false},
+		{"maximum", domain.KindWorkPulse, ActionRequest{LifetimeHours: 336}, 336 * time.Hour, false},
+		{"too long", domain.KindWorkPulse, ActionRequest{LifetimeHours: 337}, 0, true},
+		{"negative", domain.KindWorkPulse, ActionRequest{LifetimeHours: -1}, 0, true},
+		{"permanent", domain.KindWorkPulse, ActionRequest{Permanent: true}, 0, true},
+		{"days", domain.KindWorkPulse, ActionRequest{LifetimeDays: 1}, 0, true},
+		{"hours on card", domain.KindExperienceCard, ActionRequest{LifetimeHours: 1}, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expires, err := expiresAt(settings, tc.kind, tc.request, now)
+			if tc.wantErr {
+				if !errors.Is(err, apperrors.ErrInvalidArgument) {
+					t.Fatalf("err = %v", err)
+				}
+				return
+			}
+			if err != nil || expires == nil || expires.Sub(now) != tc.want {
+				t.Fatalf("expires = %v, %v", expires, err)
+			}
+		})
+	}
+}
+
+func TestWorkPulseOrganizationApprovalKeepsOriginalCap(t *testing.T) {
+	f := newFixture(t)
+	owner := employee("user-a")
+	asset, err := f.service.Create(t.Context(), owner, domain.AssetInput{
+		Kind: domain.KindWorkPulse, Title: "网关迁移", Body: "证书轮换中", WorkStatus: "in_progress",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ActionRequest{ExpectedDigest: asset.DraftDigest, Audience: knowledge.AccessScope{Visibility: "organization"}, LifetimeHours: 2}
+	review, err := f.service.Act(t.Context(), owner, asset.ID, "publish", request)
+	if err != nil || review.Asset.Review == nil {
+		t.Fatalf("request review: %+v, %v", review, err)
+	}
+	record, err := f.store.Get(t.Context(), asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := decodePayload(record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cap := nowUTC().Add(90 * time.Minute)
+	observed := value.Review.Candidate.PublishedAt
+	value.Review.Candidate.ExpiresAt = &cap
+	record.Payload, err = encodePayload(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.records[asset.ID] = record
+	if _, err := f.service.Act(t.Context(), admin(), asset.ID, "approve", ActionRequest{ExpectedDigest: value.Review.Candidate.Digest}); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	record, err = f.store.Get(t.Context(), asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err = decodePayload(record.Payload)
+	if err != nil || value.Published == nil || value.Published.ExpiresAt == nil || !value.Published.ExpiresAt.Equal(cap) ||
+		!value.Published.PublishedAt.Equal(observed) {
+		t.Fatalf("approved work pulse = %+v, %v", value.Published, err)
+	}
+}
+
+func TestWorkPulseApprovalRejectsExpiredCandidate(t *testing.T) {
+	f := newFixture(t)
+	owner := employee("user-a")
+	asset, err := f.service.Create(t.Context(), owner, domain.AssetInput{
+		Kind: domain.KindWorkPulse, Title: "网关迁移", Body: "证书轮换中", WorkStatus: "in_progress",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ActionRequest{ExpectedDigest: asset.DraftDigest, Audience: knowledge.AccessScope{Visibility: "organization"}, LifetimeHours: 1}
+	review, err := f.service.Act(t.Context(), owner, asset.ID, "publish", request)
+	if err != nil || review.Asset.Review == nil {
+		t.Fatalf("request review: %+v, %v", review, err)
+	}
+	record, err := f.store.Get(t.Context(), asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := decodePayload(record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := nowUTC().Add(-time.Minute)
+	value.Review.Candidate.ExpiresAt = &past
+	record.Payload, err = encodePayload(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.records[asset.ID] = record
+	if _, err := f.service.Act(t.Context(), admin(), asset.ID, "approve", ActionRequest{ExpectedDigest: value.Review.Candidate.Digest}); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("expired approval err = %v", err)
 	}
 }
 

@@ -1573,6 +1573,7 @@ paths:
             enum:
               - skill
               - experience_card
+              - work_pulse
               - mcp
         - name: offset
           in: query
@@ -1803,6 +1804,494 @@ paths:
         "422":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/profile:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: getAssistantMeshReceptionProfile
+      responses:
+        "200":
+          description: Assistant Mesh reception profile for the current caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - assistant-mesh
+      operationId: updateAssistantMeshReceptionProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshReceptionProfileInput"
+      responses:
+        "200":
+          description: Saved Assistant Mesh reception profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assistants/search:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: searchAssistantMeshAssistants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDiscoveryInput"
+      responses:
+        "200":
+          description: Admitted assistants matching the discovery input.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDiscoveredAssistantListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/preview:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: previewAssistantMeshInquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshQuestionInput"
+      responses:
+        "200":
+          description: Question preview after the built-in sensitive-content scan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshQuestionPreviewEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: createAssistantMeshInquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryInput"
+      responses:
+        "200":
+          description: Created inquiry, or the original item for a pending duplicate request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+    get:
+      tags:
+        - assistant-mesh
+      operationId: listAssistantMeshInquiries
+      parameters:
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - sent
+              - inbox
+            default: sent
+      responses:
+        "200":
+          description: Inquiries sent by the caller, or received in the caller's inbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/{inquiryId}/reply:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: replyAssistantMeshInquiry
+      parameters:
+        - name: inquiryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryReplyInput"
+      responses:
+        "200":
+          description: Replied inquiry. Only the exact assignee may reply to a pending, unexpired inquiry with one private answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/{inquiryId}/reply-and-publish:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: replyAndPublishAssistantMeshInquiry
+      parameters:
+        - name: inquiryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryShareReplyInput"
+      responses:
+        "200":
+          description: Privately replied to the original requester and submitted a separate, explicitly scoped publication in the same transaction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: listAssistantMeshDelegations
+      parameters:
+        - name: direction
+          in: query
+          schema: { type: string, enum: [inbox, sent], default: sent }
+      responses:
+        "200":
+          description: Delegations visible to the authenticated participant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [ assistant-mesh ]
+      operationId: createAssistantMeshDelegation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationInput"
+      responses:
+        "200":
+          description: Durable, idempotent request with frozen capability inputs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/native-device:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: registerAssistantMeshManagedDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshManagedDeviceInput"
+      responses:
+        "200":
+          description: The current owner enabled this device for future delegations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshManagedDeviceEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: getAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Delegation visible to the authenticated participant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/decline:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: declineAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationDeclineInput"
+      responses:
+        "200":
+          description: The owner declined this request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/approve:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: approveAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationApproveInput"
+      responses:
+        "200":
+          description: Short-lived, single-use ticket issued after owner approval to the registered device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationApprovalEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/claim:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: claimAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationClaimInput"
+      responses:
+        "200":
+          description: Only the first valid owner claim can move the delegation to execution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/report:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: reportAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationReportInput"
+      responses:
+        "200":
+          description: State receipt for the report. With preview, the device sends a digest with a device-held random nonce.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/deliver:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: deliverAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationDeliverInput"
+      responses:
+        "200":
+          description: Private result returned to the requesting participant after owner confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /settings/ai/assistant-mesh:
     get:
@@ -37166,6 +37655,7 @@ components:
           enum:
             - skill
             - experience_card
+            - work_pulse
             - mcp
         title:
           type: string
@@ -37178,6 +37668,12 @@ components:
         applicability:
           type: string
           maxLength: 4096
+        workStatus:
+          $ref: "#/components/schemas/AssistantMeshWorkStatus"
+        blockerReason:
+          type: string
+          description: Optional short blockers for a work pulse.
+          maxLength: 1000
         files:
           type: object
           description: Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes.
@@ -37350,6 +37846,7 @@ components:
           enum:
             - skill
             - experience_card
+            - work_pulse
             - mcp
         draft:
           $ref: "#/components/schemas/AssistantMeshAssetInput"
@@ -37448,6 +37945,11 @@ components:
           type: integer
           minimum: 7
           maximum: 365
+        lifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 336
+          description: Work Pulse lifetime in hours. Defaults to 24.
         permanent:
           type: boolean
         reason:
@@ -37540,12 +38042,367 @@ components:
           maximum: 365
         allowPermanentExperienceCards:
           type: boolean
+        delegationLifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 72
+          default: 4
+          description: Deadline for newly created L3 delegations. Omission preserves the existing value on update.
       additionalProperties: false
     AssistantMeshSettingsEnvelope:
       type: object
       required: [ data ]
       properties:
         data: { $ref: "#/components/schemas/AssistantMeshSettings" }
+      additionalProperties: false
+    AssistantMeshReceptionProfile:
+      type: object
+      required: [ open, away, intro, retentionDays ]
+      properties:
+        open:
+          type: boolean
+        away:
+          type: boolean
+        intro:
+          type: string
+          maxLength: 280
+        retentionDays:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+    AssistantMeshReceptionProfileInput:
+      type: object
+      required: [ open, away, intro ]
+      properties:
+        open:
+          type: boolean
+        away:
+          type: boolean
+        intro:
+          type: string
+          maxLength: 280
+      additionalProperties: false
+    AssistantMeshReceptionProfileEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshReceptionProfile"
+      additionalProperties: false
+    AssistantMeshDiscoveryInput:
+      type: object
+      properties:
+        query:
+          type: string
+          maxLength: 120
+      additionalProperties: false
+    AssistantMeshDiscoveredAssistant:
+      type: object
+      required: [ ownerId, name, intro, away, topics ]
+      properties:
+        ownerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        intro:
+          type: string
+        away:
+          type: boolean
+        topics:
+          type: array
+          description: Titles of admitted published topics only.
+          items:
+            type: string
+      additionalProperties: false
+    AssistantMeshDiscoveredAssistantListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshDiscoveredAssistant"
+      additionalProperties: false
+    AssistantMeshQuestionInput:
+      type: object
+      required: [ question ]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      additionalProperties: false
+    AssistantMeshQuestionPreview:
+      type: object
+      required: [ question, blocked ]
+      properties:
+        question:
+          type: string
+        blocked:
+          type: boolean
+          description: The built-in sensitive-content scan rejects this question when true.
+      additionalProperties: false
+    AssistantMeshQuestionPreviewEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshQuestionPreview"
+      additionalProperties: false
+    AssistantMeshInquiryCitation:
+      type: object
+      required: [ assetId, version, title, observedAt ]
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshInquiry:
+      type: object
+      required:
+        - id
+        - callerId
+        - ownerId
+        - callerName
+        - ownerName
+        - question
+        - status
+        - createdAt
+        - dueAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        callerId:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        callerName:
+          type: string
+        ownerName:
+          type: string
+        question:
+          type: string
+          description: Empty after content expiry.
+        status:
+          type: string
+          enum:
+            - answered
+            - processing
+            - pending
+            - replied
+            - expired
+            - invalidated
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshInquiryCitation"
+        createdAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshInquiryEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshInquiry"
+      additionalProperties: false
+    AssistantMeshInquiryListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshInquiry"
+      additionalProperties: false
+    AssistantMeshInquiryInput:
+      type: object
+      required: [ ownerId, requestId, question ]
+      properties:
+        ownerId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      additionalProperties: false
+    AssistantMeshWorkStatus:
+      type: string
+      enum: [in_progress, blocked, done]
+      x-enum-varnames: [AssistantMeshWorkStatusInProgress, AssistantMeshWorkStatusBlocked, AssistantMeshWorkStatusDone]
+    AssistantMeshInquiryShareReplyInput:
+      type: object
+      required: [answer, title, summary, kind, audience]
+      properties:
+        answer: { type: string, minLength: 1, maxLength: 4000 }
+        title: { type: string, minLength: 1, maxLength: 256 }
+        summary: { type: string, minLength: 1, maxLength: 16384 }
+        kind: { type: string, enum: [experience_card, work_pulse] }
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        lifetimeHours: { type: integer, minimum: 1, maximum: 336 }
+        lifetimeDays: { type: integer, minimum: 7, maximum: 365 }
+        workStatus:
+          $ref: "#/components/schemas/AssistantMeshWorkStatus"
+      additionalProperties: false
+    AssistantMeshInquiryReplyInput:
+      type: object
+      required: [ answer ]
+      properties:
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      additionalProperties: false
+    AssistantMeshDelegation:
+      type: object
+      required: [id, callerId, callerName, ownerId, ownerName, capability, field, inputHash, status, createdAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        callerId: { type: string, format: uuid }
+        callerName: { type: string }
+        ownerId: { type: string, format: uuid }
+        ownerName: { type: string }
+        capability: { type: string, enum: [desktop.os-version.v1] }
+        field: { type: string, enum: [productVersion, buildVersion] }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        status: { type: string, enum: [awaiting_owner_approval, approved, executing, awaiting_confirmation, completed, declined, invalidated, expired, failed] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        result: { type: string, minLength: 1, maxLength: 128 }
+        closedAt: { type: string, format: date-time }
+      additionalProperties: false
+    AssistantMeshDelegationEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshDelegation"
+      additionalProperties: false
+    AssistantMeshDelegationListEnvelope:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshDelegation"
+      additionalProperties: false
+    AssistantMeshDelegationInput:
+      type: object
+      required: [ownerId, requestId, capability, field]
+      properties:
+        ownerId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        capability: { type: string, enum: [desktop.os-version.v1] }
+        field: { type: string, enum: [productVersion, buildVersion] }
+      additionalProperties: false
+    AssistantMeshDelegationDeclineInput:
+      type: object
+      additionalProperties: false
+    AssistantMeshManagedDeviceInput:
+      type: object
+      required: [deviceId, proofHash]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proofHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+      additionalProperties: false
+    AssistantMeshManagedDevice:
+      type: object
+      required: [ownerId, deviceId]
+      properties:
+        ownerId: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshManagedDeviceEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshManagedDevice"
+      additionalProperties: false
+    AssistantMeshDelegationApproveInput:
+      type: object
+      required: [deviceId, proof, inputHash, mode]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        mode: { type: string, enum: [preview, direct] }
+      additionalProperties: false
+    AssistantMeshDelegationClaimInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence, ticket]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        ticket: { type: string, pattern: "^[0-9a-f]{64}$" }
+      additionalProperties: false
+    AssistantMeshDelegationReportInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        resultHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        result: { type: string, minLength: 1, maxLength: 128 }
+        failed: { type: boolean }
+      additionalProperties: false
+    AssistantMeshDelegationDeliverInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence, result, nonce]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        nonce: { type: string, pattern: "^[0-9a-f]{64}$", description: Device-held nonce for the preview commitment. }
+        result: { type: string, minLength: 1, maxLength: 128 }
+      additionalProperties: false
+    AssistantMeshDelegationApproval:
+      type: object
+      required: [delegation, ticket, fence]
+      properties:
+        delegation:
+          $ref: "#/components/schemas/AssistantMeshDelegation"
+        ticket: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshDelegationApprovalEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshDelegationApproval"
       additionalProperties: false
     AIWorkbenchModelSettings:
       type: object

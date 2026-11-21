@@ -58,6 +58,11 @@ func TestCreateGetAndList(t *testing.T) {
 	if err := repository.Create(ctx, Record{ID: id, OwnerID: owner, Kind: "skill", Payload: payload}); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
+	pulseID := uuid.NewString()
+	mock.ExpectExec(`INSERT INTO assistant_mesh_assets`).WithArgs(pulseID, owner, "work_pulse", string(payload)).WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := repository.Create(ctx, Record{ID: pulseID, OwnerID: owner, Kind: "work_pulse", Payload: payload}); err != nil {
+		t.Fatalf("Create(work pulse) error = %v", err)
+	}
 
 	mock.ExpectQuery(`SELECT id, owner_id, kind, payload FROM assistant_mesh_assets WHERE id = \$1`).WithArgs(id).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "owner_id", "kind", "payload"}).AddRow(id, owner, "skill", []byte(payload)))
@@ -137,6 +142,23 @@ func TestUpdateLocksAndRollsBackOnCallbackError(t *testing.T) {
 	mock.ExpectRollback()
 	if err := repository.Update(ctx, id, func(context.Context, Record) (json.RawMessage, error) { return updated, nil }); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("Update(missing) error = %v, want not found", err)
+	}
+	assertExpectations(t, mock)
+}
+
+func TestCreateJoinsBoundTransaction(t *testing.T) {
+	repository, mock, db := newTestRepository(t)
+	ctx := context.Background()
+	id, owner := uuid.NewString(), uuid.NewString()
+	payload := json.RawMessage(`{"workStatus":"in_progress"}`)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO assistant_mesh_assets`).WithArgs(id, owner, "work_pulse", string(payload)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := dbtx.Within(ctx, db, func(txCtx context.Context) error {
+		return repository.Create(txCtx, Record{ID: id, OwnerID: owner, Kind: "work_pulse", Payload: payload})
+	}); err != nil {
+		t.Fatalf("Create() in transaction error = %v", err)
 	}
 	assertExpectations(t, mock)
 }

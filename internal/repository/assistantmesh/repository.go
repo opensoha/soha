@@ -37,7 +37,7 @@ func (r *Repository) Create(ctx context.Context, item Record) error {
 	if err := validatePayload(item.Payload); err != nil {
 		return err
 	}
-	if err := r.db.WithContext(ctx).Exec(
+	if err := dbtx.DB(ctx, r.db).Exec(
 		`INSERT INTO assistant_mesh_assets (id, owner_id, kind, payload) VALUES (?, ?, ?, ?::jsonb)`,
 		item.ID, item.OwnerID, item.Kind, string(item.Payload),
 	).Error; err != nil {
@@ -163,7 +163,7 @@ func canonicalUUID(value string) bool {
 }
 
 func validKind(kind string) bool {
-	return kind == "skill" || kind == "experience_card" || kind == "mcp"
+	return kind == domain.KindSkill || kind == domain.KindExperienceCard || kind == domain.KindWorkPulse || kind == "mcp"
 }
 
 func validatePayload(payload json.RawMessage) error {

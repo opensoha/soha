@@ -253,6 +253,7 @@ const (
     ["PersonalAgentAccessDecisionStatus", [["Approved", "approved"], ["Rejected", "rejected"], ["Revoked", "revoked"]]],
     ["PersonalEnvironmentTemplateBackend", [["Container", "container"], ["VM", "vm"]]],
     ["PersonalWorkspaceRuntimeBrowserControlOwner", [["Agent", "agent"], ["Released", "released"], ["User", "user"]]],
+    ["DecideAIGatewayApprovalRequestParamsAction", [["Approve", "approve"], ["Cancel", "cancel"], ["Reject", "reject"]]],
     ["ListAIGatewayRelayUpstreamsParamsStatus", [["Active", "active"], ["Degraded", "degraded"], ["Disabled", "disabled"]]],
     ["DeliveryPlanStatus", [["Draft", "draft"], ["WaitingApproval", "waiting_approval"], ["Confirming", "confirming"], ["Confirmed", "confirmed"]]],
     ["RuntimeNetworkUsageScope", [["NetworkNamespace", "network_namespace"], ["Process", "process"], ["Unavailable", "unavailable"]]],

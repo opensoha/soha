@@ -22,13 +22,15 @@ type AssistantMeshDraftSource interface {
 }
 
 type AssistantMeshHandler struct {
-	service *mesh.Service
-	source  AssistantMeshDraftSource
-	mcp     *mesh.MCPService
+	service     *mesh.Service
+	source      AssistantMeshDraftSource
+	mcp         *mesh.MCPService
+	reception   *mesh.Reception
+	delegations *mesh.Delegations
 }
 
-func NewAssistantMeshHandler(service *mesh.Service, source AssistantMeshDraftSource, mcp *mesh.MCPService) *AssistantMeshHandler {
-	return &AssistantMeshHandler{service: service, source: source, mcp: mcp}
+func NewAssistantMeshHandler(service *mesh.Service, source AssistantMeshDraftSource, mcp *mesh.MCPService, reception *mesh.Reception, delegations *mesh.Delegations) *AssistantMeshHandler {
+	return &AssistantMeshHandler{service: service, source: source, mcp: mcp, reception: reception, delegations: delegations}
 }
 
 func (h *AssistantMeshHandler) List(c *gin.Context) {

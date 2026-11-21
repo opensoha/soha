@@ -68,6 +68,7 @@ type ActionResult struct {
 type ActionRequest struct {
 	ExpectedDigest string                `json:"expectedDigest,omitempty"`
 	Audience       knowledge.AccessScope `json:"audience,omitempty"`
+	LifetimeHours  int                   `json:"lifetimeHours,omitempty"`
 	LifetimeDays   int                   `json:"lifetimeDays,omitempty"`
 	Permanent      bool                  `json:"permanent,omitempty"`
 	Reason         string                `json:"reason,omitempty"`

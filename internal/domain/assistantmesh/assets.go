@@ -21,9 +21,11 @@ var ErrInvalidInput = errors.New("invalid assistant mesh input")
 const (
 	KindSkill          = "skill"
 	KindExperienceCard = "experience_card"
+	KindWorkPulse      = "work_pulse"
 
 	maxTitleRunes    = 256
 	maxBodyBytes     = 16 << 10
+	maxBlockerRunes  = 1000
 	maxAttachment    = 16 << 10
 	maxAttachments   = 31
 	maxPackageText   = 32 << 10
@@ -39,6 +41,7 @@ var (
 	assetVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	resourceSegment     = regexp.MustCompile(resourceNameExpr)
 	parameterName       = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+	fileReference       = regexp.MustCompile(`(?i)\b(?:file|attachment|asset):`)
 )
 
 type AssetInput struct {
@@ -49,6 +52,8 @@ type AssetInput struct {
 	Files         map[string]string    `json:"files,omitempty"`
 	Dependencies  []Dependency         `json:"dependencies,omitempty"`
 	Parameters    map[string]Parameter `json:"parameters,omitempty"`
+	WorkStatus    string               `json:"workStatus,omitempty"`
+	BlockerReason string               `json:"blockerReason,omitempty"`
 }
 
 type Dependency struct {
@@ -78,8 +83,32 @@ func (in AssetInput) Validate() error {
 		if in.Files != nil || in.Dependencies != nil || in.Parameters != nil {
 			return invalid("experience cards cannot define skill resources")
 		}
+		if in.WorkStatus != "" || in.BlockerReason != "" {
+			return invalid("experience cards cannot define work pulse fields")
+		}
+	case KindWorkPulse:
+		if in.Files != nil || in.Dependencies != nil || in.Parameters != nil {
+			return invalid("work pulses cannot define skill resources")
+		}
+		switch in.WorkStatus {
+		case "in_progress", "blocked", "done":
+		default:
+			return invalid("work pulse status must be in_progress, blocked or done")
+		}
+		if in.BlockerReason != "" {
+			if in.WorkStatus != "blocked" {
+				return invalid("blocker reason requires blocked status")
+			}
+			if utf8.RuneCountInString(in.BlockerReason) > maxBlockerRunes || !utf8.ValidString(in.BlockerReason) ||
+				strings.ContainsRune(in.BlockerReason, 0) || fileReference.MatchString(in.BlockerReason) {
+				return invalid("blocker reason must be bounded plain UTF-8 text without file references")
+			}
+		}
 	default:
-		return invalid("kind must be skill or experience_card")
+		return invalid("kind must be skill, experience_card or work_pulse")
+	}
+	if in.Kind != KindWorkPulse && (in.WorkStatus != "" || in.BlockerReason != "") {
+		return invalid("this asset kind cannot define work pulse fields")
 	}
 	if strings.TrimSpace(in.Title) == "" {
 		return invalid("title is required")
@@ -93,8 +122,8 @@ func (in AssetInput) Validate() error {
 	if len(in.Body) > maxBodyBytes {
 		return invalid("body exceeds 16 KiB")
 	}
-	if len(in.Applicability) > 4096 || !utf8.ValidString(in.Title+in.Body+in.Applicability) {
-		return invalid("title, body and applicability must be bounded UTF-8 text")
+	if len(in.Applicability) > 4096 || !utf8.ValidString(in.Title+in.Body+in.Applicability+in.WorkStatus+in.BlockerReason) {
+		return invalid("title, body, applicability and work pulse fields must be bounded UTF-8 text")
 	}
 	return nil
 }

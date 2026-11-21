@@ -30,5 +30,8 @@ func wireAssistantMeshRoutes(deps *apiroutes.Dependencies, infra *infrastructure
 	sharedMCP := appmesh.NewMCPService(store, core.settingsService, core.permissionResolver, gateway.aiGatewayService, core.auditService, repos.identityRepository)
 	delivery.copilotService.SetAssistantMeshSkills(service)
 	delivery.copilotService.SetAssistantMeshMCP(sharedMCP)
-	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP)
+	model := appmesh.GatewayReceptionModel{Gateway: gateway.aiGatewayService, Settings: core.settingsService}
+	reception := appmesh.NewReception(service, store, core.identityService, delivery.copilotService, model)
+	startPlatformReceiptCleanup(infra.lifecycleCtx, store, infra.logger, "assistant_mesh_inquiry_retention")
+	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP, reception, appmesh.NewDelegations(reception, store))
 }

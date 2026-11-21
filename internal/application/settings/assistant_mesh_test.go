@@ -48,12 +48,13 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 		t.Fatalf("viewer read = %v", err)
 	}
 	defaults, err := service.GetAssistantMeshSettings(ctx, editor)
-	if err != nil || defaults.Enabled || defaults.ExperienceCardLifetimeDays != 90 || defaults.DefaultVisibility != "private" || !defaults.AllowPermanentExperienceCards {
+	if err != nil || defaults.Enabled || defaults.ExperienceCardLifetimeDays != 90 || defaults.DelegationLifetimeHours != 4 || defaults.DefaultVisibility != "private" || !defaults.AllowPermanentExperienceCards {
 		t.Fatalf("defaults = %+v, %v", defaults, err)
 	}
 	input := defaults
 	input.Enabled = true
 	input.ExperienceCardLifetimeDays = 120
+	input.DelegationLifetimeHours = 12
 	input.OrganizationApproverUserIDs = []string{activeMeshReviewer}
 	if _, err := service.UpdateAssistantMeshSettings(ctx, viewer, input); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("viewer update = %v", err)
@@ -62,7 +63,7 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := service.GetAssistantMeshSettings(ctx, editor)
-	if err != nil || !got.Enabled || got.ExperienceCardLifetimeDays != 120 || len(got.OrganizationApproverUserIDs) != 1 || got.OrganizationApproverUserIDs[0] != activeMeshReviewer {
+	if err != nil || !got.Enabled || got.ExperienceCardLifetimeDays != 120 || got.DelegationLifetimeHours != 12 || len(got.OrganizationApproverUserIDs) != 1 || got.OrganizationApproverUserIDs[0] != activeMeshReviewer {
 		t.Fatalf("saved settings = %+v, %v", got, err)
 	}
 	if len(audit.entries) != 1 {
@@ -72,6 +73,12 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if entry.ActorID != "alice" || entry.Metadata["before"].(map[string]any)["enabled"] != false || entry.Metadata["after"].(map[string]any)["enabled"] != true {
 		t.Fatalf("unexpected audit: %+v", audit.entries)
 	}
+	input.DelegationLifetimeHours = 0
+	saved, err := service.UpdateAssistantMeshSettings(ctx, editor, input)
+	if err != nil || saved.DelegationLifetimeHours != 12 {
+		t.Fatalf("legacy update lost timeout: %+v, %v", saved, err)
+	}
+
 }
 
 func TestAssistantMeshSettingsRejectsInvalidUpdates(t *testing.T) {

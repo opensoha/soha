@@ -39,6 +39,7 @@ type MessageScenario =
 
 const testState = vi.hoisted(() => ({
   personal: false,
+  receptionAvailable: false,
   environment: {
     assistantId: 'personal-1',
     state: 'unprovisioned',
@@ -977,16 +978,27 @@ vi.mock('@/features/auth', async () => {
   }
 })
 
-vi.mock('@/services/api-client', () => ({
-  api: {
-    serviceScope: () => new URL('/api/v1', window.location.origin).toString(),
-    get: apiGetMock,
-    post: apiPostMock,
-    patch: apiPatchMock,
-    delete: apiDeleteMock,
-    put: vi.fn(),
-  },
-}))
+vi.mock('@/services/api-client', async () => {
+  const { ApiError } = await import('@/services/api-error')
+  return {
+    ApiError,
+    api: {
+      serviceScope: () => new URL('/api/v1', window.location.origin).toString(),
+      get: apiGetMock,
+      getEnvelope: async (path: string) => {
+        if (path === '/copilot/assistant-mesh/profile') {
+          if (!testState.receptionAvailable) throw new ApiError(403, 'disabled')
+          return { data: { open: false, away: false, intro: '', retentionDays: 7 } }
+        }
+        return apiGetMock(path)
+      },
+      post: apiPostMock,
+      patch: apiPatchMock,
+      delete: apiDeleteMock,
+      put: vi.fn(),
+    },
+  }
+})
 
 vi.mock('./components/graph-view-loader', () => ({
   LazyWorkbenchGraphView: ({
@@ -1327,6 +1339,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     } as PermissionSnapshot
     testState.sessionAgentProviderId = undefined
     testState.sessionMode = 'root_cause'
+    testState.receptionAvailable = false
     testState.sessionTitle = '支付告警调查'
     testState.sessionTags = ['P1']
     testState.sessionAdapterIds = ['metrics.v1']
@@ -2951,6 +2964,33 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     await pressSenderEnter(container)
     expect(senderInput(container)?.value).toContain('先不要执行操作')
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('opens Heya assistant discovery from @ without sending the chat draft', async () => {
+    useAuthStore.getState().setUser({
+      userId: 'reception-owner',
+      userName: 'Heya account',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
+    })
+    testState.receptionAvailable = true
+    testState.sessionMode = 'general'
+    const container = await renderPage('/heya?session=session-1')
+    await waitForChat(container)
+    await typeSenderMessage(container, '@平台 订单同步怎么排查')
+    expect(document.body.textContent).toContain('查找同事助手')
+    await pressSenderEnter(container)
+    expect(
+      document.body.querySelector('[role="dialog"] input[aria-label="按姓名或公开主题查找助手"]'),
+    ).not.toBeNull()
+    expect(senderInput(container)?.value).toBe('@平台 订单同步怎么排查')
+    expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
+    expect(
+      apiPostMock.mock.calls.some(([path]) => path === '/copilot/assistant-mesh/inquiries'),
+    ).toBe(false)
   })
 
   it('uses arrow keys to open context while preserving the draft', async () => {

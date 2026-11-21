@@ -19,9 +19,9 @@ func (r *Repository) UpdateAssistantMesh(ctx context.Context, actor string, valu
 		if err != nil {
 			return err
 		}
-		if err := repo.Upsert(ctx, key, "ai", value, actor); err != nil {
+		if err := audit(ctx, before, found); err != nil {
 			return err
 		}
-		return audit(ctx, before, found)
+		return repo.Upsert(ctx, key, "ai", value, actor)
 	})
 }

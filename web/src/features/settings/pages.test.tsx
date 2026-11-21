@@ -1095,6 +1095,7 @@ describe('settings ai page rendering', () => {
       const expected = {
         enabled: false,
         organizationApproverUserIds: [],
+        delegationLifetimeHours: 4,
         defaultVisibility: 'private',
         experienceCardLifetimeDays: 90,
         allowPermanentExperienceCards: true,

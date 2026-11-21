@@ -74,7 +74,7 @@ func validateInput(input domain.AssetInput) error {
 // scanAsset fails closed: any detector error blocks the caller before a trial
 // or publication can be accepted.
 func scanAsset(ctx context.Context, input domain.AssetInput) ([]string, error) {
-	segments := []string{input.Title, input.Body, input.Applicability}
+	segments := []string{input.Title, input.Body, input.Applicability, input.BlockerReason}
 	for name, content := range input.Files {
 		if domain.IsTextArchive(name) {
 			data, err := domain.DecodeTextArchive(content)
@@ -127,6 +127,23 @@ func findingsFor(ctx context.Context, input domain.AssetInput) []string {
 }
 
 func expiresAt(settings domainsettings.AssistantMeshSettings, kind string, request ActionRequest, now time.Time) (*time.Time, error) {
+	if kind == domain.KindWorkPulse {
+		if request.Permanent || request.LifetimeDays != 0 {
+			return nil, fmt.Errorf("%w: work pulses require an hours lifetime", apperrors.ErrInvalidArgument)
+		}
+		hours := request.LifetimeHours
+		if hours == 0 {
+			hours = 24
+		}
+		if hours < 1 || hours > 336 {
+			return nil, fmt.Errorf("%w: work pulse lifetime hours must be between 1 and 336", apperrors.ErrInvalidArgument)
+		}
+		expires := now.Add(time.Duration(hours) * time.Hour)
+		return &expires, nil
+	}
+	if request.LifetimeHours != 0 {
+		return nil, fmt.Errorf("%w: lifetime hours are only valid for work pulses", apperrors.ErrInvalidArgument)
+	}
 	if request.Permanent {
 		if kind == domain.KindExperienceCard && !settings.AllowPermanentExperienceCards {
 			return nil, fmt.Errorf("%w: permanent experience cards are disabled", apperrors.ErrInvalidArgument)

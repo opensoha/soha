@@ -154,6 +154,42 @@ func TestAudienceRules(t *testing.T) {
 	}
 }
 
+func TestWorkPulseInputRules(t *testing.T) {
+	valid := AssetInput{Kind: KindWorkPulse, Title: "网关迁移", Body: "证书轮换", WorkStatus: "blocked", BlockerReason: "等待运维窗口"}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid work pulse rejected: %v", err)
+	}
+	for _, status := range []string{"in_progress", "blocked", "done"} {
+		input := valid
+		input.WorkStatus, input.BlockerReason = status, ""
+		if err := input.Validate(); err != nil {
+			t.Fatalf("status %q rejected: %v", status, err)
+		}
+	}
+	if (AssetInput{Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "blocked", BlockerReason: "see file:///Users/owner/private.md"}).Validate() == nil {
+		t.Fatal("file reference accepted in blocker reason")
+	}
+	for name, input := range map[string]AssetInput{
+		"missing status":    {Kind: KindWorkPulse, Title: "t", Body: "b"},
+		"unknown status":    {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "waiting"},
+		"blocker not block": {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "done", BlockerReason: "later"},
+		"long blocker":      {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "blocked", BlockerReason: strings.Repeat("x", maxBlockerRunes+1)},
+		"pulse files":       {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "done", Files: map[string]string{}},
+		"pulse dependencies": {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "done",
+			Dependencies: []Dependency{}},
+		"pulse parameters": {Kind: KindWorkPulse, Title: "t", Body: "b", WorkStatus: "done",
+			Parameters: map[string]Parameter{}},
+		"skill work fields":      {Kind: KindSkill, Title: "t", Body: "b", WorkStatus: "done"},
+		"experience work fields": {Kind: KindExperienceCard, Title: "t", Body: "b", BlockerReason: "blocked"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := input.Validate(); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("got %v, want ErrInvalidInput", err)
+			}
+		})
+	}
+}
+
 func withFiles(base AssetInput, files map[string]string) AssetInput {
 	base.Files = files
 	return base

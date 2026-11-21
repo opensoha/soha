@@ -769,6 +769,230 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copilot/assistant-mesh/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAssistantMeshReceptionProfile"];
+        put: operations["updateAssistantMeshReceptionProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/assistants/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["searchAssistantMeshAssistants"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/inquiries/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewAssistantMeshInquiry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAssistantMeshInquiries"];
+        put?: never;
+        post: operations["createAssistantMeshInquiry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/inquiries/{inquiryId}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replyAssistantMeshInquiry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/inquiries/{inquiryId}/reply-and-publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replyAndPublishAssistantMeshInquiry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAssistantMeshDelegations"];
+        put?: never;
+        post: operations["createAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/native-device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerAssistantMeshManagedDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAssistantMeshDelegation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["declineAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["approveAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["claimAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reportAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/delegations/{id}/deliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["deliverAssistantMeshDelegation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/ai/assistant-mesh": {
         parameters: {
             query?: never;
@@ -19498,10 +19722,13 @@ export interface components {
         };
         AssistantMeshAssetInput: {
             /** @enum {string} */
-            kind: "skill" | "experience_card" | "mcp";
+            kind: "skill" | "experience_card" | "work_pulse" | "mcp";
             title: string;
             body: string;
             applicability?: string;
+            workStatus?: components["schemas"]["AssistantMeshWorkStatus"];
+            /** @description Optional short blockers for a work pulse. */
+            blockerReason?: string;
             /** @description Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes. */
             files?: {
                 [key: string]: string;
@@ -19557,7 +19784,7 @@ export interface components {
             /** Format: uuid */
             ownerUserId: string;
             /** @enum {string} */
-            kind: "skill" | "experience_card" | "mcp";
+            kind: "skill" | "experience_card" | "work_pulse" | "mcp";
             draft?: components["schemas"]["AssistantMeshAssetInput"];
             draftDigest?: string;
             published?: components["schemas"]["AssistantMeshVersion"];
@@ -19592,6 +19819,8 @@ export interface components {
             expectedDigest?: string;
             audience?: components["schemas"]["AssistantMeshAudience"];
             lifetimeDays?: number;
+            /** @description Work Pulse lifetime in hours. Defaults to 24. */
+            lifetimeHours?: number;
             permanent?: boolean;
             reason?: string;
             /** Format: uuid */
@@ -19629,9 +19858,212 @@ export interface components {
             defaultVisibility: "private" | "teams" | "projects";
             experienceCardLifetimeDays: number;
             allowPermanentExperienceCards: boolean;
+            /**
+             * @description Deadline for newly created L3 delegations. Omission preserves the existing value on update.
+             * @default 4
+             */
+            delegationLifetimeHours?: number;
         };
         AssistantMeshSettingsEnvelope: {
             data: components["schemas"]["AssistantMeshSettings"];
+        };
+        AssistantMeshReceptionProfile: {
+            open: boolean;
+            away: boolean;
+            intro: string;
+            retentionDays: number;
+        };
+        AssistantMeshReceptionProfileInput: {
+            open: boolean;
+            away: boolean;
+            intro: string;
+        };
+        AssistantMeshReceptionProfileEnvelope: {
+            data: components["schemas"]["AssistantMeshReceptionProfile"];
+        };
+        AssistantMeshDiscoveryInput: {
+            query?: string;
+        };
+        AssistantMeshDiscoveredAssistant: {
+            /** Format: uuid */
+            ownerId: string;
+            name: string;
+            intro: string;
+            away: boolean;
+            /** @description Titles of admitted published topics only. */
+            topics: string[];
+        };
+        AssistantMeshDiscoveredAssistantListEnvelope: {
+            items: components["schemas"]["AssistantMeshDiscoveredAssistant"][];
+        };
+        AssistantMeshQuestionInput: {
+            question: string;
+        };
+        AssistantMeshQuestionPreview: {
+            question: string;
+            /** @description The built-in sensitive-content scan rejects this question when true. */
+            blocked: boolean;
+        };
+        AssistantMeshQuestionPreviewEnvelope: {
+            data: components["schemas"]["AssistantMeshQuestionPreview"];
+        };
+        AssistantMeshInquiryCitation: {
+            /** Format: uuid */
+            assetId: string;
+            version: number;
+            title: string;
+            /** Format: date-time */
+            observedAt: string;
+        };
+        AssistantMeshInquiry: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            callerId: string;
+            /** Format: uuid */
+            ownerId: string;
+            callerName: string;
+            ownerName: string;
+            /** @description Empty after content expiry. */
+            question: string;
+            /** @enum {string} */
+            status: "answered" | "processing" | "pending" | "replied" | "expired" | "invalidated";
+            answer?: string;
+            citations?: components["schemas"]["AssistantMeshInquiryCitation"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            dueAt: string;
+            /** Format: date-time */
+            closedAt?: string;
+        };
+        AssistantMeshInquiryEnvelope: {
+            data: components["schemas"]["AssistantMeshInquiry"];
+        };
+        AssistantMeshInquiryListEnvelope: {
+            items: components["schemas"]["AssistantMeshInquiry"][];
+        };
+        AssistantMeshInquiryInput: {
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: uuid */
+            requestId: string;
+            question: string;
+        };
+        /** @enum {string} */
+        AssistantMeshWorkStatus: "in_progress" | "blocked" | "done";
+        AssistantMeshInquiryShareReplyInput: {
+            answer: string;
+            title: string;
+            summary: string;
+            /** @enum {string} */
+            kind: "experience_card" | "work_pulse";
+            audience: components["schemas"]["AssistantMeshAudience"];
+            lifetimeHours?: number;
+            lifetimeDays?: number;
+            workStatus?: components["schemas"]["AssistantMeshWorkStatus"];
+        };
+        AssistantMeshInquiryReplyInput: {
+            answer: string;
+        };
+        AssistantMeshDelegation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            callerId: string;
+            callerName: string;
+            /** Format: uuid */
+            ownerId: string;
+            ownerName: string;
+            /** @enum {string} */
+            capability: "desktop.os-version.v1";
+            /** @enum {string} */
+            field: "productVersion" | "buildVersion";
+            inputHash: string;
+            /** @enum {string} */
+            status: "awaiting_owner_approval" | "approved" | "executing" | "awaiting_confirmation" | "completed" | "declined" | "invalidated" | "expired" | "failed";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            result?: string;
+            /** Format: date-time */
+            closedAt?: string;
+        };
+        AssistantMeshDelegationEnvelope: {
+            data: components["schemas"]["AssistantMeshDelegation"];
+        };
+        AssistantMeshDelegationListEnvelope: {
+            items: components["schemas"]["AssistantMeshDelegation"][];
+        };
+        AssistantMeshDelegationInput: {
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: uuid */
+            requestId: string;
+            /** @enum {string} */
+            capability: "desktop.os-version.v1";
+            /** @enum {string} */
+            field: "productVersion" | "buildVersion";
+        };
+        AssistantMeshDelegationDeclineInput: Record<string, never>;
+        AssistantMeshManagedDeviceInput: {
+            /** Format: uuid */
+            deviceId: string;
+            proofHash: string;
+        };
+        AssistantMeshManagedDevice: {
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: uuid */
+            deviceId: string;
+        };
+        AssistantMeshManagedDeviceEnvelope: {
+            data: components["schemas"]["AssistantMeshManagedDevice"];
+        };
+        AssistantMeshDelegationApproveInput: {
+            /** Format: uuid */
+            deviceId: string;
+            proof: string;
+            inputHash: string;
+            /** @enum {string} */
+            mode: "preview" | "direct";
+        };
+        AssistantMeshDelegationClaimInput: {
+            /** Format: uuid */
+            deviceId: string;
+            proof: string;
+            inputHash: string;
+            fence: number;
+            ticket: string;
+        };
+        AssistantMeshDelegationReportInput: {
+            /** Format: uuid */
+            deviceId: string;
+            proof: string;
+            inputHash: string;
+            fence: number;
+            resultHash?: string;
+            result?: string;
+            failed?: boolean;
+        };
+        AssistantMeshDelegationDeliverInput: {
+            /** Format: uuid */
+            deviceId: string;
+            proof: string;
+            inputHash: string;
+            fence: number;
+            /** @description Device-held nonce for the preview commitment. */
+            nonce: string;
+            result: string;
+        };
+        AssistantMeshDelegationApproval: {
+            delegation: components["schemas"]["AssistantMeshDelegation"];
+            ticket: string;
+            fence: number;
+        };
+        AssistantMeshDelegationApprovalEnvelope: {
+            data: components["schemas"]["AssistantMeshDelegationApproval"];
         };
         AIWorkbenchModelSettings: {
             /** @description Public model name exposed by AI Gateway model routes and used as the Workbench default. */
@@ -36662,6 +37094,37 @@ export type AssistantMeshActionResult = components['schemas']['AssistantMeshActi
 export type AssistantMeshActionEnvelope = components['schemas']['AssistantMeshActionEnvelope'];
 export type AssistantMeshSettings = components['schemas']['AssistantMeshSettings'];
 export type AssistantMeshSettingsEnvelope = components['schemas']['AssistantMeshSettingsEnvelope'];
+export type AssistantMeshReceptionProfile = components['schemas']['AssistantMeshReceptionProfile'];
+export type AssistantMeshReceptionProfileInput = components['schemas']['AssistantMeshReceptionProfileInput'];
+export type AssistantMeshReceptionProfileEnvelope = components['schemas']['AssistantMeshReceptionProfileEnvelope'];
+export type AssistantMeshDiscoveryInput = components['schemas']['AssistantMeshDiscoveryInput'];
+export type AssistantMeshDiscoveredAssistant = components['schemas']['AssistantMeshDiscoveredAssistant'];
+export type AssistantMeshDiscoveredAssistantListEnvelope = components['schemas']['AssistantMeshDiscoveredAssistantListEnvelope'];
+export type AssistantMeshQuestionInput = components['schemas']['AssistantMeshQuestionInput'];
+export type AssistantMeshQuestionPreview = components['schemas']['AssistantMeshQuestionPreview'];
+export type AssistantMeshQuestionPreviewEnvelope = components['schemas']['AssistantMeshQuestionPreviewEnvelope'];
+export type AssistantMeshInquiryCitation = components['schemas']['AssistantMeshInquiryCitation'];
+export type AssistantMeshInquiry = components['schemas']['AssistantMeshInquiry'];
+export type AssistantMeshInquiryEnvelope = components['schemas']['AssistantMeshInquiryEnvelope'];
+export type AssistantMeshInquiryListEnvelope = components['schemas']['AssistantMeshInquiryListEnvelope'];
+export type AssistantMeshInquiryInput = components['schemas']['AssistantMeshInquiryInput'];
+export type AssistantMeshWorkStatus = components['schemas']['AssistantMeshWorkStatus'];
+export type AssistantMeshInquiryShareReplyInput = components['schemas']['AssistantMeshInquiryShareReplyInput'];
+export type AssistantMeshInquiryReplyInput = components['schemas']['AssistantMeshInquiryReplyInput'];
+export type AssistantMeshDelegation = components['schemas']['AssistantMeshDelegation'];
+export type AssistantMeshDelegationEnvelope = components['schemas']['AssistantMeshDelegationEnvelope'];
+export type AssistantMeshDelegationListEnvelope = components['schemas']['AssistantMeshDelegationListEnvelope'];
+export type AssistantMeshDelegationInput = components['schemas']['AssistantMeshDelegationInput'];
+export type AssistantMeshDelegationDeclineInput = components['schemas']['AssistantMeshDelegationDeclineInput'];
+export type AssistantMeshManagedDeviceInput = components['schemas']['AssistantMeshManagedDeviceInput'];
+export type AssistantMeshManagedDevice = components['schemas']['AssistantMeshManagedDevice'];
+export type AssistantMeshManagedDeviceEnvelope = components['schemas']['AssistantMeshManagedDeviceEnvelope'];
+export type AssistantMeshDelegationApproveInput = components['schemas']['AssistantMeshDelegationApproveInput'];
+export type AssistantMeshDelegationClaimInput = components['schemas']['AssistantMeshDelegationClaimInput'];
+export type AssistantMeshDelegationReportInput = components['schemas']['AssistantMeshDelegationReportInput'];
+export type AssistantMeshDelegationDeliverInput = components['schemas']['AssistantMeshDelegationDeliverInput'];
+export type AssistantMeshDelegationApproval = components['schemas']['AssistantMeshDelegationApproval'];
+export type AssistantMeshDelegationApprovalEnvelope = components['schemas']['AssistantMeshDelegationApprovalEnvelope'];
 export type AIWorkbenchModelSettings = components['schemas']['AIWorkbenchModelSettings'];
 export type AISkillSettings = components['schemas']['AISkillSettings'];
 export type AISettings = components['schemas']['AISettings'];
@@ -40074,7 +40537,7 @@ export interface operations {
         parameters: {
             query?: {
                 view?: "mine" | "shared" | "review";
-                kind?: "skill" | "experience_card" | "mcp";
+                kind?: "skill" | "experience_card" | "work_pulse" | "mcp";
                 offset?: number;
             };
             header?: never;
@@ -40263,6 +40726,498 @@ export interface operations {
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
             503: components["responses"]["Error"];
+        };
+    };
+    getAssistantMeshReceptionProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assistant Mesh reception profile for the current caller. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshReceptionProfileEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    updateAssistantMeshReceptionProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshReceptionProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Saved Assistant Mesh reception profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshReceptionProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    searchAssistantMeshAssistants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDiscoveryInput"];
+            };
+        };
+        responses: {
+            /** @description Admitted assistants matching the discovery input. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDiscoveredAssistantListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    previewAssistantMeshInquiry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshQuestionInput"];
+            };
+        };
+        responses: {
+            /** @description Question preview after the built-in sensitive-content scan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshQuestionPreviewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    listAssistantMeshInquiries: {
+        parameters: {
+            query?: {
+                direction?: "sent" | "inbox";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inquiries sent by the caller, or received in the caller's inbox. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInquiryListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createAssistantMeshInquiry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInquiryInput"];
+            };
+        };
+        responses: {
+            /** @description Created inquiry, or the original item for a pending duplicate request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInquiryEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    replyAssistantMeshInquiry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inquiryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInquiryReplyInput"];
+            };
+        };
+        responses: {
+            /** @description Replied inquiry. Only the exact assignee may reply to a pending, unexpired inquiry with one private answer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInquiryEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    replyAndPublishAssistantMeshInquiry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inquiryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInquiryShareReplyInput"];
+            };
+        };
+        responses: {
+            /** @description Privately replied to the original requester and submitted a separate, explicitly scoped publication in the same transaction. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInquiryEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    listAssistantMeshDelegations: {
+        parameters: {
+            query?: {
+                direction?: "inbox" | "sent";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delegations visible to the authenticated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationInput"];
+            };
+        };
+        responses: {
+            /** @description Durable, idempotent request with frozen capability inputs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    registerAssistantMeshManagedDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshManagedDeviceInput"];
+            };
+        };
+        responses: {
+            /** @description The current owner enabled this device for future delegations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshManagedDeviceEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delegation visible to the authenticated participant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    declineAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationDeclineInput"];
+            };
+        };
+        responses: {
+            /** @description The owner declined this request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    approveAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationApproveInput"];
+            };
+        };
+        responses: {
+            /** @description Short-lived, single-use ticket issued after owner approval to the registered device. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationApprovalEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    claimAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationClaimInput"];
+            };
+        };
+        responses: {
+            /** @description Only the first valid owner claim can move the delegation to execution. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    reportAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationReportInput"];
+            };
+        };
+        responses: {
+            /** @description State receipt for the report. With preview, the device sends a digest with a device-held random nonce. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    deliverAssistantMeshDelegation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshDelegationDeliverInput"];
+            };
+        };
+        responses: {
+            /** @description Private result returned to the requesting participant after owner confirmation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     getAssistantMeshSettings: {

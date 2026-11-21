@@ -63,6 +63,10 @@ func (s *Service) UpdateAssistantMeshSettings(ctx context.Context, principal dom
 		if err != nil {
 			return err
 		}
+		if input.DelegationLifetimeHours == 0 {
+			input.DelegationLifetimeHours = before.DelegationLifetimeHours
+			after["delegationLifetimeHours"] = input.DelegationLifetimeHours
+		}
 		return s.audit.Record(tx, domainaudit.Entry{
 			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
 			ResourceKind: "AssistantMeshSettings", ResourceName: domainsettings.AssistantMeshSettingKey,
@@ -99,6 +103,9 @@ func validateAssistantMeshSettings(input domainsettings.AssistantMeshSettings) e
 	if input.ExperienceCardLifetimeDays < 7 || input.ExperienceCardLifetimeDays > 365 {
 		return fmt.Errorf("%w: experience card lifetime must be between 7 and 365 days", apperrors.ErrInvalidArgument)
 	}
+	if input.DelegationLifetimeHours < 0 || input.DelegationLifetimeHours > 72 {
+		return fmt.Errorf("%w: delegation lifetime must be between 1 and 72 hours", apperrors.ErrInvalidArgument)
+	}
 	if input.OrganizationApproverUserIDs == nil || len(input.OrganizationApproverUserIDs) > 100 {
 		return fmt.Errorf("%w: invalid publication reviewer list", apperrors.ErrInvalidArgument)
 	}
@@ -124,7 +131,7 @@ func decodeAssistantMeshSettings(raw map[string]any, found bool) (domainsettings
 	if err != nil {
 		return domainsettings.AssistantMeshSettings{}, err
 	}
-	var item domainsettings.AssistantMeshSettings
+	item := domainsettings.AssistantMeshSettings{DelegationLifetimeHours: domainsettings.DefaultDelegationLifetimeHours}
 	if err := json.Unmarshal(data, &item); err != nil {
 		return domainsettings.AssistantMeshSettings{}, err
 	}
@@ -133,6 +140,7 @@ func decodeAssistantMeshSettings(raw map[string]any, found bool) (domainsettings
 
 func assistantMeshValues(item domainsettings.AssistantMeshSettings) map[string]any {
 	return map[string]any{
+		"delegationLifetimeHours":       item.DelegationLifetimeHours,
 		"enabled":                       item.Enabled,
 		"organizationApproverUserIds":   item.OrganizationApproverUserIDs,
 		"defaultVisibility":             item.DefaultVisibility,

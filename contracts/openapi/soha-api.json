@@ -7258,6 +7258,12 @@
             "minimum": 7,
             "type": "integer"
           },
+          "lifetimeHours": {
+            "description": "Work Pulse lifetime in hours. Defaults to 24.",
+            "maximum": 336,
+            "minimum": 1,
+            "type": "integer"
+          },
           "parameters": {
             "additionalProperties": {
               "anyOf": [
@@ -7351,6 +7357,7 @@
             "enum": [
               "skill",
               "experience_card",
+              "work_pulse",
               "mcp"
             ],
             "type": "string"
@@ -7393,6 +7400,11 @@
         "properties": {
           "applicability": {
             "maxLength": 4096,
+            "type": "string"
+          },
+          "blockerReason": {
+            "description": "Optional short blockers for a work pulse.",
+            "maxLength": 1000,
             "type": "string"
           },
           "body": {
@@ -7438,6 +7450,7 @@
             "enum": [
               "skill",
               "experience_card",
+              "work_pulse",
               "mcp"
             ],
             "type": "string"
@@ -7475,6 +7488,9 @@
             "maxLength": 256,
             "minLength": 1,
             "type": "string"
+          },
+          "workStatus": {
+            "$ref": "#/components/schemas/AssistantMeshWorkStatus"
           }
         },
         "required": [
@@ -7566,6 +7582,391 @@
         ],
         "type": "object"
       },
+      "AssistantMeshDelegation": {
+        "additionalProperties": false,
+        "properties": {
+          "callerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "callerName": {
+            "type": "string"
+          },
+          "capability": {
+            "enum": [
+              "desktop.os-version.v1"
+            ],
+            "type": "string"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "productVersion",
+              "buildVersion"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inputHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "result": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "awaiting_owner_approval",
+              "approved",
+              "executing",
+              "awaiting_confirmation",
+              "completed",
+              "declined",
+              "invalidated",
+              "expired",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callerId",
+          "callerName",
+          "ownerId",
+          "ownerName",
+          "capability",
+          "field",
+          "inputHash",
+          "status",
+          "createdAt",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationApproval": {
+        "additionalProperties": false,
+        "properties": {
+          "delegation": {
+            "$ref": "#/components/schemas/AssistantMeshDelegation"
+          },
+          "fence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "ticket": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delegation",
+          "ticket",
+          "fence"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationApprovalEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshDelegationApproval"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationApproveInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inputHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "preview",
+              "direct"
+            ],
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "proof",
+          "inputHash",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationClaimInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inputHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "ticket": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "proof",
+          "inputHash",
+          "fence",
+          "ticket"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationDeclineInput": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "AssistantMeshDelegationDeliverInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inputHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "nonce": {
+            "description": "Device-held nonce for the preview commitment.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "result": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "proof",
+          "inputHash",
+          "fence",
+          "result",
+          "nonce"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshDelegation"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "enum": [
+              "desktop.os-version.v1"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "productVersion",
+              "buildVersion"
+            ],
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "requestId",
+          "capability",
+          "field"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshDelegation"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDelegationReportInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "fence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inputHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "result": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "resultHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "proof",
+          "inputHash",
+          "fence"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDiscoveredAssistant": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "type": "boolean"
+          },
+          "intro": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "topics": {
+            "description": "Titles of admitted published topics only.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ownerId",
+          "name",
+          "intro",
+          "away",
+          "topics"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDiscoveredAssistantListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshDiscoveredAssistant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshDiscoveryInput": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssistantMeshDraftUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -7623,6 +8024,268 @@
         ],
         "type": "object"
       },
+      "AssistantMeshInquiry": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "callerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "callerName": {
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshInquiryCitation"
+            },
+            "type": "array"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "question": {
+            "description": "Empty after content expiry.",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "answered",
+              "processing",
+              "pending",
+              "replied",
+              "expired",
+              "invalidated"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callerId",
+          "ownerId",
+          "callerName",
+          "ownerName",
+          "question",
+          "status",
+          "createdAt",
+          "dueAt"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryCitation": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "version",
+          "title",
+          "observedAt"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshInquiry"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryInput": {
+        "additionalProperties": false,
+        "properties": {
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "requestId",
+          "question"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshInquiry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryReplyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryShareReplyInput": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "audience": {
+            "$ref": "#/components/schemas/AssistantMeshAudience"
+          },
+          "kind": {
+            "enum": [
+              "experience_card",
+              "work_pulse"
+            ],
+            "type": "string"
+          },
+          "lifetimeDays": {
+            "maximum": 365,
+            "minimum": 7,
+            "type": "integer"
+          },
+          "lifetimeHours": {
+            "maximum": 336,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "summary": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workStatus": {
+            "$ref": "#/components/schemas/AssistantMeshWorkStatus"
+          }
+        },
+        "required": [
+          "answer",
+          "title",
+          "summary",
+          "kind",
+          "audience"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshManagedDevice": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshManagedDeviceEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshManagedDevice"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshManagedDeviceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "proofHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId",
+          "proofHash"
+        ],
+        "type": "object"
+      },
       "AssistantMeshProjectResult": {
         "additionalProperties": false,
         "properties": {
@@ -7673,6 +8336,108 @@
         ],
         "type": "object"
       },
+      "AssistantMeshQuestionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshQuestionPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "The built-in sensitive-content scan rejects this question when true.",
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshQuestionPreviewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshQuestionPreview"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshReceptionProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "type": "boolean"
+          },
+          "intro": {
+            "maxLength": 280,
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "retentionDays": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open",
+          "away",
+          "intro",
+          "retentionDays"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshReceptionProfileEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshReceptionProfile"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshReceptionProfileInput": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "type": "boolean"
+          },
+          "intro": {
+            "maxLength": 280,
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "open",
+          "away",
+          "intro"
+        ],
+        "type": "object"
+      },
       "AssistantMeshSettings": {
         "additionalProperties": false,
         "properties": {
@@ -7687,6 +8452,13 @@
               "projects"
             ],
             "type": "string"
+          },
+          "delegationLifetimeHours": {
+            "default": 4,
+            "description": "Deadline for newly created L3 delegations. Omission preserves the existing value on update.",
+            "maximum": 72,
+            "minimum": 1,
+            "type": "integer"
           },
           "enabled": {
             "type": "boolean"
@@ -7793,6 +8565,19 @@
           "audience"
         ],
         "type": "object"
+      },
+      "AssistantMeshWorkStatus": {
+        "enum": [
+          "in_progress",
+          "blocked",
+          "done"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "AssistantMeshWorkStatusInProgress",
+          "AssistantMeshWorkStatusBlocked",
+          "AssistantMeshWorkStatusDone"
+        ]
       },
       "AuditLog": {
         "additionalProperties": false,
@@ -107421,6 +108206,7 @@
               "enum": [
                 "skill",
                 "experience_card",
+                "work_pulse",
                 "mcp"
               ],
               "type": "string"
@@ -107782,6 +108568,827 @@
             "$ref": "#/components/responses/Error"
           },
           "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/assistants/search": {
+      "post": {
+        "operationId": "searchAssistantMeshAssistants",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDiscoveryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDiscoveredAssistantListEnvelope"
+                }
+              }
+            },
+            "description": "Admitted assistants matching the discovery input."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations": {
+      "get": {
+        "operationId": "listAssistantMeshDelegations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "schema": {
+              "default": "sent",
+              "enum": [
+                "inbox",
+                "sent"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationListEnvelope"
+                }
+              }
+            },
+            "description": "Delegations visible to the authenticated participant."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "post": {
+        "operationId": "createAssistantMeshDelegation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "Durable, idempotent request with frozen capability inputs."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}": {
+      "get": {
+        "operationId": "getAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "Delegation visible to the authenticated participant."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}/approve": {
+      "post": {
+        "operationId": "approveAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationApproveInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationApprovalEnvelope"
+                }
+              }
+            },
+            "description": "Short-lived, single-use ticket issued after owner approval to the registered device."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}/claim": {
+      "post": {
+        "operationId": "claimAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationClaimInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "Only the first valid owner claim can move the delegation to execution."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}/decline": {
+      "post": {
+        "operationId": "declineAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationDeclineInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "The owner declined this request."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}/deliver": {
+      "post": {
+        "operationId": "deliverAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationDeliverInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "Private result returned to the requesting participant after owner confirmation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/{id}/report": {
+      "post": {
+        "operationId": "reportAssistantMeshDelegation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshDelegationReportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshDelegationEnvelope"
+                }
+              }
+            },
+            "description": "State receipt for the report. With preview, the device sends a digest with a device-held random nonce."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/delegations/native-device": {
+      "post": {
+        "operationId": "registerAssistantMeshManagedDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshManagedDeviceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshManagedDeviceEnvelope"
+                }
+              }
+            },
+            "description": "The current owner enabled this device for future delegations."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/inquiries": {
+      "get": {
+        "operationId": "listAssistantMeshInquiries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "sent",
+              "enum": [
+                "sent",
+                "inbox"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInquiryListEnvelope"
+                }
+              }
+            },
+            "description": "Inquiries sent by the caller, or received in the caller's inbox."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "post": {
+        "operationId": "createAssistantMeshInquiry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInquiryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInquiryEnvelope"
+                }
+              }
+            },
+            "description": "Created inquiry, or the original item for a pending duplicate request."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/inquiries/{inquiryId}/reply": {
+      "post": {
+        "operationId": "replyAssistantMeshInquiry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inquiryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInquiryReplyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInquiryEnvelope"
+                }
+              }
+            },
+            "description": "Replied inquiry. Only the exact assignee may reply to a pending, unexpired inquiry with one private answer."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/inquiries/{inquiryId}/reply-and-publish": {
+      "post": {
+        "operationId": "replyAndPublishAssistantMeshInquiry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inquiryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInquiryShareReplyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInquiryEnvelope"
+                }
+              }
+            },
+            "description": "Privately replied to the original requester and submitted a separate, explicitly scoped publication in the same transaction."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/inquiries/preview": {
+      "post": {
+        "operationId": "previewAssistantMeshInquiry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshQuestionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshQuestionPreviewEnvelope"
+                }
+              }
+            },
+            "description": "Question preview after the built-in sensitive-content scan."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/profile": {
+      "get": {
+        "operationId": "getAssistantMeshReceptionProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+                }
+              }
+            },
+            "description": "Assistant Mesh reception profile for the current caller."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "put": {
+        "operationId": "updateAssistantMeshReceptionProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshReceptionProfileInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+                }
+              }
+            },
+            "description": "Saved Assistant Mesh reception profile."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
             "$ref": "#/components/responses/Error"
           }
         },

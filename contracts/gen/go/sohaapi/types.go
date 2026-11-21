@@ -906,6 +906,7 @@ const (
 	AssistantMeshAssetKindExperienceCard AssistantMeshAssetKind = "experience_card"
 	AssistantMeshAssetKindMCP            AssistantMeshAssetKind = "mcp"
 	AssistantMeshAssetKindSkill          AssistantMeshAssetKind = "skill"
+	AssistantMeshAssetKindWorkPulse      AssistantMeshAssetKind = "work_pulse"
 )
 
 // Valid indicates whether the value is a known member of the AssistantMeshAssetKind enum.
@@ -917,6 +918,8 @@ func (e AssistantMeshAssetKind) Valid() bool {
 		return true
 	case AssistantMeshAssetKindSkill:
 		return true
+	case AssistantMeshAssetKindWorkPulse:
+		return true
 	default:
 		return false
 	}
@@ -927,6 +930,7 @@ const (
 	AssistantMeshAssetInputKindExperienceCard AssistantMeshAssetInputKind = "experience_card"
 	AssistantMeshAssetInputKindMCP            AssistantMeshAssetInputKind = "mcp"
 	AssistantMeshAssetInputKindSkill          AssistantMeshAssetInputKind = "skill"
+	AssistantMeshAssetInputKindWorkPulse      AssistantMeshAssetInputKind = "work_pulse"
 )
 
 // Valid indicates whether the value is a known member of the AssistantMeshAssetInputKind enum.
@@ -937,6 +941,8 @@ func (e AssistantMeshAssetInputKind) Valid() bool {
 	case AssistantMeshAssetInputKindMCP:
 		return true
 	case AssistantMeshAssetInputKindSkill:
+		return true
+	case AssistantMeshAssetInputKindWorkPulse:
 		return true
 	default:
 		return false
@@ -1012,6 +1018,129 @@ func (e AssistantMeshAudienceVisibility) Valid() bool {
 	}
 }
 
+// Defines values for AssistantMeshDelegationCapability.
+const (
+	AssistantMeshDelegationCapabilityDesktopOsVersionV1 AssistantMeshDelegationCapability = "desktop.os-version.v1"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationCapability enum.
+func (e AssistantMeshDelegationCapability) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationCapabilityDesktopOsVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationField.
+const (
+	AssistantMeshDelegationFieldBuildVersion   AssistantMeshDelegationField = "buildVersion"
+	AssistantMeshDelegationFieldProductVersion AssistantMeshDelegationField = "productVersion"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationField enum.
+func (e AssistantMeshDelegationField) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationFieldBuildVersion:
+		return true
+	case AssistantMeshDelegationFieldProductVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationStatus.
+const (
+	AssistantMeshDelegationStatusApproved              AssistantMeshDelegationStatus = "approved"
+	AssistantMeshDelegationStatusAwaitingConfirmation  AssistantMeshDelegationStatus = "awaiting_confirmation"
+	AssistantMeshDelegationStatusAwaitingOwnerApproval AssistantMeshDelegationStatus = "awaiting_owner_approval"
+	AssistantMeshDelegationStatusCompleted             AssistantMeshDelegationStatus = "completed"
+	AssistantMeshDelegationStatusDeclined              AssistantMeshDelegationStatus = "declined"
+	AssistantMeshDelegationStatusExecuting             AssistantMeshDelegationStatus = "executing"
+	AssistantMeshDelegationStatusExpired               AssistantMeshDelegationStatus = "expired"
+	AssistantMeshDelegationStatusFailed                AssistantMeshDelegationStatus = "failed"
+	AssistantMeshDelegationStatusInvalidated           AssistantMeshDelegationStatus = "invalidated"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationStatus enum.
+func (e AssistantMeshDelegationStatus) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationStatusApproved:
+		return true
+	case AssistantMeshDelegationStatusAwaitingConfirmation:
+		return true
+	case AssistantMeshDelegationStatusAwaitingOwnerApproval:
+		return true
+	case AssistantMeshDelegationStatusCompleted:
+		return true
+	case AssistantMeshDelegationStatusDeclined:
+		return true
+	case AssistantMeshDelegationStatusExecuting:
+		return true
+	case AssistantMeshDelegationStatusExpired:
+		return true
+	case AssistantMeshDelegationStatusFailed:
+		return true
+	case AssistantMeshDelegationStatusInvalidated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationApproveInputMode.
+const (
+	AssistantMeshDelegationApproveInputModeDirect  AssistantMeshDelegationApproveInputMode = "direct"
+	AssistantMeshDelegationApproveInputModePreview AssistantMeshDelegationApproveInputMode = "preview"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationApproveInputMode enum.
+func (e AssistantMeshDelegationApproveInputMode) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationApproveInputModeDirect:
+		return true
+	case AssistantMeshDelegationApproveInputModePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationInputCapability.
+const (
+	AssistantMeshDelegationInputCapabilityDesktopOsVersionV1 AssistantMeshDelegationInputCapability = "desktop.os-version.v1"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationInputCapability enum.
+func (e AssistantMeshDelegationInputCapability) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationInputCapabilityDesktopOsVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationInputField.
+const (
+	AssistantMeshDelegationInputFieldBuildVersion   AssistantMeshDelegationInputField = "buildVersion"
+	AssistantMeshDelegationInputFieldProductVersion AssistantMeshDelegationInputField = "productVersion"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationInputField enum.
+func (e AssistantMeshDelegationInputField) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationInputFieldBuildVersion:
+		return true
+	case AssistantMeshDelegationInputFieldProductVersion:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AssistantMeshExtractRequestKind.
 const (
 	AssistantMeshExtractRequestKindExperienceCard AssistantMeshExtractRequestKind = "experience_card"
@@ -1024,6 +1153,54 @@ func (e AssistantMeshExtractRequestKind) Valid() bool {
 	case AssistantMeshExtractRequestKindExperienceCard:
 		return true
 	case AssistantMeshExtractRequestKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshInquiryStatus.
+const (
+	AssistantMeshInquiryStatusAnswered    AssistantMeshInquiryStatus = "answered"
+	AssistantMeshInquiryStatusExpired     AssistantMeshInquiryStatus = "expired"
+	AssistantMeshInquiryStatusInvalidated AssistantMeshInquiryStatus = "invalidated"
+	AssistantMeshInquiryStatusPending     AssistantMeshInquiryStatus = "pending"
+	AssistantMeshInquiryStatusProcessing  AssistantMeshInquiryStatus = "processing"
+	AssistantMeshInquiryStatusReplied     AssistantMeshInquiryStatus = "replied"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInquiryStatus enum.
+func (e AssistantMeshInquiryStatus) Valid() bool {
+	switch e {
+	case AssistantMeshInquiryStatusAnswered:
+		return true
+	case AssistantMeshInquiryStatusExpired:
+		return true
+	case AssistantMeshInquiryStatusInvalidated:
+		return true
+	case AssistantMeshInquiryStatusPending:
+		return true
+	case AssistantMeshInquiryStatusProcessing:
+		return true
+	case AssistantMeshInquiryStatusReplied:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshInquiryShareReplyInputKind.
+const (
+	AssistantMeshInquiryShareReplyInputKindExperienceCard AssistantMeshInquiryShareReplyInputKind = "experience_card"
+	AssistantMeshInquiryShareReplyInputKindWorkPulse      AssistantMeshInquiryShareReplyInputKind = "work_pulse"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInquiryShareReplyInputKind enum.
+func (e AssistantMeshInquiryShareReplyInputKind) Valid() bool {
+	switch e {
+	case AssistantMeshInquiryShareReplyInputKindExperienceCard:
+		return true
+	case AssistantMeshInquiryShareReplyInputKindWorkPulse:
 		return true
 	default:
 		return false
@@ -1099,6 +1276,27 @@ func (e AssistantMeshTrialStatus) Valid() bool {
 	case AssistantMeshTrialStatusQueued:
 		return true
 	case AssistantMeshTrialStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshWorkStatus.
+const (
+	AssistantMeshWorkStatusBlocked    AssistantMeshWorkStatus = "blocked"
+	AssistantMeshWorkStatusDone       AssistantMeshWorkStatus = "done"
+	AssistantMeshWorkStatusInProgress AssistantMeshWorkStatus = "in_progress"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshWorkStatus enum.
+func (e AssistantMeshWorkStatus) Valid() bool {
+	switch e {
+	case AssistantMeshWorkStatusBlocked:
+		return true
+	case AssistantMeshWorkStatusDone:
+		return true
+	case AssistantMeshWorkStatusInProgress:
 		return true
 	default:
 		return false
@@ -12360,19 +12558,19 @@ func (e PersonalVMEnvironmentPolicyProvider) Valid() bool {
 
 // Defines values for PersonalWorkspaceRuntimeBrowserControlOwner.
 const (
-	Agent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
-	Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
-	User     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+	PersonalWorkspaceRuntimeBrowserControlOwnerAgent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+	PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+	PersonalWorkspaceRuntimeBrowserControlOwnerUser     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
 )
 
 // Valid indicates whether the value is a known member of the PersonalWorkspaceRuntimeBrowserControlOwner enum.
 func (e PersonalWorkspaceRuntimeBrowserControlOwner) Valid() bool {
 	switch e {
-	case Agent:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerAgent:
 		return true
-	case Released:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerReleased:
 		return true
-	case User:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerUser:
 		return true
 	default:
 		return false
@@ -16503,6 +16701,7 @@ const (
 	ListAssistantMeshAssetsParamsKindExperienceCard ListAssistantMeshAssetsParamsKind = "experience_card"
 	ListAssistantMeshAssetsParamsKindMCP            ListAssistantMeshAssetsParamsKind = "mcp"
 	ListAssistantMeshAssetsParamsKindSkill          ListAssistantMeshAssetsParamsKind = "skill"
+	ListAssistantMeshAssetsParamsKindWorkPulse      ListAssistantMeshAssetsParamsKind = "work_pulse"
 )
 
 // Valid indicates whether the value is a known member of the ListAssistantMeshAssetsParamsKind enum.
@@ -16513,6 +16712,8 @@ func (e ListAssistantMeshAssetsParamsKind) Valid() bool {
 	case ListAssistantMeshAssetsParamsKindMCP:
 		return true
 	case ListAssistantMeshAssetsParamsKindSkill:
+		return true
+	case ListAssistantMeshAssetsParamsKindWorkPulse:
 		return true
 	default:
 		return false
@@ -16579,6 +16780,42 @@ func (e ActOnAssistantMeshAssetParamsAction) Valid() bool {
 	case ActOnAssistantMeshAssetParamsActionTrial:
 		return true
 	case ActOnAssistantMeshAssetParamsActionWithdraw:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAssistantMeshDelegationsParamsDirection.
+const (
+	ListAssistantMeshDelegationsParamsDirectionInbox ListAssistantMeshDelegationsParamsDirection = "inbox"
+	ListAssistantMeshDelegationsParamsDirectionSent  ListAssistantMeshDelegationsParamsDirection = "sent"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshDelegationsParamsDirection enum.
+func (e ListAssistantMeshDelegationsParamsDirection) Valid() bool {
+	switch e {
+	case ListAssistantMeshDelegationsParamsDirectionInbox:
+		return true
+	case ListAssistantMeshDelegationsParamsDirectionSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAssistantMeshInquiriesParamsDirection.
+const (
+	ListAssistantMeshInquiriesParamsDirectionInbox ListAssistantMeshInquiriesParamsDirection = "inbox"
+	ListAssistantMeshInquiriesParamsDirectionSent  ListAssistantMeshInquiriesParamsDirection = "sent"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshInquiriesParamsDirection enum.
+func (e ListAssistantMeshInquiriesParamsDirection) Valid() bool {
+	switch e {
+	case ListAssistantMeshInquiriesParamsDirectionInbox:
+		return true
+	case ListAssistantMeshInquiriesParamsDirectionSent:
 		return true
 	default:
 		return false
@@ -16791,19 +17028,19 @@ func (e CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion) Valid() bool {
 
 // Defines values for SetWorkbenchRuntimeAssetEnabledParamsKind.
 const (
-	SetWorkbenchRuntimeAssetEnabledParamsKindHook  SetWorkbenchRuntimeAssetEnabledParamsKind = "hook"
-	SetWorkbenchRuntimeAssetEnabledParamsKindMCP   SetWorkbenchRuntimeAssetEnabledParamsKind = "mcp"
-	SetWorkbenchRuntimeAssetEnabledParamsKindSkill SetWorkbenchRuntimeAssetEnabledParamsKind = "skill"
+	Hook  SetWorkbenchRuntimeAssetEnabledParamsKind = "hook"
+	MCP   SetWorkbenchRuntimeAssetEnabledParamsKind = "mcp"
+	Skill SetWorkbenchRuntimeAssetEnabledParamsKind = "skill"
 )
 
 // Valid indicates whether the value is a known member of the SetWorkbenchRuntimeAssetEnabledParamsKind enum.
 func (e SetWorkbenchRuntimeAssetEnabledParamsKind) Valid() bool {
 	switch e {
-	case SetWorkbenchRuntimeAssetEnabledParamsKindHook:
+	case Hook:
 		return true
-	case SetWorkbenchRuntimeAssetEnabledParamsKindMCP:
+	case MCP:
 		return true
-	case SetWorkbenchRuntimeAssetEnabledParamsKindSkill:
+	case Skill:
 		return true
 	default:
 		return false
@@ -18664,15 +18901,18 @@ type AssistantMeshActionRequest struct {
 	Audience *AssistantMeshAudience `json:"audience,omitempty"`
 
 	// ExpectedDigest Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke.
-	ExpectedDigest string                                                                `json:"expectedDigest,omitempty"`
-	LifetimeDays   int                                                                   `json:"lifetimeDays,omitempty"`
-	Parameters     map[string]AssistantMeshActionRequest_Parameters_AdditionalProperties `json:"parameters,omitempty"`
-	Permanent      bool                                                                  `json:"permanent,omitempty"`
-	Prompt         string                                                                `json:"prompt,omitempty"`
-	Reason         string                                                                `json:"reason,omitempty"`
-	RequestID      string                                                                `json:"requestId,omitempty"`
-	ResourceID     openapi_types.UUID                                                    `json:"resourceId,omitempty"`
-	SessionID      openapi_types.UUID                                                    `json:"sessionId,omitempty"`
+	ExpectedDigest string `json:"expectedDigest,omitempty"`
+	LifetimeDays   int    `json:"lifetimeDays,omitempty"`
+
+	// LifetimeHours Work Pulse lifetime in hours. Defaults to 24.
+	LifetimeHours int                                                                   `json:"lifetimeHours,omitempty"`
+	Parameters    map[string]AssistantMeshActionRequest_Parameters_AdditionalProperties `json:"parameters,omitempty"`
+	Permanent     bool                                                                  `json:"permanent,omitempty"`
+	Prompt        string                                                                `json:"prompt,omitempty"`
+	Reason        string                                                                `json:"reason,omitempty"`
+	RequestID     string                                                                `json:"requestId,omitempty"`
+	ResourceID    openapi_types.UUID                                                    `json:"resourceId,omitempty"`
+	SessionID     openapi_types.UUID                                                    `json:"sessionId,omitempty"`
 }
 
 // AssistantMeshActionRequestParameters0 defines model for .
@@ -18720,6 +18960,9 @@ type AssistantMeshAssetEnvelope struct {
 // AssistantMeshAssetInput defines model for AssistantMeshAssetInput.
 type AssistantMeshAssetInput struct {
 	Applicability string `json:"applicability,omitempty"`
+
+	// BlockerReason Optional short blockers for a work pulse.
+	BlockerReason string `json:"blockerReason,omitempty"`
 	Body          string `json:"body"`
 	Dependencies  []struct {
 		ID      string `json:"id"`
@@ -18734,7 +18977,8 @@ type AssistantMeshAssetInput struct {
 		Required    bool                                  `json:"required,omitempty"`
 		Type        AssistantMeshAssetInputParametersType `json:"type"`
 	} `json:"parameters,omitempty"`
-	Title string `json:"title"`
+	Title      string                  `json:"title"`
+	WorkStatus AssistantMeshWorkStatus `json:"workStatus,omitempty"`
 }
 
 // AssistantMeshAssetInputKind defines model for AssistantMeshAssetInput.Kind.
@@ -18767,6 +19011,135 @@ type AssistantMeshAudience struct {
 // AssistantMeshAudienceVisibility defines model for AssistantMeshAudience.Visibility.
 type AssistantMeshAudienceVisibility string
 
+// AssistantMeshDelegation defines model for AssistantMeshDelegation.
+type AssistantMeshDelegation struct {
+	CallerID   openapi_types.UUID                `json:"callerId"`
+	CallerName string                            `json:"callerName"`
+	Capability AssistantMeshDelegationCapability `json:"capability"`
+	ClosedAt   *time.Time                        `json:"closedAt,omitempty"`
+	CreatedAt  time.Time                         `json:"createdAt"`
+	ExpiresAt  time.Time                         `json:"expiresAt"`
+	Field      AssistantMeshDelegationField      `json:"field"`
+	ID         openapi_types.UUID                `json:"id"`
+	InputHash  string                            `json:"inputHash"`
+	OwnerID    openapi_types.UUID                `json:"ownerId"`
+	OwnerName  string                            `json:"ownerName"`
+	Result     string                            `json:"result,omitempty"`
+	Status     AssistantMeshDelegationStatus     `json:"status"`
+}
+
+// AssistantMeshDelegationCapability defines model for AssistantMeshDelegation.Capability.
+type AssistantMeshDelegationCapability string
+
+// AssistantMeshDelegationField defines model for AssistantMeshDelegation.Field.
+type AssistantMeshDelegationField string
+
+// AssistantMeshDelegationStatus defines model for AssistantMeshDelegation.Status.
+type AssistantMeshDelegationStatus string
+
+// AssistantMeshDelegationApproval defines model for AssistantMeshDelegationApproval.
+type AssistantMeshDelegationApproval struct {
+	Delegation AssistantMeshDelegation `json:"delegation"`
+	Fence      int                     `json:"fence"`
+	Ticket     string                  `json:"ticket"`
+}
+
+// AssistantMeshDelegationApprovalEnvelope defines model for AssistantMeshDelegationApprovalEnvelope.
+type AssistantMeshDelegationApprovalEnvelope struct {
+	Data AssistantMeshDelegationApproval `json:"data"`
+}
+
+// AssistantMeshDelegationApproveInput defines model for AssistantMeshDelegationApproveInput.
+type AssistantMeshDelegationApproveInput struct {
+	DeviceID  openapi_types.UUID                      `json:"deviceId"`
+	InputHash string                                  `json:"inputHash"`
+	Mode      AssistantMeshDelegationApproveInputMode `json:"mode"`
+	Proof     string                                  `json:"proof"`
+}
+
+// AssistantMeshDelegationApproveInputMode defines model for AssistantMeshDelegationApproveInput.Mode.
+type AssistantMeshDelegationApproveInputMode string
+
+// AssistantMeshDelegationClaimInput defines model for AssistantMeshDelegationClaimInput.
+type AssistantMeshDelegationClaimInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	Fence     int                `json:"fence"`
+	InputHash string             `json:"inputHash"`
+	Proof     string             `json:"proof"`
+	Ticket    string             `json:"ticket"`
+}
+
+// AssistantMeshDelegationDeclineInput defines model for AssistantMeshDelegationDeclineInput.
+type AssistantMeshDelegationDeclineInput = map[string]any
+
+// AssistantMeshDelegationDeliverInput defines model for AssistantMeshDelegationDeliverInput.
+type AssistantMeshDelegationDeliverInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	Fence     int                `json:"fence"`
+	InputHash string             `json:"inputHash"`
+
+	// Nonce Device-held nonce for the preview commitment.
+	Nonce  string `json:"nonce"`
+	Proof  string `json:"proof"`
+	Result string `json:"result"`
+}
+
+// AssistantMeshDelegationEnvelope defines model for AssistantMeshDelegationEnvelope.
+type AssistantMeshDelegationEnvelope struct {
+	Data AssistantMeshDelegation `json:"data"`
+}
+
+// AssistantMeshDelegationInput defines model for AssistantMeshDelegationInput.
+type AssistantMeshDelegationInput struct {
+	Capability AssistantMeshDelegationInputCapability `json:"capability"`
+	Field      AssistantMeshDelegationInputField      `json:"field"`
+	OwnerID    openapi_types.UUID                     `json:"ownerId"`
+	RequestID  openapi_types.UUID                     `json:"requestId"`
+}
+
+// AssistantMeshDelegationInputCapability defines model for AssistantMeshDelegationInput.Capability.
+type AssistantMeshDelegationInputCapability string
+
+// AssistantMeshDelegationInputField defines model for AssistantMeshDelegationInput.Field.
+type AssistantMeshDelegationInputField string
+
+// AssistantMeshDelegationListEnvelope defines model for AssistantMeshDelegationListEnvelope.
+type AssistantMeshDelegationListEnvelope struct {
+	Items []AssistantMeshDelegation `json:"items"`
+}
+
+// AssistantMeshDelegationReportInput defines model for AssistantMeshDelegationReportInput.
+type AssistantMeshDelegationReportInput struct {
+	DeviceID   openapi_types.UUID `json:"deviceId"`
+	Failed     bool               `json:"failed,omitempty"`
+	Fence      int                `json:"fence"`
+	InputHash  string             `json:"inputHash"`
+	Proof      string             `json:"proof"`
+	Result     string             `json:"result,omitempty"`
+	ResultHash string             `json:"resultHash,omitempty"`
+}
+
+// AssistantMeshDiscoveredAssistant defines model for AssistantMeshDiscoveredAssistant.
+type AssistantMeshDiscoveredAssistant struct {
+	Away    bool               `json:"away"`
+	Intro   string             `json:"intro"`
+	Name    string             `json:"name"`
+	OwnerID openapi_types.UUID `json:"ownerId"`
+
+	// Topics Titles of admitted published topics only.
+	Topics []string `json:"topics"`
+}
+
+// AssistantMeshDiscoveredAssistantListEnvelope defines model for AssistantMeshDiscoveredAssistantListEnvelope.
+type AssistantMeshDiscoveredAssistantListEnvelope struct {
+	Items []AssistantMeshDiscoveredAssistant `json:"items"`
+}
+
+// AssistantMeshDiscoveryInput defines model for AssistantMeshDiscoveryInput.
+type AssistantMeshDiscoveryInput struct {
+	Query string `json:"query,omitempty"`
+}
+
 // AssistantMeshDraftUpdate defines model for AssistantMeshDraftUpdate.
 type AssistantMeshDraftUpdate struct {
 	ExpectedDigest string                  `json:"expectedDigest"`
@@ -18785,6 +19158,89 @@ type AssistantMeshExtractRequest struct {
 // AssistantMeshExtractRequestKind defines model for AssistantMeshExtractRequest.Kind.
 type AssistantMeshExtractRequestKind string
 
+// AssistantMeshInquiry defines model for AssistantMeshInquiry.
+type AssistantMeshInquiry struct {
+	Answer     string                         `json:"answer,omitempty"`
+	CallerID   openapi_types.UUID             `json:"callerId"`
+	CallerName string                         `json:"callerName"`
+	Citations  []AssistantMeshInquiryCitation `json:"citations,omitempty"`
+	ClosedAt   *time.Time                     `json:"closedAt,omitempty"`
+	CreatedAt  time.Time                      `json:"createdAt"`
+	DueAt      time.Time                      `json:"dueAt"`
+	ID         openapi_types.UUID             `json:"id"`
+	OwnerID    openapi_types.UUID             `json:"ownerId"`
+	OwnerName  string                         `json:"ownerName"`
+
+	// Question Empty after content expiry.
+	Question string                     `json:"question"`
+	Status   AssistantMeshInquiryStatus `json:"status"`
+}
+
+// AssistantMeshInquiryStatus defines model for AssistantMeshInquiry.Status.
+type AssistantMeshInquiryStatus string
+
+// AssistantMeshInquiryCitation defines model for AssistantMeshInquiryCitation.
+type AssistantMeshInquiryCitation struct {
+	AssetID    openapi_types.UUID `json:"assetId"`
+	ObservedAt time.Time          `json:"observedAt"`
+	Title      string             `json:"title"`
+	Version    int                `json:"version"`
+}
+
+// AssistantMeshInquiryEnvelope defines model for AssistantMeshInquiryEnvelope.
+type AssistantMeshInquiryEnvelope struct {
+	Data AssistantMeshInquiry `json:"data"`
+}
+
+// AssistantMeshInquiryInput defines model for AssistantMeshInquiryInput.
+type AssistantMeshInquiryInput struct {
+	OwnerID   openapi_types.UUID `json:"ownerId"`
+	Question  string             `json:"question"`
+	RequestID openapi_types.UUID `json:"requestId"`
+}
+
+// AssistantMeshInquiryListEnvelope defines model for AssistantMeshInquiryListEnvelope.
+type AssistantMeshInquiryListEnvelope struct {
+	Items []AssistantMeshInquiry `json:"items"`
+}
+
+// AssistantMeshInquiryReplyInput defines model for AssistantMeshInquiryReplyInput.
+type AssistantMeshInquiryReplyInput struct {
+	Answer string `json:"answer"`
+}
+
+// AssistantMeshInquiryShareReplyInput defines model for AssistantMeshInquiryShareReplyInput.
+type AssistantMeshInquiryShareReplyInput struct {
+	Answer        string                                  `json:"answer"`
+	Audience      AssistantMeshAudience                   `json:"audience"`
+	Kind          AssistantMeshInquiryShareReplyInputKind `json:"kind"`
+	LifetimeDays  int                                     `json:"lifetimeDays,omitempty"`
+	LifetimeHours int                                     `json:"lifetimeHours,omitempty"`
+	Summary       string                                  `json:"summary"`
+	Title         string                                  `json:"title"`
+	WorkStatus    AssistantMeshWorkStatus                 `json:"workStatus,omitempty"`
+}
+
+// AssistantMeshInquiryShareReplyInputKind defines model for AssistantMeshInquiryShareReplyInput.Kind.
+type AssistantMeshInquiryShareReplyInputKind string
+
+// AssistantMeshManagedDevice defines model for AssistantMeshManagedDevice.
+type AssistantMeshManagedDevice struct {
+	DeviceID openapi_types.UUID `json:"deviceId"`
+	OwnerID  openapi_types.UUID `json:"ownerId"`
+}
+
+// AssistantMeshManagedDeviceEnvelope defines model for AssistantMeshManagedDeviceEnvelope.
+type AssistantMeshManagedDeviceEnvelope struct {
+	Data AssistantMeshManagedDevice `json:"data"`
+}
+
+// AssistantMeshManagedDeviceInput defines model for AssistantMeshManagedDeviceInput.
+type AssistantMeshManagedDeviceInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	ProofHash string             `json:"proofHash"`
+}
+
 // AssistantMeshProjectResult defines model for AssistantMeshProjectResult.
 type AssistantMeshProjectResult struct {
 	ID     openapi_types.UUID `json:"id"`
@@ -18802,14 +19258,54 @@ type AssistantMeshPublicationReview struct {
 // AssistantMeshPublicationReviewStatus defines model for AssistantMeshPublicationReview.Status.
 type AssistantMeshPublicationReviewStatus string
 
+// AssistantMeshQuestionInput defines model for AssistantMeshQuestionInput.
+type AssistantMeshQuestionInput struct {
+	Question string `json:"question"`
+}
+
+// AssistantMeshQuestionPreview defines model for AssistantMeshQuestionPreview.
+type AssistantMeshQuestionPreview struct {
+	// Blocked The built-in sensitive-content scan rejects this question when true.
+	Blocked  bool   `json:"blocked"`
+	Question string `json:"question"`
+}
+
+// AssistantMeshQuestionPreviewEnvelope defines model for AssistantMeshQuestionPreviewEnvelope.
+type AssistantMeshQuestionPreviewEnvelope struct {
+	Data AssistantMeshQuestionPreview `json:"data"`
+}
+
+// AssistantMeshReceptionProfile defines model for AssistantMeshReceptionProfile.
+type AssistantMeshReceptionProfile struct {
+	Away          bool   `json:"away"`
+	Intro         string `json:"intro"`
+	Open          bool   `json:"open"`
+	RetentionDays int    `json:"retentionDays"`
+}
+
+// AssistantMeshReceptionProfileEnvelope defines model for AssistantMeshReceptionProfileEnvelope.
+type AssistantMeshReceptionProfileEnvelope struct {
+	Data AssistantMeshReceptionProfile `json:"data"`
+}
+
+// AssistantMeshReceptionProfileInput defines model for AssistantMeshReceptionProfileInput.
+type AssistantMeshReceptionProfileInput struct {
+	Away  bool   `json:"away"`
+	Intro string `json:"intro"`
+	Open  bool   `json:"open"`
+}
+
 // AssistantMeshSettings defines model for AssistantMeshSettings.
 type AssistantMeshSettings struct {
 	AllowPermanentExperienceCards bool `json:"allowPermanentExperienceCards"`
 
 	// DefaultVisibility The suggested initial audience kind. Specific teams or projects must be selected during publication.
-	DefaultVisibility          AssistantMeshSettingsDefaultVisibility `json:"defaultVisibility"`
-	Enabled                    bool                                   `json:"enabled"`
-	ExperienceCardLifetimeDays int                                    `json:"experienceCardLifetimeDays"`
+	DefaultVisibility AssistantMeshSettingsDefaultVisibility `json:"defaultVisibility"`
+
+	// DelegationLifetimeHours Deadline for newly created L3 delegations. Omission preserves the existing value on update.
+	DelegationLifetimeHours    int  `json:"delegationLifetimeHours,omitempty"`
+	Enabled                    bool `json:"enabled"`
+	ExperienceCardLifetimeDays int  `json:"experienceCardLifetimeDays"`
 
 	// OrganizationApproverUserIDs Explicit reviewer user IDs. An empty list uses platform administrators.
 	OrganizationApproverUserIDs []openapi_types.UUID `json:"organizationApproverUserIds"`
@@ -18842,6 +19338,9 @@ type AssistantMeshVersion struct {
 	PublishedAt *time.Time              `json:"publishedAt,omitempty"`
 	Version     int                     `json:"version"`
 }
+
+// AssistantMeshWorkStatus defines model for AssistantMeshWorkStatus.
+type AssistantMeshWorkStatus string
 
 // AuditLog defines model for AuditLog.
 type AuditLog struct {
@@ -42616,6 +43115,22 @@ type ActOnAssistantMeshAssetParamsKind string
 // ActOnAssistantMeshAssetParamsAction defines parameters for ActOnAssistantMeshAsset.
 type ActOnAssistantMeshAssetParamsAction string
 
+// ListAssistantMeshDelegationsParams defines parameters for ListAssistantMeshDelegations.
+type ListAssistantMeshDelegationsParams struct {
+	Direction ListAssistantMeshDelegationsParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
+}
+
+// ListAssistantMeshDelegationsParamsDirection defines parameters for ListAssistantMeshDelegations.
+type ListAssistantMeshDelegationsParamsDirection string
+
+// ListAssistantMeshInquiriesParams defines parameters for ListAssistantMeshInquiries.
+type ListAssistantMeshInquiriesParams struct {
+	Direction ListAssistantMeshInquiriesParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
+}
+
+// ListAssistantMeshInquiriesParamsDirection defines parameters for ListAssistantMeshInquiries.
+type ListAssistantMeshInquiriesParamsDirection string
+
 // ListPersonalFeedParams defines parameters for ListPersonalFeed.
 type ListPersonalFeedParams struct {
 	Before string `form:"before,omitempty" json:"before,omitempty"`
@@ -44148,6 +44663,45 @@ type UpdateAssistantMeshDraftJSONRequestBody = AssistantMeshDraftUpdate
 
 // ActOnAssistantMeshAssetJSONRequestBody defines body for ActOnAssistantMeshAsset for application/json ContentType.
 type ActOnAssistantMeshAssetJSONRequestBody = AssistantMeshActionRequest
+
+// SearchAssistantMeshAssistantsJSONRequestBody defines body for SearchAssistantMeshAssistants for application/json ContentType.
+type SearchAssistantMeshAssistantsJSONRequestBody = AssistantMeshDiscoveryInput
+
+// CreateAssistantMeshDelegationJSONRequestBody defines body for CreateAssistantMeshDelegation for application/json ContentType.
+type CreateAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationInput
+
+// RegisterAssistantMeshManagedDeviceJSONRequestBody defines body for RegisterAssistantMeshManagedDevice for application/json ContentType.
+type RegisterAssistantMeshManagedDeviceJSONRequestBody = AssistantMeshManagedDeviceInput
+
+// ApproveAssistantMeshDelegationJSONRequestBody defines body for ApproveAssistantMeshDelegation for application/json ContentType.
+type ApproveAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationApproveInput
+
+// ClaimAssistantMeshDelegationJSONRequestBody defines body for ClaimAssistantMeshDelegation for application/json ContentType.
+type ClaimAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationClaimInput
+
+// DeclineAssistantMeshDelegationJSONRequestBody defines body for DeclineAssistantMeshDelegation for application/json ContentType.
+type DeclineAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationDeclineInput
+
+// DeliverAssistantMeshDelegationJSONRequestBody defines body for DeliverAssistantMeshDelegation for application/json ContentType.
+type DeliverAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationDeliverInput
+
+// ReportAssistantMeshDelegationJSONRequestBody defines body for ReportAssistantMeshDelegation for application/json ContentType.
+type ReportAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationReportInput
+
+// CreateAssistantMeshInquiryJSONRequestBody defines body for CreateAssistantMeshInquiry for application/json ContentType.
+type CreateAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryInput
+
+// PreviewAssistantMeshInquiryJSONRequestBody defines body for PreviewAssistantMeshInquiry for application/json ContentType.
+type PreviewAssistantMeshInquiryJSONRequestBody = AssistantMeshQuestionInput
+
+// ReplyAssistantMeshInquiryJSONRequestBody defines body for ReplyAssistantMeshInquiry for application/json ContentType.
+type ReplyAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryReplyInput
+
+// ReplyAndPublishAssistantMeshInquiryJSONRequestBody defines body for ReplyAndPublishAssistantMeshInquiry for application/json ContentType.
+type ReplyAndPublishAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryShareReplyInput
+
+// UpdateAssistantMeshReceptionProfileJSONRequestBody defines body for UpdateAssistantMeshReceptionProfile for application/json ContentType.
+type UpdateAssistantMeshReceptionProfileJSONRequestBody = AssistantMeshReceptionProfileInput
 
 // DecidePersonalAgentAccessJSONRequestBody defines body for DecidePersonalAgentAccess for application/json ContentType.
 type DecidePersonalAgentAccessJSONRequestBody = PersonalAgentAccessDecision
@@ -53412,13 +53966,22 @@ const Container PersonalEnvironmentTemplateBackend = "container"
 const VM PersonalEnvironmentTemplateBackend = "vm"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerAgent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+const Agent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+const Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerUser PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+const User PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+
+// Retained for Go SDK source compatibility.
+const Approve DecideAIGatewayApprovalRequestParamsAction = "approve"
+
+// Retained for Go SDK source compatibility.
+const Cancel DecideAIGatewayApprovalRequestParamsAction = "cancel"
+
+// Retained for Go SDK source compatibility.
+const Reject DecideAIGatewayApprovalRequestParamsAction = "reject"
 
 // Retained for Go SDK source compatibility.
 const Active ListAIGatewayRelayUpstreamsParamsStatus = "active"

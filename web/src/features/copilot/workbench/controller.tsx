@@ -87,6 +87,7 @@ import { AnimatedIcon } from '@/components/animated-icon'
 import { AssistantAvatar } from './components/assistant-avatar'
 import { AssistantChatResult, UserMessageContent } from './components/assistant-chat-result'
 import { AssistantMesh } from './components/assistant-mesh'
+import { AssistantReception, useReceptionProfile } from './components/assistant-reception'
 import { AssistantPanel, type AssistantTab } from './components/assistant-panel'
 import { ChatMemory } from './components/chat-memory'
 import { WorkbenchComposer } from './components/composer'
@@ -360,6 +361,14 @@ export function AIWorkbenchController() {
     updateDraft,
   } = useChatDraft(requestedSessionId)
   const owner = useAuthStore((state) => state.user?.userId)
+  const receptionOwner = personal ? (owner ?? '') : ''
+  const receptionProfile = useReceptionProfile(receptionOwner)
+  const [assistantMention, setAssistantMention] = useState<{
+    request: number
+    sessionId: string
+    query: string
+    question: string
+  }>()
   const [contextParsing, setContextParsing] = useState(false)
   const [selectedArtifactKey, setSelectedArtifactKey] = useState<string>()
   const [personalArtifactEntry, setPersonalArtifactEntry] = useState<WorkbenchArtifactEntry>()
@@ -2251,6 +2260,15 @@ export function AIWorkbenchController() {
             />
             {personal ? (
               <>
+                <AssistantReception
+                  key={receptionOwner}
+                  owner={receptionOwner}
+                  mention={
+                    assistantMention?.sessionId === requestedSessionId
+                      ? assistantMention
+                      : undefined
+                  }
+                />
                 <Tooltip title="动态" placement="right">
                   <Button
                     type="text"
@@ -3024,6 +3042,17 @@ export function AIWorkbenchController() {
                   onChange={setSenderValue}
                   onCancel={cancelMessageStream}
                   onSubmit={submitMessage}
+                  onAssistantMention={
+                    receptionProfile.isSuccess
+                      ? (query, question) =>
+                          setAssistantMention((previous) => ({
+                            request: (previous?.request ?? 0) + 1,
+                            sessionId: currentSession.id,
+                            query,
+                            question,
+                          }))
+                      : undefined
+                  }
                   onTools={() => setPanel('toolset')}
                   onSettings={() => setPanel('settings')}
                   onAnalysis={openExplicitAnalysis}

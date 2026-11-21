@@ -159,12 +159,14 @@ func (s *Service) review(ctx context.Context, principal domainidentity.Principal
 			if err := s.requireCompletedTrial(ctx, record, *value, domainidentity.Principal{UserID: record.OwnerID}, value.DraftDigest); err != nil {
 				return Asset{}, err
 			}
-			now := nowUTC()
-			if candidate.ExpiresAt != nil {
-				deadline := now.Add(candidate.ExpiresAt.Sub(candidate.PublishedAt))
-				candidate.ExpiresAt = &deadline
+			if record.Kind != domain.KindWorkPulse {
+				now := nowUTC()
+				if candidate.ExpiresAt != nil {
+					deadline := now.Add(candidate.ExpiresAt.Sub(candidate.PublishedAt))
+					candidate.ExpiresAt = &deadline
+				}
+				candidate.PublishedAt = now
 			}
-			candidate.PublishedAt = now
 			candidate.Digest = value.DraftDigest
 			value.Published = &candidate
 			value.Review.Status, action = "approved", "assistant.mesh.asset.review.approve"

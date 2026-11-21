@@ -27,7 +27,7 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
         <Form<Settings>
           key={JSON.stringify(settings)}
           layout="vertical"
-          initialValues={settings}
+          initialValues={{ delegationLifetimeHours: 4, ...settings }}
           disabled={!editable || save.isPending}
           onFinish={(values) => {
             if (editable && !save.isPending) save.mutate(values)
@@ -65,6 +65,14 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
             valuePropName="checked"
           >
             <Switch />
+          </Form.Item>
+          <Form.Item
+            label="新本机委托超时（小时）"
+            name="delegationLifetimeHours"
+            extra="保存后适用于新创建的委托。"
+            rules={[{ required: true, type: 'integer', min: 1, max: 72 }]}
+          >
+            <InputNumber min={1} max={72} precision={0} />
           </Form.Item>
           <Button type="primary" htmlType="submit" disabled={!editable} loading={save.isPending}>
             保存助手互联设置
