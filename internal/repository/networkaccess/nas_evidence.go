@@ -30,6 +30,46 @@ func (r *Repository) NASSessionObservation(ctx context.Context, sessionID string
 	return scanOne(r.db.WithContext(ctx).Raw(`SELECT `+nasEvidenceColumns+` FROM network_nas_session_evidence WHERE tenant_id = 'default' AND workspace_id = 'default' AND session_id = ?`, sessionID).Row(), scanNASObservation, "NAS session evidence")
 }
 
+func (r *Repository) LatestAccessNetworkNASSessions(ctx context.Context, device domain.Device, networkIDs []string) (map[string]domain.ConnectionNASSession, error) {
+	var rows []struct {
+		AccessNetworkID string
+		State           string
+		LastReceivedAt  *time.Time
+	}
+	// Select the latest authorization before interpreting accounting. An older
+	// active receipt must not conceal a newer authorization awaiting its Start.
+	err := r.db.WithContext(ctx).Raw(`
+SELECT DISTINCT ON (a.access_network_id) a.access_network_id,
+       CASE WHEN s.status IN ('revoked', 'expired') OR s.valid_until <= CURRENT_TIMESTAMP
+                 OR e.stopped_at IS NOT NULL OR b.status IS DISTINCT FROM 'active' THEN 'ended'
+            WHEN e.session_id IS NULL THEN 'pending'
+            WHEN e.state = 'active' AND e.started_at IS NOT NULL THEN 'observed'
+            ELSE 'unknown' END AS state,
+       e.received_at AS last_received_at
+FROM network_nas_authorizations a
+JOIN network_runtime_sessions s ON s.id = a.session_id AND s.tenant_id = a.tenant_id AND s.workspace_id = a.workspace_id
+    AND s.subject_id = a.subject_id AND s.device_id = a.device_id AND s.runtime_id = a.runtime_id AND s.nas_id = a.nas_id
+JOIN network_access_devices d ON d.id = a.device_id AND d.tenant_id = a.tenant_id AND d.workspace_id = a.workspace_id
+    AND d.owner_user_id::text = a.subject_id AND d.site_id = s.site_id AND d.status = 'active'
+LEFT JOIN network_access_nas_bindings b ON b.id = a.admission_binding_id AND b.tenant_id = a.tenant_id AND b.workspace_id = a.workspace_id
+    AND b.site_id = s.site_id AND b.nas_id = a.nas_id
+LEFT JOIN network_nas_session_evidence e ON e.session_id = a.session_id AND e.tenant_id = a.tenant_id AND e.workspace_id = a.workspace_id
+    AND e.subject_id = a.subject_id AND e.device_id = a.device_id AND e.runtime_id = a.runtime_id AND e.nas_id = a.nas_id
+    AND e.credential_id = a.credential_id AND e.station_id = a.station_id
+WHERE a.tenant_id = 'default' AND a.workspace_id = 'default' AND a.subject_id = ? AND a.device_id = ?
+    AND s.site_id = ? AND a.access_network_id IN (?) AND a.access_network_id <> ''
+    AND a.authentication_method = 'eap-tls' AND a.decision = 'allow'
+ORDER BY a.access_network_id, a.created_at DESC, a.session_id DESC`, device.OwnerUserID, device.ID, device.SiteID, networkIDs).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]domain.ConnectionNASSession, len(rows))
+	for _, row := range rows {
+		result[row.AccessNetworkID] = domain.ConnectionNASSession{State: row.State, LastReceivedAt: row.LastReceivedAt}
+	}
+	return result, nil
+}
+
 func (r *Repository) RecordNASAccounting(ctx context.Context, runtimeID string, request networkprotocol.RadiusAccountingRequest, receivedAt time.Time, skew time.Duration) error {
 	observedAt := time.Unix(request.EventTimestamp, 0).UTC()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

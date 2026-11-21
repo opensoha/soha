@@ -206,7 +206,8 @@ func (h *NetworkAccessHandler) ListConnectionOptions(c *gin.Context) {
 	var bootstrap []appnetworkaccess.BootstrapNetworkChoice
 	var err error
 	if h.accessNetwork != nil {
-		items, bootstrap, err = h.accessNetwork.ListAccessNetworkChoices(c.Request.Context(), principal(c), params.DeviceID, params.IncludeBootstrap)
+		items, bootstrap, err = h.accessNetwork.ListAccessNetworkChoices(c.Request.Context(), principal(c), params.DeviceID,
+			appnetworkaccess.AccessNetworkChoiceOptions{IncludeBootstrap: params.IncludeBootstrap, IncludeNASSession: params.IncludeNasSession})
 	} else {
 		items, err = h.device.ListConnectionOptions(c.Request.Context(), principal(c), params.DeviceID)
 	}

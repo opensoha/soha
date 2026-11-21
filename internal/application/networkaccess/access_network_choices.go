@@ -22,12 +22,17 @@ type BootstrapNetworkChoice struct {
 	AutoConnect     bool   `json:"autoConnect"`
 }
 
+type AccessNetworkChoiceOptions struct {
+	IncludeBootstrap  bool
+	IncludeNASSession bool
+}
+
 func (s *Service) ListConnectionOptions(ctx context.Context, principal identity.Principal, deviceID string) ([]domain.ConnectionOption, error) {
-	items, _, err := s.ListAccessNetworkChoices(ctx, principal, deviceID, false)
+	items, _, err := s.ListAccessNetworkChoices(ctx, principal, deviceID, AccessNetworkChoiceOptions{})
 	return items, err
 }
 
-func (s *Service) ListAccessNetworkChoices(ctx context.Context, principal identity.Principal, deviceID string, includeBootstrap bool) ([]domain.ConnectionOption, []BootstrapNetworkChoice, error) {
+func (s *Service) ListAccessNetworkChoices(ctx context.Context, principal identity.Principal, deviceID string, options AccessNetworkChoiceOptions) ([]domain.ConnectionOption, []BootstrapNetworkChoice, error) {
 	if s.accessNetworks == nil {
 		items, err := s.legacyConnectionOptions(ctx, principal, deviceID)
 		return items, nil, err
@@ -64,7 +69,38 @@ func (s *Service) ListAccessNetworkChoices(ctx context.Context, principal identi
 	if site.Status != domain.StatusActive {
 		return []domain.ConnectionOption{}, nil, nil
 	}
-	return s.accessNetworkChoices(ctx, principal, site, subject, device, networks, includeBootstrap)
+	items, bootstrap, err := s.accessNetworkChoices(ctx, principal, site, subject, device, networks, options.IncludeBootstrap)
+	if err != nil || !options.IncludeNASSession {
+		return items, bootstrap, err
+	}
+	return items, bootstrap, s.readNASSessionChoices(ctx, device, items)
+}
+
+func (s *Service) readNASSessionChoices(ctx context.Context, device domain.Device, items []domain.ConnectionOption) error {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.AccessNetworkID != "" {
+			ids = append(ids, item.AccessNetworkID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	sessions, err := s.accessNetworks.LatestAccessNetworkNASSessions(ctx, device, ids)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if items[i].AccessNetworkID == "" {
+			continue
+		}
+		session := sessions[items[i].AccessNetworkID]
+		if session.State == "" {
+			session.State = "pending"
+		}
+		items[i].NASSession = &session
+	}
+	return nil
 }
 
 func (s *Service) connectionOptionDevice(ctx context.Context, principal identity.Principal, deviceID string) (domain.Device, error) {

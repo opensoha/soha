@@ -33434,6 +33434,17 @@ export interface components {
             networkName?: string;
             recommendationPriority?: number;
             autoConnect?: boolean;
+            nasSession?: components["schemas"]["NetworkConnectionNASSession"];
+        };
+        /** @description Last Core observation of the NAS session bound to this access network and registered device. */
+        NetworkConnectionNASSession: {
+            /**
+             * @description Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+             * @enum {string}
+             */
+            state: "pending" | "observed" | "ended" | "unknown";
+            /** Format: date-time */
+            lastReceivedAt?: string;
         };
         NetworkConnectionOptionListEnvelope: {
             items: components["schemas"]["NetworkConnectionOption"][];
@@ -38129,6 +38140,7 @@ export type NetworkAccessNetworkDecisionListEnvelope = components['schemas']['Ne
 export type NetworkAccessDeviceType = components['schemas']['NetworkAccessDeviceType'];
 export type NetworkConnectionAuthentication = components['schemas']['NetworkConnectionAuthentication'];
 export type NetworkConnectionOption = components['schemas']['NetworkConnectionOption'];
+export type NetworkConnectionNASSession = components['schemas']['NetworkConnectionNASSession'];
 export type NetworkConnectionOptionListEnvelope = components['schemas']['NetworkConnectionOptionListEnvelope'];
 export type NetworkAccessBootstrapOption = components['schemas']['NetworkAccessBootstrapOption'];
 export type NetworkNASBindingInput = components['schemas']['NetworkNASBindingInput'];
@@ -64310,6 +64322,8 @@ export interface operations {
                 deviceId: string;
                 /** @description When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options. */
                 includeBootstrap?: boolean;
+                /** @description Include the latest NAS accounting status for authorized access networks and the current user's registered device. */
+                includeNasSession?: boolean;
             };
             header?: never;
             path?: never;

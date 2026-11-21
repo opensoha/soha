@@ -2,6 +2,8 @@ package networkaccess
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -145,11 +147,16 @@ func TestAccessNetworkTTLSDoesNotIgnoreUnverifiedDeviceDenies(t *testing.T) {
 
 type accessNetworkChoiceCatalog struct {
 	AccessNetworkCatalog
-	items []domain.AccessNetwork
+	items       []domain.AccessNetwork
+	readSession func(domain.Device, []string) map[string]domain.ConnectionNASSession
 }
 
 func (c accessNetworkChoiceCatalog) ListAccessNetworks(context.Context, string) ([]domain.AccessNetwork, error) {
 	return c.items, nil
+}
+
+func (c accessNetworkChoiceCatalog) LatestAccessNetworkNASSessions(_ context.Context, device domain.Device, ids []string) (map[string]domain.ConnectionNASSession, error) {
+	return c.readSession(device, ids), nil
 }
 
 func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
@@ -173,16 +180,27 @@ func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
 	catalog := accessNetworkChoiceCatalog{items: []domain.AccessNetwork{
 		managed("second", 20, true), managed("denied", 1, false), managed("first", 10, true),
 		{ID: "guest", Configuration: domain.AccessNetworkInput{SiteID: "site", Kind: domain.AccessNetworkBootstrap, Enabled: true, SSID: "guest"}},
+	}, readSession: func(device domain.Device, ids []string) map[string]domain.ConnectionNASSession {
+		if device.OwnerUserID != "user-1" || device.ID != "device-1" || device.SiteID != "site" || !slices.Equal(ids, []string{"first", "second"}) {
+			t.Fatalf("unexpected readback scope: %v, %v", device, ids)
+		}
+		return map[string]domain.ConnectionNASSession{"first": {State: "observed"}}
 	}}
 	service := &Service{store: store, accessNetworks: catalog}
 	ctx := context.Background()
 	principal := identity.Principal{UserID: "user-1"}
-	items, guest, err := service.ListAccessNetworkChoices(ctx, principal, "device-1", true)
+	items, guest, err := service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{IncludeBootstrap: true, IncludeNASSession: true})
 	if err != nil || len(items) != 2 || items[0].AccessNetworkID != "first" || items[1].AccessNetworkID != "second" || len(guest) != 1 || guest[0].AccessNetworkID != "guest" {
 		t.Fatalf("got %#v, %#v, %v", items, guest, err)
 	}
-	_, guest, err = service.ListAccessNetworkChoices(ctx, principal, "device-1", false)
-	if err != nil || len(guest) != 0 {
-		t.Fatalf("legacy caller received guest info: %#v, %v", guest, err)
+	if items[0].NASSession == nil || items[0].NASSession.State != "observed" || items[1].NASSession == nil || items[1].NASSession.State != "pending" {
+		t.Fatalf("unexpected NAS readback: %+v, %+v", items[0].NASSession, items[1].NASSession)
+	}
+	items, guest, err = service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{})
+	if err != nil || len(guest) != 0 || len(items) != 2 || items[0].NASSession != nil {
+		t.Fatalf("legacy caller received opt-in info: %#v, %#v, %v", items, guest, err)
+	}
+	if _, _, err := service.ListAccessNetworkChoices(ctx, identity.Principal{UserID: "other-user"}, "device-1", AccessNetworkChoiceOptions{IncludeNASSession: true}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("foreign device readback returned %v", err)
 	}
 }

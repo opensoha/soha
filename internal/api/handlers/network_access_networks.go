@@ -16,7 +16,7 @@ type NetworkAccessNetworkService interface {
 	SaveAccessNetwork(context.Context, identity.Principal, string, domain.AccessNetworkInput) (domain.AccessNetwork, error)
 	DeleteAccessNetwork(context.Context, identity.Principal, string) error
 	PreviewAccessNetworks(context.Context, identity.Principal, string, string, string, string, *domain.AccessNetworkInput) ([]app.AccessNetworkDecision, error)
-	ListAccessNetworkChoices(context.Context, identity.Principal, string, bool) ([]domain.ConnectionOption, []app.BootstrapNetworkChoice, error)
+	ListAccessNetworkChoices(context.Context, identity.Principal, string, app.AccessNetworkChoiceOptions) ([]domain.ConnectionOption, []app.BootstrapNetworkChoice, error)
 }
 
 func (h *NetworkAccessHandler) ListAccessNetworks(c *gin.Context) {

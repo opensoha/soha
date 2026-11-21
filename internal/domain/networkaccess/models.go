@@ -421,17 +421,23 @@ type NASBindingFilter struct {
 }
 
 type ConnectionOption struct {
-	SiteID                 string `json:"siteId"`
-	SiteName               string `json:"siteName"`
-	AccessMedium           string `json:"accessMedium"`
-	SSID                   string `json:"ssid,omitempty"`
-	Authentication         string `json:"authentication"`
-	AccessProfile          string `json:"accessProfile"`
-	PolicyVersion          int    `json:"policyVersion"`
-	AccessNetworkID        string `json:"accessNetworkId,omitempty"`
-	NetworkName            string `json:"networkName,omitempty"`
-	RecommendationPriority int    `json:"recommendationPriority,omitempty"`
-	AutoConnect            bool   `json:"autoConnect,omitempty"`
+	SiteID                 string                `json:"siteId"`
+	SiteName               string                `json:"siteName"`
+	AccessMedium           string                `json:"accessMedium"`
+	SSID                   string                `json:"ssid,omitempty"`
+	Authentication         string                `json:"authentication"`
+	AccessProfile          string                `json:"accessProfile"`
+	PolicyVersion          int                   `json:"policyVersion"`
+	AccessNetworkID        string                `json:"accessNetworkId,omitempty"`
+	NetworkName            string                `json:"networkName,omitempty"`
+	RecommendationPriority int                   `json:"recommendationPriority,omitempty"`
+	AutoConnect            bool                  `json:"autoConnect,omitempty"`
+	NASSession             *ConnectionNASSession `json:"nasSession,omitempty"`
+}
+
+type ConnectionNASSession struct {
+	State          string     `json:"state"`
+	LastReceivedAt *time.Time `json:"lastReceivedAt,omitempty"`
 }
 
 type SiteProfileBinding struct {

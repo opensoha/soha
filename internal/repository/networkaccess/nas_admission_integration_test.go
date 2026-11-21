@@ -15,6 +15,7 @@ import (
 
 func (s *accessRepositoryScenario) checkNASAdmission(t *testing.T) {
 	t.Run("NASAccountingTTLSBindsClassAndPersists64BitTotals", s.checkNASAccountingTTLS)
+	t.Run("AccessNetworkNASReadback", s.checkAccessNetworkNASReadback)
 
 	t.Run("NASAdmissionFloorSurvivesReevaluationAndRejectsLateACK", func(t *testing.T) {
 		now := s.now.Add(40 * time.Minute)
@@ -65,6 +66,82 @@ func (s *accessRepositoryScenario) checkNASAdmission(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func (s *accessRepositoryScenario) checkAccessNetworkNASReadback(t *testing.T) {
+	device := s.updatedDevice
+	networkID := "readback-network-" + s.suffix
+	add := func(label string, at time.Time) string {
+		t.Helper()
+		id := "readback-" + label + "-" + s.suffix
+		validUntil := at.Add(time.Hour)
+		if err := s.store.Exec(s.ctx, `INSERT INTO network_runtime_sessions
+			(id,runtime_id,subject_id,device_id,site_id,mode,access_profile,status,policy_version,valid_until,nas_id,authentication_method,created_at,updated_at)
+			SELECT $1,runtime_id,subject_id,device_id,site_id,'internal_direct','full','active',policy_version,$2,nas_id,'eap-tls',$3,$3
+			FROM network_runtime_sessions WHERE id=$4`, id, validUntil, at, s.sessionID); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.store.Exec(s.ctx, `INSERT INTO network_nas_authorizations
+			(runtime_id,request_id,request_hash,nas_id,subject_id,device_id,authentication_method,session_id,decision,access_profile,
+			 policy_version,reason_code,valid_until,created_at,credential_id,station_id,radius_attributes,access_network_id,admission_binding_id)
+			SELECT runtime_id,$1,request_hash,nas_id,subject_id,device_id,'eap-tls',$1,'allow','full',policy_version,
+			 'policy_allowed',$2,$3,credential_id,station_id,radius_attributes,$4,$5 FROM network_nas_authorizations WHERE session_id=$6`,
+			id, validUntil, at, networkID, s.nasBinding.ID, s.sessionID); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	assertReadback := func(owner domain.Device, id, state string) domain.ConnectionNASSession {
+		t.Helper()
+		items, err := s.repository.LatestAccessNetworkNASSessions(s.ctx, owner, []string{id})
+		if item := items[id]; err == nil && item.State == state {
+			return item
+		}
+		t.Fatalf("readback %q: got %+v, %v, want %q", id, items, err, state)
+		return domain.ConnectionNASSession{}
+	}
+	packet := networkprotocol.RadiusAccountingRequest{RadiusAccounting: networkprotocol.RadiusAccounting{
+		NASID: s.nasBinding.NASID, UserID: device.OwnerUserID, DeviceID: "AA-BB-CC-DD-EE-FF",
+	}}
+	record := func(id, status string, at time.Time) {
+		t.Helper()
+		packet.SessionID, packet.AccountingSessionID = id, id
+		packet.EventTimestamp, packet.StatusType = at.Unix(), status
+		if err := s.repository.RecordNASAccounting(s.ctx, s.runtimeID, packet, at, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The prior endpoint-response fixture creates an accounting epoch.
+	now := s.now.Add(50 * time.Minute).Truncate(time.Second)
+	first := add("first", now)
+	assertReadback(device, networkID, "pending")
+	record(first, "start", now.Add(time.Second))
+	got := assertReadback(device, networkID, "observed")
+	if got.LastReceivedAt == nil || !got.LastReceivedAt.Equal(now.Add(time.Second)) {
+		t.Fatalf("received at %v", got.LastReceivedAt)
+	}
+	other := device
+	other.OwnerUserID = "other-user"
+	assertReadback(other, networkID, "")
+	other = device
+	other.ID = "other-device"
+	assertReadback(other, networkID, "")
+	assertReadback(device, "other-network", "")
+
+	next := add("next", now.Add(2*time.Second))
+	assertReadback(device, networkID, "pending")
+	record(next, "start", now.Add(3*time.Second))
+	assertReadback(device, networkID, "observed")
+	if err := s.store.Exec(s.ctx, `UPDATE network_nas_authorizations SET admission_binding_id=$1 WHERE session_id=$2`, "removed-"+s.suffix, next); err != nil {
+		t.Fatal(err)
+	}
+	assertReadback(device, networkID, "ended")
+	if err := s.store.Exec(s.ctx, `UPDATE network_nas_authorizations SET admission_binding_id=$1 WHERE session_id=$2`, s.nasBinding.ID, next); err != nil {
+		t.Fatal(err)
+	}
+	record(next, "stop", now.Add(4*time.Second))
+	assertReadback(device, networkID, "ended")
 }
 
 func (s *accessRepositoryScenario) prepareNASAdmissionRoleSession(t *testing.T, now time.Time) (string, string) {

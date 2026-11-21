@@ -9016,6 +9016,30 @@ func (e NetworkConnectionAuthentication) Valid() bool {
 	}
 }
 
+// Defines values for NetworkConnectionNASSessionState.
+const (
+	NetworkConnectionNASSessionStateEnded    NetworkConnectionNASSessionState = "ended"
+	NetworkConnectionNASSessionStateObserved NetworkConnectionNASSessionState = "observed"
+	NetworkConnectionNASSessionStatePending  NetworkConnectionNASSessionState = "pending"
+	NetworkConnectionNASSessionStateUnknown  NetworkConnectionNASSessionState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkConnectionNASSessionState enum.
+func (e NetworkConnectionNASSessionState) Valid() bool {
+	switch e {
+	case NetworkConnectionNASSessionStateEnded:
+		return true
+	case NetworkConnectionNASSessionStateObserved:
+		return true
+	case NetworkConnectionNASSessionStatePending:
+		return true
+	case NetworkConnectionNASSessionStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkDeviceGovernanceMode.
 const (
 	NetworkDeviceGovernanceModeLegacy              NetworkDeviceGovernanceMode = "legacy"
@@ -31061,20 +31085,34 @@ type NetworkConflictSourceType string
 // NetworkConnectionAuthentication defines model for NetworkConnectionAuthentication.
 type NetworkConnectionAuthentication string
 
+// NetworkConnectionNASSession Last Core observation of the NAS session bound to this access network and registered device.
+type NetworkConnectionNASSession struct {
+	LastReceivedAt *time.Time `json:"lastReceivedAt,omitempty"`
+
+	// State Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+	State NetworkConnectionNASSessionState `json:"state"`
+}
+
+// NetworkConnectionNASSessionState Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+type NetworkConnectionNASSessionState string
+
 // NetworkConnectionOption defines model for NetworkConnectionOption.
 type NetworkConnectionOption struct {
-	AccessMedium           NetworkAccessMedium             `json:"accessMedium"`
-	AccessNetworkID        string                          `json:"accessNetworkId,omitempty"`
-	AccessProfile          NetworkAccessProfile            `json:"accessProfile"`
-	Authentication         NetworkConnectionAuthentication `json:"authentication"`
-	AutoConnect            bool                            `json:"autoConnect,omitempty"`
-	NetworkName            string                          `json:"networkName,omitempty"`
-	PolicyVersion          int                             `json:"policyVersion"`
-	ProvisioningAvailable  bool                            `json:"provisioningAvailable,omitempty"`
-	ProvisioningReason     string                          `json:"provisioningReason,omitempty"`
-	RecommendationPriority int                             `json:"recommendationPriority,omitempty"`
-	SiteID                 string                          `json:"siteId"`
-	SiteName               string                          `json:"siteName"`
+	AccessMedium    NetworkAccessMedium             `json:"accessMedium"`
+	AccessNetworkID string                          `json:"accessNetworkId,omitempty"`
+	AccessProfile   NetworkAccessProfile            `json:"accessProfile"`
+	Authentication  NetworkConnectionAuthentication `json:"authentication"`
+	AutoConnect     bool                            `json:"autoConnect,omitempty"`
+
+	// NasSession Last Core observation of the NAS session bound to this access network and registered device.
+	NasSession             *NetworkConnectionNASSession `json:"nasSession,omitempty"`
+	NetworkName            string                       `json:"networkName,omitempty"`
+	PolicyVersion          int                          `json:"policyVersion"`
+	ProvisioningAvailable  bool                         `json:"provisioningAvailable,omitempty"`
+	ProvisioningReason     string                       `json:"provisioningReason,omitempty"`
+	RecommendationPriority int                          `json:"recommendationPriority,omitempty"`
+	SiteID                 string                       `json:"siteId"`
+	SiteName               string                       `json:"siteName"`
 
 	// Ssid Present only for Wi-Fi options.
 	Ssid string `json:"ssid,omitempty"`
@@ -42631,6 +42669,9 @@ type ListCurrentNetworkConnectionOptionsParams struct {
 
 	// IncludeBootstrap When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
 	IncludeBootstrap bool `form:"includeBootstrap,omitempty" json:"includeBootstrap,omitempty"`
+
+	// IncludeNasSession Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+	IncludeNasSession bool `form:"includeNasSession,omitempty" json:"includeNasSession,omitempty"`
 }
 
 // ListManagedContentCasesParams defines parameters for ListManagedContentCases.

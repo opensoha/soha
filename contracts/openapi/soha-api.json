@@ -50623,6 +50623,36 @@
           "NetworkConnectionAuthenticationRadius8021X"
         ]
       },
+      "NetworkConnectionNASSession": {
+        "additionalProperties": false,
+        "description": "Last Core observation of the NAS session bound to this access network and registered device.",
+        "properties": {
+          "lastReceivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.",
+            "enum": [
+              "pending",
+              "observed",
+              "ended",
+              "unknown"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "NetworkConnectionNASSessionStatePending",
+              "NetworkConnectionNASSessionStateObserved",
+              "NetworkConnectionNASSessionStateEnded",
+              "NetworkConnectionNASSessionStateUnknown"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
       "NetworkConnectionOption": {
         "additionalProperties": false,
         "properties": {
@@ -50642,6 +50672,9 @@
           },
           "autoConnect": {
             "type": "boolean"
+          },
+          "nasSession": {
+            "$ref": "#/components/schemas/NetworkConnectionNASSession"
           },
           "networkName": {
             "maxLength": 200,
@@ -121065,6 +121098,15 @@
             "description": "When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.",
             "in": "query",
             "name": "includeBootstrap",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include the latest NAS accounting status for authorized access networks and the current user's registered device.",
+            "in": "query",
+            "name": "includeNasSession",
             "schema": {
               "default": false,
               "type": "boolean"

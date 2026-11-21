@@ -20934,6 +20934,10 @@ paths:
           in: query
           description: When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
           schema: { type: boolean, default: false }
+        - name: includeNasSession
+          in: query
+          description: Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Wi-Fi and wired 802.1X connection options authorized for the current user and endpoint.
@@ -62252,6 +62256,19 @@ components:
         networkName: { type: string, minLength: 1, maxLength: 200 }
         recommendationPriority: { type: integer, minimum: 1, maximum: 10000 }
         autoConnect: { type: boolean }
+        nasSession: { $ref: "#/components/schemas/NetworkConnectionNASSession" }
+      additionalProperties: false
+    NetworkConnectionNASSession:
+      type: object
+      description: Last Core observation of the NAS session bound to this access network and registered device.
+      required: [ state ]
+      properties:
+        state:
+          type: string
+          enum: [ pending, observed, ended, unknown ]
+          x-enum-varnames: [ NetworkConnectionNASSessionStatePending, NetworkConnectionNASSessionStateObserved, NetworkConnectionNASSessionStateEnded, NetworkConnectionNASSessionStateUnknown ]
+          description: Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+        lastReceivedAt: { type: string, format: date-time }
       additionalProperties: false
     NetworkConnectionOptionListEnvelope:
       type: object
