@@ -51,7 +51,8 @@ func (r *Repository) CompleteInquiry(ctx context.Context, item domain.Inquiry) e
 }
 
 func (r *Repository) Cleanup(ctx context.Context) error {
-	return errors.Join(r.cleanupInquiries(ctx), r.CleanupDelegations(ctx, time.Now().UTC(), receptionRetention))
+	now := time.Now().UTC()
+	return errors.Join(r.cleanupInquiries(ctx), r.CleanupDelegations(ctx, now, receptionRetention), r.CleanupFeishuJobs(ctx, now))
 }
 
 func (r *Repository) cleanupInquiries(ctx context.Context) error {

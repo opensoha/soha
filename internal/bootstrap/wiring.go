@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
@@ -1517,8 +1518,13 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		DirectorySync:       directorySyncHandler,
 	}
 	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	if cfg.AIGateway.FeishuMesh.Enabled && (!cfg.Modules.AI.Enabled || !cfg.Modules.AIGateway.Enabled) {
+		return apiRoutes.Dependencies{}, errors.New("Heya Feishu channel requires AI and AI Gateway modules")
+	}
 	if cfg.Modules.AI.Enabled {
-		wireAssistantMeshRoutes(&dependencies, infra, repos, core, delivery, gateway)
+		if err := wireAssistantMeshRoutes(cfg.AIGateway, &dependencies, infra, repos, core, delivery, gateway); err != nil {
+			return apiRoutes.Dependencies{}, err
+		}
 	}
 	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
 	return dependencies, nil

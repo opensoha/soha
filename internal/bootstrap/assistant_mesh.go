@@ -9,6 +9,7 @@ import (
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	identity "github.com/opensoha/soha/internal/domain/identity"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	meshrepo "github.com/opensoha/soha/internal/repository/assistantmesh"
 )
 
@@ -23,7 +24,7 @@ func (r assistantMeshRunner) MeshRunStatus(ctx context.Context, principal identi
 	return r.copilot.AssistantMeshRunStatus(ctx, principal, runID, assetID, digest)
 }
 
-func wireAssistantMeshRoutes(deps *apiroutes.Dependencies, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices) {
+func wireAssistantMeshRoutes(cfg cfgpkg.AIGatewayConfig, deps *apiroutes.Dependencies, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices) error {
 	runner := assistantMeshRunner{copilot: delivery.copilotService}
 	store := meshrepo.New(infra.databaseStore.DB())
 	service := appmesh.New(store, core.settingsService, runner, repos.identityRepository, core.permissionResolver, core.auditService)
@@ -34,4 +35,5 @@ func wireAssistantMeshRoutes(deps *apiroutes.Dependencies, infra *infrastructure
 	reception := appmesh.NewReception(service, store, core.identityService, delivery.copilotService, model)
 	startPlatformReceiptCleanup(infra.lifecycleCtx, store, infra.logger, "assistant_mesh_inquiry_retention")
 	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP, reception, appmesh.NewDelegations(reception, store))
+	return wireFeishuMesh(cfg, infra, repos, core, reception, store)
 }

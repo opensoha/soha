@@ -186,6 +186,7 @@ type AIGatewayConfig struct {
 	ConnectorRuntime   AIGatewayConnectorRuntimeConfig   `mapstructure:"connector_runtime"`
 	ConnectorRuntimes  []AIGatewayConnectorRuntimeConfig `mapstructure:"connector_runtimes"`
 	ConnectorEventSink AIGatewayConnectorEventSinkConfig `mapstructure:"connector_event_sink"`
+	FeishuMesh         AIGatewayFeishuMeshConfig         `mapstructure:"feishu_mesh"`
 }
 
 type AIGatewayRelayConfig struct {
@@ -222,6 +223,18 @@ type AIGatewayConnectorRuntimeConfig struct {
 	Token       string `mapstructure:"token"`
 	PluginID    string `mapstructure:"plugin_id"`
 	ConnectorID string `mapstructure:"connector_id"`
+}
+
+// AIGatewayFeishuMeshConfig binds the private channel to one app and directory.
+type AIGatewayFeishuMeshConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	AppID        string `mapstructure:"app_id"`
+	TenantKey    string `mapstructure:"tenant_key"`
+	BotOpenID    string `mapstructure:"bot_open_id"`
+	ConnectionID string `mapstructure:"connection_id"`
+	Endpoint     string `mapstructure:"endpoint"`
+	IngressToken string `mapstructure:"ingress_token"`
+	RuntimeToken string `mapstructure:"runtime_token"`
 }
 
 type AIGatewayConnectorEventSinkConfig struct {
@@ -420,6 +433,8 @@ func (c *Config) expandEnv() {
 		c.AIGateway.ConnectorRuntimes[i].expandEnv()
 	}
 	c.AIGateway.ConnectorEventSink.Token = os.ExpandEnv(c.AIGateway.ConnectorEventSink.Token)
+	c.AIGateway.FeishuMesh.IngressToken = os.ExpandEnv(c.AIGateway.FeishuMesh.IngressToken)
+	c.AIGateway.FeishuMesh.RuntimeToken = os.ExpandEnv(c.AIGateway.FeishuMesh.RuntimeToken)
 	c.Plugins.Marketplace.URL = os.ExpandEnv(c.Plugins.Marketplace.URL)
 	for i := range c.Plugins.Marketplace.Sources {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
@@ -908,6 +923,14 @@ var configDefaults = []struct {
 	{"ai_gateway.connector_runtime.connector_id", ""},
 	{"ai_gateway.connector_runtimes", []map[string]any{}},
 	{"ai_gateway.connector_event_sink.token", ""},
+	{"ai_gateway.feishu_mesh.enabled", false},
+	{"ai_gateway.feishu_mesh.app_id", ""},
+	{"ai_gateway.feishu_mesh.tenant_key", ""},
+	{"ai_gateway.feishu_mesh.bot_open_id", ""},
+	{"ai_gateway.feishu_mesh.connection_id", ""},
+	{"ai_gateway.feishu_mesh.endpoint", ""},
+	{"ai_gateway.feishu_mesh.ingress_token", ""},
+	{"ai_gateway.feishu_mesh.runtime_token", ""},
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
