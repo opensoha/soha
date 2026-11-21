@@ -3,6 +3,10 @@ import type {
   EndpointDevice,
   EndpointDeviceInput,
   EndpointDeviceStatus,
+  NetworkAccessNetwork,
+  NetworkAccessNetworkInput,
+  NetworkAccessNetworkDecision,
+  NetworkAccessNetworkPreviewInput,
   NetworkAccessGrant,
   NetworkAccessGrantInput,
   NetworkAccessGrantSecret,
@@ -401,6 +405,42 @@ export async function getNetworkTelemetrySummary(
     ])}`,
   )
   return response.data
+}
+
+const accessNetworksPath = '/network-access/access-networks'
+
+export function listNetworkAccessNetworks(siteId: string): Promise<NetworkAccessNetwork[]> {
+  return list(`${accessNetworksPath}${queryString([['siteId', siteId]])}`)
+}
+
+export async function saveNetworkAccessNetwork({
+  id,
+  input,
+}: {
+  id?: string
+  input: NetworkAccessNetworkInput
+}): Promise<NetworkAccessNetwork> {
+  const response = id
+    ? await api.put<ApiResponse<NetworkAccessNetwork>>(
+        `${accessNetworksPath}/${encodeURIComponent(id)}`,
+        input,
+      )
+    : await api.post<ApiResponse<NetworkAccessNetwork>>(accessNetworksPath, input)
+  return response.data
+}
+
+export async function deleteNetworkAccessNetwork({ id }: { id: string; siteId: string; name: string }): Promise<void> {
+  await api.delete(`${accessNetworksPath}/${encodeURIComponent(id)}`)
+}
+
+export async function previewNetworkAccessNetworks(
+  input: NetworkAccessNetworkPreviewInput,
+): Promise<NetworkAccessNetworkDecision[]> {
+  const response = await api.post<ApiResponse<NetworkAccessNetworkDecision[]>>(
+    `${accessNetworksPath}/preview`,
+    input,
+  )
+  return response.data ?? []
 }
 
 export function listNetworkNASBindings(

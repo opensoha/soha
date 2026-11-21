@@ -122,6 +122,9 @@ export const networkAccessKeys = {
         },
       ] as const,
   },
+  accessNetworks: {
+    list: (siteId: string) => ['network-access', 'access-networks', 'list', text(siteId)] as const,
+  },
   nasBindings: {
     all: ['network-access', 'nas-bindings'] as const,
     list: (filters: NetworkNASBindingFilters) =>
@@ -233,6 +236,9 @@ export const networkAccessMutationKeys = {
   enrollmentRevoke: ['network-access', 'mutation', 'enrollment-revoke'] as const,
   accessGrantCreate: ['network-access', 'mutation', 'access-grant-create'] as const,
   accessGrantRevoke: ['network-access', 'mutation', 'access-grant-revoke'] as const,
+  accessNetworkSave: ['network-access', 'mutation', 'access-network-save'] as const,
+  accessNetworkDelete: ['network-access', 'mutation', 'access-network-delete'] as const,
+  accessNetworksPreview: ['network-access', 'mutation', 'access-networks-preview'] as const,
   nasBindingCreate: ['network-access', 'mutation', 'nas-binding-create'] as const,
   nasBindingUpdate: ['network-access', 'mutation', 'nas-binding-update'] as const,
   nasBindingDelete: ['network-access', 'mutation', 'nas-binding-delete'] as const,
