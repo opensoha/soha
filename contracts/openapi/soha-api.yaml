@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Soha API
-  version: 0.2.1
+  version: 0.2.2
   description: >
     Public OpenSoha core API contract. This first contract focuses on stable cross-repository boundaries: auth, health, runner-facing control-plane callbacks, AI Gateway, and MCP capability discovery. Pod session WebSocket targets and their UID-aware ticket requirements are described separately in x-soha-websocket-paths to preserve HTTP client generation.
 servers:
@@ -17380,6 +17380,146 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstalledPluginListEnvelope"
+  /plugins/updates:
+    get:
+      tags: [ Plugins ]
+      operationId: listPluginUpdates
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.view ]
+      description: Checks up to 24 installed plugins for higher stable releases from their recorded sources. Pass the installed IDs visible on the current page to check a specific set.
+      parameters:
+        - name: pluginId
+          in: query
+          schema:
+            type: array
+            maxItems: 24
+            items:
+              type: string
+              minLength: 1
+      responses:
+        "200":
+          description: A list of available same-source upgrades.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginUpdateListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+        "504":
+          $ref: "#/components/responses/Error"
+  /plugins/repository/refs:
+    post:
+      tags: [ Plugins ]
+      operationId: listPluginRepositoryRefs
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.view ]
+      description: Reads a page of public published releases or branch choices for a GitHub plugin repository.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryRefsRequest"
+      responses:
+        "200":
+          description: The requested page of repository revisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginRepositoryRefListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+  /plugins/repository/preview:
+    post:
+      tags: [ Plugins ]
+      operationId: previewRepositoryPlugin
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.install ]
+      description: Requires plugin.install before fetching a supported public repository. Resolves the requested revision to a full commit and validates the root manifest without installing or enabling the plugin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryPreviewRequest"
+      responses:
+        "200":
+          description: Validated manifest and opaque short-lived confirmation token. Clients must not persist, log or decode the token.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PluginRepositoryPreviewEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+        "504":
+          $ref: "#/components/responses/Error"
+  /plugins/repository/install:
+    post:
+      tags: [ Plugins ]
+      operationId: installRepositoryPlugin
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.install ]
+      description: Installs the immutable repository version reviewed in preview. Clients must not fall back to the legacy install route when this operation is unavailable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryInstallRequest"
+      responses:
+        "201":
+          description: Installed plugin snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /plugins/install:
     post:
       tags: [ Plugins ]
@@ -17397,6 +17537,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "409":
+          $ref: "#/components/responses/Error"
   /plugins/{pluginID}:
     get:
       tags: [ Plugins ]
@@ -17480,6 +17622,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "409":
+          $ref: "#/components/responses/Error"
+  /plugins/{pluginID}/repository/upgrade:
+    post:
+      tags: [ Plugins ]
+      operationId: upgradeRepositoryPlugin
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.upgrade ]
+      description: Upgrades a repository-installed plugin using a preview token bound to a new immutable commit from its existing source. Clients must not fall back to the legacy upgrade route when this operation is unavailable.
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryUpgradeRequest"
+      responses:
+        "200":
+          description: Updated plugin snapshot from the existing source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /plugins/{pluginID}/config:
     put:
       tags: [ Plugins ]
@@ -59059,6 +59236,10 @@ components:
           type: string
         manifestUrl:
           type: string
+        commitSha:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+          description: Publisher-declared source commit for this immutable release. This declaration is not a signature or proof of origin.
         packageUrl:
           type: string
         checksum:
@@ -59270,6 +59451,10 @@ components:
           type: string
         sourceUrl:
           type: string
+        repositoryUrl:
+          type: string
+          x-go-name: RepositoryURL
+          description: Public GitHub repository registered by the marketplace catalog. Release data is queried separately.
         riskLevel:
           type: string
         latestVersion:
@@ -59282,6 +59467,8 @@ components:
           type: boolean
         publisherInfo:
           $ref: "#/components/schemas/MarketplacePublisher"
+        sourceInfo:
+          $ref: "#/components/schemas/PluginSourceInfo"
         compatibility:
           $ref: "#/components/schemas/PluginCompatibility"
         versions:
@@ -59603,6 +59790,227 @@ components:
         data:
           $ref: "#/components/schemas/SoftwareStorage"
       additionalProperties: false
+    PluginSourceInfo:
+      type: object
+      description: Server-computed distribution source. Never use author-provided catalog or manifest claims as trust evidence.
+      required: [ kind, canonicalSource, official ]
+      properties:
+        kind:
+          type: string
+          enum: [ marketplace, github-repo, direct-manifest ]
+        canonicalSource:
+          type: string
+          minLength: 1
+        sourceId:
+          type: string
+        pinnedRef:
+          type: string
+          description: Selected repository revision, including a qualified release tag when available. Use commitSha for the immutable revision.
+        repositoryUrl:
+          type: string
+          x-go-name: RepositoryURL
+          description: The author repository for a repository-backed marketplace installation.
+        commitSha:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+        rawManifestChecksum:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+          description: Digest of the original manifest bytes, not of a reserialized JSON object.
+        official:
+          type: boolean
+          description: True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification.
+      additionalProperties: false
+    PluginRepositoryPreviewRequest:
+      type: object
+      required: [ repositoryUrl ]
+      properties:
+        repositoryUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          pattern: "^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+(/(tree|releases/tag)/[^?#\\s]+)?/?$"
+          description: Public GitHub repository, tree revision, or published release tag URL. The manifest must be at the repository root.
+        ref:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Optional branch, tag or commit. A ref in the URL must match this value if both are supplied. A bare URL selects the latest stable release, or asks the caller to explicitly select a branch when no stable release exists.
+        pluginId:
+          type: string
+          description: Marketplace plugin identity. Supply with marketplaceSourceId for a registered repository preview.
+        marketplaceSourceId:
+          type: string
+          x-go-name: MarketplaceSourceID
+          description: Configured repository catalog source. The server verifies the plugin and repository binding.
+      additionalProperties: false
+    PluginRepositoryRefsRequest:
+      type: object
+      required: [ repositoryUrl, kind ]
+      properties:
+        repositoryUrl:
+          type: string
+          x-go-name: RepositoryURL
+          minLength: 1
+          maxLength: 2048
+        kind:
+          type: string
+          enum: [ release, branch ]
+          x-enum-varnames: [ PluginRepositoryRefsRequestKindRelease, PluginRepositoryRefsRequestKindBranch ]
+        page:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          x-go-type-skip-optional-pointer: false
+      additionalProperties: false
+    PluginRepositoryRef:
+      type: object
+      required: [ name ]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        prerelease:
+          type: boolean
+          description: True for a published prerelease. Prereleases require an explicit revision choice.
+        publishedAt:
+          type: string
+          format: date-time
+          x-go-type-skip-optional-pointer: false
+        releaseUrl:
+          type: string
+          x-go-name: ReleaseURL
+      additionalProperties: false
+    PluginRepositoryRefList:
+      type: object
+      required: [ refs, hasMore ]
+      properties:
+        refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginRepositoryRef"
+        hasMore:
+          type: boolean
+      additionalProperties: false
+    PluginRepositoryRefListEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/PluginRepositoryRefList"
+      additionalProperties: false
+    PluginUpdate:
+      type: object
+      required: [ pluginId, repositoryUrl, installedVersion, targetVersion, ref ]
+      properties:
+        pluginId:
+          type: string
+        repositoryUrl:
+          type: string
+          x-go-name: RepositoryURL
+        installedVersion:
+          type: string
+        targetVersion:
+          type: string
+        ref:
+          type: string
+        releaseUrl:
+          type: string
+          x-go-name: ReleaseURL
+        marketplaceSourceId:
+          type: string
+          x-go-name: MarketplaceSourceID
+      additionalProperties: false
+    PluginUpdateListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginUpdate"
+      additionalProperties: false
+    PluginRepositoryPreviewSource:
+      type: object
+      required: [ kind, canonicalSource, commitSha, rawManifestChecksum, official ]
+      properties:
+        kind:
+          type: string
+          const: github-repo
+        canonicalSource:
+          type: string
+          pattern: "^https://github\\.com/[a-z0-9-]+/[a-z0-9_.-]+$"
+        pinnedRef:
+          type: string
+          description: Selected repository revision, including a qualified release tag when available.
+        commitSha:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+        rawManifestChecksum:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+          description: Digest of the original repository manifest bytes.
+        official:
+          type: boolean
+          description: True when the server confirms that the repository was selected from a configured official catalog.
+      additionalProperties: false
+    PluginRepositoryPreview:
+      type: object
+      required: [ manifest, sourceInfo, checksumStatus, signatureStatus, previewToken, expiresAt ]
+      properties:
+        manifest:
+          $ref: "#/components/schemas/PluginManifest"
+        sourceInfo:
+          $ref: "#/components/schemas/PluginRepositoryPreviewSource"
+        checksumStatus:
+          type: string
+          description: A computed digest can bind confirmation to the preview; it does not authenticate the publisher.
+        signatureStatus:
+          type: string
+          description: A signature declared by a repository is not verified until checked against a trusted key.
+        previewToken:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.
+        expiresAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    PluginRepositoryPreviewEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/PluginRepositoryPreview"
+      additionalProperties: false
+    PluginRepositoryInstallRequest:
+      type: object
+      required: [ previewToken ]
+      properties:
+        previewToken:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: An unexpired token issued to the same caller and scope by the repository preview endpoint.
+        enable:
+          type: boolean
+          description: Repository installs are disabled unless enabled explicitly.
+      additionalProperties: false
+    PluginRepositoryUpgradeRequest:
+      type: object
+      required: [ previewToken ]
+      properties:
+        previewToken:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: An unexpired token issued to the same caller and scope for the selected repository version.
+        confirmPermissionIncrease:
+          type: boolean
+          description: Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization.
+      additionalProperties: false
     InstalledPlugin:
       type: object
       required: [ id, name, version, publisher, type, status, source, manifest, checksumStatus, installedBy, installedAt, updatedAt ]
@@ -59622,6 +60030,8 @@ components:
           enum: [ installed, pending_config, enabled, disabled, failed, deprecated ]
         source:
           type: string
+        sourceInfo:
+          $ref: "#/components/schemas/PluginSourceInfo"
         manifest:
           $ref: "#/components/schemas/PluginManifest"
         checksumStatus:
@@ -59794,6 +60204,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MarketplacePlugin"
+        meta:
+          $ref: "#/components/schemas/MarketplacePluginListMeta"
+      additionalProperties: false
+    MarketplacePluginListMeta:
+      type: object
+      properties:
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplaceSourceStatus"
+      additionalProperties: false
+    MarketplaceSourceStatus:
+      type: object
+      required: [ sourceId, status ]
+      properties:
+        sourceId:
+          type: string
+        status:
+          type: string
+          enum: [ available, unavailable ]
+          x-enum-varnames: [ MarketplaceSourceStatusAvailable, MarketplaceSourceStatusUnavailable ]
+        code:
+          type: string
+          description: Stable warning code for an unavailable source, when known.
       additionalProperties: false
     InstalledPluginEnvelope:
       type: object

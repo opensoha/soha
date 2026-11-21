@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/plugins/marketplace-repositories.schema.json",
+  "title": "OpenSoha Marketplace Repository Index",
+  "type": "object",
+  "required": ["schemaVersion", "sourceId", "repositories"],
+  "properties": {
+    "schemaVersion": {"const": "marketplace.opensoha.io/repositories/v1"},
+    "sourceId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "publisher", "type", "repositoryUrl"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "publisher": {"type": "string", "minLength": 1, "maxLength": 128},
+          "type": {"type": "string", "minLength": 1, "maxLength": 64},
+          "repositoryUrl": {
+            "type": "string",
+            "pattern": "^https://github\\.com/[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9_.-]{1,100}$",
+            "not": {
+              "anyOf": [
+                {"pattern": "^https://github\\.com/[^/]*--"},
+                {"pattern": "/(?:\\.|\\.\\.)$"},
+                {"pattern": "\\.git$"}
+              ]
+            }
+          },
+          "summary": {"type": "string", "maxLength": 1000}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
