@@ -3,11 +3,12 @@ import { getAnnouncementInbox } from './api'
 import { announcementKeys } from './keys'
 
 export const announcementQueries = {
-  inbox: (limit: number, enabled: boolean) =>
+  inbox: (limit: number, enabled: boolean, session: number, live: boolean) =>
     queryOptions({
-      queryKey: announcementKeys.inbox(limit),
-      queryFn: () => getAnnouncementInbox(limit),
+      queryKey: announcementKeys.inbox(limit, session),
+      queryFn: ({ signal }) => getAnnouncementInbox(limit, signal),
       enabled,
       staleTime: 15_000,
+      refetchInterval: live ? 30_000 : false,
     }),
 }

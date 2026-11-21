@@ -35,7 +35,7 @@ func wireAssistantMeshRoutes(cfg cfgpkg.AIGatewayConfig, deps *apiroutes.Depende
 	reception := appmesh.NewReception(service, store, core.identityService, delivery.copilotService, model)
 	startPlatformReceiptCleanup(infra.lifecycleCtx, assistantMeshCleanup{service, store}, infra.logger, "assistant_mesh_inquiry_retention")
 	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP, reception,
-		appmesh.NewDelegations(reception, store), appmesh.NewInquiryAudit(service, store), appmesh.NewInheritance(service, store))
+		appmesh.NewDelegations(reception, store), appmesh.NewInquiryAudit(service, store), appmesh.NewInheritance(service, store, repos.announcementRepository))
 	return wireFeishuMesh(cfg, infra, repos, core, reception, store)
 }
 

@@ -17,13 +17,18 @@ type InheritanceStore interface {
 	DisposeInheritedAssets(context.Context, domain.InheritanceInput, func(context.Context, []string) error) (int, error)
 }
 
-type Inheritance struct {
-	assets *Service
-	store  InheritanceStore
+type InheritanceNotices interface {
+	CreatePersonal(ctx context.Context, recipientID, title, content string) error
 }
 
-func NewInheritance(assets *Service, store InheritanceStore) *Inheritance {
-	return &Inheritance{assets: assets, store: store}
+type Inheritance struct {
+	assets  *Service
+	store   InheritanceStore
+	notices InheritanceNotices
+}
+
+func NewInheritance(assets *Service, store InheritanceStore, notices InheritanceNotices) *Inheritance {
+	return &Inheritance{assets: assets, store: store, notices: notices}
 }
 
 func (s *Inheritance) List(ctx context.Context, actor identity.Principal, ownerID, after string) (domain.InheritancePage, error) {
@@ -65,11 +70,18 @@ func (s *Inheritance) dispose(ctx context.Context, actor identity.Principal, inp
 	if err := validateInheritance(input); err != nil {
 		return 0, err
 	}
-	if s.assets.auditor == nil {
+	if s.assets.auditor == nil || (input.HeirID != "" && s.notices == nil) {
 		return 0, apperrors.ErrServiceUnavailable
 	}
 	return s.store.DisposeInheritedAssets(ctx, input, func(tx context.Context, ids []string) error {
-		return s.record(tx, actor, input, ids)
+		if err := s.record(tx, actor, input, ids); err != nil {
+			return err
+		}
+		if input.HeirID == "" {
+			return nil
+		}
+		return s.notices.CreatePersonal(tx, input.HeirID, "收到 Heya 继承资产",
+			fmt.Sprintf("你已继承 %d 项已发布的 Heya 资产。可在 Heya 的能力共享中查看。", len(ids)))
 	})
 }
 
