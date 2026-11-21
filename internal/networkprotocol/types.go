@@ -350,6 +350,10 @@ type RadiusAttributes struct {
 }
 
 type NASAuthorizationRequest struct {
+	CalledStationIDBase64           string           `json:"calledStationIdBase64,omitempty"`
+	NASPortIDBase64                 string           `json:"nasPortIdBase64,omitempty"`
+	NASPort                         *int64           `json:"nasPort,omitempty"`
+	OuterIdentity                   string           `json:"outerIdentity,omitempty"`
 	RuntimeProof                    *ManagedNASProof `json:"runtimeProof,omitempty"`
 	AuthenticationReceipt           string           `json:"authenticationReceipt,omitempty"`
 	RequestID                       string           `json:"requestId"`
@@ -435,8 +439,12 @@ type RadiusAccounting struct {
 }
 
 type RadiusAccountingRequest struct {
-	SchemaVersion  string `json:"schemaVersion"`
-	EventTimestamp int64  `json:"eventTimestamp"`
+	SchemaVersion   string `json:"schemaVersion"`
+	EventTimestamp  int64  `json:"eventTimestamp"`
+	NASPortIDBase64 string `json:"nasPortIdBase64,omitempty"`
+	NASPort         *int64 `json:"nasPort,omitempty"`
+	InputGigawords  *int64 `json:"inputGigawords,omitempty"`
+	OutputGigawords *int64 `json:"outputGigawords,omitempty"`
 	RadiusAccounting
 }
 

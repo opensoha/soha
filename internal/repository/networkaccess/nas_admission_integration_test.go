@@ -14,6 +14,8 @@ import (
 )
 
 func (s *accessRepositoryScenario) checkNASAdmission(t *testing.T) {
+	t.Run("NASAccountingTTLSBindsClassAndPersists64BitTotals", s.checkNASAccountingTTLS)
+
 	t.Run("NASAdmissionFloorSurvivesReevaluationAndRejectsLateACK", func(t *testing.T) {
 		now := s.now.Add(40 * time.Minute)
 		roleID, sessionID := s.prepareNASAdmissionRoleSession(t, now)
@@ -67,7 +69,12 @@ func (s *accessRepositoryScenario) checkNASAdmission(t *testing.T) {
 
 func (s *accessRepositoryScenario) prepareNASAdmissionRoleSession(t *testing.T, now time.Time) (string, string) {
 	t.Helper()
-	roleID := "nas-role-" + s.suffix
+	return s.prepareNASAdmissionRoleSessionWithSuffix(t, now, "revalidate")
+}
+
+func (s *accessRepositoryScenario) prepareNASAdmissionRoleSessionWithSuffix(t *testing.T, now time.Time, purpose string) (string, string) {
+	t.Helper()
+	roleID := "nas-role-" + purpose + "-" + s.suffix
 	if err := s.store.Exec(s.ctx, `INSERT INTO roles (id,name) VALUES ($1,$2)`, roleID, roleID); err != nil {
 		t.Fatal(err)
 	}
@@ -79,12 +86,62 @@ func (s *accessRepositoryScenario) prepareNASAdmissionRoleSession(t *testing.T, 
 	if err != nil || fmt.Sprint(preview.Subject.Roles) != "["+roleID+"]" || preview.Binding.ID != s.nasBinding.ID || preview.Device.ID != s.registeredDevice.ID {
 		t.Fatalf("consistent admission preview=%#v error=%v", preview, err)
 	}
-	sessionID := "reevaluated-" + s.suffix
+	sessionID := "reevaluated-" + purpose + "-" + s.suffix
 	if err := s.store.Exec(s.ctx, `INSERT INTO network_runtime_sessions (id,runtime_id,subject_id,device_id,site_id,mode,access_profile,status,policy_version,configuration_version,posture_version,valid_until,nas_id,authentication_method,created_at,updated_at) SELECT $1,runtime_id,subject_id,device_id,site_id,'internal_direct','full','active',policy_version,configuration_version,posture_version,$2,nas_id,'eap-tls',$3,$3 FROM network_runtime_sessions WHERE id=$4`, sessionID, now.Add(time.Hour), now, s.sessionID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.Exec(s.ctx, `INSERT INTO network_nas_authorizations (runtime_id,request_id,request_hash,nas_id,subject_id,device_id,authentication_method,session_id,decision,access_profile,policy_version,reason_code,valid_until,created_at,credential_id,station_id,radius_attributes) SELECT runtime_id,$1,request_hash,nas_id,subject_id,device_id,authentication_method,$2,decision,'full',policy_version,reason_code,$3,$4,credential_id,station_id,radius_attributes FROM network_nas_authorizations WHERE session_id=$5`, "reevaluated-request-"+s.suffix, sessionID, now.Add(time.Hour), now, s.sessionID); err != nil {
+	if err := s.store.Exec(s.ctx, `INSERT INTO network_nas_authorizations (runtime_id,request_id,request_hash,nas_id,subject_id,device_id,authentication_method,session_id,decision,access_profile,policy_version,reason_code,valid_until,created_at,credential_id,station_id,radius_attributes) SELECT runtime_id,$1,request_hash,nas_id,subject_id,device_id,authentication_method,$2,decision,'full',policy_version,reason_code,$3,$4,credential_id,station_id,radius_attributes FROM network_nas_authorizations WHERE session_id=$5`, "reevaluated-request-"+purpose+"-"+s.suffix, sessionID, now.Add(time.Hour), now, s.sessionID); err != nil {
 		t.Fatal(err)
 	}
 	return roleID, sessionID
+}
+
+func (s *accessRepositoryScenario) checkNASAccountingTTLS(t *testing.T) {
+	now := s.now.Add(35 * time.Minute)
+	roleID, sessionID := s.prepareNASAdmissionRoleSessionWithSuffix(t, now, "ttls")
+	t.Cleanup(func() {
+		if err := userrepo.New(s.store.DB()).ReplaceRoleBindings(s.ctx, s.userID, nil); err != nil {
+			t.Error(err)
+		}
+	})
+	const outer = "anonymous@hq.example"
+	if err := s.store.Exec(s.ctx, `UPDATE network_nas_authorizations SET authentication_method='eap-ttls-pap', outer_identity=$1, admission_binding_id=$2 WHERE session_id=$3`, outer, s.nasBinding.ID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	packet := networkprotocol.RadiusAccountingRequest{
+		EventTimestamp: now.Unix(), RadiusAccounting: networkprotocol.RadiusAccounting{
+			NASID: s.nasBinding.NASID, SessionID: sessionID, AccountingSessionID: "ttls-" + roleID,
+			UserID: outer, DeviceID: "AA-BB-CC-DD-EE-FF", NASPortID: "GigabitEthernet1/0/1", StatusType: "start",
+		},
+	}
+	wrong := packet
+	wrong.SessionID = "forged-class"
+	if err := s.repository.RecordNASAccounting(s.ctx, s.runtimeID, wrong, now, time.Minute); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("forged Class = %v", err)
+	}
+	wrong = packet
+	wrong.UserID = "different@hq.example"
+	if err := s.repository.RecordNASAccounting(s.ctx, s.runtimeID, wrong, now, time.Minute); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("unbound outer identity = %v", err)
+	}
+	if err := s.repository.RecordNASAccounting(s.ctx, s.runtimeID, packet, now, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	high := int64(2)
+	packet.EventTimestamp++
+	packet.StatusType, packet.SessionTimeSeconds = "interim-update", 1
+	packet.InputGigawords, packet.OutputGigawords = &high, &high
+	packet.InputOctets, packet.OutputOctets = 17, 42
+	if !packet.NormalizeOctets() {
+		t.Fatal("valid RADIUS octets rejected")
+	}
+	for range 2 {
+		if err := s.repository.RecordNASAccounting(s.ctx, s.runtimeID, packet, now.Add(time.Second), time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evidence, err := s.repository.NASSessionObservation(s.ctx, sessionID)
+	if err != nil || evidence.SubjectID != s.userID || evidence.InputOctets != 2<<32+17 || evidence.OutputOctets != 2<<32+42 {
+		t.Fatalf("observed accounting = %#v, error = %v", evidence, err)
+	}
 }

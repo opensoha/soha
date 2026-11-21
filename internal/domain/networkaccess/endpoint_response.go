@@ -55,6 +55,7 @@ type NASSessionObservation struct {
 	CredentialID                   string
 	LastStatus                     string
 	LastSessionSeconds             int64
+	InputOctets, OutputOctets      int64
 	AccountingEpoch                time.Time
 	VLANID                         int
 	FilterID                       string

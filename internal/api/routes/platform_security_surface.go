@@ -142,6 +142,8 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 		return nonPlatformMutationEntry("NetworkAccessGrant", "create", appaccess.PermNetworkAccessAccessGrantsCreate, false), true
 	case strings.HasPrefix(path, "/api/v1/network-access/access-grants/") && strings.HasSuffix(path, "/revoke"):
 		return nonPlatformMutationEntry("NetworkAccessGrant", "revoke", appaccess.PermNetworkAccessAccessGrantsRevoke, false), true
+	case path == "/api/v1/network-access/access-networks" || strings.HasPrefix(path, "/api/v1/network-access/access-networks/"):
+		return nonPlatformMutationEntry("NetworkAccessNetwork", action, appaccess.PermNetworkAccessSitesUpdate, true), true
 	case strings.HasPrefix(path, "/api/v1/network-access/nas-bindings"):
 		return nonPlatformMutationEntry("NetworkNASBinding", action, appaccess.PermNetworkAccessSitesUpdate, false), true
 	case strings.HasPrefix(path, "/api/v1/network-access/site-profile-bindings"):

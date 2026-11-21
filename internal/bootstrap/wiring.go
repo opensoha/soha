@@ -606,6 +606,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build network access service: %w", err)
 	}
+	networkAccessService.SetAccessNetworkCatalog(repos.networkAccessRepository)
 	networkEnrollmentService, err := appnetworkaccess.NewEnrollmentService(repos.networkRuntimeRepository, repos.networkProxyRepository, permissionResolver, auditService, operationService)
 	if err != nil {
 		infra.cancel()
@@ -1688,7 +1689,8 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 	dependencies.Virtualization = newVirtualizationHandler(delivery.virtualizationService)
 	dependencies.Docker = newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys)
 	dependencies.NetworkAccess = apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
-		Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
+		AccessNetwork: core.networkAccessService,
+		Device:        core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
 		Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
 		NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
 		Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,

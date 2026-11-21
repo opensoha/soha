@@ -2760,6 +2760,27 @@
           "maxLength": 191,
           "pattern": "^[A-Fa-f0-9:]+$"
         },
+        "calledStationIdBase64": {
+          "type": "string",
+          "maxLength": 340,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "nasPortIdBase64": {
+          "type": "string",
+          "maxLength": 172,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "nasPort": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "outerIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]*$"
+        },
         "authenticationReceipt": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{43}$"
@@ -2927,8 +2948,9 @@
           },
           "then": {
             "not": {
-              "required": [
-                "authenticationReceipt"
+              "anyOf": [
+                { "required": ["authenticationReceipt"] },
+                { "required": ["outerIdentity"] }
               ]
             }
           }

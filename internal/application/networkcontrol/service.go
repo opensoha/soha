@@ -32,6 +32,7 @@ var networkIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0
 
 type Store interface {
 	AdmissionNASBindings(context.Context, string, int) ([]domainnetworkaccess.NASBinding, error)
+	ListAccessNetworks(context.Context, string) ([]domainnetworkaccess.AccessNetwork, error)
 	EAPFingerprint(context.Context, string, time.Time) (string, error)
 	EndpointAdmissionEpoch(context.Context, string) (int, error)
 	SaveEAPCertificate(context.Context, domainnetworkruntime.EAPCredential, time.Time) (domainnetworkruntime.EAPCredential, error)
@@ -738,24 +739,36 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 	if err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
-	preview := appnetworkaccess.EvaluateAdmission(appnetworkaccess.AdmissionInput{SubjectUserID: request.SubjectID, DeviceID: request.DeviceID, SiteID: binding.SiteID, Mode: domainnetworkaccess.ModeInternalDirect}, principal.subject, principal.device, site, principal.snapshot)
-
+	attachment, err := radiusAttachment(request)
+	if err != nil {
+		return networkprotocol.NASAuthorizationResult{}, err
+	}
+	networks, err := s.store.ListAccessNetworks(ctx, site.ID)
+	if err != nil {
+		return networkprotocol.NASAuthorizationResult{}, err
+	}
 	now := s.now().UTC()
+	decision := appnetworkaccess.EvaluateNASNetwork(now, domainnetworkaccess.NASAdmissionSnapshot{
+		AuthenticationMethod: request.AuthenticationMethod, AccessNetworks: networks, Attachment: attachment,
+		Subject: principal.subject, Device: principal.device, Site: site, Binding: binding, Policies: principal.snapshot,
+	})
+	profile, reason := appnetworkaccess.NASInitialProfile(decision, request.AuthenticationMethod)
 	authorization := domainnetworkruntime.NASAuthorization{
 		RequestID: request.RequestID, RequestHash: nasRequestHash(identity.ID, request), RuntimeID: identity.ID,
 		NASID: request.NASID, SubjectID: request.SubjectID, DeviceID: request.DeviceID, AuthenticationMethod: request.AuthenticationMethod,
 		CredentialID: endpointCredential.ID, StationID: request.StationID,
-		SessionID: nasSessionID(identity.ID, request.RequestID), Decision: preview.Decision, AccessProfile: domainnetworkaccess.ProfileDeny,
-		PolicyVersion: snapshot.PolicyVersion, ReasonCode: firstReason(preview.Reasons, "authorization_denied"),
-		ValidUntil: now.Add(s.options.MaxClockSkew), CreatedAt: now,
+		SessionID: "nac-" + uuid.NewString(), Decision: domainnetworkaccess.DecisionDeny, AccessProfile: profile,
+		PolicyVersion: snapshot.PolicyVersion, ReasonCode: reason, ValidUntil: now.Add(s.options.MaxClockSkew), CreatedAt: now,
+		AccessNetworkID: decision.AccessNetworkID, AdmissionBindingID: binding.ID,
+		AccessNetworkCatalogHash: domainnetworkaccess.AccessNetworkCatalogHash(networks), Attachment: attachment,
+	}
+	if request.AuthenticationMethod == networkprotocol.NASAuthenticationTTLS {
+		authorization.OuterIdentity = request.OuterIdentity
+	}
+	if decision.Allowed {
+		authorization.Decision = domainnetworkaccess.DecisionAllow
 	}
 	attachManagedNAS(&authorization, request.RuntimeProof, managedPin, binding.ID, identity.CertificateFingerprint)
-	if preview.Decision == domainnetworkaccess.DecisionAllow {
-		authorization.AccessProfile, authorization.ReasonCode = preview.NetworkProfile, "policy_allowed"
-		if (request.AuthenticationMethod == networkprotocol.NASAuthenticationPasswordCompatible || passwordProof != nil) && authorization.AccessProfile == domainnetworkaccess.ProfileFull {
-			authorization.AccessProfile, authorization.ReasonCode = domainnetworkaccess.ProfileRestricted, "password_compatible_profile_capped"
-		}
-	}
 	authorization.PasswordProof = passwordProof
 	if passwordProof != nil && authorization.Decision != domainnetworkaccess.DecisionAllow {
 		return nasAuthorizationResult(authorization), nil
@@ -763,25 +776,17 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 	if err := s.applyEndpointAdmission(ctx, &authorization, principal.subject, principal.device, binding); err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
-	var admissionProfile *domainnetworkaccess.SiteProfileBinding
-	if authorization.Decision == domainnetworkaccess.DecisionAllow {
-		profile, profileErr := s.store.SiteProfileBinding(ctx, binding.SiteID, authorization.AccessProfile)
-		if errors.Is(profileErr, apperrors.ErrNotFound) {
-			authorization.Decision, authorization.AccessProfile, authorization.ReasonCode = domainnetworkaccess.DecisionDeny, domainnetworkaccess.ProfileDeny, "site_profile_binding_unavailable"
-		} else if profileErr != nil {
-			return networkprotocol.NASAuthorizationResult{}, profileErr
-		} else if profile.SiteID != binding.SiteID || profile.AccessProfile != authorization.AccessProfile {
-			return networkprotocol.NASAuthorizationResult{}, fmt.Errorf("site profile binding does not match authorization")
-		} else {
-			admissionProfile = &profile
-			authorization.RadiusAttributes = &networkprotocol.RadiusAttributes{VLANID: profile.VLANID, FilterID: profile.FilterID, SessionTimeoutSeconds: profile.SessionTimeoutSeconds}
-			authorization.ValidUntil = now.Add(time.Duration(profile.SessionTimeoutSeconds) * time.Second)
-		}
+	admissionProfile, err := s.applyNASAttributes(ctx, &authorization, decision, binding.SiteID)
+	if err != nil {
+		return networkprotocol.NASAuthorizationResult{}, err
 	}
 	if passwordProof != nil && authorization.Decision != domainnetworkaccess.DecisionAllow {
 		return nasAuthorizationResult(authorization), nil
 	}
 	capNASManagementDeadline(&authorization, principal.device, site, now)
+	if authorization.Decision == domainnetworkaccess.DecisionDeny {
+		admissionProfile = nil
+	}
 	authorization.InputsHash = domainnetworkaccess.AdmissionAttributesHash(principal.subject, principal.device, site, binding, admissionProfile)
 	authorization.AttributeVersion = domainnetworkaccess.AdmissionDecisionVersion(authorization.InputsHash, authorization.PolicyVersion, authorization.ResponsePolicyHash, authorization.PresenceHash, authorization.RestrictionEpoch)
 	saved, err := s.store.SaveNASAuthorization(ctx, authorization)
@@ -864,11 +869,6 @@ func vpnSessionID(runtimeID, requestID string) string {
 
 func hasDefaultRoute(cidrs []string) bool {
 	return slices.Contains(cidrs, "0.0.0.0/0")
-}
-
-func nasSessionID(runtimeID, requestID string) string {
-	digest := sha256.Sum256([]byte(runtimeID + "\n" + requestID))
-	return fmt.Sprintf("nac-%x", digest)
 }
 
 func firstReason(reasons []string, fallback string) string {

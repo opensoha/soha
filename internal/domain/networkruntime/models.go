@@ -2,6 +2,7 @@ package networkruntime
 
 import (
 	"encoding/json"
+	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	"time"
 
 	"github.com/opensoha/soha/internal/networkprotocol"
@@ -172,6 +173,12 @@ type Session struct {
 }
 
 type NASAuthorization struct {
+	AccessNetworkID           string
+	AdmissionBindingID        string
+	AccessNetworkCatalogHash  string
+	AccessNetworkRadius       *networkprotocol.RadiusAttributes
+	Attachment                access.NASAttachment
+	OuterIdentity             string
 	ManagedRuntimeProof       *networkprotocol.ManagedNASProof
 	ManagedBindingID          string
 	ManagedSlotHash           string

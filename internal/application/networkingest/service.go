@@ -93,7 +93,15 @@ func (s *Service) IngestRADIUS(ctx context.Context, identity networkidentity.Ide
 	}
 	var request networkprotocol.RadiusAccountingRequest
 	if err := json.Unmarshal(raw, &request); err != nil {
-		return domainnetworkingest.Acknowledgement{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_radius_accounting", "The RADIUS accounting request is invalid.", "RADIUS Accounting 请求无效。")
+		return domainnetworkingest.Acknowledgement{}, invalidRadiusAccounting()
+	}
+	extendedSource := request.NASPort != nil || request.NASPortIDBase64 != "" || request.InputGigawords != nil || request.OutputGigawords != nil
+	if !request.NormalizeOctets() || !request.NormalizeNASPort() {
+		return domainnetworkingest.Acknowledgement{}, invalidRadiusAccounting()
+	}
+	// Keep existing event IDs stable for the legacy wire shape.
+	if extendedSource {
+		request.AccountingDelaySeconds = 0
 	}
 	canonicalRequest, err := json.Marshal(request)
 	if err != nil {
@@ -121,6 +129,10 @@ func (s *Service) IngestRADIUS(ctx context.Context, identity networkidentity.Ide
 		return domainnetworkingest.Acknowledgement{}, fmt.Errorf("marshal canonical RADIUS accounting batch: %w", err)
 	}
 	return s.Ingest(ctx, identity, batch)
+}
+
+func invalidRadiusAccounting() error {
+	return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_radius_accounting", "The RADIUS accounting request is invalid.", "RADIUS Accounting 请求无效。")
 }
 
 func (s *Service) Summary(ctx context.Context, identity networkidentity.Identity, filter domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error) {

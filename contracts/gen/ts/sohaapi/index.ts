@@ -12498,6 +12498,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/network-access/access-networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkAccessNetworks"];
+        put?: never;
+        post: operations["createNetworkAccessNetwork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/access-networks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewNetworkAccessNetworks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/access-networks/{accessNetworkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateNetworkAccessNetwork"];
+        post?: never;
+        delete: operations["deleteNetworkAccessNetwork"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/network-access/sessions": {
         parameters: {
             query?: never;
@@ -33281,6 +33329,92 @@ export interface components {
         NetworkNASBindingStatus: "active" | "disabled";
         /** @enum {string} */
         NetworkAccessMedium: "wifi" | "wired";
+        /**
+         * @description strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+         * @enum {string}
+         */
+        NetworkAccessNetworkKind: "standard" | "strict_online" | "open_guest_bootstrap";
+        /** @description Empty subject arrays match any subject. Core applies deny precedence before allow. */
+        NetworkAccessNetworkRule: {
+            effect: components["schemas"]["NetworkPolicyEffect"];
+            subjects: components["schemas"]["NetworkPolicySubjects"];
+            deviceIds?: string[];
+            deviceStatuses?: components["schemas"]["EndpointDeviceStatus"][];
+            postureStatuses?: components["schemas"]["EndpointDevicePostureStatus"][];
+            authenticationMethods?: ("eap_tls" | "eap_ttls_pap")[];
+            scheduleStartMinute?: number;
+            scheduleEndMinute?: number;
+            vlanId?: number;
+            filterId?: string;
+            sessionTimeoutSeconds?: number;
+        };
+        NetworkAccessNetworkInput: {
+            siteId: string;
+            name: string;
+            accessMedium: components["schemas"]["NetworkAccessMedium"];
+            kind: components["schemas"]["NetworkAccessNetworkKind"];
+            enabled: boolean;
+            nasBindingIds: string[];
+            priority: number;
+            autoConnect: boolean;
+            /** @description Wi-Fi SSID. Core restricts this to Wi-Fi access networks. */
+            ssid?: string;
+            /** @description Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks. */
+            bssids?: string[];
+            /** @description Wired port identifiers. Core restricts this to wired access networks. */
+            portIds?: string[];
+            /**
+             * Format: int64
+             * @description Wired port range start. Core restricts this to wired access networks and validates the range order.
+             */
+            portStart?: number;
+            /**
+             * Format: int64
+             * @description Wired port range end. Core restricts this to wired access networks and validates the range order.
+             */
+            portEnd?: number;
+            vlanId?: number;
+            filterId?: string;
+            sessionTimeoutSeconds?: number;
+            rules: components["schemas"]["NetworkAccessNetworkRule"][];
+        };
+        NetworkAccessNetwork: {
+            id: string;
+            configuration: components["schemas"]["NetworkAccessNetworkInput"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        NetworkAccessNetworkEnvelope: {
+            data: components["schemas"]["NetworkAccessNetwork"];
+        };
+        NetworkAccessNetworkListEnvelope: {
+            items: components["schemas"]["NetworkAccessNetwork"][];
+        };
+        NetworkAccessNetworkPreviewInput: {
+            siteId: string;
+            userId: string;
+            deviceId: string;
+            /**
+             * @default eap_tls
+             * @enum {string}
+             */
+            authenticationMethod?: "eap_tls" | "eap_ttls_pap";
+            draft?: components["schemas"]["NetworkAccessNetworkInput"];
+        };
+        NetworkAccessNetworkDecision: {
+            accessNetworkId: string;
+            name: string;
+            allowed: boolean;
+            reasonCode: string;
+            accessProfile?: components["schemas"]["NetworkAccessProfile"];
+            /** @description One-based index of the first matching rule that determined the decision, when applicable. */
+            matchedRuleIndex?: number;
+        };
+        NetworkAccessNetworkDecisionListEnvelope: {
+            items: components["schemas"]["NetworkAccessNetworkDecision"][];
+        };
         /** @enum {string} */
         NetworkAccessDeviceType: "wireless_controller" | "access_point" | "switch" | "other";
         /** @enum {string} */
@@ -33296,9 +33430,23 @@ export interface components {
             policyVersion: number;
             provisioningAvailable?: boolean;
             provisioningReason?: string;
+            accessNetworkId?: string;
+            networkName?: string;
+            recommendationPriority?: number;
+            autoConnect?: boolean;
         };
         NetworkConnectionOptionListEnvelope: {
             items: components["schemas"]["NetworkConnectionOption"][];
+            bootstrapNetworks?: components["schemas"]["NetworkAccessBootstrapOption"][];
+        };
+        /** @description Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers. */
+        NetworkAccessBootstrapOption: {
+            accessNetworkId: string;
+            siteId: string;
+            name: string;
+            ssid: string;
+            priority: number;
+            autoConnect: boolean;
         };
         NetworkNASBindingInput: {
             nasId: string;
@@ -37969,10 +38117,20 @@ export type NetworkTelemetrySummary = components['schemas']['NetworkTelemetrySum
 export type NetworkTelemetrySummaryEnvelope = components['schemas']['NetworkTelemetrySummaryEnvelope'];
 export type NetworkNASBindingStatus = components['schemas']['NetworkNASBindingStatus'];
 export type NetworkAccessMedium = components['schemas']['NetworkAccessMedium'];
+export type NetworkAccessNetworkKind = components['schemas']['NetworkAccessNetworkKind'];
+export type NetworkAccessNetworkRule = components['schemas']['NetworkAccessNetworkRule'];
+export type NetworkAccessNetworkInput = components['schemas']['NetworkAccessNetworkInput'];
+export type NetworkAccessNetwork = components['schemas']['NetworkAccessNetwork'];
+export type NetworkAccessNetworkEnvelope = components['schemas']['NetworkAccessNetworkEnvelope'];
+export type NetworkAccessNetworkListEnvelope = components['schemas']['NetworkAccessNetworkListEnvelope'];
+export type NetworkAccessNetworkPreviewInput = components['schemas']['NetworkAccessNetworkPreviewInput'];
+export type NetworkAccessNetworkDecision = components['schemas']['NetworkAccessNetworkDecision'];
+export type NetworkAccessNetworkDecisionListEnvelope = components['schemas']['NetworkAccessNetworkDecisionListEnvelope'];
 export type NetworkAccessDeviceType = components['schemas']['NetworkAccessDeviceType'];
 export type NetworkConnectionAuthentication = components['schemas']['NetworkConnectionAuthentication'];
 export type NetworkConnectionOption = components['schemas']['NetworkConnectionOption'];
 export type NetworkConnectionOptionListEnvelope = components['schemas']['NetworkConnectionOptionListEnvelope'];
+export type NetworkAccessBootstrapOption = components['schemas']['NetworkAccessBootstrapOption'];
 export type NetworkNASBindingInput = components['schemas']['NetworkNASBindingInput'];
 export type NetworkNASBinding = components['schemas']['NetworkNASBinding'];
 export type NetworkNASBindingEnvelope = components['schemas']['NetworkNASBindingEnvelope'];
@@ -64150,6 +64308,8 @@ export interface operations {
         parameters: {
             query: {
                 deviceId: string;
+                /** @description When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options. */
+                includeBootstrap?: boolean;
             };
             header?: never;
             path?: never;
@@ -64433,6 +64593,140 @@ export interface operations {
             };
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listNetworkAccessNetworks: {
+        parameters: {
+            query: {
+                siteId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access networks configured for the requested site. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkAccessNetworkListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createNetworkAccessNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkAccessNetworkInput"];
+            };
+        };
+        responses: {
+            /** @description Created access network. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkAccessNetworkEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewNetworkAccessNetworks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkAccessNetworkPreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Read-only per-network allow or deny decisions for the requested user and device. No access network is mutated. */
+            200: {
+                headers: {
+                    /** @description Always no-store because the result is user and device scoped. */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkAccessNetworkDecisionListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateNetworkAccessNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                accessNetworkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkAccessNetworkInput"];
+            };
+        };
+        responses: {
+            /** @description Updated access network. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkAccessNetworkEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    deleteNetworkAccessNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                accessNetworkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access network deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listNetworkSessions: {

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -25,6 +26,7 @@ import (
 )
 
 type controlStoreStub struct {
+	accessNetworks      []domainnetworkaccess.AccessNetwork
 	admissionBindings   []domainnetworkaccess.NASBinding
 	admissionSites      map[string]domainnetworkaccess.Site
 	eapCredential       domainnetworkruntime.EAPCredential
@@ -67,6 +69,10 @@ type controlStoreStub struct {
 	mihomoCredID        string
 	mihomoID            string
 	mihomoErr           error
+}
+
+func (store *controlStoreStub) ListAccessNetworks(context.Context, string) ([]domainnetworkaccess.AccessNetwork, error) {
+	return store.accessNetworks, nil
 }
 
 func (store *controlStoreStub) AdmissionNASBindings(_ context.Context, after string, limit int) ([]domainnetworkaccess.NASBinding, error) {
@@ -594,7 +600,64 @@ func TestServiceAuthorizesNASFromPublishedNetworkPolicy(t *testing.T) {
 	}
 	delete(store.credentialErr, clientBindingKey)
 
+	t.Run("managed-networks", func(t *testing.T) {
+		managedStore := *store
+		service, err := New(&managedStore, service.schemas, service.options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service.now = func() time.Time { return now }
+		if err := service.RefreshSnapshot(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		checkManagedNASAuthorization(t, service, &managedStore, identity, now, request)
+	})
 	checkNASPasswordAndDenials(t, service, store, identity, now, request)
+}
+
+func checkManagedNASAuthorization(t *testing.T, service *Service, store *controlStoreStub, identity networkidentity.Identity, now time.Time, request networkprotocol.NASAuthorizationRequest) {
+	t.Helper()
+	const ssid = "R&D Wi-Fi"
+	store.subject.Teams = []string{"engineering"}
+	store.device.PostureStatus = domainnetworkaccess.PostureCompliant
+	store.nasBinding.ID, store.nasBinding.AccessMedium = "nas-binding-1", domainnetworkaccess.AccessMediumWiFi
+	store.accessNetworks = []domainnetworkaccess.AccessNetwork{{
+		ID: "network-1", Activated: true, Configuration: domainnetworkaccess.AccessNetworkInput{
+			SiteID: store.site.ID, Name: ssid, SSID: ssid, AccessMedium: domainnetworkaccess.AccessMediumWiFi,
+			Kind: domainnetworkaccess.AccessNetworkStandard, Enabled: true, NASBindingIDs: []string{store.nasBinding.ID},
+			VLANID: 44, SessionTimeoutSeconds: 7200, BSSIDs: []string{"00:11:22:33:44:55"},
+			Rules: []domainnetworkaccess.AccessNetworkRule{{Effect: domainnetworkaccess.PolicyEffectAllow, Subjects: domainnetworkaccess.PolicySubjects{Teams: []string{"engineering"}}}},
+		},
+	}}
+	for _, tc := range []struct{ name, attachment, want string }{
+		{"selected", "00-11-22-33-44-55:" + ssid, domainnetworkaccess.DecisionAllow},
+		{"wrong-bssid", "aa-bb-cc-dd-ee-ff:" + ssid, domainnetworkaccess.DecisionDeny},
+		{"wrong-ssid", "00-11-22-33-44-55:legacy", domainnetworkaccess.DecisionDeny},
+		{"no-attachment", "", domainnetworkaccess.DecisionDeny},
+		{"retired", "00-11-22-33-44-55:" + ssid, domainnetworkaccess.DecisionDeny},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store.accessNetworks[0].Deleted = tc.name == "retired"
+			request.RequestID = "network-" + tc.name
+			request.CalledStationIDBase64 = base64.StdEncoding.EncodeToString([]byte(tc.attachment))
+			raw := runtimeMessageJSON(t, now, identity, networkprotocol.MessageNASAuthorizationRequest, request)
+			message, err := service.AuthorizeNAS(context.Background(), identity, raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := networkprotocol.DecodePayload[networkprotocol.NASAuthorizationResult](message.Payload)
+			if err != nil || result.Decision != tc.want {
+				t.Fatalf("result = %#v, error = %v", result, err)
+			}
+			if tc.want == domainnetworkaccess.DecisionAllow &&
+				(store.authorized.AccessNetworkID != "network-1" || store.authorized.AdmissionBindingID != store.nasBinding.ID ||
+					result.RadiusAttributes == nil || result.RadiusAttributes.VLANID != 44 ||
+					result.RadiusAttributes.SessionTimeoutSeconds != store.profile.SessionTimeoutSeconds ||
+					result.RadiusAttributes.FilterID != store.profile.FilterID) {
+				t.Fatalf("authorization = %#v, result = %#v", store.authorized, result)
+			}
+		})
+	}
 }
 
 func TestServiceMapsEveryNACAccessProfile(t *testing.T) {

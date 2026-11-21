@@ -87,7 +87,7 @@ func (s *Service) NASAccounting(ctx context.Context, identity networkidentity.Id
 		return invalidRuntimeMessage()
 	}
 	var request networkprotocol.RadiusAccountingRequest
-	if err := json.Unmarshal(raw, &request); err != nil {
+	if err := json.Unmarshal(raw, &request); err != nil || !request.NormalizeOctets() || !request.NormalizeNASPort() {
 		return invalidRuntimeMessage()
 	}
 	if _, err := s.authenticateNAS(ctx, identity, request.NASID); err != nil {
