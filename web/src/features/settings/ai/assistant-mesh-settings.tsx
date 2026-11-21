@@ -3,10 +3,55 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import type { AssistantMeshSettings as Settings } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, InputNumber, Select, Switch } from 'antd'
+import { Button, Col, Form, InputNumber, Row, Select, Switch, Typography } from 'antd'
 import { settingsMutations } from '../mutations'
 import { settingsQueries } from '../queries'
 import { SettingsCard } from '../shared/components'
+
+const inquiryFields = [
+  {
+    name: 'inquiryPairLimitPerHour',
+    label: '同事间提问上限（次 / 小时）',
+    initial: 5,
+    min: 1,
+    max: 60,
+  },
+  {
+    name: 'inquiryCallerLimitPerDay',
+    label: '跨员工提问上限（次 / 天）',
+    initial: 30,
+    min: 1,
+    max: 500,
+  },
+  {
+    name: 'inquiryMergeWindowHours',
+    label: '重复问询合并窗口（小时）',
+    initial: 24,
+    min: 1,
+    max: 168,
+  },
+  { name: 'inquiryPendingLimit', label: '每位员工的未决待办上限', initial: 20, min: 5, max: 200 },
+  {
+    name: 'inquiryTimeoutHours',
+    label: '新问询超时（小时）',
+    initial: 72,
+    min: 1,
+    max: 720,
+    hint: '保存后适用于新问询。',
+  },
+  {
+    name: 'inquiryRetentionDays',
+    label: '问询正文保留期（天）',
+    initial: 7,
+    min: 1,
+    max: 365,
+    hint: '问询关闭时确定，已关闭的问询沿用原到期日。',
+  },
+] as const
+
+const inquiryDefaults = Object.fromEntries(
+  inquiryFields.map(({ name, initial }) => [name, initial]),
+)
 
 export function AssistantMeshSettings({ owner }: { owner: string }) {
   const queryClient = useQueryClient()
@@ -27,7 +72,7 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
         <Form<Settings>
           key={JSON.stringify(settings)}
           layout="vertical"
-          initialValues={{ delegationLifetimeHours: 4, ...settings }}
+          initialValues={{ delegationLifetimeHours: 4, ...inquiryDefaults, ...settings }}
           disabled={!editable || save.isPending}
           onFinish={(values) => {
             if (editable && !save.isPending) save.mutate(values)
@@ -74,6 +119,21 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
           >
             <InputNumber min={1} max={72} precision={0} />
           </Form.Item>
+          <Typography.Title level={5}>问询治理</Typography.Title>
+          <Row gutter={16}>
+            {inquiryFields.map((field) => (
+              <Col key={field.name} xs={24} md={12}>
+                <Form.Item
+                  label={field.label}
+                  name={field.name}
+                  extra={'hint' in field ? field.hint : undefined}
+                  rules={[{ required: true, type: 'integer', min: field.min, max: field.max }]}
+                >
+                  <InputNumber min={field.min} max={field.max} precision={0} />
+                </Form.Item>
+              </Col>
+            ))}
+          </Row>
           <Button type="primary" htmlType="submit" disabled={!editable} loading={save.isPending}>
             保存助手互联设置
           </Button>

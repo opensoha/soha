@@ -149,6 +149,10 @@ func TestReceptionWithPostgres(t *testing.T) {
 		if err != nil || merged.ID != created.ID {
 			t.Fatalf("merge = %#v, %v", merged, err)
 		}
+		afterWindow := pendingInquiry(caller, owner, "merge-3", "same-question", now.Add(11*time.Minute), now.Add(time.Hour))
+		if separate, err := repo.CreateInquiry(ctx, afterWindow, limits); err != nil || separate.ID == created.ID {
+			t.Fatalf("outside the configured merge window = %#v, %v", separate, err)
+		}
 
 		owner, caller = seedPair()
 		limits = generousLimits()
@@ -168,6 +172,17 @@ func TestReceptionWithPostgres(t *testing.T) {
 		}
 		if _, err := repo.CreateInquiry(ctx, pendingInquiry(caller, owner, "rate-2", "rate-key-2", now.Add(time.Minute), now.Add(time.Hour)), limits); !errors.Is(err, domain.ErrInquiryRateLimited) {
 			t.Fatalf("rate error = %v", err)
+		}
+
+		owner, caller = seedPair()
+		otherOwner, _ := seedPair()
+		limits = generousLimits()
+		limits.CallerPerDay = 1
+		if _, err := repo.CreateInquiry(ctx, pendingInquiry(caller, owner, "daily-first", "first", now, now.Add(time.Hour)), limits); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.CreateInquiry(ctx, pendingInquiry(caller, otherOwner, "daily-second", "second", now.Add(time.Minute), now.Add(time.Hour)), limits); !errors.Is(err, domain.ErrInquiryRateLimited) {
+			t.Fatalf("cross-owner daily rate error = %v", err)
 		}
 
 		owner, caller = seedPair()
@@ -451,7 +466,7 @@ func receptionPostgres(t *testing.T) *dbstore.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	dir := t.TempDir()
-	for _, name := range []string{"0001_init.sql", "0113_heya_access.sql", "0155_assistant_mesh_reception.sql", "0157_assistant_mesh_delegations.sql", "0158_assistant_mesh_feishu.sql"} {
+	for _, name := range []string{"0001_init.sql", "0113_heya_access.sql", "0154_assistant_mesh_assets.sql", "0155_assistant_mesh_reception.sql", "0157_assistant_mesh_delegations.sql", "0158_assistant_mesh_feishu.sql", "0159_assistant_mesh_inquiry_retention.sql", "0160_assistant_mesh_inheritance_delete_guard.sql"} {
 		contents, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "postgres", name))
 		if err != nil {
 			t.Fatal(err)

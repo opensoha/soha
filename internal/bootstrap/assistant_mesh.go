@@ -33,7 +33,21 @@ func wireAssistantMeshRoutes(cfg cfgpkg.AIGatewayConfig, deps *apiroutes.Depende
 	delivery.copilotService.SetAssistantMeshMCP(sharedMCP)
 	model := appmesh.GatewayReceptionModel{Gateway: gateway.aiGatewayService, Settings: core.settingsService}
 	reception := appmesh.NewReception(service, store, core.identityService, delivery.copilotService, model)
-	startPlatformReceiptCleanup(infra.lifecycleCtx, store, infra.logger, "assistant_mesh_inquiry_retention")
-	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP, reception, appmesh.NewDelegations(reception, store))
+	startPlatformReceiptCleanup(infra.lifecycleCtx, assistantMeshCleanup{service, store}, infra.logger, "assistant_mesh_inquiry_retention")
+	deps.AssistantMesh = apihandlers.NewAssistantMeshHandler(service, delivery.copilotService, sharedMCP, reception,
+		appmesh.NewDelegations(reception, store), appmesh.NewInquiryAudit(service, store), appmesh.NewInheritance(service, store))
 	return wireFeishuMesh(cfg, infra, repos, core, reception, store)
+}
+
+type assistantMeshCleanup struct {
+	service *appmesh.Service
+	store   *meshrepo.Repository
+}
+
+func (c assistantMeshCleanup) Cleanup(ctx context.Context) error {
+	policy, err := c.service.InquiryPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	return c.store.CleanupWithInquiryPolicy(ctx, policy.Limits)
 }

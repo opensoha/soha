@@ -33,11 +33,15 @@ func (s *Reception) Ask(ctx context.Context, p identity.Principal, input Inquiry
 	if err != nil {
 		return InquiryView{}, err
 	}
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return InquiryView{}, err
+	}
 	now := nowUTC()
 	item := domain.Inquiry{
 		ID: uuid.NewString(), CallerID: caller.UserID, OwnerID: input.OwnerID, RequestID: input.RequestID,
 		QuestionKey: inquiryQuestionKey(question), Question: question, Status: domain.InquiryPending,
-		CreatedAt: now, DueAt: now.Add(inquiryLifetime),
+		CreatedAt: now, DueAt: now.Add(policy.Timeout),
 	}
 	previous, err := s.store.GetInquiry(ctx, item.CallerID, item.RequestID)
 	if err == nil {
@@ -49,7 +53,7 @@ func (s *Reception) Ask(ctx context.Context, p identity.Principal, input Inquiry
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		return InquiryView{}, err
 	}
-	return s.createInquiry(ctx, caller, item)
+	return s.createInquiry(ctx, caller, item, policy.Limits)
 }
 
 func inquiryQuestionKey(question string) string {
@@ -58,7 +62,7 @@ func inquiryQuestionKey(question string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal, item domain.Inquiry) (InquiryView, error) {
+func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal, item domain.Inquiry, limits domain.InquiryLimits) (InquiryView, error) {
 	if _, err := s.openOwner(ctx, item.OwnerID); err != nil {
 		return InquiryView{}, err
 	}
@@ -73,9 +77,7 @@ func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal
 	if s.model != nil && matched {
 		item.Status = domain.InquiryProcessing
 	}
-	result, err := s.store.CreateInquiry(ctx, item, domain.InquiryLimits{
-		PairPerHour: 5, CallerPerDay: 30, OwnerPending: domain.DefaultInquiryPendingLimit, MergeWindow: 24 * time.Hour, Retention: retention,
-	})
+	result, err := s.store.CreateInquiry(ctx, item, limits)
 	if err != nil {
 		return InquiryView{}, err
 	}
@@ -104,10 +106,14 @@ func (s *Reception) answerInquiry(ctx context.Context, caller identity.Principal
 	if err != nil {
 		return domain.Inquiry{}, err
 	}
-	if answer == "" {
-		return s.store.FallbackInquiry(ctx, item, domain.DefaultInquiryPendingLimit, nowUTC(), retention)
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return domain.Inquiry{}, err
 	}
-	return s.completeReception(ctx, current, item, answer, fact.Citation)
+	if answer == "" {
+		return s.store.FallbackInquiry(ctx, item, policy.Limits.OwnerPending, nowUTC(), policy.Limits.Retention)
+	}
+	return s.completeReception(ctx, current, item, answer, fact.Citation, policy.Limits.Retention)
 }
 
 func (s *Reception) recheckReception(ctx context.Context, caller identity.Principal, ownerID string) (identity.Principal, error) {
@@ -139,9 +145,9 @@ func (s *Reception) tryReceptionAnswer(ctx context.Context, caller identity.Prin
 	return answer, nil
 }
 
-func (s *Reception) completeReception(ctx context.Context, caller identity.Principal, item domain.Inquiry, answer string, citation domain.Citation) (domain.Inquiry, error) {
+func (s *Reception) completeReception(ctx context.Context, caller identity.Principal, item domain.Inquiry, answer string, citation domain.Citation, bodyRetention time.Duration) (domain.Inquiry, error) {
 	now := nowUTC()
-	purge := now.Add(retention)
+	purge := now.Add(bodyRetention)
 	item.Status, item.Answer, item.Citations = domain.InquiryAnswered, answer, []domain.Citation{citation}
 	item.ClosedAt, item.PurgeAfter = &now, &purge
 	if err := s.store.CompleteInquiry(ctx, item); err != nil {
@@ -218,7 +224,11 @@ func (s *Reception) ListInquiries(ctx context.Context, p identity.Principal, dir
 	if direction != "sent" && direction != "inbox" {
 		return nil, fmt.Errorf("%w: unsupported inquiry direction", apperrors.ErrInvalidArgument)
 	}
-	items, err := s.store.ListInquiries(ctx, p.UserID, direction == "inbox", nowUTC(), retention)
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.store.ListInquiries(ctx, p.UserID, direction == "inbox", nowUTC(), policy.Limits.Retention)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +255,11 @@ func (s *Reception) Reply(ctx context.Context, p identity.Principal, inquiryID, 
 	if err != nil {
 		return InquiryView{}, err
 	}
-	item, err := s.store.ReplyInquiry(ctx, p.UserID, inquiryID, answer, nowUTC(), retention)
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return InquiryView{}, err
+	}
+	item, err := s.store.ReplyInquiry(ctx, p.UserID, inquiryID, answer, nowUTC(), policy.Limits.Retention)
 	if err != nil {
 		return InquiryView{}, err
 	}

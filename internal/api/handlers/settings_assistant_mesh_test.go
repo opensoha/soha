@@ -17,6 +17,9 @@ func TestAssistantMeshSettingsRequest(t *testing.T) {
 		status     int
 	}{
 		{"explicit false", valid, http.StatusOK},
+		{"valid optional governance", strings.Replace(valid, "{", `{"inquiryRetentionDays":14,`, 1), http.StatusOK},
+		{"explicit null retention", strings.Replace(valid, "{", `{"inquiryRetentionDays":null,`, 1), http.StatusBadRequest},
+		{"explicit zero limit", strings.Replace(valid, "{", `{"inquiryPendingLimit":0,`, 1), http.StatusBadRequest},
 		{"missing enabled", strings.Replace(valid, `"enabled":false,`, "", 1), http.StatusBadRequest},
 		{"null reviewers", strings.Replace(valid, "[]", "null", 1), http.StatusBadRequest},
 		{"unknown field", strings.Replace(valid, "{", `{"approvalsEnabled":false,`, 1), http.StatusBadRequest},

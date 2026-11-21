@@ -9,15 +9,16 @@ import (
 
 // Asset is the owner-facing aggregate; shared callers only receive Published.
 type Asset struct {
-	ID          string             `json:"id"`
-	OwnerUserID string             `json:"ownerUserId"`
-	Kind        string             `json:"kind"`
-	Draft       *domain.AssetInput `json:"draft,omitempty"`
-	DraftDigest string             `json:"draftDigest,omitempty"`
-	Published   *Version           `json:"published,omitempty"`
-	Review      *Review            `json:"review,omitempty"`
-	Trial       *Trial             `json:"trial,omitempty"`
-	Findings    []string           `json:"findings,omitempty"`
+	ID                   string             `json:"id"`
+	OwnerUserID          string             `json:"ownerUserId"`
+	OriginalAuthorUserID string             `json:"originalAuthorUserId,omitempty"`
+	Kind                 string             `json:"kind"`
+	Draft                *domain.AssetInput `json:"draft,omitempty"`
+	DraftDigest          string             `json:"draftDigest,omitempty"`
+	Published            *Version           `json:"published,omitempty"`
+	Review               *Review            `json:"review,omitempty"`
+	Trial                *Trial             `json:"trial,omitempty"`
+	Findings             []string           `json:"findings,omitempty"`
 }
 
 type Page struct {
@@ -82,11 +83,12 @@ type ActionRequest struct {
 // payload is the stored aggregate body. LastVersion keeps numbering monotonic
 // across revoke so republished assets never reuse a version number.
 type payload struct {
-	Draft       *domain.AssetInput `json:"draft,omitempty"`
-	DraftDigest string             `json:"draftDigest,omitempty"`
-	Published   *Version           `json:"published,omitempty"`
-	Review      *Review            `json:"review,omitempty"`
-	Trial       *Trial             `json:"trial,omitempty"`
-	Findings    []string           `json:"findings,omitempty"`
-	LastVersion int                `json:"lastVersion,omitempty"`
+	OriginalAuthorID string             `json:"originalAuthorId,omitempty"`
+	Draft            *domain.AssetInput `json:"draft,omitempty"`
+	DraftDigest      string             `json:"draftDigest,omitempty"`
+	Published        *Version           `json:"published,omitempty"`
+	Review           *Review            `json:"review,omitempty"`
+	Trial            *Trial             `json:"trial,omitempty"`
+	Findings         []string           `json:"findings,omitempty"`
+	LastVersion      int                `json:"lastVersion,omitempty"`
 }

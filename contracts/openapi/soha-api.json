@@ -7362,6 +7362,11 @@
             ],
             "type": "string"
           },
+          "originalAuthorUserId": {
+            "description": "Original author of an inherited publication.",
+            "format": "uuid",
+            "type": "string"
+          },
           "ownerUserId": {
             "format": "uuid",
             "type": "string"
@@ -8024,6 +8029,175 @@
         ],
         "type": "object"
       },
+      "AssistantMeshInheritanceAsset": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "skill",
+              "experience_card"
+            ],
+            "type": "string"
+          },
+          "originalAuthorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "ownerId",
+          "originalAuthorId",
+          "kind",
+          "title",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritanceInput": {
+        "additionalProperties": false,
+        "properties": {
+          "assetIds": {
+            "description": "Omission selects all eligible assets of the owner. An explicit list must be nonempty.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "heirId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "heirId"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritancePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantMeshInheritanceAsset"
+            },
+            "type": "array"
+          },
+          "nextAfter": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritancePageEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshInheritancePage"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritanceResult": {
+        "additionalProperties": false,
+        "properties": {
+          "transferred": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transferred"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritanceResultEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshInheritanceResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritanceRetirement": {
+        "additionalProperties": false,
+        "properties": {
+          "assetIds": {
+            "description": "Omit to retire all eligible assets for the owner.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInheritanceRetirementEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "retired": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "retired"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "AssistantMeshInquiry": {
         "additionalProperties": false,
         "properties": {
@@ -8092,6 +8266,80 @@
           "status",
           "createdAt",
           "dueAt"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryAudit": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "callerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purgeAfter": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callerId",
+          "ownerId",
+          "status",
+          "question",
+          "answer",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryAuditEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AssistantMeshInquiryAudit"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssistantMeshInquiryAuditInput": {
+        "additionalProperties": false,
+        "properties": {
+          "inquiryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "inquiryId",
+          "reason"
         ],
         "type": "object"
       },
@@ -8466,6 +8714,48 @@
           "experienceCardLifetimeDays": {
             "maximum": 365,
             "minimum": 7,
+            "type": "integer"
+          },
+          "inquiryCallerLimitPerDay": {
+            "default": 30,
+            "description": "Daily limit for a caller across recipients. Omission preserves the existing value on update.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inquiryMergeWindowHours": {
+            "default": 24,
+            "description": "Window for merging equivalent open inquiries. Omission preserves the existing value on update.",
+            "maximum": 168,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inquiryPairLimitPerHour": {
+            "default": 5,
+            "description": "Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.",
+            "maximum": 60,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inquiryPendingLimit": {
+            "default": 20,
+            "description": "Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.",
+            "maximum": 200,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "inquiryRetentionDays": {
+            "default": 7,
+            "description": "Body retention recorded when inquiries close. Omission preserves the existing value on update.",
+            "maximum": 365,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "inquiryTimeoutHours": {
+            "default": 72,
+            "description": "Deadline applied to new inquiries. Omission preserves the existing value on update.",
+            "maximum": 720,
+            "minimum": 1,
             "type": "integer"
           },
           "organizationApproverUserIds": {
@@ -109073,6 +109363,197 @@
             "$ref": "#/components/responses/Error"
           },
           "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/governance/inheritance": {
+      "get": {
+        "description": "Requires the dedicated access.users.inherit-heya-assets permission. Returns metadata for published assets eligible for reassignment.",
+        "operationId": "listAssistantMeshInheritance",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ownerId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInheritancePageEnvelope"
+                }
+              }
+            },
+            "description": "A page of up to 50 eligible assets. Use nextAfter to fetch the next page when present."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      },
+      "post": {
+        "description": "Requires the dedicated access.users.inherit-heya-assets permission. Reassigns published Skills or experience cards from an inactive owner to an active heir, preserving their published versions and audiences.",
+        "operationId": "transferAssistantMeshInheritance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInheritanceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInheritanceResultEnvelope"
+                }
+              }
+            },
+            "description": "Transactionally reassigned assets."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/governance/inheritance/retire": {
+      "post": {
+        "description": "Requires the dedicated access.users.inherit-heya-assets permission. Retires published assets of a disabled employee without transferring ownership.",
+        "operationId": "retireAssistantMeshInheritance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInheritanceRetirement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInheritanceRetirementEnvelope"
+                }
+              }
+            },
+            "description": "Transactionally retired assets."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "assistant-mesh"
+        ]
+      }
+    },
+    "/copilot/assistant-mesh/governance/inquiry-audit": {
+      "post": {
+        "description": "Requires platform audit permission. A reason is recorded before retained content is returned.",
+        "operationId": "readAssistantMeshInquiryAudit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantMeshInquiryAuditInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantMeshInquiryAuditEnvelope"
+                }
+              }
+            },
+            "description": "Retained inquiry content for audit. The response must not be cached."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
             "$ref": "#/components/responses/Error"
           }
         },

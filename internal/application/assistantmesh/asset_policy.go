@@ -239,7 +239,7 @@ func (s *Service) canReview(ctx context.Context, settings domainsettings.Assista
 
 func (s *Service) ownerAsset(record domain.Record, value payload) Asset {
 	asset := Asset{
-		ID: record.ID, OwnerUserID: record.OwnerID, Kind: record.Kind,
+		ID: record.ID, OwnerUserID: record.OwnerID, OriginalAuthorUserID: value.OriginalAuthorID, Kind: record.Kind,
 		Draft: value.Draft, DraftDigest: value.DraftDigest,
 		Published: value.Published, Review: value.Review, Trial: value.Trial,
 	}
@@ -250,7 +250,7 @@ func (s *Service) ownerAsset(record domain.Record, value payload) Asset {
 }
 
 func (s *Service) reviewAsset(record domain.Record, value payload) Asset {
-	return Asset{ID: record.ID, OwnerUserID: record.OwnerID, Kind: record.Kind, Review: value.Review}
+	return Asset{ID: record.ID, OwnerUserID: record.OwnerID, OriginalAuthorUserID: value.OriginalAuthorID, Kind: record.Kind, Review: value.Review}
 }
 
 func (s *Service) sharedAsset(ctx context.Context, principal domainidentity.Principal, record domain.Record, value payload) (Asset, error) {
@@ -263,7 +263,7 @@ func (s *Service) sharedAsset(ctx context.Context, principal domainidentity.Prin
 	if !domain.AudienceAllows(record.OwnerID, value.Published.Audience, principal) {
 		return Asset{}, apperrors.ErrNotFound
 	}
-	return Asset{ID: record.ID, OwnerUserID: record.OwnerID, Kind: record.Kind, Published: value.Published}, nil
+	return Asset{ID: record.ID, OwnerUserID: record.OwnerID, OriginalAuthorUserID: value.OriginalAuthorID, Kind: record.Kind, Published: value.Published}, nil
 }
 
 func (s *Service) audit(ctx context.Context, principal domainidentity.Principal, action, id, result string, metadata map[string]any) error {

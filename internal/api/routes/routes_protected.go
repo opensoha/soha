@@ -69,6 +69,10 @@ func registerAssistantMeshRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST(reception+"/inquiries/preview", h.PreviewInquiry)
 	protected.POST(reception+"/inquiries/:inquiryId/reply", h.ReplyInquiry)
 	protected.POST(reception+"/inquiries/:inquiryId/reply-and-publish", h.ShareInquiryReply)
+	protected.POST(reception+"/governance/inquiry-audit", h.ReadInquiryAudit)
+	protected.GET(reception+"/governance/inheritance", h.ListInheritance)
+	protected.POST(reception+"/governance/inheritance", h.TransferInheritance)
+	protected.POST(reception+"/governance/inheritance/retire", h.RetireInheritance)
 	const delegations = reception + "/delegations"
 	protected.GET(delegations, h.ListDelegations)
 	protected.POST(delegations, h.CreateDelegation)

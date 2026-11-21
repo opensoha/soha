@@ -993,6 +993,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/copilot/assistant-mesh/governance/inquiry-audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires platform audit permission. A reason is recorded before retained content is returned. */
+        post: operations["readAssistantMeshInquiryAudit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/governance/inheritance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires the dedicated access.users.inherit-heya-assets permission. Returns metadata for published assets eligible for reassignment. */
+        get: operations["listAssistantMeshInheritance"];
+        put?: never;
+        /** @description Requires the dedicated access.users.inherit-heya-assets permission. Reassigns published Skills or experience cards from an inactive owner to an active heir, preserving their published versions and audiences. */
+        post: operations["transferAssistantMeshInheritance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/assistant-mesh/governance/inheritance/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires the dedicated access.users.inherit-heya-assets permission. Retires published assets of a disabled employee without transferring ownership. */
+        post: operations["retireAssistantMeshInheritance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/ai/assistant-mesh": {
         parameters: {
             query?: never;
@@ -19783,6 +19835,11 @@ export interface components {
             id: string;
             /** Format: uuid */
             ownerUserId: string;
+            /**
+             * Format: uuid
+             * @description Original author of an inherited publication.
+             */
+            originalAuthorUserId?: string;
             /** @enum {string} */
             kind: "skill" | "experience_card" | "work_pulse" | "mcp";
             draft?: components["schemas"]["AssistantMeshAssetInput"];
@@ -19863,6 +19920,104 @@ export interface components {
              * @default 4
              */
             delegationLifetimeHours?: number;
+            /**
+             * @description Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.
+             * @default 5
+             */
+            inquiryPairLimitPerHour?: number;
+            /**
+             * @description Daily limit for a caller across recipients. Omission preserves the existing value on update.
+             * @default 30
+             */
+            inquiryCallerLimitPerDay?: number;
+            /**
+             * @description Window for merging equivalent open inquiries. Omission preserves the existing value on update.
+             * @default 24
+             */
+            inquiryMergeWindowHours?: number;
+            /**
+             * @description Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.
+             * @default 20
+             */
+            inquiryPendingLimit?: number;
+            /**
+             * @description Deadline applied to new inquiries. Omission preserves the existing value on update.
+             * @default 72
+             */
+            inquiryTimeoutHours?: number;
+            /**
+             * @description Body retention recorded when inquiries close. Omission preserves the existing value on update.
+             * @default 7
+             */
+            inquiryRetentionDays?: number;
+        };
+        AssistantMeshInquiryAuditInput: {
+            /** Format: uuid */
+            inquiryId: string;
+            reason: string;
+        };
+        AssistantMeshInquiryAudit: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            callerId: string;
+            /** Format: uuid */
+            ownerId: string;
+            status: string;
+            question: string;
+            answer: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            purgeAfter?: string;
+        };
+        AssistantMeshInquiryAuditEnvelope: {
+            data: components["schemas"]["AssistantMeshInquiryAudit"];
+        };
+        AssistantMeshInheritanceAsset: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: uuid */
+            originalAuthorId: string;
+            /** @enum {string} */
+            kind: "skill" | "experience_card";
+            title: string;
+            version: number;
+        };
+        AssistantMeshInheritancePage: {
+            items: components["schemas"]["AssistantMeshInheritanceAsset"][];
+            /** Format: uuid */
+            nextAfter?: string;
+        };
+        AssistantMeshInheritancePageEnvelope: {
+            data: components["schemas"]["AssistantMeshInheritancePage"];
+        };
+        AssistantMeshInheritanceInput: {
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: uuid */
+            heirId: string;
+            /** @description Omission selects all eligible assets of the owner. An explicit list must be nonempty. */
+            assetIds?: string[];
+        };
+        AssistantMeshInheritanceResult: {
+            transferred: number;
+        };
+        AssistantMeshInheritanceResultEnvelope: {
+            data: components["schemas"]["AssistantMeshInheritanceResult"];
+        };
+        AssistantMeshInheritanceRetirement: {
+            /** Format: uuid */
+            ownerId: string;
+            /** @description Omit to retire all eligible assets for the owner. */
+            assetIds?: string[];
+        };
+        AssistantMeshInheritanceRetirementEnvelope: {
+            data: {
+                retired: number;
+            };
         };
         AssistantMeshSettingsEnvelope: {
             data: components["schemas"]["AssistantMeshSettings"];
@@ -37093,6 +37248,17 @@ export type AssistantMeshProjectResult = components['schemas']['AssistantMeshPro
 export type AssistantMeshActionResult = components['schemas']['AssistantMeshActionResult'];
 export type AssistantMeshActionEnvelope = components['schemas']['AssistantMeshActionEnvelope'];
 export type AssistantMeshSettings = components['schemas']['AssistantMeshSettings'];
+export type AssistantMeshInquiryAuditInput = components['schemas']['AssistantMeshInquiryAuditInput'];
+export type AssistantMeshInquiryAudit = components['schemas']['AssistantMeshInquiryAudit'];
+export type AssistantMeshInquiryAuditEnvelope = components['schemas']['AssistantMeshInquiryAuditEnvelope'];
+export type AssistantMeshInheritanceAsset = components['schemas']['AssistantMeshInheritanceAsset'];
+export type AssistantMeshInheritancePage = components['schemas']['AssistantMeshInheritancePage'];
+export type AssistantMeshInheritancePageEnvelope = components['schemas']['AssistantMeshInheritancePageEnvelope'];
+export type AssistantMeshInheritanceInput = components['schemas']['AssistantMeshInheritanceInput'];
+export type AssistantMeshInheritanceResult = components['schemas']['AssistantMeshInheritanceResult'];
+export type AssistantMeshInheritanceResultEnvelope = components['schemas']['AssistantMeshInheritanceResultEnvelope'];
+export type AssistantMeshInheritanceRetirement = components['schemas']['AssistantMeshInheritanceRetirement'];
+export type AssistantMeshInheritanceRetirementEnvelope = components['schemas']['AssistantMeshInheritanceRetirementEnvelope'];
 export type AssistantMeshSettingsEnvelope = components['schemas']['AssistantMeshSettingsEnvelope'];
 export type AssistantMeshReceptionProfile = components['schemas']['AssistantMeshReceptionProfile'];
 export type AssistantMeshReceptionProfileInput = components['schemas']['AssistantMeshReceptionProfileInput'];
@@ -41211,6 +41377,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantMeshDelegationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    readAssistantMeshInquiryAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInquiryAuditInput"];
+            };
+        };
+        responses: {
+            /** @description Retained inquiry content for audit. The response must not be cached. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInquiryAuditEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+        };
+    };
+    listAssistantMeshInheritance: {
+        parameters: {
+            query: {
+                ownerId: string;
+                after?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of up to 50 eligible assets. Use nextAfter to fetch the next page when present. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInheritancePageEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    transferAssistantMeshInheritance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInheritanceInput"];
+            };
+        };
+        responses: {
+            /** @description Transactionally reassigned assets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInheritanceResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    retireAssistantMeshInheritance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantMeshInheritanceRetirement"];
+            };
+        };
+        responses: {
+            /** @description Transactionally retired assets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantMeshInheritanceRetirementEnvelope"];
                 };
             };
             400: components["responses"]["Error"];

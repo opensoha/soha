@@ -127,10 +127,10 @@ func (r *Repository) SaveFeishuJob(ctx context.Context, job domain.FeishuJob) er
 			UPDATE assistant_mesh_feishu_jobs
 			SET stage = ?, group_id = ?, sender_id = ?, target_id = ?, question = ?, caller_id = ?,
 			    owner_id = ?, inquiry_id = ?, outcome = ?, attempts = ?, next_at = ?, started_at = ?,
-			    claim_id = NULL, claim_expires_at = NULL, updated_at = now()
+			    expires_at = ?, claim_id = NULL, claim_expires_at = NULL, updated_at = now()
 			WHERE scope = ? AND id = ?
 		`, stage, job.GroupID, job.SenderID, job.TargetID, job.Question, job.CallerID, job.OwnerID,
-			inquiryID, outcome, job.Attempts, job.NextAt, nullableFeishuTime(startedAt), job.Scope, job.ID)
+			inquiryID, outcome, job.Attempts, job.NextAt, nullableFeishuTime(startedAt), job.ExpiresAt, job.Scope, job.ID)
 		if result.Error != nil {
 			return fmt.Errorf("save assistant mesh Feishu job: %w", result.Error)
 		}

@@ -22,12 +22,18 @@ func (h *SettingsHandler) GetAssistantMeshSettings(c *gin.Context) {
 
 func (h *SettingsHandler) UpdateAssistantMeshSettings(c *gin.Context) {
 	var input struct {
-		DelegationLifetimeHours       *int      `json:"delegationLifetimeHours"`
-		Enabled                       *bool     `json:"enabled"`
-		OrganizationApproverUserIDs   *[]string `json:"organizationApproverUserIds"`
-		DefaultVisibility             *string   `json:"defaultVisibility"`
-		ExperienceCardLifetimeDays    *int      `json:"experienceCardLifetimeDays"`
-		AllowPermanentExperienceCards *bool     `json:"allowPermanentExperienceCards"`
+		InquiryPairLimitPerHour       json.RawMessage `json:"inquiryPairLimitPerHour"`
+		InquiryCallerLimitPerDay      json.RawMessage `json:"inquiryCallerLimitPerDay"`
+		InquiryMergeWindowHours       json.RawMessage `json:"inquiryMergeWindowHours"`
+		InquiryPendingLimit           json.RawMessage `json:"inquiryPendingLimit"`
+		InquiryTimeoutHours           json.RawMessage `json:"inquiryTimeoutHours"`
+		InquiryRetentionDays          json.RawMessage `json:"inquiryRetentionDays"`
+		DelegationLifetimeHours       *int            `json:"delegationLifetimeHours"`
+		Enabled                       *bool           `json:"enabled"`
+		OrganizationApproverUserIDs   *[]string       `json:"organizationApproverUserIds"`
+		DefaultVisibility             *string         `json:"defaultVisibility"`
+		ExperienceCardLifetimeDays    *int            `json:"experienceCardLifetimeDays"`
+		AllowPermanentExperienceCards *bool           `json:"allowPermanentExperienceCards"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10))
 	decoder.DisallowUnknownFields()
@@ -46,12 +52,29 @@ func (h *SettingsHandler) UpdateAssistantMeshSettings(c *gin.Context) {
 			return
 		}
 	}
-	item, err := h.ai.UpdateAssistantMeshSettings(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainsettings.AssistantMeshSettings{
+	settings := domainsettings.AssistantMeshSettings{
 		DelegationLifetimeHours: delegationHours,
 		Enabled:                 *input.Enabled, OrganizationApproverUserIDs: *input.OrganizationApproverUserIDs,
 		DefaultVisibility: *input.DefaultVisibility, ExperienceCardLifetimeDays: *input.ExperienceCardLifetimeDays,
 		AllowPermanentExperienceCards: *input.AllowPermanentExperienceCards,
-	})
+	}
+	for _, field := range []struct {
+		raw   json.RawMessage
+		value *int
+	}{
+		{input.InquiryPairLimitPerHour, &settings.InquiryPairLimitPerHour},
+		{input.InquiryCallerLimitPerDay, &settings.InquiryCallerLimitPerDay},
+		{input.InquiryMergeWindowHours, &settings.InquiryMergeWindowHours},
+		{input.InquiryPendingLimit, &settings.InquiryPendingLimit},
+		{input.InquiryTimeoutHours, &settings.InquiryTimeoutHours},
+		{input.InquiryRetentionDays, &settings.InquiryRetentionDays},
+	} {
+		if len(field.raw) > 0 && (json.Unmarshal(field.raw, field.value) != nil || *field.value < 1) {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid inquiry governance setting")
+			return
+		}
+	}
+	item, err := h.ai.UpdateAssistantMeshSettings(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), settings)
 	if err != nil {
 		writeError(c, err)
 		return

@@ -202,3 +202,14 @@ func TestFeishuHumanReplyRemainsInHeyaIfPrivateDeliveryFails(t *testing.T) {
 		t.Fatalf("reply lost in Heya: %+v, %v", view, err)
 	}
 }
+
+func TestFeishuLinkedInquiryUsesConfiguredLongerDeadline(t *testing.T) {
+	f := setupFeishuTest(t, domain.FeishuQuestion, "ou_caller", "机房什么时候搬迁")
+	f.channel.reception.assets.config.(*fakeSettings).value.InquiryTimeoutHours = 240
+	f.jobs.job.ExpiresAt = f.channel.now().Add(7 * 24 * time.Hour)
+	f.step(t, 1)
+	if want := f.channel.now().Add(240*time.Hour + feishuRetryWindow); f.jobs.job.Stage != domain.FeishuAnswer ||
+		f.jobs.job.ExpiresAt.Before(want.Add(-time.Minute)) {
+		t.Fatalf("long-lived Heya inquiry lost its private delivery route: %+v", f.jobs.job)
+	}
+}

@@ -51,12 +51,16 @@ func (r *Repository) CompleteInquiry(ctx context.Context, item domain.Inquiry) e
 }
 
 func (r *Repository) Cleanup(ctx context.Context) error {
-	now := time.Now().UTC()
-	return errors.Join(r.cleanupInquiries(ctx), r.CleanupDelegations(ctx, now, receptionRetention), r.CleanupFeishuJobs(ctx, now))
+	return r.CleanupWithInquiryPolicy(ctx, domain.InquiryLimits{OwnerPending: domain.DefaultInquiryPendingLimit, Retention: receptionRetention})
 }
 
-func (r *Repository) cleanupInquiries(ctx context.Context) error {
-	if err := r.recoverReception(ctx); err != nil {
+func (r *Repository) CleanupWithInquiryPolicy(ctx context.Context, policy domain.InquiryLimits) error {
+	now := time.Now().UTC()
+	return errors.Join(r.cleanupInquiries(ctx, policy), r.CleanupDelegations(ctx, now, receptionRetention), r.CleanupFeishuJobs(ctx, now))
+}
+
+func (r *Repository) cleanupInquiries(ctx context.Context, policy domain.InquiryLimits) error {
+	if err := r.recoverReception(ctx, policy); err != nil {
 		return err
 	}
 	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
@@ -67,9 +71,9 @@ func (r *Repository) cleanupInquiries(ctx context.Context) error {
 				ORDER BY due_at LIMIT 200 FOR UPDATE SKIP LOCKED
 			)
 			UPDATE assistant_mesh_inquiries i
-			SET status = 'expired', closed_at = i.due_at, purge_after = i.due_at + make_interval(secs => ?)
+			SET status = 'expired', closed_at = i.due_at, purge_after = i.due_at + make_interval(secs => assistant_mesh_effective_inquiry_retention_seconds(?))
 			FROM due WHERE i.id = due.id
-		`, int(receptionRetention.Seconds())).Error; err != nil {
+		`, int(policy.Retention.Seconds())).Error; err != nil {
 			return fmt.Errorf("expire assistant mesh inquiries: %w", err)
 		}
 		if err := db.Exec(`
@@ -78,7 +82,10 @@ func (r *Repository) cleanupInquiries(ctx context.Context) error {
 				WHERE purge_after <= now() AND (question <> '' OR answer <> '' OR citations <> '[]'::jsonb)
 				ORDER BY purge_after LIMIT 200 FOR UPDATE SKIP LOCKED
 			)
-			UPDATE assistant_mesh_inquiries i SET question = '', answer = '', citations = '[]'::jsonb
+			UPDATE assistant_mesh_inquiries i SET question = '', answer = '',
+			    citation_versions = CASE WHEN citations <> '[]'::jsonb
+			        THEN assistant_mesh_retained_citation_versions(citations) ELSE citation_versions END,
+			    citations = '[]'::jsonb
 			FROM ready WHERE i.id = ready.id
 		`).Error; err != nil {
 			return fmt.Errorf("purge assistant mesh inquiries: %w", err)
@@ -133,7 +140,7 @@ func fallbackReception(db *gorm.DB, item domain.Inquiry, promote bool, now time.
 	return next, err
 }
 
-func (r *Repository) recoverReception(ctx context.Context) error {
+func (r *Repository) recoverReception(ctx context.Context, policy domain.InquiryLimits) error {
 	now := time.Now().UTC()
 	var rows []struct{ ID, OwnerID, CallerID string }
 	err := r.db.WithContext(ctx).Raw(`
@@ -146,7 +153,7 @@ func (r *Repository) recoverReception(ctx context.Context) error {
 	}
 	for _, row := range rows {
 		item := domain.Inquiry{ID: row.ID, OwnerID: row.OwnerID, CallerID: row.CallerID}
-		_, err := r.FallbackInquiry(ctx, item, domain.DefaultInquiryPendingLimit, now, receptionRetention)
+		_, err := r.FallbackInquiry(ctx, item, policy.OwnerPending, now, policy.Retention)
 		if err != nil && !errors.Is(err, domain.ErrInquiryInboxFull) && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}

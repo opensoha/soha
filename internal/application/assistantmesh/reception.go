@@ -50,11 +50,10 @@ func NewReception(assets *Service, store ReceptionStore, identities ReceptionIde
 }
 
 const (
-	retentionDays   = 7
-	retention       = retentionDays * 24 * time.Hour
-	inquiryLifetime = 72 * time.Hour
-	discoveryLimit  = 30
-	pageSize        = 100
+	retentionDays  = 7
+	retention      = retentionDays * 24 * time.Hour
+	discoveryLimit = 30
+	pageSize       = 100
 )
 
 type ReceptionProfile struct {
@@ -113,8 +112,12 @@ func (s *Reception) Profile(ctx context.Context, p identity.Principal) (Receptio
 	if _, err := s.prepare(ctx, p); err != nil {
 		return ReceptionProfile{}, err
 	}
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return ReceptionProfile{}, err
+	}
 	profile, err := s.store.GetProfile(ctx, p.UserID)
-	return ReceptionProfile{Profile: profile, RetentionDays: retentionDays}, err
+	return ReceptionProfile{Profile: profile, RetentionDays: int(policy.Limits.Retention / (24 * time.Hour))}, err
 }
 
 func (s *Reception) SaveProfile(ctx context.Context, p identity.Principal, profile domain.Profile) (ReceptionProfile, error) {
@@ -126,11 +129,15 @@ func (s *Reception) SaveProfile(ctx context.Context, p identity.Principal, profi
 		return ReceptionProfile{}, err
 	}
 	profile.OwnerID, profile.Intro = p.UserID, intro
-	if err := s.store.PutProfile(ctx, profile, nowUTC(), retention); err != nil {
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return ReceptionProfile{}, err
+	}
+	if err := s.store.PutProfile(ctx, profile, nowUTC(), policy.Limits.Retention); err != nil {
 		return ReceptionProfile{}, err
 	}
 	_ = s.assets.audit(ctx, p, "reception.profile", p.UserID, "success", map[string]any{"open": profile.Open})
-	return ReceptionProfile{Profile: profile, RetentionDays: retentionDays}, nil
+	return ReceptionProfile{Profile: profile, RetentionDays: int(policy.Limits.Retention / (24 * time.Hour))}, nil
 }
 
 func (s *Reception) openOwner(ctx context.Context, ownerID string) (identity.Principal, error) {

@@ -2293,6 +2293,112 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inquiry-audit:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: readAssistantMeshInquiryAudit
+      description: Requires platform audit permission. A reason is recorded before retained content is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInquiryAuditInput" }
+      responses:
+        "200":
+          description: Retained inquiry content for audit. The response must not be cached.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInquiryAuditEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inheritance:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: listAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Returns metadata for published assets eligible for reassignment.
+      parameters:
+        - name: ownerId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: after
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: A page of up to 50 eligible assets. Use nextAfter to fetch the next page when present.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritancePageEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [ assistant-mesh ]
+      operationId: transferAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Reassigns published Skills or experience cards from an inactive owner to an active heir, preserving their published versions and audiences.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInheritanceInput" }
+      responses:
+        "200":
+          description: Transactionally reassigned assets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritanceResultEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inheritance/retire:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: retireAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Retires published assets of a disabled employee without transferring ownership.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInheritanceRetirement" }
+      responses:
+        "200":
+          description: Transactionally retired assets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritanceRetirementEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /settings/ai/assistant-mesh:
     get:
       tags: [ assistant-mesh ]
@@ -37841,6 +37947,10 @@ components:
         ownerUserId:
           type: string
           format: uuid
+        originalAuthorUserId:
+          type: string
+          format: uuid
+          description: Original author of an inherited publication.
         kind:
           type: string
           enum:
@@ -38048,6 +38158,141 @@ components:
           maximum: 72
           default: 4
           description: Deadline for newly created L3 delegations. Omission preserves the existing value on update.
+        inquiryPairLimitPerHour:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 5
+          description: Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.
+        inquiryCallerLimitPerDay:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 30
+          description: Daily limit for a caller across recipients. Omission preserves the existing value on update.
+        inquiryMergeWindowHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          default: 24
+          description: Window for merging equivalent open inquiries. Omission preserves the existing value on update.
+        inquiryPendingLimit:
+          type: integer
+          minimum: 5
+          maximum: 200
+          default: 20
+          description: Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.
+        inquiryTimeoutHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 72
+          description: Deadline applied to new inquiries. Omission preserves the existing value on update.
+        inquiryRetentionDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 7
+          description: Body retention recorded when inquiries close. Omission preserves the existing value on update.
+      additionalProperties: false
+    AssistantMeshInquiryAuditInput:
+      type: object
+      required: [ inquiryId, reason ]
+      properties:
+        inquiryId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+      additionalProperties: false
+    AssistantMeshInquiryAudit:
+      type: object
+      required: [ id, callerId, ownerId, status, question, answer, createdAt ]
+      properties:
+        id: { type: string, format: uuid }
+        callerId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        status: { type: string }
+        question: { type: string }
+        answer: { type: string }
+        createdAt: { type: string, format: date-time }
+        purgeAfter: { type: string, format: date-time }
+      additionalProperties: false
+    AssistantMeshInquiryAuditEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInquiryAudit" }
+    AssistantMeshInheritanceAsset:
+      type: object
+      required: [ id, ownerId, originalAuthorId, kind, title, version ]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        originalAuthorId: { type: string, format: uuid }
+        kind: { type: string, enum: [ skill, experience_card ] }
+        title: { type: string }
+        version: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshInheritancePage:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AssistantMeshInheritanceAsset" }
+        nextAfter: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshInheritancePageEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInheritancePage" }
+    AssistantMeshInheritanceInput:
+      type: object
+      required: [ ownerId, heirId ]
+      properties:
+        ownerId: { type: string, format: uuid }
+        heirId: { type: string, format: uuid }
+        assetIds:
+          type: array
+          description: Omission selects all eligible assets of the owner. An explicit list must be nonempty.
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshInheritanceResult:
+      type: object
+      required: [ transferred ]
+      properties:
+        transferred: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshInheritanceResultEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInheritanceResult" }
+    AssistantMeshInheritanceRetirement:
+      type: object
+      required: [ ownerId ]
+      properties:
+        ownerId: { type: string, format: uuid }
+        assetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+          description: Omit to retire all eligible assets for the owner.
+      additionalProperties: false
+    AssistantMeshInheritanceRetirementEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          type: object
+          required: [ retired ]
+          properties:
+            retired: { type: integer, minimum: 1 }
+          additionalProperties: false
       additionalProperties: false
     AssistantMeshSettingsEnvelope:
       type: object

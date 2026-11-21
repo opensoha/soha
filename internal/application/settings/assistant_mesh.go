@@ -67,6 +67,10 @@ func (s *Service) UpdateAssistantMeshSettings(ctx context.Context, principal dom
 			input.DelegationLifetimeHours = before.DelegationLifetimeHours
 			after["delegationLifetimeHours"] = input.DelegationLifetimeHours
 		}
+		retainInquirySettings(&input, before)
+		for _, field := range assistantMeshInquiryFields(&input) {
+			after[field.key] = *field.value
+		}
 		return s.audit.Record(tx, domainaudit.Entry{
 			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
 			ResourceKind: "AssistantMeshSettings", ResourceName: domainsettings.AssistantMeshSettingKey,
@@ -109,6 +113,11 @@ func validateAssistantMeshSettings(input domainsettings.AssistantMeshSettings) e
 	if input.OrganizationApproverUserIDs == nil || len(input.OrganizationApproverUserIDs) > 100 {
 		return fmt.Errorf("%w: invalid publication reviewer list", apperrors.ErrInvalidArgument)
 	}
+	for _, field := range assistantMeshInquiryFields(&input) {
+		if *field.value != 0 && (*field.value < field.minimum || *field.value > field.maximum) {
+			return fmt.Errorf("%w: %s must be between %d and %d", apperrors.ErrInvalidArgument, field.key, field.minimum, field.maximum)
+		}
+	}
 	seen := make(map[string]struct{}, len(input.OrganizationApproverUserIDs))
 	for _, id := range input.OrganizationApproverUserIDs {
 		parsed, err := uuid.Parse(id)
@@ -131,20 +140,51 @@ func decodeAssistantMeshSettings(raw map[string]any, found bool) (domainsettings
 	if err != nil {
 		return domainsettings.AssistantMeshSettings{}, err
 	}
-	item := domainsettings.AssistantMeshSettings{DelegationLifetimeHours: domainsettings.DefaultDelegationLifetimeHours}
+	item := domainsettings.DefaultAssistantMeshSettings()
 	if err := json.Unmarshal(data, &item); err != nil {
 		return domainsettings.AssistantMeshSettings{}, err
 	}
+	retainInquirySettings(&item, domainsettings.DefaultAssistantMeshSettings())
 	return item, validateAssistantMeshSettings(item)
 }
 
 func assistantMeshValues(item domainsettings.AssistantMeshSettings) map[string]any {
-	return map[string]any{
+	values := map[string]any{
 		"delegationLifetimeHours":       item.DelegationLifetimeHours,
 		"enabled":                       item.Enabled,
 		"organizationApproverUserIds":   item.OrganizationApproverUserIDs,
 		"defaultVisibility":             item.DefaultVisibility,
 		"experienceCardLifetimeDays":    item.ExperienceCardLifetimeDays,
 		"allowPermanentExperienceCards": item.AllowPermanentExperienceCards,
+	}
+	for _, field := range assistantMeshInquiryFields(&item) {
+		values[field.key] = *field.value
+	}
+	return values
+}
+
+type inquirySettingField struct {
+	key              string
+	value            *int
+	minimum, maximum int
+}
+
+func assistantMeshInquiryFields(item *domainsettings.AssistantMeshSettings) []inquirySettingField {
+	return []inquirySettingField{
+		{"inquiryPairLimitPerHour", &item.InquiryPairLimitPerHour, 1, 60},
+		{"inquiryCallerLimitPerDay", &item.InquiryCallerLimitPerDay, 1, 500},
+		{"inquiryMergeWindowHours", &item.InquiryMergeWindowHours, 1, 168},
+		{"inquiryPendingLimit", &item.InquiryPendingLimit, 5, 200},
+		{"inquiryTimeoutHours", &item.InquiryTimeoutHours, 1, 720},
+		{"inquiryRetentionDays", &item.InquiryRetentionDays, 1, 365},
+	}
+}
+
+func retainInquirySettings(input *domainsettings.AssistantMeshSettings, old domainsettings.AssistantMeshSettings) {
+	before := assistantMeshInquiryFields(&old)
+	for i, field := range assistantMeshInquiryFields(input) {
+		if *field.value == 0 {
+			*field.value = *before[i].value
+		}
 	}
 }

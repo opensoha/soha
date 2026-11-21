@@ -55,6 +55,8 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	input.Enabled = true
 	input.ExperienceCardLifetimeDays = 120
 	input.DelegationLifetimeHours = 12
+	input.InquiryPairLimitPerHour = 16
+	input.InquiryRetentionDays = 25
 	input.OrganizationApproverUserIDs = []string{activeMeshReviewer}
 	if _, err := service.UpdateAssistantMeshSettings(ctx, viewer, input); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("viewer update = %v", err)
@@ -74,8 +76,10 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 		t.Fatalf("unexpected audit: %+v", audit.entries)
 	}
 	input.DelegationLifetimeHours = 0
+	input.InquiryPairLimitPerHour = 0
+	input.InquiryRetentionDays = 0
 	saved, err := service.UpdateAssistantMeshSettings(ctx, editor, input)
-	if err != nil || saved.DelegationLifetimeHours != 12 {
+	if err != nil || saved.DelegationLifetimeHours != 12 || saved.InquiryPairLimitPerHour != 16 || saved.InquiryRetentionDays != 25 {
 		t.Fatalf("legacy update lost timeout: %+v, %v", saved, err)
 	}
 
@@ -92,6 +96,9 @@ func TestAssistantMeshSettingsRejectsInvalidUpdates(t *testing.T) {
 	editor := domainidentity.Principal{UserID: "alice", Roles: []string{"editor"}}
 	for name, change := range map[string]func(*domainsettings.AssistantMeshSettings){
 		"out-of-range lifetime": func(in *domainsettings.AssistantMeshSettings) { in.ExperienceCardLifetimeDays = 366 },
+		"paired limit":          func(in *domainsettings.AssistantMeshSettings) { in.InquiryPairLimitPerHour = 61 },
+		"pending limit":         func(in *domainsettings.AssistantMeshSettings) { in.InquiryPendingLimit = 4 },
+		"body retention":        func(in *domainsettings.AssistantMeshSettings) { in.InquiryRetentionDays = 366 },
 		"organization default":  func(in *domainsettings.AssistantMeshSettings) { in.DefaultVisibility = "organization" },
 		"invalid reviewer ID":   func(in *domainsettings.AssistantMeshSettings) { in.OrganizationApproverUserIDs = []string{"reviewer"} },
 		"inactive reviewer": func(in *domainsettings.AssistantMeshSettings) {

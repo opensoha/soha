@@ -36,7 +36,11 @@ func (s *Reception) ReplyAndPublish(ctx context.Context, p identity.Principal, i
 	}
 	var replied domain.Inquiry
 	err = s.store.WithReceptionTransaction(ctx, func(txCtx context.Context) error {
-		replied, err = s.store.ReplyInquiry(txCtx, p.UserID, inquiryID, answer, nowUTC(), retention)
+		policy, err := s.assets.InquiryPolicy(txCtx)
+		if err != nil {
+			return err
+		}
+		replied, err = s.store.ReplyInquiry(txCtx, p.UserID, inquiryID, answer, nowUTC(), policy.Limits.Retention)
 		if err != nil {
 			return err
 		}

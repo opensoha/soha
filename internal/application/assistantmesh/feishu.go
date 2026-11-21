@@ -176,6 +176,11 @@ func (c *FeishuChannel) askFeishuQuestion(ctx context.Context, job *domain.Feish
 		return
 	}
 	job.CallerID, job.OwnerID, job.InquiryID = caller, owner, receipt.ID
+	// After Heya stores the question the job only retains routing metadata.
+	// A longer administrator-configured deadline must still allow delivery.
+	if deadline := receipt.DueAt.Add(feishuRetryWindow); deadline.After(job.ExpiresAt) {
+		job.ExpiresAt = deadline
+	}
 	advanceFeishuJob(job, domain.FeishuAnswer, now)
 }
 

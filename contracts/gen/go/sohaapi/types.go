@@ -1159,6 +1159,24 @@ func (e AssistantMeshExtractRequestKind) Valid() bool {
 	}
 }
 
+// Defines values for AssistantMeshInheritanceAssetKind.
+const (
+	AssistantMeshInheritanceAssetKindExperienceCard AssistantMeshInheritanceAssetKind = "experience_card"
+	AssistantMeshInheritanceAssetKindSkill          AssistantMeshInheritanceAssetKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInheritanceAssetKind enum.
+func (e AssistantMeshInheritanceAssetKind) Valid() bool {
+	switch e {
+	case AssistantMeshInheritanceAssetKindExperienceCard:
+		return true
+	case AssistantMeshInheritanceAssetKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AssistantMeshInquiryStatus.
 const (
 	AssistantMeshInquiryStatusAnswered    AssistantMeshInquiryStatus = "answered"
@@ -17028,19 +17046,19 @@ func (e CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion) Valid() bool {
 
 // Defines values for SetWorkbenchRuntimeAssetEnabledParamsKind.
 const (
-	Hook  SetWorkbenchRuntimeAssetEnabledParamsKind = "hook"
-	MCP   SetWorkbenchRuntimeAssetEnabledParamsKind = "mcp"
-	Skill SetWorkbenchRuntimeAssetEnabledParamsKind = "skill"
+	SetWorkbenchRuntimeAssetEnabledParamsKindHook  SetWorkbenchRuntimeAssetEnabledParamsKind = "hook"
+	SetWorkbenchRuntimeAssetEnabledParamsKindMCP   SetWorkbenchRuntimeAssetEnabledParamsKind = "mcp"
+	SetWorkbenchRuntimeAssetEnabledParamsKindSkill SetWorkbenchRuntimeAssetEnabledParamsKind = "skill"
 )
 
 // Valid indicates whether the value is a known member of the SetWorkbenchRuntimeAssetEnabledParamsKind enum.
 func (e SetWorkbenchRuntimeAssetEnabledParamsKind) Valid() bool {
 	switch e {
-	case Hook:
+	case SetWorkbenchRuntimeAssetEnabledParamsKindHook:
 		return true
-	case MCP:
+	case SetWorkbenchRuntimeAssetEnabledParamsKindMCP:
 		return true
-	case Skill:
+	case SetWorkbenchRuntimeAssetEnabledParamsKindSkill:
 		return true
 	default:
 		return false
@@ -18938,15 +18956,18 @@ type AssistantMeshActionResult struct {
 
 // AssistantMeshAsset defines model for AssistantMeshAsset.
 type AssistantMeshAsset struct {
-	Draft       *AssistantMeshAssetInput        `json:"draft,omitempty"`
-	DraftDigest string                          `json:"draftDigest,omitempty"`
-	Findings    []string                        `json:"findings,omitempty"`
-	ID          openapi_types.UUID              `json:"id"`
-	Kind        AssistantMeshAssetKind          `json:"kind"`
-	OwnerUserID openapi_types.UUID              `json:"ownerUserId"`
-	Published   *AssistantMeshVersion           `json:"published,omitempty"`
-	Review      *AssistantMeshPublicationReview `json:"review,omitempty"`
-	Trial       *AssistantMeshTrial             `json:"trial,omitempty"`
+	Draft       *AssistantMeshAssetInput `json:"draft,omitempty"`
+	DraftDigest string                   `json:"draftDigest,omitempty"`
+	Findings    []string                 `json:"findings,omitempty"`
+	ID          openapi_types.UUID       `json:"id"`
+	Kind        AssistantMeshAssetKind   `json:"kind"`
+
+	// OriginalAuthorUserID Original author of an inherited publication.
+	OriginalAuthorUserID openapi_types.UUID              `json:"originalAuthorUserId,omitempty"`
+	OwnerUserID          openapi_types.UUID              `json:"ownerUserId"`
+	Published            *AssistantMeshVersion           `json:"published,omitempty"`
+	Review               *AssistantMeshPublicationReview `json:"review,omitempty"`
+	Trial                *AssistantMeshTrial             `json:"trial,omitempty"`
 }
 
 // AssistantMeshAssetKind defines model for AssistantMeshAsset.Kind.
@@ -19158,6 +19179,62 @@ type AssistantMeshExtractRequest struct {
 // AssistantMeshExtractRequestKind defines model for AssistantMeshExtractRequest.Kind.
 type AssistantMeshExtractRequestKind string
 
+// AssistantMeshInheritanceAsset defines model for AssistantMeshInheritanceAsset.
+type AssistantMeshInheritanceAsset struct {
+	ID               openapi_types.UUID                `json:"id"`
+	Kind             AssistantMeshInheritanceAssetKind `json:"kind"`
+	OriginalAuthorID openapi_types.UUID                `json:"originalAuthorId"`
+	OwnerID          openapi_types.UUID                `json:"ownerId"`
+	Title            string                            `json:"title"`
+	Version          int                               `json:"version"`
+}
+
+// AssistantMeshInheritanceAssetKind defines model for AssistantMeshInheritanceAsset.Kind.
+type AssistantMeshInheritanceAssetKind string
+
+// AssistantMeshInheritanceInput defines model for AssistantMeshInheritanceInput.
+type AssistantMeshInheritanceInput struct {
+	// AssetIDs Omission selects all eligible assets of the owner. An explicit list must be nonempty.
+	AssetIDs []openapi_types.UUID `json:"assetIds,omitempty"`
+	HeirID   openapi_types.UUID   `json:"heirId"`
+	OwnerID  openapi_types.UUID   `json:"ownerId"`
+}
+
+// AssistantMeshInheritancePage defines model for AssistantMeshInheritancePage.
+type AssistantMeshInheritancePage struct {
+	Items     []AssistantMeshInheritanceAsset `json:"items"`
+	NextAfter openapi_types.UUID              `json:"nextAfter,omitempty"`
+}
+
+// AssistantMeshInheritancePageEnvelope defines model for AssistantMeshInheritancePageEnvelope.
+type AssistantMeshInheritancePageEnvelope struct {
+	Data AssistantMeshInheritancePage `json:"data"`
+}
+
+// AssistantMeshInheritanceResult defines model for AssistantMeshInheritanceResult.
+type AssistantMeshInheritanceResult struct {
+	Transferred int `json:"transferred"`
+}
+
+// AssistantMeshInheritanceResultEnvelope defines model for AssistantMeshInheritanceResultEnvelope.
+type AssistantMeshInheritanceResultEnvelope struct {
+	Data AssistantMeshInheritanceResult `json:"data"`
+}
+
+// AssistantMeshInheritanceRetirement defines model for AssistantMeshInheritanceRetirement.
+type AssistantMeshInheritanceRetirement struct {
+	// AssetIDs Omit to retire all eligible assets for the owner.
+	AssetIDs []openapi_types.UUID `json:"assetIds,omitempty"`
+	OwnerID  openapi_types.UUID   `json:"ownerId"`
+}
+
+// AssistantMeshInheritanceRetirementEnvelope defines model for AssistantMeshInheritanceRetirementEnvelope.
+type AssistantMeshInheritanceRetirementEnvelope struct {
+	Data struct {
+		Retired int `json:"retired"`
+	} `json:"data"`
+}
+
 // AssistantMeshInquiry defines model for AssistantMeshInquiry.
 type AssistantMeshInquiry struct {
 	Answer     string                         `json:"answer,omitempty"`
@@ -19178,6 +19255,29 @@ type AssistantMeshInquiry struct {
 
 // AssistantMeshInquiryStatus defines model for AssistantMeshInquiry.Status.
 type AssistantMeshInquiryStatus string
+
+// AssistantMeshInquiryAudit defines model for AssistantMeshInquiryAudit.
+type AssistantMeshInquiryAudit struct {
+	Answer     string             `json:"answer"`
+	CallerID   openapi_types.UUID `json:"callerId"`
+	CreatedAt  time.Time          `json:"createdAt"`
+	ID         openapi_types.UUID `json:"id"`
+	OwnerID    openapi_types.UUID `json:"ownerId"`
+	PurgeAfter *time.Time         `json:"purgeAfter,omitempty"`
+	Question   string             `json:"question"`
+	Status     string             `json:"status"`
+}
+
+// AssistantMeshInquiryAuditEnvelope defines model for AssistantMeshInquiryAuditEnvelope.
+type AssistantMeshInquiryAuditEnvelope struct {
+	Data AssistantMeshInquiryAudit `json:"data"`
+}
+
+// AssistantMeshInquiryAuditInput defines model for AssistantMeshInquiryAuditInput.
+type AssistantMeshInquiryAuditInput struct {
+	InquiryID openapi_types.UUID `json:"inquiryId"`
+	Reason    string             `json:"reason"`
+}
 
 // AssistantMeshInquiryCitation defines model for AssistantMeshInquiryCitation.
 type AssistantMeshInquiryCitation struct {
@@ -19306,6 +19406,24 @@ type AssistantMeshSettings struct {
 	DelegationLifetimeHours    int  `json:"delegationLifetimeHours,omitempty"`
 	Enabled                    bool `json:"enabled"`
 	ExperienceCardLifetimeDays int  `json:"experienceCardLifetimeDays"`
+
+	// InquiryCallerLimitPerDay Daily limit for a caller across recipients. Omission preserves the existing value on update.
+	InquiryCallerLimitPerDay int `json:"inquiryCallerLimitPerDay,omitempty"`
+
+	// InquiryMergeWindowHours Window for merging equivalent open inquiries. Omission preserves the existing value on update.
+	InquiryMergeWindowHours int `json:"inquiryMergeWindowHours,omitempty"`
+
+	// InquiryPairLimitPerHour Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.
+	InquiryPairLimitPerHour int `json:"inquiryPairLimitPerHour,omitempty"`
+
+	// InquiryPendingLimit Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.
+	InquiryPendingLimit int `json:"inquiryPendingLimit,omitempty"`
+
+	// InquiryRetentionDays Body retention recorded when inquiries close. Omission preserves the existing value on update.
+	InquiryRetentionDays int `json:"inquiryRetentionDays,omitempty"`
+
+	// InquiryTimeoutHours Deadline applied to new inquiries. Omission preserves the existing value on update.
+	InquiryTimeoutHours int `json:"inquiryTimeoutHours,omitempty"`
 
 	// OrganizationApproverUserIDs Explicit reviewer user IDs. An empty list uses platform administrators.
 	OrganizationApproverUserIDs []openapi_types.UUID `json:"organizationApproverUserIds"`
@@ -43123,6 +43241,12 @@ type ListAssistantMeshDelegationsParams struct {
 // ListAssistantMeshDelegationsParamsDirection defines parameters for ListAssistantMeshDelegations.
 type ListAssistantMeshDelegationsParamsDirection string
 
+// ListAssistantMeshInheritanceParams defines parameters for ListAssistantMeshInheritance.
+type ListAssistantMeshInheritanceParams struct {
+	OwnerID openapi_types.UUID `form:"ownerId" json:"ownerId"`
+	After   openapi_types.UUID `form:"after,omitempty" json:"after,omitempty"`
+}
+
 // ListAssistantMeshInquiriesParams defines parameters for ListAssistantMeshInquiries.
 type ListAssistantMeshInquiriesParams struct {
 	Direction ListAssistantMeshInquiriesParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
@@ -44687,6 +44811,15 @@ type DeliverAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationDeli
 
 // ReportAssistantMeshDelegationJSONRequestBody defines body for ReportAssistantMeshDelegation for application/json ContentType.
 type ReportAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationReportInput
+
+// TransferAssistantMeshInheritanceJSONRequestBody defines body for TransferAssistantMeshInheritance for application/json ContentType.
+type TransferAssistantMeshInheritanceJSONRequestBody = AssistantMeshInheritanceInput
+
+// RetireAssistantMeshInheritanceJSONRequestBody defines body for RetireAssistantMeshInheritance for application/json ContentType.
+type RetireAssistantMeshInheritanceJSONRequestBody = AssistantMeshInheritanceRetirement
+
+// ReadAssistantMeshInquiryAuditJSONRequestBody defines body for ReadAssistantMeshInquiryAudit for application/json ContentType.
+type ReadAssistantMeshInquiryAuditJSONRequestBody = AssistantMeshInquiryAuditInput
 
 // CreateAssistantMeshInquiryJSONRequestBody defines body for CreateAssistantMeshInquiry for application/json ContentType.
 type CreateAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryInput

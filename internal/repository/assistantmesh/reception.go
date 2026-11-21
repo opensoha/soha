@@ -486,7 +486,7 @@ func inquiryByRequest(ctx context.Context, db *gorm.DB, callerID, requestID stri
 func refreshInquiries(ctx context.Context, db *gorm.DB, userID string, now time.Time, retention time.Duration) error {
 	if err := db.Exec(`
 		UPDATE assistant_mesh_inquiries
-		SET status = ?, closed_at = due_at, purge_after = COALESCE(purge_after, due_at + make_interval(secs => ?))
+		SET status = ?, closed_at = due_at, purge_after = COALESCE(purge_after, due_at + make_interval(secs => assistant_mesh_effective_inquiry_retention_seconds(?)))
 		WHERE status IN (?, ?) AND due_at <= ? AND (caller_id = ? OR owner_id = ?)
 	`, domain.InquiryExpired, int(retention.Seconds()), domain.InquiryPending, domain.InquiryProcessing, now, userID, userID).Error; err != nil {
 		return fmt.Errorf("expire assistant mesh inquiries: %w", err)
@@ -505,7 +505,10 @@ func refreshInquiries(ctx context.Context, db *gorm.DB, userID string, now time.
 	}
 	if err := db.Exec(`
 		UPDATE assistant_mesh_inquiries
-		SET question = '', answer = '', citations = '[]'::jsonb
+		SET question = '', answer = '',
+			    citation_versions = CASE WHEN citations <> '[]'::jsonb
+			        THEN assistant_mesh_retained_citation_versions(citations) ELSE citation_versions END,
+			    citations = '[]'::jsonb
 		WHERE (caller_id = ? OR owner_id = ?) AND purge_after IS NOT NULL AND purge_after <= ?
 		  AND (question <> '' OR answer <> '' OR citations <> '[]'::jsonb)
 	`, userID, userID, now).Error; err != nil {

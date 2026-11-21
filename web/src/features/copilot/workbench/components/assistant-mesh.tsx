@@ -756,6 +756,11 @@ export function AssistantMesh({
                       </Text>
                     }
                   >
+                    {asset.originalAuthorUserId ? (
+                      <Text type="secondary" copyable={{ text: asset.originalAuthorUserId }}>
+                        原作者 ID {asset.originalAuthorUserId}
+                      </Text>
+                    ) : null}
                     {hasFindings ? (
                       <ContextFeedback
                         type="warning"

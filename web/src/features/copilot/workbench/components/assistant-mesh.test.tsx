@@ -62,6 +62,7 @@ it('runs the published digest even when the owner has a newer draft', async () =
     id: 'asset-1',
     kind: 'skill',
     ownerUserId: 'author',
+    originalAuthorUserId: 'original-author',
     draft: { ...input, body: 'New draft' },
     draftDigest: 'draft-digest',
     published: {
@@ -81,6 +82,7 @@ it('runs the published digest even when the owner has a newer draft', async () =
     await click('[aria-label="能力共享"]')
     await vi.waitFor(() => expect(document.querySelector('.ant-card-head-title')).toBeTruthy())
     await click('.ant-card-hoverable')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('原作者 ID original-author'))
     const placeholder = 'textarea[placeholder="试跑提示词"]'
     await vi.waitFor(() => expect(document.querySelector(placeholder)).toBeTruthy())
     await act(async () => {

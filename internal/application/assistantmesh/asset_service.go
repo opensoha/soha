@@ -162,7 +162,7 @@ func (s *Service) listAsset(ctx context.Context, principal domainidentity.Princi
 		if _, seen := owners[record.OwnerID]; !seen {
 			owners[record.OwnerID] = s.requireAssetOwner(ctx, record.OwnerID)
 		}
-		return Asset{ID: record.ID, OwnerUserID: record.OwnerID, Kind: record.Kind, Published: value.Published}, owners[record.OwnerID] == nil
+		return Asset{ID: record.ID, OwnerUserID: record.OwnerID, OriginalAuthorUserID: value.OriginalAuthorID, Kind: record.Kind, Published: value.Published}, owners[record.OwnerID] == nil
 	}
 }
 
