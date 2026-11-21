@@ -20,6 +20,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	repoplugin "github.com/opensoha/soha/internal/repository/plugin"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -95,9 +96,9 @@ func TestPluginSourceAndStaleUpgradeWithPostgres(t *testing.T) {
 		Manifest: domainplugin.PluginManifest{ID: pluginID, Name: "Source Test Plugin", Version: "1.0.0", Publisher: "test", Type: "skill-pack"},
 	}
 	installed, created, err := repository.CreateInstalled(ctx, initial, nil)
-	if err != nil || !created || installed.SourceInfo == nil || *installed.SourceInfo != source {
-		t.Fatalf("create source = %#v, created=%v, err=%v", installed.SourceInfo, created, err)
-	}
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, &source, installed.SourceInfo)
 
 	expectStaleUpgrade := func(expected domainplugin.InstalledPlugin) {
 		t.Helper()
@@ -112,38 +113,37 @@ func TestPluginSourceAndStaleUpgradeWithPostgres(t *testing.T) {
 			called = true
 			return nil
 		})
-		if !errors.Is(err, apperrors.ErrConflict) || called {
-			t.Fatalf("stale upgrade error = %v, callback called = %v", err, called)
-		}
+		require.ErrorIs(t, err, apperrors.ErrConflict)
+		require.False(t, called, "stale upgrade ran its callback")
 	}
 
 	configuration := installed
 	configuration.ConfiguredSecretRefs = map[string]string{"kubeconfig": "secret://test"}
 	configured, err := repository.UpdateInstalled(ctx, installed, configuration, nil)
-	if err != nil || !configured.UpdatedAt.Equal(installed.UpdatedAt.Add(time.Microsecond)) {
-		t.Fatalf("configure revision = %v, previous revision = %v, err = %v", configured.UpdatedAt, installed.UpdatedAt, err)
-	}
+	require.NoError(t, err)
+	require.True(t, configured.UpdatedAt.Equal(installed.UpdatedAt.Add(time.Microsecond)),
+		"configure revision = %v, previous revision = %v", configured.UpdatedAt, installed.UpdatedAt)
 	expectStaleUpgrade(installed)
 	removed, err := repository.RemoveInstalled(ctx, pluginID, func(context.Context, domainplugin.InstalledPlugin) error { return nil })
-	if err != nil || removed.SourceInfo == nil || *removed.SourceInfo != source ||
-		removed.Version != initial.Version || removed.ConfiguredSecretRefs["kubeconfig"] != "secret://test" {
-		t.Fatalf("remove returned an unexpected installation: %#v, err=%v", removed, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, &source, removed.SourceInfo)
+	require.Equal(t, initial.Version, removed.Version)
+	require.Equal(t, "secret://test", removed.ConfiguredSecretRefs["kubeconfig"])
 	expectStaleUpgrade(configured)
 
 	replacement := initial
 	replacement.InstalledAt = configured.UpdatedAt
 	replacement.UpdatedAt = configured.UpdatedAt
 	reinstalled, created, err := repository.CreateInstalled(ctx, replacement, nil)
-	if err != nil || !created || !reinstalled.UpdatedAt.Equal(configured.UpdatedAt) {
-		t.Fatalf("create replacement revision = %v, created=%v, err=%v", reinstalled.UpdatedAt, created, err)
-	}
+	require.NoError(t, err)
+	require.True(t, created)
+	require.True(t, reinstalled.UpdatedAt.Equal(configured.UpdatedAt), "replacement revision = %v", reinstalled.UpdatedAt)
 	expectStaleUpgrade(configured)
 	stored, err := repository.GetInstalled(ctx, pluginID)
-	if err != nil || !stored.InstalledAt.Equal(replacement.InstalledAt) || stored.Version != replacement.Version ||
-		stored.SourceInfo == nil || *stored.SourceInfo != source {
-		t.Fatalf("stale upgrade changed replacement: %#v, err=%v", stored, err)
-	}
+	require.NoError(t, err)
+	require.True(t, stored.InstalledAt.Equal(replacement.InstalledAt))
+	require.Equal(t, replacement.Version, stored.Version)
+	require.Equal(t, &source, stored.SourceInfo)
 }
 
 func newPluginIntegrationRepository(t *testing.T) (*repoplugin.Repository, string) {
@@ -163,7 +163,7 @@ func newPluginIntegrationRepository(t *testing.T) (*repoplugin.Repository, strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = store.Close() })
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	if err := store.MigrateFromFile(t.Context(), filepath.Join("..", "..", "..", "migrations", "postgres")); err != nil {
 		t.Fatal(err)
 	}

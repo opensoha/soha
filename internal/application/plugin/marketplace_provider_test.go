@@ -17,6 +17,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMarketplaceListIsolatesSources(t *testing.T) {
@@ -67,9 +68,10 @@ func TestMarketplaceListIsolatesSources(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	result, err := provider.listWithSources(ctx, domainplugin.MarketplaceFilter{})
-	if err != nil || len(result.Items) != 2 || result.Items[0].SourceID != "official" || result.Items[1].SourceID != "community" {
-		t.Fatalf("marketplace list did not preserve healthy sources and priority: %#v, %v", result, err)
-	}
+	require.NoError(t, err)
+	require.Len(t, result.Items, 2)
+	require.Equal(t, "official", result.Items[0].SourceID)
+	require.Equal(t, "community", result.Items[1].SourceID)
 	wantSources := []sohaapi.MarketplaceSourceStatus{
 		{SourceID: "official", Status: sohaapi.MarketplaceSourceStatusAvailable},
 		{SourceID: "timeout", Status: sohaapi.MarketplaceSourceStatusUnavailable, Code: "source_unavailable"},
@@ -77,23 +79,16 @@ func TestMarketplaceListIsolatesSources(t *testing.T) {
 		{SourceID: "community", Status: sohaapi.MarketplaceSourceStatusAvailable},
 		{SourceID: "malformed", Status: sohaapi.MarketplaceSourceStatusUnavailable, Code: "source_unavailable"},
 	}
-	if result.Meta == nil || len(result.Meta.Sources) != len(wantSources) {
-		t.Fatalf("marketplace source statuses: %#v", result.Meta)
-	}
-	for index, want := range wantSources {
-		if got := result.Meta.Sources[index]; got != want {
-			t.Fatalf("source status %d = %#v, want %#v", index, got, want)
-		}
-	}
+	require.NotNil(t, result.Meta)
+	require.Equal(t, wantSources, result.Meta.Sources)
 
 	// An empty search response still proves that the selected catalog is available.
 	result, err = provider.listWithSources(ctx, domainplugin.MarketplaceFilter{SourceID: "community", Query: "absent"})
-	if err != nil || len(result.Items) != 0 || result.Meta == nil || len(result.Meta.Sources) != 1 || result.Meta.Sources[0] != wantSources[3] {
-		t.Fatalf("scoped marketplace list = %#v, %v", result, err)
-	}
-	if got := unrelatedCalls.Load(); got != 2 {
-		t.Fatalf("scoped listing fetched unrelated sources: %d requests", got)
-	}
+	require.NoError(t, err)
+	require.Empty(t, result.Items)
+	require.NotNil(t, result.Meta)
+	require.Equal(t, []sohaapi.MarketplaceSourceStatus{wantSources[3]}, result.Meta.Sources)
+	require.Equal(t, int32(2), unrelatedCalls.Load(), "scoped listing fetched unrelated sources")
 	if _, err = provider.Get(ctx, domainplugin.PluginVersionRef{PluginID: "shared", SourceID: "broken"}); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("scoped detail lost its source error: %v", err)
 	}
@@ -104,9 +99,10 @@ func TestMarketplaceListIsolatesSources(t *testing.T) {
 		t.Fatalf("scoped listing lost its source error: %v", err)
 	}
 	result, err = provider.listWithSources(ctx, domainplugin.MarketplaceFilter{SourceID: "unknown"})
-	if err != nil || result.Items == nil || len(result.Items) != 0 || result.Meta != nil {
-		t.Fatalf("unknown source filter = %#v, %v", result, err)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, result.Items)
+	require.Empty(t, result.Items)
+	require.Nil(t, result.Meta)
 }
 
 func TestMarketplaceListAllSourcesUnavailable(t *testing.T) {

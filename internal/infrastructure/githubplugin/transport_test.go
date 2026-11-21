@@ -13,7 +13,10 @@ import (
 func TestNewHTTPClientUsesBoundedDirectTLS(t *testing.T) {
 	t.Parallel()
 	client := newHTTPClient()
-	transport := client.Transport.(*http.Transport)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
 	if transport.Proxy != nil || transport.TLSClientConfig.InsecureSkipVerify || transport.DialTLSContext != nil {
 		t.Fatal("expected direct transport with standard TLS hostname verification")
 	}

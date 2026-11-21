@@ -1,6 +1,7 @@
 package runtimeconfig
 
 import (
+	"fmt"
 	"slices"
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
@@ -14,7 +15,11 @@ func marketplaceThirdPartyURLsDefinition() Definition {
 		ValueType:   sohaapi.RuntimeConfigValueTypeStringList, ApplyMode: sohaapi.RuntimeConfigApplyModeReconfigure,
 		DefaultValue: []string{}, BaselineValue: []string{}, Editable: true,
 		normalize: func(value any) (any, error) {
-			sources, err := appplugin.ManagedMarketplaceSources(value.([]string))
+			rawURLs, ok := value.([]string)
+			if !ok {
+				return nil, fmt.Errorf("must be a string list")
+			}
+			sources, err := appplugin.ManagedMarketplaceSources(rawURLs)
 			if err != nil {
 				return nil, err
 			}
@@ -37,13 +42,22 @@ func (s Snapshot) ManagedMarketplaceSources() ([]appplugin.MarketplaceSource, er
 	if err != nil {
 		return nil, err
 	}
+	urls, ok := value.([]string)
+	if !ok {
+		return nil, fmt.Errorf("must be a string list")
+	}
 	mainURL, _ := s.Definition(KeyMarketplaceURL)
 	mainID, _ := s.Definition(KeyMarketplaceSourceID)
+	baselineURL, urlOK := mainURL.BaselineValue.(string)
+	baselineID, idOK := mainID.BaselineValue.(string)
+	if !urlOK || !idOK {
+		return nil, fmt.Errorf("marketplace baseline URL and source ID must be strings")
+	}
 	effectiveURL := s.String(KeyMarketplaceURL, DefaultMarketplaceURL)
 	effectiveID := s.String(KeyMarketplaceSourceID, DefaultMarketplaceSourceID)
 	declared := append(slices.Clone(s.registry.marketplaceSources),
 		appplugin.MarketplaceSource{ID: DefaultMarketplaceSourceID, URL: DefaultMarketplaceURL},
-		appplugin.MarketplaceSource{ID: mainID.BaselineValue.(string), URL: mainURL.BaselineValue.(string)},
+		appplugin.MarketplaceSource{ID: baselineID, URL: baselineURL},
 		appplugin.MarketplaceSource{ID: effectiveID, URL: effectiveURL},
 	)
 	if effectiveURL == DefaultMarketplaceURL && effectiveID == DefaultMarketplaceSourceID {
@@ -52,7 +66,7 @@ func (s Snapshot) ManagedMarketplaceSources() ([]appplugin.MarketplaceSource, er
 			appplugin.MarketplaceSource{URL: "https://opensoha.github.io/soha-marketplace/marketplace/index.json"},
 		)
 	}
-	return appplugin.ManagedMarketplaceSources(value.([]string), declared...)
+	return appplugin.ManagedMarketplaceSources(urls, declared...)
 }
 
 func isMarketplaceConfigKey(key string) bool {

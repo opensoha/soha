@@ -15,6 +15,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 type fixtureRepository struct {
@@ -55,13 +56,11 @@ func TestRepositoryDistributionPreviewConfirmAndUpgrade(t *testing.T) {
 		t.Fatalf("unauthorized preview reached upstream: %v", err)
 	}
 	preview, err := service.PreviewRepository(ctx, actor, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if preview.SourceInfo.Official || preview.SourceInfo.CommitSha != upstream.commit ||
-		preview.SourceInfo.RawManifestChecksum != checksumBytes(raw) || len(repo.items) != 0 {
-		t.Fatal("preview source evidence or read-only behavior is incorrect")
-	}
+	require.NoError(t, err)
+	require.False(t, preview.SourceInfo.Official)
+	require.Equal(t, upstream.commit, preview.SourceInfo.CommitSha)
+	require.Equal(t, checksumBytes(raw), preview.SourceInfo.RawManifestChecksum)
+	require.Empty(t, repo.items, "preview should be read-only")
 	install := domainplugin.PluginRepositoryInstallRequest{PreviewToken: preview.PreviewToken}
 	for _, invalid := range []struct {
 		name  string
@@ -90,40 +89,45 @@ func TestRepositoryDistributionPreviewConfirmAndUpgrade(t *testing.T) {
 	}
 	service.repositories.now = time.Now
 	item, err := service.InstallRepository(ctx, actor, install)
-	if err != nil || item.Status != statusDisabled || item.SourceInfo == nil || item.SourceInfo.CanonicalSource != upstream.source || upstream.resolves != 1 {
-		t.Fatalf("unexpected install status = %s, resolutions = %d, err = %v", item.Status, upstream.resolves, err)
-	}
-	if _, err := service.Enable(ctx, actor, item.ID); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, statusDisabled, item.Status)
+	require.NotNil(t, item.SourceInfo)
+	require.Equal(t, upstream.source, item.SourceInfo.CanonicalSource)
+	require.Equal(t, 1, upstream.resolves)
+	_, err = service.Enable(ctx, actor, item.ID)
+	require.NoError(t, err)
 	again, err := service.InstallRepository(ctx, actor, install)
-	if err != nil || again.Status != statusEnabled {
-		t.Fatalf("retry changed state: %s, %v", again.Status, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, statusEnabled, again.Status, "retry changed state")
 	if _, err := service.Install(ctx, actor, domainplugin.PluginInstallRequest{Manifest: &item.Manifest}); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("cross-source install accepted: %v", err)
 	}
 	if _, err := service.Upgrade(ctx, actor, item.ID, domainplugin.PluginInstallRequest{Manifest: &item.Manifest}); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("legacy upgrade of repository plugin accepted: %v", err)
 	}
+	requireRepositoryDistributionUpgrade(t, service, upstream, actor, item.ID)
+}
+
+func requireRepositoryDistributionUpgrade(t *testing.T, service *Service, upstream *fixtureRepository, actor domainidentity.Principal, pluginID string) {
+	t.Helper()
+	ctx := t.Context()
+	input := domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: upstream.source}
 	upstream.commit = strings.Repeat("b", 40)
-	upstream.manifest = bytes.Replace(raw, []byte(`"version": "0.1.0"`), []byte(`"version": "0.2.0", "permissions": {"required": ["plugin.view"]}`), 1)
+	upstream.manifest = bytes.Replace(upstream.manifest, []byte(`"version": "0.1.0"`), []byte(`"version": "0.2.0", "permissions": {"required": ["plugin.view"]}`), 1)
 	next, err := service.PreviewRepository(ctx, actor, input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	change := domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: next.PreviewToken}
-	if _, err := service.UpgradeRepository(ctx, actor, item.ID, change); !errors.Is(err, apperrors.ErrConflict) {
+	if _, err := service.UpgradeRepository(ctx, actor, pluginID, change); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("unconfirmed added permissions accepted: %v", err)
 	}
 	change.ConfirmPermissionIncrease = true
-	if _, err := service.Disable(ctx, actor, item.ID); err != nil {
+	if _, err := service.Disable(ctx, actor, pluginID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.UpgradeRepository(ctx, actor, item.ID, change); !errors.Is(err, apperrors.ErrConflict) {
+	if _, err := service.UpgradeRepository(ctx, actor, pluginID, change); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("upgrade used an outdated installation snapshot: %v", err)
 	}
-	if _, err := service.Enable(ctx, actor, item.ID); err != nil {
+	if _, err := service.Enable(ctx, actor, pluginID); err != nil {
 		t.Fatal(err)
 	}
 	next, err = service.PreviewRepository(ctx, actor, input)
@@ -131,10 +135,12 @@ func TestRepositoryDistributionPreviewConfirmAndUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	change.PreviewToken = next.PreviewToken
-	upgraded, err := service.UpgradeRepository(ctx, actor, item.ID, change)
-	if err != nil || upgraded.Version != "0.2.0" || upgraded.Status != statusEnabled || upgraded.SourceInfo.CommitSha != upstream.commit {
-		t.Fatalf("same-source upgrade got version %q, status %q, err %v", upgraded.Version, upgraded.Status, err)
-	}
+	upgraded, err := service.UpgradeRepository(ctx, actor, pluginID, change)
+	require.NoError(t, err)
+	require.Equal(t, "0.2.0", upgraded.Version)
+	require.Equal(t, statusEnabled, upgraded.Status)
+	require.NotNil(t, upgraded.SourceInfo)
+	require.Equal(t, upstream.commit, upgraded.SourceInfo.CommitSha)
 }
 
 func TestRepositoryManifestUsesPublishedIDConstraints(t *testing.T) {

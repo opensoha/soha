@@ -19,7 +19,7 @@ const (
 	testSource   = "https://github.com/acme/plugin"
 	testMetadata = `{"full_name":"Acme/Plugin","private":false,"visibility":"public"}`
 	testRelease  = `{"tag_name":"v1.2.3","draft":false,"prerelease":false,"published_at":"2026-11-20T08:00:00Z"}`
-	testSecret   = "stub-credential-not-for-errors"
+	testSecret   = "stub-credential-not-for-errors" // #nosec G101 -- Synthetic token sent only to stub HTTP transport to exercise redaction.
 	testRemote   = "stub-upstream-not-for-errors"
 	metadataURL  = "https://api.github.com/repos/acme/plugin"
 	manifestURL  = "https://raw.githubusercontent.com/acme/plugin/" + testCommit + "/plugin.manifest.json"

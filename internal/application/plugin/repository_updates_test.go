@@ -12,6 +12,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 const updatesRepositoryURL = "https://github.com/example/demo"
@@ -19,7 +20,7 @@ const updatesRepositoryURL = "https://github.com/example/demo"
 type repositoryUpdatesFixture struct {
 	listCalls  atomic.Int32
 	resolves   atomic.Int32
-	branchPage atomic.Int32
+	branchPage atomic.Int64
 	manifest   []byte
 }
 
@@ -35,7 +36,7 @@ func (f *repositoryUpdatesFixture) ListReleases(_ context.Context, repo string, 
 }
 
 func (f *repositoryUpdatesFixture) ListBranches(_ context.Context, _ string, page int) (domainplugin.PluginRepositoryRefList, error) {
-	f.branchPage.Store(int32(page))
+	f.branchPage.Store(int64(page))
 	return domainplugin.PluginRepositoryRefList{}, nil
 }
 
@@ -102,18 +103,24 @@ func TestRepositoryDiscoveryRequiresViewAndReturnsCompatibleReadOnlyUpdates(t *t
 	page := 2
 	refRequest.Kind, refRequest.Page = "branch", &page
 	refs, err := service.ListRepositoryRefs(ctx, viewer, refRequest)
-	if err != nil || upstream.branchPage.Load() != 2 || refs.Refs == nil || len(refs.Refs) != 0 {
-		t.Fatalf("paged branch discovery: %#v, %v", refs, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, int64(2), upstream.branchPage.Load())
+	require.NotNil(t, refs.Refs)
+	require.Empty(t, refs.Refs)
 	updates, err := service.ListUpdates(ctx, viewer)
-	if err != nil || len(updates) != 1 || updates[0].PluginID != pluginID || updates[0].Ref != "refs/tags/v0.2.0" ||
-		updates[0].TargetVersion != "0.2.0" || updates[0].InstalledVersion != installed.Version ||
-		updates[0].RepositoryURL != updatesRepositoryURL || upstream.listCalls.Load() != 2 || upstream.resolves.Load() != 3 {
-		t.Fatalf("update hint must ignore incompatible, mismatched, prerelease, unrelated and unavailable candidates: %#v, %v", updates, err)
-	}
-	if got := store.items[pluginID]; got.Version != installed.Version || got.Status != installed.Status || got.SourceInfo != installed.SourceInfo {
-		t.Fatalf("discovery changed the installed snapshot: %#v", got)
-	}
+	require.NoError(t, err)
+	require.Len(t, updates, 1, "discovery should ignore incompatible, mismatched, prerelease, unrelated and unavailable candidates")
+	require.Equal(t, pluginID, updates[0].PluginID)
+	require.Equal(t, "refs/tags/v0.2.0", updates[0].Ref)
+	require.Equal(t, "0.2.0", updates[0].TargetVersion)
+	require.Equal(t, installed.Version, updates[0].InstalledVersion)
+	require.Equal(t, updatesRepositoryURL, updates[0].RepositoryURL)
+	require.Equal(t, int32(2), upstream.listCalls.Load())
+	require.Equal(t, int32(3), upstream.resolves.Load())
+	got := store.items[pluginID]
+	require.Equal(t, installed.Version, got.Version)
+	require.Equal(t, installed.Status, got.Status)
+	require.Same(t, installed.SourceInfo, got.SourceInfo)
 	before := upstream.listCalls.Load()
 	updates, err = service.ListUpdates(ctx, viewer, "uninstalled", pluginID)
 	if err != nil || len(updates) != 1 || updates[0].PluginID != pluginID || upstream.listCalls.Load() != before+1 {

@@ -62,7 +62,7 @@ func TestParseSourceRejectsInvalidInputs(t *testing.T) {
 		{name: "insecure scheme", repositoryURL: "http://github.com/acme/plugin"},
 		{name: "foreign host", repositoryURL: "https://example.invalid/acme/plugin"},
 		{name: "noncanonical port", repositoryURL: "https://github.com:443/acme/plugin"},
-		{name: "credentials", repositoryURL: "https://user:test-secret@github.com/acme/plugin"},
+		{name: "credentials", repositoryURL: "https://user:test-secret@github.com/acme/plugin"}, // #nosec G101 -- Synthetic URL credentials must be rejected before HTTP.
 		{name: "query", repositoryURL: root + "?tab=readme"},
 		{name: "fragment", repositoryURL: root + "#"},
 		{name: "missing repository", repositoryURL: "https://github.com/acme"},

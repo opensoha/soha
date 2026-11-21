@@ -134,7 +134,7 @@ func TestManagedMarketplaceStartupAndReconfiguration(t *testing.T) {
 	// A deployment change can reserve a URL previously saved in runtime settings.
 	previous := readSnapshot(map[string]any{
 		appruntimeconfig.KeyMarketplaceThirdPartyURLs: []any{declared, managed},
-		appruntimeconfig.KeyMarketplaceURL:            "https://example:example@primary.example.com/index.json",
+		appruntimeconfig.KeyMarketplaceURL:            "https://example@primary.example.com/index.json",
 	})
 	provider, err := startupMarketplaceProvider(base, previous, zap.NewNop())
 	if err != nil {

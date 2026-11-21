@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 	"testing"
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
@@ -12,6 +11,7 @@ import (
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 type marketplaceRuntimePermissions struct{}
@@ -47,17 +47,18 @@ func TestManagedMarketplaceRuntimeSettingsAuthorizePersistAndReapply(t *testing.
 		t.Fatalf("installer rollback error = %v", err)
 	}
 	validation, err := service.Validate(ctx, admin, change)
-	if err != nil || !validation.Valid || !slices.Equal(validation.Changes[0].ProposedValue.([]string), []string{"https://catalog.example.com/index.json"}) {
-		t.Fatalf("validate = %#v, error = %v", validation, err)
-	}
-	result, err := service.Apply(ctx, admin, change)
-	if err != nil || result.Application.Status != sohaapi.RuntimeConfigApplicationStatusApplied || result.Revision.Version != 1 {
-		t.Fatalf("apply = %#v, error = %v", result, err)
-	}
-	if len(audit.entries) != 1 || audit.entries[0].ActorID != admin.UserID || !slices.Equal(audit.entries[0].Metadata["keys"].([]string), []string{KeyMarketplaceThirdPartyURLs}) {
-		t.Fatalf("audit = %#v", audit.entries)
-	}
+	require.NoError(t, err)
+	require.True(t, validation.Valid, "validation issues: %#v", validation.Issues)
+	require.NotEmpty(t, validation.Changes)
 	canonical := "https://catalog.example.com/index.json"
+	require.Equal(t, []string{canonical}, validation.Changes[0].ProposedValue)
+	result, err := service.Apply(ctx, admin, change)
+	require.NoError(t, err)
+	require.Equal(t, sohaapi.RuntimeConfigApplicationStatusApplied, result.Application.Status)
+	require.Equal(t, int64(1), result.Revision.Version)
+	require.Len(t, audit.entries, 1)
+	require.Equal(t, admin.UserID, audit.entries[0].ActorID)
+	require.Equal(t, []string{KeyMarketplaceThirdPartyURLs}, audit.entries[0].Metadata["keys"])
 	wire, err := json.Marshal(store.state.Overrides)
 	if err != nil {
 		t.Fatal(err)
@@ -66,14 +67,13 @@ func TestManagedMarketplaceRuntimeSettingsAuthorizePersistAndReapply(t *testing.
 	if err := json.Unmarshal(wire, &overrides); err != nil {
 		t.Fatal(err)
 	}
-	if urls := overrides[KeyMarketplaceThirdPartyURLs].([]any); len(urls) != 1 || urls[0] != canonical {
-		t.Fatalf("stored URLs = %#v", urls)
-	}
+	require.Equal(t, []any{canonical}, overrides[KeyMarketplaceThirdPartyURLs])
 	store.state.Overrides = overrides
 	restarted := newTestService(t, &store, &audit)
-	if sources, err := restarted.Current().ManagedMarketplaceSources(); err != nil || len(sources) != 1 || sources[0].URL != canonical {
-		t.Fatalf("restart sources = %#v, error = %v", sources, err)
-	}
+	sources, err := restarted.Current().ManagedMarketplaceSources()
+	require.NoError(t, err)
+	require.Len(t, sources, 1)
+	require.Equal(t, canonical, sources[0].URL)
 	applier := &captureApplier{key: KeyMarketplaceThirdPartyURLs, called: make(chan struct{}, 1)}
 	restarted.RegisterApplier(applier)
 	if _, err := service.Apply(ctx, admin, sohaapi.RuntimeConfigChangeRequest{ExpectedVersion: 1, Changes: []sohaapi.RuntimeConfigChange{{Key: KeyMarketplaceThirdPartyURLs, Reset: true}}}); err != nil {

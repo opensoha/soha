@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
+	"github.com/stretchr/testify/require"
 )
 
 func TestManagedMarketplaceSourceCanonicalIdentity(t *testing.T) {
@@ -76,7 +77,11 @@ func TestManagedMarketplaceGuardsManifestAndRedirects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if provider.client.Transport.(managedMarketplaceTransport).transport.(*http.Transport).Proxy != nil {
+			managed, ok := provider.client.Transport.(managedMarketplaceTransport)
+			require.True(t, ok, "managed source transport = %T", provider.client.Transport)
+			transport, ok := managed.transport.(*http.Transport)
+			require.True(t, ok, "managed source base transport = %T", managed.transport)
+			if transport.Proxy != nil {
 				t.Fatal("managed sources inherited a proxy")
 			}
 			requests := 0

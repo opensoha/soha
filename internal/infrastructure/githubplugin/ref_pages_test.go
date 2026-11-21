@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -48,30 +49,35 @@ func TestListRepositoryRefsRequestsOnlySelectedPage(t *testing.T) {
 		}
 	})
 	result, err := client.ListReleases(t.Context(), testSource, 2)
-	if err != nil || len(result.Refs) != 3 || !result.HasMore {
-		t.Fatalf("release page = %+v, %v", result, err)
-	}
+	require.NoError(t, err)
+	require.Len(t, result.Refs, 3)
+	require.True(t, result.HasMore)
 	first := result.Refs[0]
-	if first.Name != "v1.2.3" || first.Version != "1.2.3" || first.Prerelease || first.PublishedAt == nil || first.ReleaseURL != testSource+"/releases/tag/v1.2.3" {
-		t.Fatalf("release version = %+v", first)
-	}
-	if result.Refs[1].Version != "1.5.0-preview.1+build.1" || !result.Refs[1].Prerelease ||
-		result.Refs[2].Version != "" || result.Refs[2].ReleaseURL != testSource+"/releases/tag/special%2Fupdate" {
-		t.Fatalf("prerelease or non-SemVer tag = %+v", result.Refs[1:])
-	}
+	require.Equal(t, "v1.2.3", first.Name)
+	require.Equal(t, "1.2.3", first.Version)
+	require.False(t, first.Prerelease)
+	require.NotNil(t, first.PublishedAt)
+	require.Equal(t, testSource+"/releases/tag/v1.2.3", first.ReleaseURL)
+	require.Equal(t, "1.5.0-preview.1+build.1", result.Refs[1].Version)
+	require.True(t, result.Refs[1].Prerelease)
+	require.Empty(t, result.Refs[2].Version)
+	require.Equal(t, testSource+"/releases/tag/special%2Fupdate", result.Refs[2].ReleaseURL)
 	result.Refs[0].Name = "modified by caller"
 	*result.Refs[0].PublishedAt = time.Time{}
 	result, err = client.ListReleases(t.Context(), "https://GitHub.com/Acme/Plugin.git/", 2)
-	if err != nil || result.Refs[0].Name != "v1.2.3" || result.Refs[0].PublishedAt.IsZero() {
-		t.Fatalf("cached release page = %+v, %v", result, err)
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Refs)
+	require.Equal(t, "v1.2.3", result.Refs[0].Name)
+	require.NotNil(t, result.Refs[0].PublishedAt)
+	require.False(t, result.Refs[0].PublishedAt.IsZero())
 	branches, err := client.ListBranches(t.Context(), testSource, 1)
-	if err != nil || len(branches.Refs) != 2 || branches.Refs[1].Name != "release/stable" || branches.HasMore {
-		t.Fatalf("branch page = %+v, %v", branches, err)
-	}
-	if metadataCalls != 2 || releaseCalls != 1 || branchCalls != 1 {
-		t.Fatalf("request counts = %d metadata, %d releases, %d branches", metadataCalls, releaseCalls, branchCalls)
-	}
+	require.NoError(t, err)
+	require.Len(t, branches.Refs, 2)
+	require.Equal(t, "release/stable", branches.Refs[1].Name)
+	require.False(t, branches.HasMore)
+	require.Equal(t, 2, metadataCalls, "metadata requests")
+	require.Equal(t, 1, releaseCalls, "release requests")
+	require.Equal(t, 1, branchCalls, "branch requests")
 }
 
 func TestRefPageRevalidationAndBackoffNeverServeStaleResults(t *testing.T) {
@@ -111,31 +117,33 @@ func TestRefPageRevalidationAndBackoffNeverServeStaleResults(t *testing.T) {
 		})
 		for range 2 {
 			result, err := client.ListReleases(t.Context(), testSource, 1)
-			if err != nil || len(result.Refs) != 1 || !result.HasMore {
-				t.Fatalf("release page after revalidation = %+v, %v", result, err)
-			}
+			require.NoError(t, err)
+			require.Len(t, result.Refs, 1)
+			require.True(t, result.HasMore)
 			time.Sleep(refCacheTTL)
 		}
 		for range 2 {
 			result, err := client.ListReleases(t.Context(), testSource, 1)
 			assertSafeError(t, err, apperrors.ErrServiceUnavailable)
-			if len(result.Refs) != 0 || result.HasMore || calls != 3 {
-				t.Fatalf("failed refresh = %+v, %d HTTP page requests", result, calls)
-			}
+			require.Empty(t, result.Refs, "failed refresh must not return stale refs")
+			require.False(t, result.HasMore)
+			require.Equal(t, 3, calls)
 		}
 		time.Sleep(refErrorBackoff)
 		for range 2 {
 			result, err := client.ListReleases(t.Context(), testSource, 1)
 			assertSafeError(t, err, ErrRateLimited)
-			if len(result.Refs) != 0 || result.HasMore || calls != 4 {
-				t.Fatalf("rate-limited page = %+v, %d HTTP page requests", result, calls)
-			}
+			require.Empty(t, result.Refs, "rate-limited page must not return stale refs")
+			require.False(t, result.HasMore)
+			require.Equal(t, 4, calls)
 			time.Sleep(30 * time.Second)
 		}
 		result, err := client.ListReleases(t.Context(), testSource, 1)
-		if err != nil || result.Refs == nil || len(result.Refs) != 0 || result.HasMore || calls != 5 {
-			t.Fatalf("recovered empty page = %+v, %v; requests %d", result, err, calls)
-		}
+		require.NoError(t, err)
+		require.NotNil(t, result.Refs)
+		require.Empty(t, result.Refs)
+		require.False(t, result.HasMore)
+		require.Equal(t, 5, calls)
 	})
 }
 

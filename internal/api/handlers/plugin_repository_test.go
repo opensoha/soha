@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 type pluginRepositoryHandlerStub struct {
@@ -75,51 +75,45 @@ func TestRepositoryPluginHTTPBoundary(t *testing.T) {
 	} {
 		stub.previewErr = tc.err
 		response := send("/preview", `{"repositoryUrl":"https://github.com/example/demo"}`)
-		if response.Code != tc.status || response.Header().Get("Cache-Control") != "no-store" ||
-			stub.previewMaxTime <= 0 || stub.previewMaxTime > pluginRepositoryRequestTimeout {
-			t.Fatalf("preview got status %d, headers %v; want status %d with no-store", response.Code, response.Header(), tc.status)
-		}
+		require.Equal(t, tc.status, response.Code)
+		require.Equal(t, "no-store", response.Header().Get("Cache-Control"))
+		require.Positive(t, stub.previewMaxTime)
+		require.LessOrEqual(t, stub.previewMaxTime, pluginRepositoryRequestTimeout)
 	}
 	for _, request := range []string{
 		`{"previewToken":"example","pluginId":"legacy-id"}`,
 		`{"previewToken":"example"} {}`,
 		`{"previewToken":"` + strings.Repeat("a", 16<<10) + `"}`,
 	} {
-		if response := send("/install", request); response.Code != http.StatusBadRequest || stub.installs != 0 {
-			t.Fatalf("ambiguous request reached install: status=%d calls=%d", response.Code, stub.installs)
-		}
+		response := send("/install", request)
+		require.Equal(t, http.StatusBadRequest, response.Code, "ambiguous install request")
+		require.Zero(t, stub.installs, "ambiguous request reached install")
 	}
-	if response := send("/install", `{"previewToken":"example"}`); response.Code != http.StatusCreated || stub.installs != 1 {
-		t.Fatalf("confirmed request was not delegated: status=%d calls=%d", response.Code, stub.installs)
-	}
+	response := send("/install", `{"previewToken":"example"}`)
+	require.Equal(t, http.StatusCreated, response.Code)
+	require.Equal(t, 1, stub.installs, "confirmed request was not delegated")
 	for _, path := range []string{"/legacy-install", "/legacy-upgrade"} {
-		if response := send(path, `{"previewToken":"example","pluginId":"fixture"}`); response.Code != http.StatusBadRequest {
-			t.Fatalf("legacy route accepted a preview token: %s status=%d", path, response.Code)
-		}
+		response := send(path, `{"previewToken":"example","pluginId":"fixture"}`)
+		require.Equal(t, http.StatusBadRequest, response.Code, "legacy route %s accepted a preview token", path)
 	}
 	stub.previewErr = nil
 	refs := send("/refs", `{"repositoryUrl":"https://github.com/example/demo","kind":"release"}`)
-	if refs.Code != http.StatusOK || !strings.Contains(refs.Body.String(), `"data":`) || refs.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("invalid refs response: %d %s", refs.Code, refs.Body)
-	}
+	require.Equal(t, http.StatusOK, refs.Code)
+	require.Contains(t, refs.Body.String(), `"data":`)
+	require.Equal(t, "no-store", refs.Header().Get("Cache-Control"))
 	updates := httptest.NewRecorder()
 	router.ServeHTTP(updates, httptest.NewRequest(http.MethodGet, "/updates?pluginId=example.first&pluginId=example.second", nil))
-	if updates.Code != http.StatusOK || !strings.Contains(updates.Body.String(), `"items":[]`) || updates.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("invalid updates response: %d %s", updates.Code, updates.Body)
-	}
-	if !slices.Equal(stub.updateIDs, []string{"example.first", "example.second"}) {
-		t.Fatalf("update selection was not passed to the service: %v", stub.updateIDs)
-	}
+	require.Equal(t, http.StatusOK, updates.Code)
+	require.Contains(t, updates.Body.String(), `"items":[]`)
+	require.Equal(t, "no-store", updates.Header().Get("Cache-Control"))
+	require.Equal(t, []string{"example.first", "example.second"}, stub.updateIDs)
 	stub.updateIDs = nil
 	updates = httptest.NewRecorder()
 	router.ServeHTTP(updates, httptest.NewRequest(http.MethodGet, "/updates?pluginId=%zz&pluginId=example.first", nil))
-	if updates.Code != http.StatusBadRequest || stub.updateIDs != nil {
-		t.Fatalf("malformed update selection reached the service: %d %v", updates.Code, stub.updateIDs)
-	}
+	require.Equal(t, http.StatusBadRequest, updates.Code)
+	require.Nil(t, stub.updateIDs, "malformed update selection reached the service")
 	stub.updateErr = apperrors.ErrServiceUnavailable
 	updates = httptest.NewRecorder()
 	router.ServeHTTP(updates, httptest.NewRequest(http.MethodGet, "/updates", nil))
-	if updates.Code != http.StatusServiceUnavailable {
-		t.Fatalf("upstream outage should be visible on updates: %d %s", updates.Code, updates.Body)
-	}
+	require.Equal(t, http.StatusServiceUnavailable, updates.Code, "upstream outage should be visible on updates")
 }

@@ -15,6 +15,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMarketplaceRepositoryRegistrationBindsPreviewAndConfirmation(t *testing.T) {
@@ -54,10 +55,15 @@ func TestMarketplaceRepositoryRegistrationBindsPreviewAndConfirmation(t *testing
 	ctx := t.Context()
 	actor := domainidentity.Principal{UserID: "operator", Roles: []string{"operator"}}
 	items, err := service.ListMarketplace(ctx, actor, domainplugin.MarketplaceFilter{SourceID: sourceID})
-	if err != nil || len(items) != 1 || items[0].SourceInfo == nil || items[0].RepositoryURL != repoURL || items[0].Version != "" ||
-		items[0].SourceID != sourceID || !items[0].SourceInfo.Official || upstream.resolves != 0 || hiddenCatalogReads.Load() != 0 {
-		t.Fatalf("marketplace home should only read visible registration metadata: %#v, %v", items, err)
-	}
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.NotNil(t, items[0].SourceInfo)
+	require.Equal(t, repoURL, items[0].RepositoryURL)
+	require.Empty(t, items[0].Version)
+	require.Equal(t, sourceID, items[0].SourceID)
+	require.True(t, items[0].SourceInfo.Official)
+	require.Zero(t, upstream.resolves, "marketplace home should only read registration metadata")
+	require.Zero(t, hiddenCatalogReads.Load(), "marketplace home should read only visible registrations")
 	if _, err := service.Install(ctx, actor, domainplugin.PluginInstallRequest{PluginID: pluginID, SourceID: sourceID, Version: "0.1.0"}); !errors.Is(err, errMarketplaceRepositoryPreviewRequired) {
 		t.Fatalf("legacy install bypassed the dynamic preview or fell back to hidden legacy catalog: %v", err)
 	}
@@ -76,9 +82,10 @@ func TestMarketplaceRepositoryRegistrationBindsPreviewAndConfirmation(t *testing
 	}
 	input.Ref = "refs/tags/v0.1.0"
 	preview, err := service.PreviewRepository(ctx, actor, input)
-	if err != nil || !preview.SourceInfo.Official || preview.SourceInfo.CanonicalSource != repoURL || len(store.items) != 0 {
-		t.Fatalf("dynamic preview was not read-only with a server-owned official source: %#v, %v", preview.SourceInfo, err)
-	}
+	require.NoError(t, err)
+	require.True(t, preview.SourceInfo.Official)
+	require.Equal(t, repoURL, preview.SourceInfo.CanonicalSource)
+	require.Empty(t, store.items, "dynamic preview should be read-only")
 	confirm := domainplugin.PluginRepositoryInstallRequest{PreviewToken: preview.PreviewToken}
 	registeredURL.Store("https://github.com/attacker/demo")
 	reads := upstream.fetches
@@ -87,29 +94,35 @@ func TestMarketplaceRepositoryRegistrationBindsPreviewAndConfirmation(t *testing
 	}
 	registeredURL.Store(repoURL)
 	installed, err := service.InstallRepository(ctx, actor, confirm)
-	if err != nil || installed.SourceInfo == nil || installed.SourceInfo.Kind != domainplugin.SourceKindMarketplace ||
-		installed.SourceInfo.CanonicalSource != server.URL+"/repositories.json" || installed.SourceInfo.RepositoryURL != repoURL ||
-		installed.SourceInfo.CommitSha != upstream.commit || !installed.SourceInfo.Official || installed.Version != "0.1.0" {
-		t.Fatalf("dynamic install lost catalog or GitHub provenance: %#v, %v", installed.SourceInfo, err)
-	}
+	require.NoError(t, err)
+	requireMarketplaceRegistrationProvenance(t, installed, server.URL+"/repositories.json", repoURL, upstream.commit)
 	upstream.commit = strings.Repeat("b", 40)
 	upstream.manifest = bytes.Replace(raw, []byte(`"version": "0.1.0"`), []byte(`"version": "0.2.0"`), 1)
 	input.Ref = "refs/tags/v0.2.0"
 	direct, err := service.PreviewRepository(ctx, actor, domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: repoURL, Ref: input.Ref})
-	if err != nil || direct.SourceInfo.Official {
-		t.Fatalf("direct preview received official identity: %#v %v", direct.SourceInfo, err)
-	}
+	require.NoError(t, err)
+	require.False(t, direct.SourceInfo.Official, "direct preview received official identity")
 	if _, err := service.UpgradeRepository(ctx, actor, pluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: direct.PreviewToken}); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("direct proof could upgrade a marketplace installation: %v", err)
 	}
 	preview, err = service.PreviewRepository(ctx, actor, input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	updated, err := service.UpgradeRepository(ctx, actor, pluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: preview.PreviewToken})
-	if err != nil || updated.Version != "0.2.0" || !updated.InstalledAt.Equal(installed.InstalledAt) || !samePluginSource(updated.SourceInfo, installed.SourceInfo) {
-		t.Fatalf("dynamic upgrade changed its installation identity or failed: %#v, %v", updated.SourceInfo, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "0.2.0", updated.Version)
+	require.WithinDuration(t, installed.InstalledAt, updated.InstalledAt, 0)
+	require.True(t, samePluginSource(updated.SourceInfo, installed.SourceInfo), "dynamic upgrade changed source identity")
+}
+
+func requireMarketplaceRegistrationProvenance(t *testing.T, installed domainplugin.InstalledPlugin, catalogURL, repoURL, commit string) {
+	t.Helper()
+	require.NotNil(t, installed.SourceInfo)
+	require.Equal(t, domainplugin.SourceKindMarketplace, installed.SourceInfo.Kind)
+	require.Equal(t, catalogURL, installed.SourceInfo.CanonicalSource)
+	require.Equal(t, repoURL, installed.SourceInfo.RepositoryURL)
+	require.Equal(t, commit, installed.SourceInfo.CommitSha)
+	require.True(t, installed.SourceInfo.Official)
+	require.Equal(t, "0.1.0", installed.Version)
 }
 
 func distributionTestManifest(t *testing.T) []byte {

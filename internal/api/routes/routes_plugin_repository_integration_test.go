@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	repoplugin "github.com/opensoha/soha/internal/repository/plugin"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -72,23 +74,15 @@ func TestRepositoryDistributionRoutesWithPostgres(t *testing.T) {
 		t.Skip("requires an isolated PostgreSQL instance")
 	}
 	port, err := strconv.Atoi(portText)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	store, err := dbstore.New(config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
 	}, zap.NewNop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	if err := store.MigrateFromFile(t.Context(), "../../../migrations/postgres"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	require.NoError(t, store.MigrateFromFile(t.Context(), "../../../migrations/postgres"))
 	raw, err := os.ReadFile("../../../contracts/examples/plugin-distribution/plugin.manifest.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	repo := repoplugin.New(store.DB())
 	nextRaw := bytes.Replace(raw, []byte(`"version": "0.1.0"`),
 		[]byte(`"version": "0.2.0", "permissions": {"required": ["plugin.view"]}`), 1)
@@ -116,18 +110,14 @@ func TestRepositoryDistributionRoutesWithPostgres(t *testing.T) {
 	var preview struct {
 		Data domainplugin.PluginRepositoryPreview
 	}
-	if err := json.Unmarshal(result, &preview); err != nil || preview.Data.PreviewToken == "" || preview.Data.SourceInfo.CommitSha != distributionFixtureSHA {
-		t.Fatalf("invalid repository preview evidence: %v", err)
-	}
+	require.NoError(t, json.Unmarshal(result, &preview))
+	require.NotEmpty(t, preview.Data.PreviewToken)
+	require.Equal(t, distributionFixtureSHA, preview.Data.SourceInfo.CommitSha)
 	id := preview.Data.Manifest.ID
 	before := callDistributionRoute(t, server, "installer", http.MethodGet, "/plugins/installed", "", http.StatusOK)
-	if bytes.Contains(before, []byte(id)) {
-		t.Fatal("preview created an installation")
-	}
+	require.NotContains(t, string(before), id, "preview created an installation")
 	input, err := json.Marshal(domainplugin.PluginRepositoryInstallRequest{PreviewToken: preview.Data.PreviewToken})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	installPath := "/plugins/repository/install"
 	if cliBinary := os.Getenv("SOHA_PLUGIN_TEST_CLI"); cliBinary != "" {
 		t.Run("cli_binary", func(t *testing.T) {
@@ -138,45 +128,49 @@ func TestRepositoryDistributionRoutesWithPostgres(t *testing.T) {
 	callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/"+id+"/enable", "", http.StatusOK)
 	callDistributionRoute(t, server, "installer", http.MethodPost, installPath, string(input), http.StatusCreated)
 	item, err := repo.GetInstalled(t.Context(), id)
-	if err != nil || item.Status != "enabled" || item.SourceInfo == nil || item.SourceInfo.CommitSha != distributionFixtureSHA {
-		t.Fatalf("readback did not preserve install source and enabled state: status=%s err=%v", item.Status, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "enabled", item.Status)
+	require.NotNil(t, item.SourceInfo)
+	require.Equal(t, distributionFixtureSHA, item.SourceInfo.CommitSha)
 	extensions := callDistributionRoute(t, server, "installer", http.MethodGet, "/extensions/ai", "", http.StatusOK)
-	if !bytes.Contains(extensions, []byte(id)) {
-		t.Fatal("enabled repository plugin did not register its declaration")
-	}
+	require.Contains(t, string(extensions), id, "enabled repository plugin did not register its declaration")
 	callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/"+id+"/upgrade", `{}`, http.StatusConflict)
 	callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/install", string(input), http.StatusBadRequest)
 	manifestInput, err := json.Marshal(domainplugin.PluginInstallRequest{Manifest: &preview.Data.Manifest})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/install", string(manifestInput), http.StatusConflict)
 
 	next := callDistributionRoute(t, server, "installer", http.MethodPost, previewPath,
 		`{"repositoryUrl":"`+distributionFixtureURL+`","ref":"v0.2.0"}`, http.StatusOK)
-	if err := json.Unmarshal(next, &preview); err != nil || preview.Data.SourceInfo.CommitSha != distributionNextSHA {
-		t.Fatalf("invalid upgrade preview: %v", err)
-	}
+	require.NoError(t, json.Unmarshal(next, &preview))
+	require.Equal(t, distributionNextSHA, preview.Data.SourceInfo.CommitSha)
 	upgradePath := "/plugins/" + id + "/repository/upgrade"
 	unconfirmed := `{"previewToken":"` + preview.Data.PreviewToken + `"}`
 	callDistributionRoute(t, server, "viewer", http.MethodPost, upgradePath, unconfirmed, http.StatusForbidden)
 	rejected := callDistributionRoute(t, server, "installer", http.MethodPost, upgradePath, unconfirmed, http.StatusConflict)
-	if !bytes.Contains(rejected, []byte("plugin_permission_increase")) {
-		t.Fatal("the upgrade did not require explicit permission acknowledgement")
-	}
+	require.Contains(t, string(rejected), "plugin_permission_increase", "the upgrade did not require explicit permission acknowledgement")
 	confirmed := `{"previewToken":"` + preview.Data.PreviewToken + `","confirmPermissionIncrease":true}`
 	callDistributionRoute(t, server, "installer", http.MethodPost, upgradePath, confirmed, http.StatusOK)
 	item, err = repo.GetInstalled(t.Context(), id)
-	if err != nil || item.Version != "0.2.0" || item.Status != "enabled" ||
-		item.SourceInfo == nil || item.SourceInfo.CommitSha != distributionNextSHA {
-		t.Fatalf("upgraded readback: version=%s status=%s err=%v", item.Version, item.Status, err)
-	}
+	require.NoError(t, err)
+	require.Equal(t, "0.2.0", item.Version)
+	require.Equal(t, "enabled", item.Status)
+	require.NotNil(t, item.SourceInfo)
+	require.Equal(t, distributionNextSHA, item.SourceInfo.CommitSha)
 }
 
 func testDistributionCLI(t *testing.T, cliBinary, server, id, checksum string) {
 	t.Helper()
-	command := exec.CommandContext(t.Context(), cliBinary, "plugin", "install", "--profile", "local",
+	binary, err := filepath.Abs(cliBinary)
+	require.NoError(t, err)
+	file, err := os.Stat(binary)
+	require.NoError(t, err)
+	require.True(t, file.Mode().IsRegular(), "SOHA_PLUGIN_TEST_CLI must point to a regular binary")
+	build, err := buildinfo.ReadFile(binary)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/opensoha/soha/cli/cmd/soha", build.Path, "SOHA_PLUGIN_TEST_CLI must select a built Soha CLI")
+	// #nosec G204 G702 -- Opt-in Test runner supplies the absolute Go CLI fixture checked above; fixed arguments and no shell.
+	command := exec.CommandContext(t.Context(), binary, "plugin", "install", "--profile", "local",
 		"--repository", distributionFixtureURL, "--yes", "--json")
 	command.Env = append(os.Environ(), "SOHA_SERVER="+server, "SOHA_TOKEN=task136-local-fixture",
 		"SOHA_CONFIG="+filepath.Join(t.TempDir(), "config.json"))
@@ -208,7 +202,7 @@ func callDistributionRoute(t *testing.T, server *httptest.Server, role, method, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { require.NoError(t, response.Body.Close()) }()
 	var data json.RawMessage
 	if err := json.NewDecoder(response.Body).Decode(&data); err != nil || response.StatusCode != want {
 		t.Fatalf("%s %s returned status %d (want %d), decode err: %v", method, path, response.StatusCode, want, err)
