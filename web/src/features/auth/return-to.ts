@@ -1,6 +1,10 @@
 import { appBasePath, appRouterPath } from '@/utils/app-base'
 
-const SERVER_RETURN_PATHS = new Set(['/api/v1/provider/proxy/callback', '/oauth2/authorize'])
+const SERVER_RETURN_PATHS = new Set([
+  '/api/v1/provider/proxy/callback',
+  '/api/v1/app-hosting/auth/start',
+  '/oauth2/authorize',
+])
 
 function hasControlCharacter(value: string) {
   for (let index = 0; index < value.length; index += 1) {

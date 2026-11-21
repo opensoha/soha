@@ -170,6 +170,7 @@ var topLevelCommandSpecs = []commandSpec{
 		},
 		Handler: runDelivery,
 	},
+	hostCommandSpec(),
 	{
 		Name:    "resource",
 		Usage:   "soha resource read <uri> [options]",

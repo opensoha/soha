@@ -388,6 +388,7 @@ function applyGoCompatibility(spec) {
     "NetworkProxyServerPublication",
     "NetworkProxyConfigurationInput",
     "NetworkProxyConfigurationPatchInput",
+    "AppHostingGatewayAccessDecision",
   ]);
 
   const riskLevel = schemas.RiskLevel;

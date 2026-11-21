@@ -57,7 +57,7 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, c
 			return
 		}
 
-		token, validHeader := accessTokenFromRequest(c)
+		token, validHeader := accessTokenFromRequest(c, basePath)
 		if !validHeader {
 			_ = c.Error(errors.New("request contains multiple authorization headers"))
 			apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid authentication token")
@@ -148,7 +148,7 @@ func isDSHServiceCallback(r *http.Request, basePath string) bool {
 	}
 }
 
-func accessTokenFromRequest(c *gin.Context) (requestAccessToken, bool) {
+func accessTokenFromRequest(c *gin.Context, basePath string) (requestAccessToken, bool) {
 	authorization, valid := SingleAuthorizationHeader(c.Request)
 	if !valid {
 		return requestAccessToken{}, false
@@ -157,7 +157,7 @@ func accessTokenFromRequest(c *gin.Context) (requestAccessToken, bool) {
 	if token != "" {
 		return requestAccessToken{value: token, source: accessTokenSourceHeader}, true
 	}
-	if allowsProtocolAccessCookie(c.Request.URL.Path) {
+	if allowsProtocolAccessCookie(c.Request.Method, c.Request.URL.Path, basePath) {
 		if value, err := c.Cookie(ProtocolAccessCookieName); err == nil {
 			if token = strings.TrimSpace(value); token != "" {
 				return requestAccessToken{value: token, source: accessTokenSourceProtocolCookie}, true
@@ -237,10 +237,13 @@ func isAIGatewayLLMRelayPath(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/ai-gateway/llm/")
 }
 
-func allowsProtocolAccessCookie(path string) bool {
+func allowsProtocolAccessCookie(method, path, basePath string) bool {
 	path = strings.TrimSpace(path)
+	if path == basePath+"/app-hosting/auth/start" {
+		return method == http.MethodGet
+	}
 	switch path {
-	case "/oauth2/authorize", "/api/v1/provider/oidc/authorize", "/api/v1/provider/proxy/callback":
+	case "/oauth2/authorize", basePath + "/provider/oidc/authorize", basePath + "/provider/proxy/callback":
 		return true
 	default:
 		return false
@@ -248,6 +251,8 @@ func allowsProtocolAccessCookie(path string) bool {
 }
 
 var externalBearerTokenSuffixes = [...]string{
+	"/app-hosting/gateway/tickets/exchange",
+	"/app-hosting/gateway/access-check",
 	"/network/radius-deployment-executor/claim",
 	"/network/radius-deployment-executor/status",
 	"/network/radius-deployment-executor/callback",

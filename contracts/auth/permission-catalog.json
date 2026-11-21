@@ -1,7 +1,7 @@
 {
   "schemaVersion": "authorization.opensoha.io/v1",
   "catalogVersion": "2.0.0",
-  "contentHash": "sha256:132db706644d454f3706998f29f1ca9d7de4fece9a7adaeb00acc6597386104a",
+  "contentHash": "sha256:1fb6e61c2a6ae7d411057ea525f759101a31ef8c0518113fdb8f50c1001b3599",
   "permissions": [
     {
       "key": "access.directory.create",
@@ -2458,6 +2458,68 @@
       "resource": "operations",
       "action": "view",
       "displayName": "查看 AI 操作记录",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "apphosting.admin.manage",
+      "domain": "apphosting",
+      "resource": "admin",
+      "action": "manage",
+      "displayName": "管理应用托管平台配置与治理",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "apphosting.admin.view",
+      "domain": "apphosting",
+      "resource": "admin",
+      "action": "view",
+      "displayName": "查看应用托管平台配置与全局台账",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "apphosting.apps.publish",
+      "domain": "apphosting",
+      "resource": "apps",
+      "action": "publish",
+      "displayName": "创建、发布、回滚与管理托管应用",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "apphosting.apps.view",
+      "domain": "apphosting",
+      "resource": "apps",
+      "action": "view",
+      "displayName": "查看所维护的托管应用与版本",
       "riskLevel": "read",
       "scopeKinds": [
         "tenant",

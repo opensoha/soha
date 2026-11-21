@@ -448,6 +448,26 @@
           "type": "string"
         }
       },
+      "HostedAppID": {
+        "in": "path",
+        "name": "appId",
+        "required": true,
+        "schema": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "HostedAppRevisionID": {
+        "in": "path",
+        "name": "revisionId",
+        "required": true,
+        "schema": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
       "IdempotencyKey": {
         "in": "header",
         "name": "Idempotency-Key",
@@ -5550,6 +5570,285 @@
         "type": "object"
       },
       "AnyValue": {},
+      "AppHostingAudienceCandidates": {
+        "additionalProperties": false,
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/AppHostingAudienceTeam"
+            },
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AppHostingAudienceUser"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "teams"
+        ],
+        "type": "object"
+      },
+      "AppHostingAudienceCandidatesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppHostingAudienceCandidates"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AppHostingAudienceTeam": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AppHostingAudienceUser": {
+        "additionalProperties": false,
+        "properties": {
+          "department": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "AppHostingGatewayAccessDecision": {
+        "$ref": "#/components/schemas/HostedAppGatewayAccessDecision"
+      },
+      "AppHostingGatewayTokenRotateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AppHostingGatewayTokenRotateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppHostingGatewayTokenSecret"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AppHostingGatewayTokenSecret": {
+        "additionalProperties": false,
+        "properties": {
+          "rotatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "token": {
+            "format": "password",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "rotatedAt"
+        ],
+        "type": "object"
+      },
+      "AppHostingSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allowOrganizationVisibility": {
+            "type": "boolean"
+          },
+          "appsDomain": {
+            "maxLength": 253,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "gatewayTokenConfigured": {
+            "type": "boolean"
+          },
+          "maxAppsPerOwner": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxBundleCompressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxBundleFileCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxBundleUncompressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "publicScheme": {
+            "maxLength": 16,
+            "type": "string"
+          },
+          "retainedRevisionsPerApp": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "storageIntegrationId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "storagePrefix": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedBy": {
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "appsDomain",
+          "publicScheme",
+          "storageIntegrationId",
+          "storagePrefix",
+          "gatewayTokenConfigured",
+          "allowOrganizationVisibility",
+          "maxBundleCompressedBytes",
+          "maxBundleUncompressedBytes",
+          "maxBundleFileCount",
+          "maxAppsPerOwner",
+          "retainedRevisionsPerApp"
+        ],
+        "type": "object"
+      },
+      "AppHostingSettingsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppHostingSettings"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "AppHostingSettingsUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowOrganizationVisibility": {
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "appsDomain": {
+            "maxLength": 253,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxAppsPerOwner": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxBundleCompressedBytes": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxBundleFileCount": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxBundleUncompressedBytes": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "publicScheme": {
+            "maxLength": 16,
+            "type": "string"
+          },
+          "retainedRevisionsPerApp": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "storageIntegrationId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "storagePrefix": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
       "Application": {
         "additionalProperties": false,
         "properties": {
@@ -12535,6 +12834,45 @@
         },
         "required": [
           "data"
+        ],
+        "type": "object"
+      },
+      "CreateHostedAppRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 48,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "spaFallback": {
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityInput"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -26109,6 +26447,903 @@
         },
         "required": [
           "data"
+        ],
+        "type": "object"
+      },
+      "HostedApp": {
+        "additionalProperties": false,
+        "properties": {
+          "activeRevisionId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "dnsLabel": {
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind"
+          },
+          "maintainerUserIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerUserId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "routeGeneration": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaFallback": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HostedAppStatus"
+          },
+          "suspendedReason": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityScope"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "dnsLabel",
+          "host",
+          "url",
+          "spaFallback",
+          "ownerUserId",
+          "maintainerUserIds",
+          "visibility",
+          "status",
+          "routeGeneration",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "HostedAppAccessDecisionKind": {
+        "enum": [
+          "allow",
+          "unauthenticated",
+          "forbidden",
+          "offline",
+          "not_found"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppAccessDecisionKindAllow",
+          "HostedAppAccessDecisionKindUnauthenticated",
+          "HostedAppAccessDecisionKindForbidden",
+          "HostedAppAccessDecisionKindOffline",
+          "HostedAppAccessDecisionKindNotFound"
+        ]
+      },
+      "HostedAppDeploymentReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "$ref": "#/components/schemas/HostedApp"
+          },
+          "reusedIdempotencyKey": {
+            "type": "boolean"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/HostedAppRevision"
+          }
+        },
+        "required": [
+          "app",
+          "revision",
+          "reusedIdempotencyKey"
+        ],
+        "type": "object"
+      },
+      "HostedAppDeploymentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppDeploymentReceipt"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppGatewayAccessCheckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "userId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "type": "object"
+      },
+      "HostedAppGatewayAccessCheckResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppGatewayAccessDecision"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppGatewayAccessDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "activeRevisionId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "appStatus": {
+            "$ref": "#/components/schemas/HostedAppStatus"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/HostedAppAccessDecisionKind"
+          },
+          "dnsLabel": {
+            "maxLength": 63,
+            "minLength": 1,
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppManifestFile"
+            },
+            "type": "array"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "routeGeneration": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaFallback": {
+            "type": "boolean"
+          },
+          "storageIntegrationId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "storagePrefix": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/HostedAppVisitorIdentity"
+          }
+        },
+        "required": [
+          "decision",
+          "host"
+        ],
+        "type": "object"
+      },
+      "HostedAppKind": {
+        "enum": [
+          "static",
+          "dynamic"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppKindStatic",
+          "HostedAppKindDynamic"
+        ]
+      },
+      "HostedAppLifecycleActionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HostedAppList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HostedApp"
+            },
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "HostedAppListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppList"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppListScope": {
+        "enum": [
+          "mine",
+          "all"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppListScopeMine",
+          "HostedAppListScopeAll"
+        ]
+      },
+      "HostedAppManifestFile": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "etag": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "objectKey": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "sizeBytes",
+          "sha256",
+          "contentType",
+          "etag",
+          "objectKey"
+        ],
+        "type": "object"
+      },
+      "HostedAppPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "compressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "fileCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "flaggedFiles": {
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "hasIndexHtml": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind"
+          },
+          "samplePaths": {
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "spaFallback": {
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "uncompressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "uncompressedBytes",
+          "fileCount",
+          "hasIndexHtml"
+        ],
+        "type": "object"
+      },
+      "HostedAppPreflightResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppPreflightResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppPreflightResult": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxCompressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxFileCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxUncompressedBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "allowed",
+          "appId",
+          "url",
+          "blockers",
+          "warnings",
+          "maxCompressedBytes",
+          "maxUncompressedBytes",
+          "maxFileCount"
+        ],
+        "type": "object"
+      },
+      "HostedAppResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedApp"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevision": {
+        "additionalProperties": false,
+        "properties": {
+          "activatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "bundleSha256": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "failureReason": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "failureStage": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "fileCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind"
+          },
+          "revisionNumber": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "spaFallback": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HostedAppRevisionStatus"
+          },
+          "storageIntegrationId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "storagePrefix": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "totalBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "appId",
+          "revisionNumber",
+          "kind",
+          "status",
+          "bundleSha256",
+          "fileCount",
+          "totalBytes",
+          "spaFallback",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppRevision"
+            },
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppRevisionList"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppRevision"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionStatus": {
+        "enum": [
+          "uploading",
+          "validating",
+          "ready",
+          "failed",
+          "evicted"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppRevisionStatusUploading",
+          "HostedAppRevisionStatusValidating",
+          "HostedAppRevisionStatusReady",
+          "HostedAppRevisionStatusFailed",
+          "HostedAppRevisionStatusEvicted"
+        ]
+      },
+      "HostedAppRollbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "targetRevisionId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetRevisionId"
+        ],
+        "type": "object"
+      },
+      "HostedAppStatus": {
+        "enum": [
+          "draft",
+          "online",
+          "offline",
+          "suspended_by_admin"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppStatusDraft",
+          "HostedAppStatusOnline",
+          "HostedAppStatusOffline",
+          "HostedAppStatusSuspendedByAdmin"
+        ]
+      },
+      "HostedAppSuspendRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "HostedAppTicketExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "gatewayState": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ticket": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "host"
+        ],
+        "type": "object"
+      },
+      "HostedAppTicketExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppTicketExchangeResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppTicketExchangeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "dnsLabel": {
+            "maxLength": 63,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "principalUserId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "returnPath": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "routeGeneration": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sessionId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/HostedAppVisitorIdentity"
+          }
+        },
+        "required": [
+          "sessionId",
+          "principalUserId",
+          "appId",
+          "dnsLabel",
+          "host",
+          "routeGeneration",
+          "returnPath",
+          "expiresAt",
+          "user"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/HostedAppVisibilityMode"
+          },
+          "teamIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityMode": {
+        "enum": [
+          "private",
+          "selected",
+          "organization"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppVisibilityModePrivate",
+          "HostedAppVisibilityModeSelected",
+          "HostedAppVisibilityModeOrganization"
+        ]
+      },
+      "HostedAppVisibilityScope": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/HostedAppVisibilityMode"
+          },
+          "teamIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisitorIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
         ],
         "type": "object"
       },
@@ -74487,6 +75722,39 @@
         ],
         "type": "object"
       },
+      "UpdateHostedAppRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1024,
+            "type": "string",
+            "x-go-pointer": true
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+            "x-go-pointer": true
+          },
+          "spaFallback": {
+            "type": "boolean",
+            "x-go-pointer": true
+          }
+        },
+        "type": "object"
+      },
+      "UpdateHostedAppVisibilityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "visibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityInput"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "type": "object"
+      },
       "UpdateLoginProvidersSettingsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -82148,6 +83416,11 @@
     "securitySchemes": {
       "agentBearerAuth": {
         "description": "Per-cluster Agent session token provisioned through the installation manifest.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "appHostingGatewayBearerAuth": {
+        "description": "Dedicated App Hosting gateway bearer token provisioned through platform settings rotation. User JWTs and general runner credentials do not authorize standalone app-gateway endpoints.",
         "scheme": "bearer",
         "type": "http"
       },
@@ -91314,6 +92587,1265 @@
           ],
           "mode": "all"
         }
+      }
+    },
+    "/app-hosting/apps": {
+      "get": {
+        "operationId": "listHostedApps",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostedAppListScope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostedAppStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppListResponse"
+                }
+              }
+            },
+            "description": "Paginated hosted applications list."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List hosted applications visible in maintainer or administrator scope",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.list",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.view"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "read"
+        }
+      },
+      "post": {
+        "operationId": "createHostedApp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHostedAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Existing hosted application returned for a matching idempotencyKey."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Newly created hosted application."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a hosted application and allocate its immutable subdomain label",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.create",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}": {
+      "get": {
+        "operationId": "getHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application detail."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get hosted application metadata and current active revision binding",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.get",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.view"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "read"
+        }
+      },
+      "patch": {
+        "operationId": "updateHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHostedAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Updated hosted application detail."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update hosted application display metadata or SPA fallback mode",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/deployments/preflight": {
+      "post": {
+        "operationId": "preflightHostedAppDeployment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppPreflightResponse"
+                }
+              }
+            },
+            "description": "Preflight evaluation result with blockers, warnings, and active limits."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Validate bundle limits, entrypoint presence, and flagged file checks before upload",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.preflight",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "analyze"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}/offline": {
+      "post": {
+        "operationId": "takeHostedAppOffline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppLifecycleActionRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application transitioned to offline."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Take a hosted application offline and advance route generation",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.offline",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}/online": {
+      "post": {
+        "operationId": "bringHostedAppOnline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppLifecycleActionRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application transitioned to online."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Bring an offline hosted application with a ready active revision back online",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.online",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}/revisions": {
+      "get": {
+        "operationId": "listHostedAppRevisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRevisionListResponse"
+                }
+              }
+            },
+            "description": "Paginated hosted application revisions."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List immutable revisions of a hosted application",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.revisions.list",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.view"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "read"
+        }
+      },
+      "post": {
+        "operationId": "uploadHostedAppRevision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          },
+          {
+            "in": "query",
+            "name": "idempotencyKey",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "spaFallback",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "x-go-type-skip-optional-pointer": false
+            }
+          },
+          {
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/gzip": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppDeploymentResponse"
+                }
+              }
+            },
+            "description": "Existing deployment receipt returned for a matching idempotencyKey."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppDeploymentResponse"
+                }
+              }
+            },
+            "description": "Uploaded and activated new hosted application revision."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Upload a tar.gz static bundle, run DLP checks, persist to object storage, and activate the revision",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/revisions/{revisionId}": {
+      "get": {
+        "operationId": "getHostedAppRevision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          },
+          {
+            "$ref": "#/components/parameters/HostedAppRevisionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRevisionResponse"
+                }
+              }
+            },
+            "description": "Hosted application revision detail."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get detail of a specific hosted application revision",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/rollback": {
+      "post": {
+        "operationId": "rollbackHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppDeploymentResponse"
+                }
+              }
+            },
+            "description": "Rollback completed without altering visibilityScope or administrative suspension."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Atomically switch the active revision of a hosted application to an earlier ready revision",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.rollback",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}/suspend": {
+      "post": {
+        "operationId": "suspendHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppSuspendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application suspended by administrator."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Administratively suspend a hosted application and immediately revoke visitor access",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/unsuspend": {
+      "post": {
+        "operationId": "unsuspendHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppLifecycleActionRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Administrative suspension lifted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Lift administrative suspension on a hosted application",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/visibility": {
+      "put": {
+        "operationId": "updateHostedAppVisibility",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHostedAppVisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application with updated visibility scope and bumped routeGeneration."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Replace hosted application audience visibility scope and advance route generation",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.visibility.set",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
+      }
+    },
+    "/app-hosting/audience-candidates": {
+      "get": {
+        "operationId": "listAppHostingAudienceCandidates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppHostingAudienceCandidatesResponse"
+                }
+              }
+            },
+            "description": "Sanitized shareable users and teams matching the query."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Search sanitized user and team audience candidates for hosted app sharing",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.audience.search",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "read"
+        }
+      }
+    },
+    "/app-hosting/auth/start": {
+      "get": {
+        "operationId": "startHostedAppBrowserAuth",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "maxLength": 253,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "returnPath",
+            "required": false,
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gatewayState",
+            "required": false,
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirects authenticated visitors to the hosted app callback with a one-time host-bound ticket, or redirects unauthenticated visitors to Soha login.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "summary": "Start browser SSO handoff for a hosted application subdomain",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/gateway/access-check": {
+      "post": {
+        "operationId": "checkHostedAppGatewayAccess",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppGatewayAccessCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppGatewayAccessCheckResponse"
+                }
+              }
+            },
+            "description": "Real-time access decision and active revision manifest metadata.",
+            "headers": {
+              "Cache-Control": {
+                "description": "no-store",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "appHostingGatewayBearerAuth": []
+          }
+        ],
+        "summary": "Evaluate real-time visitor access, route generation, and manifest files for standalone app-gateway",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/gateway/tickets/exchange": {
+      "post": {
+        "operationId": "exchangeHostedAppGatewayTicket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppTicketExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppTicketExchangeResponse"
+                }
+              }
+            },
+            "description": "Validated host-bound session identity and current route generation.",
+            "headers": {
+              "Cache-Control": {
+                "description": "no-store",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "appHostingGatewayBearerAuth": []
+          }
+        ],
+        "summary": "Exchange a one-time host-bound SSO ticket from standalone app-gateway",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/settings": {
+      "get": {
+        "operationId": "getAppHostingSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppHostingSettingsResponse"
+                }
+              }
+            },
+            "description": "Current App Hosting platform settings."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get workspace App Hosting platform settings and governance limits",
+        "tags": [
+          "AppHosting"
+        ]
+      },
+      "put": {
+        "operationId": "updateAppHostingSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppHostingSettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppHostingSettingsResponse"
+                }
+              }
+            },
+            "description": "Updated App Hosting platform settings."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update workspace App Hosting platform settings and governance limits",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/settings/gateway-token/rotate": {
+      "post": {
+        "operationId": "rotateAppHostingGatewayToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppHostingGatewayTokenRotateRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppHostingGatewayTokenRotateResponse"
+                }
+              }
+            },
+            "description": "Newly rotated gateway bearer token secret, returned once.",
+            "headers": {
+              "Cache-Control": {
+                "description": "no-store",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Rotate the dedicated App Hosting gateway bearer token",
+        "tags": [
+          "AppHosting"
+        ]
       }
     },
     "/application-environments": {
@@ -138671,6 +141203,9 @@
     },
     {
       "name": "Network Access"
+    },
+    {
+      "name": "AppHosting"
     }
   ],
   "x-soha-websocket-paths": {

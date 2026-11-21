@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	AgentBearerAuthScopes            agentBearerAuthContextKey            = "agentBearerAuth.Scopes"
-	BearerAuthScopes                 bearerAuthContextKey                 = "bearerAuth.Scopes"
-	NetworkControlMTLSScopes         networkControlMTLSContextKey         = "networkControlMTLS.Scopes"
-	OutpostRuntimeExecutorAuthScopes outpostRuntimeExecutorAuthContextKey = "outpostRuntimeExecutorAuth.Scopes"
-	RuntimeBearerAuthScopes          runtimeBearerAuthContextKey          = "runtimeBearerAuth.Scopes"
-	SohaXAPIKeyScopes                sohaXAPIKeyContextKey                = "sohaXAPIKey.Scopes"
+	AgentBearerAuthScopes             agentBearerAuthContextKey             = "agentBearerAuth.Scopes"
+	AppHostingGatewayBearerAuthScopes appHostingGatewayBearerAuthContextKey = "appHostingGatewayBearerAuth.Scopes"
+	BearerAuthScopes                  bearerAuthContextKey                  = "bearerAuth.Scopes"
+	NetworkControlMTLSScopes          networkControlMTLSContextKey          = "networkControlMTLS.Scopes"
+	OutpostRuntimeExecutorAuthScopes  outpostRuntimeExecutorAuthContextKey  = "outpostRuntimeExecutorAuth.Scopes"
+	RuntimeBearerAuthScopes           runtimeBearerAuthContextKey           = "runtimeBearerAuth.Scopes"
+	SohaXAPIKeyScopes                 sohaXAPIKeyContextKey                 = "sohaXAPIKey.Scopes"
 )
 
 // Defines values for AIEnvironmentTemplateBackend.
@@ -5029,6 +5030,141 @@ func (e HelmReleaseImportResultOwnershipMode) Valid() bool {
 	case HelmReleaseImportResultOwnershipModeManaged:
 		return true
 	case HelmReleaseImportResultOwnershipModeObserveOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppAccessDecisionKind.
+const (
+	HostedAppAccessDecisionKindAllow           HostedAppAccessDecisionKind = "allow"
+	HostedAppAccessDecisionKindForbidden       HostedAppAccessDecisionKind = "forbidden"
+	HostedAppAccessDecisionKindNotFound        HostedAppAccessDecisionKind = "not_found"
+	HostedAppAccessDecisionKindOffline         HostedAppAccessDecisionKind = "offline"
+	HostedAppAccessDecisionKindUnauthenticated HostedAppAccessDecisionKind = "unauthenticated"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppAccessDecisionKind enum.
+func (e HostedAppAccessDecisionKind) Valid() bool {
+	switch e {
+	case HostedAppAccessDecisionKindAllow:
+		return true
+	case HostedAppAccessDecisionKindForbidden:
+		return true
+	case HostedAppAccessDecisionKindNotFound:
+		return true
+	case HostedAppAccessDecisionKindOffline:
+		return true
+	case HostedAppAccessDecisionKindUnauthenticated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppKind.
+const (
+	HostedAppKindDynamic HostedAppKind = "dynamic"
+	HostedAppKindStatic  HostedAppKind = "static"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppKind enum.
+func (e HostedAppKind) Valid() bool {
+	switch e {
+	case HostedAppKindDynamic:
+		return true
+	case HostedAppKindStatic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppListScope.
+const (
+	HostedAppListScopeAll  HostedAppListScope = "all"
+	HostedAppListScopeMine HostedAppListScope = "mine"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppListScope enum.
+func (e HostedAppListScope) Valid() bool {
+	switch e {
+	case HostedAppListScopeAll:
+		return true
+	case HostedAppListScopeMine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppRevisionStatus.
+const (
+	HostedAppRevisionStatusEvicted    HostedAppRevisionStatus = "evicted"
+	HostedAppRevisionStatusFailed     HostedAppRevisionStatus = "failed"
+	HostedAppRevisionStatusReady      HostedAppRevisionStatus = "ready"
+	HostedAppRevisionStatusUploading  HostedAppRevisionStatus = "uploading"
+	HostedAppRevisionStatusValidating HostedAppRevisionStatus = "validating"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppRevisionStatus enum.
+func (e HostedAppRevisionStatus) Valid() bool {
+	switch e {
+	case HostedAppRevisionStatusEvicted:
+		return true
+	case HostedAppRevisionStatusFailed:
+		return true
+	case HostedAppRevisionStatusReady:
+		return true
+	case HostedAppRevisionStatusUploading:
+		return true
+	case HostedAppRevisionStatusValidating:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppStatus.
+const (
+	HostedAppStatusDraft            HostedAppStatus = "draft"
+	HostedAppStatusOffline          HostedAppStatus = "offline"
+	HostedAppStatusOnline           HostedAppStatus = "online"
+	HostedAppStatusSuspendedByAdmin HostedAppStatus = "suspended_by_admin"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppStatus enum.
+func (e HostedAppStatus) Valid() bool {
+	switch e {
+	case HostedAppStatusDraft:
+		return true
+	case HostedAppStatusOffline:
+		return true
+	case HostedAppStatusOnline:
+		return true
+	case HostedAppStatusSuspendedByAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppVisibilityMode.
+const (
+	HostedAppVisibilityModeOrganization HostedAppVisibilityMode = "organization"
+	HostedAppVisibilityModePrivate      HostedAppVisibilityMode = "private"
+	HostedAppVisibilityModeSelected     HostedAppVisibilityMode = "selected"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppVisibilityMode enum.
+func (e HostedAppVisibilityMode) Valid() bool {
+	switch e {
+	case HostedAppVisibilityModeOrganization:
+		return true
+	case HostedAppVisibilityModePrivate:
+		return true
+	case HostedAppVisibilityModeSelected:
 		return true
 	default:
 		return false
@@ -17796,6 +17932,89 @@ type AnthropicModelsResponse struct {
 // AnyValue defines model for AnyValue.
 type AnyValue = any
 
+// AppHostingAudienceCandidates defines model for AppHostingAudienceCandidates.
+type AppHostingAudienceCandidates struct {
+	Teams []AppHostingAudienceTeam `json:"teams"`
+	Users []AppHostingAudienceUser `json:"users"`
+}
+
+// AppHostingAudienceCandidatesResponse defines model for AppHostingAudienceCandidatesResponse.
+type AppHostingAudienceCandidatesResponse struct {
+	Data AppHostingAudienceCandidates `json:"data"`
+}
+
+// AppHostingAudienceTeam defines model for AppHostingAudienceTeam.
+type AppHostingAudienceTeam struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug,omitempty"`
+}
+
+// AppHostingAudienceUser defines model for AppHostingAudienceUser.
+type AppHostingAudienceUser struct {
+	Department  string `json:"department,omitempty"`
+	DisplayName string `json:"displayName"`
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+}
+
+// AppHostingGatewayAccessDecision defines model for AppHostingGatewayAccessDecision.
+type AppHostingGatewayAccessDecision = HostedAppGatewayAccessDecision
+
+// AppHostingGatewayTokenRotateRequest defines model for AppHostingGatewayTokenRotateRequest.
+type AppHostingGatewayTokenRotateRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+// AppHostingGatewayTokenRotateResponse defines model for AppHostingGatewayTokenRotateResponse.
+type AppHostingGatewayTokenRotateResponse struct {
+	Data AppHostingGatewayTokenSecret `json:"data"`
+}
+
+// AppHostingGatewayTokenSecret defines model for AppHostingGatewayTokenSecret.
+type AppHostingGatewayTokenSecret struct {
+	RotatedAt time.Time `json:"rotatedAt"`
+	Token     string    `json:"token"`
+}
+
+// AppHostingSettings defines model for AppHostingSettings.
+type AppHostingSettings struct {
+	AllowOrganizationVisibility bool       `json:"allowOrganizationVisibility"`
+	AppsDomain                  string     `json:"appsDomain"`
+	Enabled                     bool       `json:"enabled"`
+	GatewayTokenConfigured      bool       `json:"gatewayTokenConfigured"`
+	MaxAppsPerOwner             int32      `json:"maxAppsPerOwner"`
+	MaxBundleCompressedBytes    int64      `json:"maxBundleCompressedBytes"`
+	MaxBundleFileCount          int32      `json:"maxBundleFileCount"`
+	MaxBundleUncompressedBytes  int64      `json:"maxBundleUncompressedBytes"`
+	PublicScheme                string     `json:"publicScheme"`
+	RetainedRevisionsPerApp     int32      `json:"retainedRevisionsPerApp"`
+	StorageIntegrationID        string     `json:"storageIntegrationId"`
+	StoragePrefix               string     `json:"storagePrefix"`
+	UpdatedAt                   *time.Time `json:"updatedAt,omitempty"`
+	UpdatedBy                   string     `json:"updatedBy,omitempty"`
+}
+
+// AppHostingSettingsResponse defines model for AppHostingSettingsResponse.
+type AppHostingSettingsResponse struct {
+	Data AppHostingSettings `json:"data"`
+}
+
+// AppHostingSettingsUpdateRequest defines model for AppHostingSettingsUpdateRequest.
+type AppHostingSettingsUpdateRequest struct {
+	AllowOrganizationVisibility *bool  `json:"allowOrganizationVisibility,omitempty"`
+	AppsDomain                  string `json:"appsDomain,omitempty"`
+	Enabled                     bool   `json:"enabled"`
+	MaxAppsPerOwner             int32  `json:"maxAppsPerOwner,omitempty"`
+	MaxBundleCompressedBytes    int64  `json:"maxBundleCompressedBytes,omitempty"`
+	MaxBundleFileCount          int32  `json:"maxBundleFileCount,omitempty"`
+	MaxBundleUncompressedBytes  int64  `json:"maxBundleUncompressedBytes,omitempty"`
+	PublicScheme                string `json:"publicScheme,omitempty"`
+	RetainedRevisionsPerApp     int32  `json:"retainedRevisionsPerApp,omitempty"`
+	StorageIntegrationID        string `json:"storageIntegrationId,omitempty"`
+	StoragePrefix               string `json:"storagePrefix,omitempty"`
+}
+
 // Application defines model for Application.
 type Application struct {
 	BuildContextDir     string         `json:"buildContextDir,omitempty"`
@@ -19945,6 +20164,17 @@ type ConnectionCheckResult struct {
 type ConnectionCheckResultEnvelope struct {
 	// Data Current connection health from a synchronous probe. This result is not a task and has no task identifier or lifecycle actions.
 	Data ConnectionCheckResult `json:"data"`
+}
+
+// CreateHostedAppRequest defines model for CreateHostedAppRequest.
+type CreateHostedAppRequest struct {
+	Description    string                    `json:"description,omitempty"`
+	IdempotencyKey string                    `json:"idempotencyKey,omitempty"`
+	Kind           HostedAppKind             `json:"kind,omitempty"`
+	Name           string                    `json:"name"`
+	Slug           string                    `json:"slug,omitempty"`
+	SpaFallback    *bool                     `json:"spaFallback,omitempty"`
+	Visibility     *HostedAppVisibilityInput `json:"visibility,omitempty"`
 }
 
 // CreatedPersonalAccessToken defines model for CreatedPersonalAccessToken.
@@ -23961,6 +24191,244 @@ type HelmReleaseImportResultOwnershipMode string
 // HelmReleaseImportResultEnvelope defines model for HelmReleaseImportResultEnvelope.
 type HelmReleaseImportResultEnvelope struct {
 	Data HelmReleaseImportResult `json:"data"`
+}
+
+// HostedApp defines model for HostedApp.
+type HostedApp struct {
+	ActiveRevisionID  string                   `json:"activeRevisionId,omitempty"`
+	CreatedAt         time.Time                `json:"createdAt"`
+	Description       string                   `json:"description,omitempty"`
+	DNSLabel          string                   `json:"dnsLabel"`
+	Host              string                   `json:"host"`
+	ID                string                   `json:"id"`
+	Kind              HostedAppKind            `json:"kind"`
+	MaintainerUserIDs []string                 `json:"maintainerUserIds"`
+	Name              string                   `json:"name"`
+	OwnerUserID       string                   `json:"ownerUserId"`
+	RouteGeneration   int64                    `json:"routeGeneration"`
+	SpaFallback       bool                     `json:"spaFallback"`
+	Status            HostedAppStatus          `json:"status"`
+	SuspendedReason   string                   `json:"suspendedReason,omitempty"`
+	UpdatedAt         time.Time                `json:"updatedAt"`
+	URL               string                   `json:"url"`
+	Visibility        HostedAppVisibilityScope `json:"visibility"`
+}
+
+// HostedAppAccessDecisionKind defines model for HostedAppAccessDecisionKind.
+type HostedAppAccessDecisionKind string
+
+// HostedAppDeploymentReceipt defines model for HostedAppDeploymentReceipt.
+type HostedAppDeploymentReceipt struct {
+	App                  HostedApp         `json:"app"`
+	ReusedIdempotencyKey bool              `json:"reusedIdempotencyKey"`
+	Revision             HostedAppRevision `json:"revision"`
+}
+
+// HostedAppDeploymentResponse defines model for HostedAppDeploymentResponse.
+type HostedAppDeploymentResponse struct {
+	Data HostedAppDeploymentReceipt `json:"data"`
+}
+
+// HostedAppGatewayAccessCheckRequest defines model for HostedAppGatewayAccessCheckRequest.
+type HostedAppGatewayAccessCheckRequest struct {
+	Host      string `json:"host"`
+	SessionID string `json:"sessionId,omitempty"`
+	UserID    string `json:"userId,omitempty"`
+}
+
+// HostedAppGatewayAccessCheckResponse defines model for HostedAppGatewayAccessCheckResponse.
+type HostedAppGatewayAccessCheckResponse struct {
+	Data HostedAppGatewayAccessDecision `json:"data"`
+}
+
+// HostedAppGatewayAccessDecision defines model for HostedAppGatewayAccessDecision.
+type HostedAppGatewayAccessDecision struct {
+	ActiveRevisionID     string                      `json:"activeRevisionId,omitempty"`
+	AppID                string                      `json:"appId,omitempty"`
+	AppStatus            HostedAppStatus             `json:"appStatus,omitempty"`
+	Decision             HostedAppAccessDecisionKind `json:"decision"`
+	DNSLabel             string                      `json:"dnsLabel,omitempty"`
+	Files                []HostedAppManifestFile     `json:"files,omitempty"`
+	Host                 string                      `json:"host"`
+	Reason               string                      `json:"reason,omitempty"`
+	RouteGeneration      int64                       `json:"routeGeneration,omitempty"`
+	SpaFallback          bool                        `json:"spaFallback,omitempty"`
+	StorageIntegrationID string                      `json:"storageIntegrationId,omitempty"`
+	StoragePrefix        string                      `json:"storagePrefix,omitempty"`
+	User                 *HostedAppVisitorIdentity   `json:"user,omitempty"`
+}
+
+// HostedAppKind defines model for HostedAppKind.
+type HostedAppKind string
+
+// HostedAppLifecycleActionRequest defines model for HostedAppLifecycleActionRequest.
+type HostedAppLifecycleActionRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+// HostedAppList defines model for HostedAppList.
+type HostedAppList struct {
+	Items []HostedApp `json:"items"`
+	Total int         `json:"total"`
+}
+
+// HostedAppListResponse defines model for HostedAppListResponse.
+type HostedAppListResponse struct {
+	Data HostedAppList `json:"data"`
+}
+
+// HostedAppListScope defines model for HostedAppListScope.
+type HostedAppListScope string
+
+// HostedAppManifestFile defines model for HostedAppManifestFile.
+type HostedAppManifestFile struct {
+	ContentType string `json:"contentType"`
+	Etag        string `json:"etag"`
+	ObjectKey   string `json:"objectKey"`
+	Path        string `json:"path"`
+	Sha256      string `json:"sha256"`
+	SizeBytes   int64  `json:"sizeBytes"`
+}
+
+// HostedAppPreflightRequest defines model for HostedAppPreflightRequest.
+type HostedAppPreflightRequest struct {
+	CompressedBytes   *int64        `json:"compressedBytes,omitempty"`
+	FileCount         int32         `json:"fileCount"`
+	FlaggedFiles      []string      `json:"flaggedFiles,omitempty"`
+	HasIndexHTML      bool          `json:"hasIndexHtml"`
+	Kind              HostedAppKind `json:"kind"`
+	SamplePaths       []string      `json:"samplePaths,omitempty"`
+	SpaFallback       *bool         `json:"spaFallback,omitempty"`
+	UncompressedBytes int64         `json:"uncompressedBytes"`
+}
+
+// HostedAppPreflightResponse defines model for HostedAppPreflightResponse.
+type HostedAppPreflightResponse struct {
+	Data HostedAppPreflightResult `json:"data"`
+}
+
+// HostedAppPreflightResult defines model for HostedAppPreflightResult.
+type HostedAppPreflightResult struct {
+	Allowed              bool     `json:"allowed"`
+	AppID                string   `json:"appId"`
+	Blockers             []string `json:"blockers"`
+	MaxCompressedBytes   int64    `json:"maxCompressedBytes"`
+	MaxFileCount         int32    `json:"maxFileCount"`
+	MaxUncompressedBytes int64    `json:"maxUncompressedBytes"`
+	URL                  string   `json:"url"`
+	Warnings             []string `json:"warnings"`
+}
+
+// HostedAppResponse defines model for HostedAppResponse.
+type HostedAppResponse struct {
+	Data HostedApp `json:"data"`
+}
+
+// HostedAppRevision defines model for HostedAppRevision.
+type HostedAppRevision struct {
+	ActivatedAt          *time.Time              `json:"activatedAt,omitempty"`
+	AppID                string                  `json:"appId"`
+	BundleSha256         string                  `json:"bundleSha256"`
+	CreatedAt            time.Time               `json:"createdAt"`
+	CreatedBy            string                  `json:"createdBy"`
+	Description          string                  `json:"description,omitempty"`
+	FailureReason        string                  `json:"failureReason,omitempty"`
+	FailureStage         string                  `json:"failureStage,omitempty"`
+	FileCount            int32                   `json:"fileCount"`
+	ID                   string                  `json:"id"`
+	IdempotencyKey       string                  `json:"idempotencyKey,omitempty"`
+	Kind                 HostedAppKind           `json:"kind"`
+	RevisionNumber       int64                   `json:"revisionNumber"`
+	SpaFallback          bool                    `json:"spaFallback"`
+	Status               HostedAppRevisionStatus `json:"status"`
+	StorageIntegrationID string                  `json:"storageIntegrationId,omitempty"`
+	StoragePrefix        string                  `json:"storagePrefix,omitempty"`
+	TotalBytes           int64                   `json:"totalBytes"`
+}
+
+// HostedAppRevisionList defines model for HostedAppRevisionList.
+type HostedAppRevisionList struct {
+	Items []HostedAppRevision `json:"items"`
+	Total int                 `json:"total"`
+}
+
+// HostedAppRevisionListResponse defines model for HostedAppRevisionListResponse.
+type HostedAppRevisionListResponse struct {
+	Data HostedAppRevisionList `json:"data"`
+}
+
+// HostedAppRevisionResponse defines model for HostedAppRevisionResponse.
+type HostedAppRevisionResponse struct {
+	Data HostedAppRevision `json:"data"`
+}
+
+// HostedAppRevisionStatus defines model for HostedAppRevisionStatus.
+type HostedAppRevisionStatus string
+
+// HostedAppRollbackRequest defines model for HostedAppRollbackRequest.
+type HostedAppRollbackRequest struct {
+	IdempotencyKey   string `json:"idempotencyKey,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	TargetRevisionID string `json:"targetRevisionId"`
+}
+
+// HostedAppStatus defines model for HostedAppStatus.
+type HostedAppStatus string
+
+// HostedAppSuspendRequest defines model for HostedAppSuspendRequest.
+type HostedAppSuspendRequest struct {
+	Reason string `json:"reason"`
+}
+
+// HostedAppTicketExchangeRequest defines model for HostedAppTicketExchangeRequest.
+type HostedAppTicketExchangeRequest struct {
+	GatewayState string `json:"gatewayState,omitempty"`
+	Host         string `json:"host"`
+	Ticket       string `json:"ticket"`
+}
+
+// HostedAppTicketExchangeResponse defines model for HostedAppTicketExchangeResponse.
+type HostedAppTicketExchangeResponse struct {
+	Data HostedAppTicketExchangeResult `json:"data"`
+}
+
+// HostedAppTicketExchangeResult defines model for HostedAppTicketExchangeResult.
+type HostedAppTicketExchangeResult struct {
+	AppID           string                   `json:"appId"`
+	DNSLabel        string                   `json:"dnsLabel"`
+	ExpiresAt       time.Time                `json:"expiresAt"`
+	Host            string                   `json:"host"`
+	PrincipalUserID string                   `json:"principalUserId"`
+	ReturnPath      string                   `json:"returnPath"`
+	RouteGeneration int64                    `json:"routeGeneration"`
+	SessionID       string                   `json:"sessionId"`
+	User            HostedAppVisitorIdentity `json:"user"`
+}
+
+// HostedAppVisibilityInput defines model for HostedAppVisibilityInput.
+type HostedAppVisibilityInput struct {
+	Mode    HostedAppVisibilityMode `json:"mode"`
+	TeamIDs []string                `json:"teamIds,omitempty"`
+	UserIDs []string                `json:"userIds,omitempty"`
+}
+
+// HostedAppVisibilityMode defines model for HostedAppVisibilityMode.
+type HostedAppVisibilityMode string
+
+// HostedAppVisibilityScope defines model for HostedAppVisibilityScope.
+type HostedAppVisibilityScope struct {
+	Mode    HostedAppVisibilityMode `json:"mode"`
+	TeamIDs []string                `json:"teamIds,omitempty"`
+	UserIDs []string                `json:"userIds,omitempty"`
+}
+
+// HostedAppVisitorIdentity defines model for HostedAppVisitorIdentity.
+type HostedAppVisitorIdentity struct {
+	DisplayName string   `json:"displayName"`
+	Email       string   `json:"email,omitempty"`
+	ID          string   `json:"id"`
+	Teams       []string `json:"teams,omitempty"`
+	Username    string   `json:"username,omitempty"`
 }
 
 // IdentityApplication defines model for IdentityApplication.
@@ -37303,6 +37771,18 @@ type UpdateBrandingSettingsRequest struct {
 	Slogan              string `json:"slogan,omitempty"`
 }
 
+// UpdateHostedAppRequest defines model for UpdateHostedAppRequest.
+type UpdateHostedAppRequest struct {
+	Description *string `json:"description,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	SpaFallback *bool   `json:"spaFallback,omitempty"`
+}
+
+// UpdateHostedAppVisibilityRequest defines model for UpdateHostedAppVisibilityRequest.
+type UpdateHostedAppVisibilityRequest struct {
+	Visibility HostedAppVisibilityInput `json:"visibility"`
+}
+
 // UpdateLoginProvidersSettingsRequest defines model for UpdateLoginProvidersSettingsRequest.
 type UpdateLoginProvidersSettingsRequest struct {
 	DefaultProviderID         string                       `json:"defaultProviderId,omitempty"`
@@ -39970,6 +40450,12 @@ type EvaluationRunID = string
 // GitLabProjectIDQuery defines model for GitLabProjectIDQuery.
 type GitLabProjectIDQuery = string
 
+// HostedAppID defines model for HostedAppID.
+type HostedAppID = string
+
+// HostedAppRevisionID defines model for HostedAppRevisionID.
+type HostedAppRevisionID = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -40278,6 +40764,9 @@ type IdentityError = IdentityErrorEnvelope
 
 // agentBearerAuthContextKey is the context key for agentBearerAuth security scheme
 type agentBearerAuthContextKey string
+
+// appHostingGatewayBearerAuthContextKey is the context key for appHostingGatewayBearerAuth security scheme
+type appHostingGatewayBearerAuthContextKey string
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
@@ -40905,6 +41394,41 @@ type ListAnnouncementReceiptsParams struct {
 	State    AnnouncementReceiptState `form:"state,omitempty" json:"state,omitempty"`
 	Page     int                      `form:"page,omitempty" json:"page,omitempty"`
 	PageSize int                      `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+}
+
+// ListHostedAppsParams defines parameters for ListHostedApps.
+type ListHostedAppsParams struct {
+	Scope  HostedAppListScope `form:"scope,omitempty" json:"scope,omitempty"`
+	Query  string             `form:"query,omitempty" json:"query,omitempty"`
+	Status HostedAppStatus    `form:"status,omitempty" json:"status,omitempty"`
+	Limit  int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset int                `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListHostedAppRevisionsParams defines parameters for ListHostedAppRevisions.
+type ListHostedAppRevisionsParams struct {
+	Limit  int `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset int `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// UploadHostedAppRevisionParams defines parameters for UploadHostedAppRevision.
+type UploadHostedAppRevisionParams struct {
+	IdempotencyKey string `form:"idempotencyKey,omitempty" json:"idempotencyKey,omitempty"`
+	SpaFallback    *bool  `form:"spaFallback,omitempty" json:"spaFallback,omitempty"`
+	Description    string `form:"description,omitempty" json:"description,omitempty"`
+}
+
+// ListAppHostingAudienceCandidatesParams defines parameters for ListAppHostingAudienceCandidates.
+type ListAppHostingAudienceCandidatesParams struct {
+	Query string `form:"query,omitempty" json:"query,omitempty"`
+	Limit int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// StartHostedAppBrowserAuthParams defines parameters for StartHostedAppBrowserAuth.
+type StartHostedAppBrowserAuthParams struct {
+	Host         string `form:"host" json:"host"`
+	ReturnPath   string `form:"returnPath,omitempty" json:"returnPath,omitempty"`
+	GatewayState string `form:"gatewayState,omitempty" json:"gatewayState,omitempty"`
 }
 
 // ListApplicationEnvironmentsParams defines parameters for ListApplicationEnvironments.
@@ -43316,6 +43840,45 @@ type ValidateAlertRuleJSONRequestBody = AlertRuleInput
 
 // AssignAlertOwnershipJSONRequestBody defines body for AssignAlertOwnership for application/json ContentType.
 type AssignAlertOwnershipJSONRequestBody = AlertOwnershipInput
+
+// CreateHostedAppJSONRequestBody defines body for CreateHostedApp for application/json ContentType.
+type CreateHostedAppJSONRequestBody = CreateHostedAppRequest
+
+// UpdateHostedAppJSONRequestBody defines body for UpdateHostedApp for application/json ContentType.
+type UpdateHostedAppJSONRequestBody = UpdateHostedAppRequest
+
+// PreflightHostedAppDeploymentJSONRequestBody defines body for PreflightHostedAppDeployment for application/json ContentType.
+type PreflightHostedAppDeploymentJSONRequestBody = HostedAppPreflightRequest
+
+// TakeHostedAppOfflineJSONRequestBody defines body for TakeHostedAppOffline for application/json ContentType.
+type TakeHostedAppOfflineJSONRequestBody = HostedAppLifecycleActionRequest
+
+// BringHostedAppOnlineJSONRequestBody defines body for BringHostedAppOnline for application/json ContentType.
+type BringHostedAppOnlineJSONRequestBody = HostedAppLifecycleActionRequest
+
+// RollbackHostedAppJSONRequestBody defines body for RollbackHostedApp for application/json ContentType.
+type RollbackHostedAppJSONRequestBody = HostedAppRollbackRequest
+
+// SuspendHostedAppJSONRequestBody defines body for SuspendHostedApp for application/json ContentType.
+type SuspendHostedAppJSONRequestBody = HostedAppSuspendRequest
+
+// UnsuspendHostedAppJSONRequestBody defines body for UnsuspendHostedApp for application/json ContentType.
+type UnsuspendHostedAppJSONRequestBody = HostedAppLifecycleActionRequest
+
+// UpdateHostedAppVisibilityJSONRequestBody defines body for UpdateHostedAppVisibility for application/json ContentType.
+type UpdateHostedAppVisibilityJSONRequestBody = UpdateHostedAppVisibilityRequest
+
+// CheckHostedAppGatewayAccessJSONRequestBody defines body for CheckHostedAppGatewayAccess for application/json ContentType.
+type CheckHostedAppGatewayAccessJSONRequestBody = HostedAppGatewayAccessCheckRequest
+
+// ExchangeHostedAppGatewayTicketJSONRequestBody defines body for ExchangeHostedAppGatewayTicket for application/json ContentType.
+type ExchangeHostedAppGatewayTicketJSONRequestBody = HostedAppTicketExchangeRequest
+
+// UpdateAppHostingSettingsJSONRequestBody defines body for UpdateAppHostingSettings for application/json ContentType.
+type UpdateAppHostingSettingsJSONRequestBody = AppHostingSettingsUpdateRequest
+
+// RotateAppHostingGatewayTokenJSONRequestBody defines body for RotateAppHostingGatewayToken for application/json ContentType.
+type RotateAppHostingGatewayTokenJSONRequestBody = AppHostingGatewayTokenRotateRequest
 
 // CreateApplicationEnvironmentJSONRequestBody defines body for CreateApplicationEnvironment for application/json ContentType.
 type CreateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput

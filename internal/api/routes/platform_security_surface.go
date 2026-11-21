@@ -57,6 +57,7 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/rollback/plan") ||
 		strings.HasSuffix(path, "/access-control/access-reviews") ||
 		isNetworkSecurityReadOnlyPOST(path) ||
+		strings.HasSuffix(path, "/deployments/preflight") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		path == "/api/v1/ai-gateway/plans/validate" ||
 		strings.HasSuffix(path, "/logs/query") ||
@@ -119,6 +120,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
 	softwareMutationSecuritySurface,
+	appHostingMutationSecuritySurface,
 	networkAccessMutationSecuritySurface,
 }
 
@@ -213,6 +215,26 @@ func softwareMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		permission = appaccess.PermSoftwarePackageDelete
 	}
 	return nonPlatformMutationEntry("SoftwarePackage", nonPlatformMutationAction(method, path), permission, false), true
+}
+
+func appHostingMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if !strings.HasPrefix(path, "/api/v1/app-hosting/") {
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+	switch {
+	case path == "/api/v1/app-hosting/settings":
+		return nonPlatformMutationEntry("AppHostingSettings", "update", appaccess.PermAppHostingAdminManage, false), true
+	case path == "/api/v1/app-hosting/settings/gateway-token/rotate":
+		return nonPlatformMutationEntry("AppHostingGatewayToken", "rotate", appaccess.PermAppHostingAdminManage, false), true
+	case strings.HasSuffix(path, "/suspend") && !strings.HasSuffix(path, "/unsuspend"):
+		return nonPlatformMutationEntry("HostedApp", "suspend", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/unsuspend"):
+		return nonPlatformMutationEntry("HostedApp", "unsuspend", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/revisions"):
+		return nonPlatformMutationEntry("HostedAppRevision", "upload", appaccess.PermAppHostingAppsPublish, true), true
+	default:
+		return nonPlatformMutationEntry("HostedApp", nonPlatformMutationAction(method, path), appaccess.PermAppHostingAppsPublish, path != "/api/v1/app-hosting/apps"), true
+	}
 }
 
 func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {

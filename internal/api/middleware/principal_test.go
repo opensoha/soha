@@ -340,6 +340,34 @@ func TestBuildPrincipalMiddlewareAcceptsProtocolCookieOnlyOnProtocolReturnPaths(
 			t.Fatalf("parser calls=%d, want protocol cookie ignored", parser.calls)
 		}
 	})
+
+	t.Run("app hosting auth start respects basePath and GET only", func(t *testing.T) {
+		parser := &stubAccessTokenParser{}
+		router := gin.New()
+		router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser, "/custom/v1"), RequireAuth())
+		router.GET("/custom/v1/app-hosting/auth/start", func(c *gin.Context) {
+			c.String(http.StatusOK, PrincipalFromContext(c).UserID)
+		})
+		router.POST("/custom/v1/app-hosting/auth/start", func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		})
+
+		getReq := httptest.NewRequest(http.MethodGet, "/custom/v1/app-hosting/auth/start", nil)
+		getReq.AddCookie(&http.Cookie{Name: ProtocolAccessCookieName, Value: "valid-key", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+		getRec := httptest.NewRecorder()
+		router.ServeHTTP(getRec, getReq)
+		if getRec.Code != http.StatusOK || parser.calls != 1 {
+			t.Fatalf("GET auth/start status=%d calls=%d, want 200 and 1 call", getRec.Code, parser.calls)
+		}
+
+		postReq := httptest.NewRequest(http.MethodPost, "/custom/v1/app-hosting/auth/start", nil)
+		postReq.AddCookie(&http.Cookie{Name: ProtocolAccessCookieName, Value: "valid-key", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+		postRec := httptest.NewRecorder()
+		router.ServeHTTP(postRec, postReq)
+		if postRec.Code != http.StatusUnauthorized || parser.calls != 1 {
+			t.Fatalf("POST auth/start status=%d calls=%d, want 401 and cookie ignored", postRec.Code, parser.calls)
+		}
+	})
 }
 
 func TestAuthenticationRejectionMarksRequestBeforeProtectedHandler(t *testing.T) {

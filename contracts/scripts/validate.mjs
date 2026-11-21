@@ -407,6 +407,9 @@ const requiredOpenapiFixtureSchemas = [
   "NetworkSiteProfileBindingInput",
   "NetworkSpaceInput",
   "ResourceLease",
+  "HostedApp",
+  "HostedAppGatewayAccessDecision",
+  "AppHostingGatewayAccessDecision",
 ];
 
 const requiredJsonExamples = [

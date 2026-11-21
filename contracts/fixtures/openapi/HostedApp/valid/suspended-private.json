@@ -1,0 +1,21 @@
+{
+  "id": "app_01j8x2h4a9m7k3q1w5e6r7t9z0",
+  "name": "Internal Prototype",
+  "kind": "static",
+  "dnsLabel": "internal-proto-9f8e7d",
+  "host": "internal-proto-9f8e7d.apps.soha.internal",
+  "url": "https://internal-proto-9f8e7d.apps.soha.internal",
+  "spaFallback": false,
+  "ownerUserId": "usr_alice",
+  "maintainerUserIds": [
+    "usr_alice"
+  ],
+  "visibility": {
+    "mode": "private"
+  },
+  "status": "suspended_by_admin",
+  "suspendedReason": "Security policy review pending",
+  "routeGeneration": 5,
+  "createdAt": "2026-11-20T09:00:00Z",
+  "updatedAt": "2026-11-20T11:00:00Z"
+}

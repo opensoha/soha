@@ -1,0 +1,20 @@
+{
+  "id": "app_bad_dns",
+  "name": "Invalid Label App",
+  "kind": "static",
+  "dnsLabel": "Invalid_DNS_Label",
+  "host": "Invalid_DNS_Label.apps.soha.internal",
+  "url": "https://invalid.apps.soha.internal",
+  "spaFallback": false,
+  "ownerUserId": "usr_alice",
+  "maintainerUserIds": [
+    "usr_alice"
+  ],
+  "visibility": {
+    "mode": "private"
+  },
+  "status": "draft",
+  "routeGeneration": 1,
+  "createdAt": "2026-11-20T09:00:00Z",
+  "updatedAt": "2026-11-20T09:00:00Z"
+}
