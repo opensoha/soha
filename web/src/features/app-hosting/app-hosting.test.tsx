@@ -196,103 +196,124 @@ describe('app-hosting feature data layer and components', () => {
     expect(container.textContent).toContain(AUDIENCE_NARROWING_WARNING)
   })
 
-  it('submits WorkspacePublishModal and renders safe receipt link without router context', async () => {
-    apiMocks.get.mockResolvedValue({ data: { items: [], total: 0 } })
-    apiMocks.post.mockResolvedValue({
-      data: {
-        created: true,
-        app: {
-          id: 'app-new',
-          name: '季度看板',
-          kind: 'static',
-          dnsLabel: 'board-a1b2',
-          host: 'board-a1b2.apps.soha.internal',
-          url: 'https://board-a1b2.apps.soha.internal',
-          spaFallback: true,
-          ownerUserId: 'usr-1',
-          maintainerUserIds: [],
-          visibility: { mode: 'private' },
-          status: 'online',
-          routeGeneration: 1,
-          createdAt: '2026-11-21T00:00:00Z',
-          updatedAt: '2026-11-21T00:00:00Z',
+  it.each(['static', 'dynamic'] as const)(
+    'submits %s workspace without claiming a queued build is online',
+    async (kind) => {
+      const dynamic = kind === 'dynamic'
+      apiMocks.get.mockResolvedValue({ data: { items: [], total: 0 } })
+      apiMocks.post.mockResolvedValue({
+        data: {
+          created: true,
+          app: {
+            id: 'app-new',
+            name: '季度看板',
+            kind,
+            dnsLabel: 'board-a1b2',
+            host: 'board-a1b2.apps.soha.internal',
+            url: 'https://board-a1b2.apps.soha.internal',
+            spaFallback: true,
+            ownerUserId: 'usr-1',
+            maintainerUserIds: [],
+            visibility: { mode: 'private' },
+            status: dynamic ? 'draft' : 'online',
+            routeGeneration: 1,
+            createdAt: '2026-11-21T00:00:00Z',
+            updatedAt: '2026-11-21T00:00:00Z',
+          },
+          revision: {
+            id: 'rev-1',
+            appId: 'app-new',
+            revisionNumber: 1,
+            kind,
+            status: dynamic ? 'validating' : 'ready',
+            bundleSha256: '1234567890abcdef',
+            fileCount: 4,
+            totalBytes: 2048,
+            spaFallback: true,
+            createdBy: 'usr-1',
+            createdAt: '2026-11-21T00:00:00Z',
+          },
         },
-        revision: {
-          id: 'rev-1',
-          appId: 'app-new',
-          revisionNumber: 1,
-          kind: 'static',
-          status: 'ready',
-          bundleSha256: '1234567890abcdef',
-          fileCount: 4,
-          totalBytes: 2048,
-          spaFallback: true,
-          createdBy: 'usr-1',
-          createdAt: '2026-11-21T00:00:00Z',
-        },
-      },
-    })
+      })
 
-    const onPublished = vi.fn()
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    const root = createRoot(container)
-    mountedRoots.push(root)
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const onPublished = vi.fn()
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      const root = createRoot(container)
+      mountedRoots.push(root)
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
-    await act(async () => {
-      root.render(
-        <AntdApp>
-          <QueryClientProvider client={queryClient}>
-            <I18nProvider>
-              <WorkspacePublishModal
-                open
-                onClose={() => {}}
-                defaultName="季度看板"
-                source={{ kind: 'personal_environment', sourcePath: 'dist', assistantId: 'a-1', environmentVersion: 3 }}
-                sourceSummary="个人工作空间 /data/dist"
-                onPublished={onPublished}
-              />
-            </I18nProvider>
-          </QueryClientProvider>
-        </AntdApp>,
+      await act(async () => {
+        root.render(
+          <AntdApp>
+            <QueryClientProvider client={queryClient}>
+              <I18nProvider>
+                <WorkspacePublishModal
+                  open
+                  onClose={() => {}}
+                  defaultName="季度看板"
+                  source={{
+                    kind: 'personal_environment',
+                    sourcePath: 'dist',
+                    assistantId: 'a-1',
+                    environmentVersion: 3,
+                  }}
+                  sourceSummary="个人工作空间 /data/dist"
+                  onPublished={onPublished}
+                />
+              </I18nProvider>
+            </QueryClientProvider>
+          </AntdApp>,
+        )
+      })
+      await flushAsync()
+
+      if (dynamic) {
+        const typeOption = Array.from(document.querySelectorAll<HTMLElement>('.ant-segmented-item'))
+          .find((item) => item.textContent?.trim() === '动态 HTTP 应用')
+        expect(typeOption).toBeDefined()
+        await act(async () => typeOption?.click())
+      }
+      const submitBtn = Array.from(document.querySelectorAll('button')).find((btn) =>
+        btn.textContent?.includes('确认发布'),
       )
-    })
-    await flushAsync()
+      expect(submitBtn).toBeDefined()
+      await act(async () => {
+        submitBtn?.click()
+      })
+      await flushAsync()
 
-    const submitBtn = Array.from(document.querySelectorAll('button')).find((btn) =>
-      btn.textContent?.includes('确认发布'),
-    )
-    expect(submitBtn).toBeDefined()
-    await act(async () => {
-      submitBtn?.click()
-    })
-    await flushAsync()
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/app-hosting/workspace-deployments',
+        expect.objectContaining({
+          name: '季度看板',
+          ...(dynamic ? { kind: 'dynamic' } : { spaFallback: true }),
+          visibility: { mode: 'private' },
+          source: {
+            kind: 'personal_environment',
+            sourcePath: 'dist',
+            assistantId: 'a-1',
+            environmentVersion: 3,
+          },
+          idempotencyKey: expect.any(String),
+        }),
+      )
+      expect(onPublished).toHaveBeenCalledTimes(dynamic ? 0 : 1)
 
-    expect(apiMocks.post).toHaveBeenCalledWith(
-      '/app-hosting/workspace-deployments',
-      expect.objectContaining({
-        name: '季度看板',
-        spaFallback: true,
-        visibility: { mode: 'private' },
-        source: {
-          kind: 'personal_environment',
-          sourcePath: 'dist',
-          assistantId: 'a-1',
-          environmentVersion: 3,
-        },
-        idempotencyKey: expect.any(String),
-      }),
-    )
-    expect(onPublished).toHaveBeenCalledTimes(1)
-
-    const openLink = Array.from(document.querySelectorAll('a')).find((a) =>
-      a.textContent?.includes('打开应用'),
-    )
-    expect(openLink?.getAttribute('href')).toBe('https://board-a1b2.apps.soha.internal/')
-    expect(openLink?.getAttribute('target')).toBe('_blank')
-    expect(openLink?.getAttribute('rel')).toBe('noopener noreferrer')
-  })
+      const openLink = Array.from(document.querySelectorAll('a')).find((a) =>
+        a.textContent?.includes('打开应用'),
+      )
+      if (dynamic) {
+        expect(openLink).toBeUndefined()
+        expect(document.body.textContent).toContain('查看版本进度')
+        expect(apiMocks.post.mock.calls[0]?.[1]).not.toHaveProperty('spaFallback')
+        return
+      }
+      expect(openLink?.getAttribute('href')).toBe('https://board-a1b2.apps.soha.internal/')
+      expect(openLink?.getAttribute('target')).toBe('_blank')
+      expect(openLink?.getAttribute('rel')).toBe('noopener noreferrer')
+    },
+  )
 
   it('omits unchanged visibility and filters offline apps when updating an existing app', async () => {
     apiMocks.get.mockResolvedValue({

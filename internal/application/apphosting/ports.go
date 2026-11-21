@@ -27,6 +27,8 @@ type ActivateRevisionInput struct {
 	Files                []sohaapi.HostedAppManifestFile
 	RetainedRevisionsMax int32
 	Now                  time.Time
+	DynamicClaimID       string
+	BeforeActivate       func(context.Context) error
 }
 
 type ActivateRevisionOutput struct {
@@ -170,6 +172,8 @@ type Service struct {
 	audit                      AuditRecorder
 	sessions                   SessionValidator
 	workspaceSource            WorkspaceBundleSource
+	dynamic                    DynamicBackend
+	runtimeConfigKey           []byte
 	visitorIDSecret            []byte
 	fallbackGatewayTokenSHA256 string
 	now                        func() time.Time
@@ -206,6 +210,11 @@ func New(
 	for _, opt := range opts {
 		if opt != nil {
 			opt(svc)
+		}
+	}
+	if svc.dynamic != nil {
+		if _, ok := repo.(dynamicRepository); !ok {
+			return nil, errors.New("dynamic app hosting requires durable revision claims")
 		}
 	}
 	return svc, nil

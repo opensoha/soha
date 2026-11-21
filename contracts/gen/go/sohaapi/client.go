@@ -1191,6 +1191,30 @@ func (c *Client) GetHostedApp(ctx context.Context, appID string) (HostedApp, err
 	return out.Data, nil
 }
 
+func (c *Client) GetHostedAppRuntimeConfig(ctx context.Context, appID string) (HostedAppRuntimeConfig, error) {
+	path, err := hostedAppPath(appID, "runtime-config")
+	if err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	var out HostedAppRuntimeConfigResponse
+	if err := c.doJSON(ctx, http.MethodGet, path, true, nil, &out); err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UpdateHostedAppRuntimeConfig(ctx context.Context, appID string, req UpdateHostedAppRuntimeConfigRequest) (HostedAppRuntimeConfig, error) {
+	path, err := hostedAppPath(appID, "runtime-config")
+	if err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	var out HostedAppRuntimeConfigResponse
+	if err := c.doJSON(ctx, http.MethodPut, path, true, req, &out); err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	return out.Data, nil
+}
+
 func (c *Client) UpdateHostedApp(ctx context.Context, appID string, req UpdateHostedAppRequest) (HostedApp, error) {
 	path, err := hostedAppPath(appID, "")
 	if err != nil {

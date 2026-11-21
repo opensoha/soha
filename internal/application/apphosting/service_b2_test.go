@@ -26,7 +26,7 @@ type b2TestHarness struct {
 	adminPeer domainidentity.Principal
 }
 
-func newB2TestHarness(t *testing.T) *b2TestHarness {
+func newB2TestHarness(t *testing.T, extra ...appapphosting.Option) *b2TestHarness {
 	t.Helper()
 	repo := apphostingrepo.NewMemoryRepository()
 	store := newStubObjectStore()
@@ -38,17 +38,13 @@ func newB2TestHarness(t *testing.T) *b2TestHarness {
 	sessions.Set("sess_bob", "usr_bob", true, now.Add(6*time.Hour))
 	perms := seedB2PermissionsAndAudience(audience)
 
-	svc, err := appapphosting.New(
-		repo,
-		store,
-		audience,
-		perms,
-		audit,
+	options := []appapphosting.Option{
 		appapphosting.WithFallbackGatewayToken("bootstrap-gw-token"),
 		appapphosting.WithSessionValidator(sessions),
 		appapphosting.WithVisitorIDSecret("b2-visitor-hmac-secret-key"),
 		appapphosting.WithClock(func() time.Time { return now }),
-	)
+	}
+	svc, err := appapphosting.New(repo, store, audience, perms, audit, append(options, extra...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

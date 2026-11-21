@@ -15,6 +15,7 @@ import { appHostingQueries } from './queries'
 import {
   resolveSafeHostedAppUrl,
   type HostedApp,
+  type HostedAppKind,
   type HostedAppVisibilityInput,
   type WorkspaceHostedAppDeploymentRequest,
   type WorkspaceHostedAppDeploymentResult,
@@ -69,6 +70,7 @@ export function WorkspacePublishModal({
 
   const [targetMode, setTargetMode] = useState<PublishTargetMode>('create')
   const [selectedAppId, setSelectedAppId] = useState('')
+  const [newKind, setNewKind] = useState<HostedAppKind>('static')
   const [name, setName] = useState(defaultName)
   const [description, setDescription] = useState(defaultDescription)
   const [spaFallback, setSpaFallback] = useState(defaultSpaFallback)
@@ -84,31 +86,45 @@ export function WorkspacePublishModal({
   const availableApps = useMemo(
     () =>
       (readableQueryData(myAppsQuery)?.items ?? []).filter(
-        (item) => item.status !== 'suspended_by_admin' && item.status !== 'offline',
+        (item) =>
+          item.status !== 'suspended_by_admin' &&
+          item.status !== 'offline' &&
+          (source.kind === 'personal_environment' || item.kind === 'static'),
       ),
-    [myAppsQuery],
+    [myAppsQuery, source.kind],
   )
 
   const selectedApp: HostedApp | undefined = useMemo(
     () => availableApps.find((item) => item.id === selectedAppId),
     [availableApps, selectedAppId],
   )
-  const isSelectedAppOwner = !selectedApp || !currentUserId || selectedApp.ownerUserId === currentUserId
+  const isSelectedAppOwner =
+    !selectedApp || !currentUserId || selectedApp.ownerUserId === currentUserId
+  const dynamic = (targetMode === 'create' ? newKind : selectedApp?.kind) === 'dynamic'
 
-  const deployMutation = useOperationMutation(appHostingMutations.deployFromWorkspace(queryClient), {
-    label: ['工作区发布托管应用', 'Publish hosted app from workspace'],
-    target: (input) => input.name || selectedApp?.name || sourceSummary,
-    receipt: (result) => ({
-      message: result.created ? '托管应用已创建并上线' : '托管应用版本已更新',
-      evidence: `固定访问地址：${result.app.url}`,
-    }),
-  })
+  const deployMutation = useOperationMutation(
+    appHostingMutations.deployFromWorkspace(queryClient),
+    {
+      label: ['工作区发布托管应用', 'Publish hosted app from workspace'],
+      target: (input) => input.name || selectedApp?.name || sourceSummary,
+      receipt: (result) => ({
+        message:
+          result.revision.status === 'ready'
+            ? result.created
+              ? '托管应用已创建并上线'
+              : '托管应用版本已更新'
+            : '已收到托管应用版本状态',
+        evidence: `版本 v${result.revision.revisionNumber}`,
+      }),
+    },
+  )
   const resetDeployMutation = deployMutation.reset
 
   useEffect(() => {
     if (!open) return
     setTargetMode('create')
     setSelectedAppId('')
+    setNewKind('static')
     setName(defaultName)
     setDescription(defaultDescription)
     setSpaFallback(defaultSpaFallback)
@@ -182,7 +198,7 @@ export function WorkspacePublishModal({
         ? {
             name: trimmedName,
             ...(trimmedDescription ? { description: trimmedDescription } : {}),
-            spaFallback,
+            ...(dynamic ? { kind: 'dynamic' as const } : { spaFallback }),
             visibility,
             ...(visibility.mode === 'organization' && trimmedReason
               ? { visibilityReason: trimmedReason }
@@ -194,7 +210,7 @@ export function WorkspacePublishModal({
             appId: selectedAppId,
             ...(isSelectedAppOwner && trimmedName ? { name: trimmedName } : {}),
             ...(isSelectedAppOwner ? { description: trimmedDescription } : {}),
-            spaFallback,
+            ...(!dynamic ? { spaFallback } : {}),
             ...(isSelectedAppOwner && visibilityChanged ? { visibility } : {}),
             ...(isSelectedAppOwner &&
             visibilityChanged &&
@@ -209,12 +225,16 @@ export function WorkspacePublishModal({
     deployMutation.mutate(payload, {
       onSuccess: (result) => {
         setPublishedResult(result)
-        onPublished?.(result)
+        if (result.revision.status === 'ready' && result.app.status === 'online')
+          onPublished?.(result)
       },
     })
   }
 
   const safeResultUrl = resolveSafeHostedAppUrl(publishedResult?.app.url)
+  const ready =
+    publishedResult?.revision.status === 'ready' && publishedResult.app.status === 'online'
+  const failed = publishedResult?.revision.status === 'failed'
 
   return (
     <Modal
@@ -226,7 +246,7 @@ export function WorkspacePublishModal({
       closable={!deployMutation.blocked}
       keyboard={!deployMutation.blocked}
       open={open}
-      title={publishedResult ? '托管应用已发布就绪' : '发布为托管应用'}
+      title={ready ? '托管应用已发布就绪' : publishedResult ? '动态应用版本状态' : '发布为托管应用'}
       onCancel={() => {
         if (deployMutation.blocked) return
         onClose()
@@ -235,20 +255,22 @@ export function WorkspacePublishModal({
         publishedResult ? (
           <Space wrap>
             <MyAppsEntryButton onNavigate={onClose} />
-            <Button
-              icon={<CopyOutlined />}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(publishedResult.app.url)
-                  void message.success('已复制固定分享链接')
-                } catch {
-                  void message.error('复制失败，请手动复制地址')
-                }
-              }}
-            >
-              复制分享链接
-            </Button>
-            {safeResultUrl ? (
+            {ready ? (
+              <Button
+                icon={<CopyOutlined />}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(publishedResult.app.url)
+                    void message.success('已复制固定分享链接')
+                  } catch {
+                    void message.error('复制失败，请手动复制地址')
+                  }
+                }}
+              >
+                复制分享链接
+              </Button>
+            ) : null}
+            {safeResultUrl && ready ? (
               <Button
                 type="primary"
                 icon={<ExportOutlined />}
@@ -285,13 +307,21 @@ export function WorkspacePublishModal({
           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <ContextFeedback
               showIcon
-              type="success"
+              type={failed ? 'error' : ready ? 'success' : 'info'}
               title={
-                publishedResult.created
-                  ? `已创建「${publishedResult.app.name}」并发布版本 v${publishedResult.revision.revisionNumber}`
-                  : `「${publishedResult.app.name}」已更新至版本 v${publishedResult.revision.revisionNumber}`
+                failed
+                  ? `「${publishedResult.app.name}」的版本 v${publishedResult.revision.revisionNumber} 构建失败`
+                  : !ready
+                    ? `已提交「${publishedResult.app.name}」的版本 v${publishedResult.revision.revisionNumber}`
+                    : publishedResult.created
+                      ? `已创建「${publishedResult.app.name}」并发布版本 v${publishedResult.revision.revisionNumber}`
+                      : `「${publishedResult.app.name}」已更新至版本 v${publishedResult.revision.revisionNumber}`
               }
-              description="固定子域地址保持稳定，后续更新版本或回滚不会改变分享链接。"
+              description={
+                ready
+                  ? '固定访问地址保持稳定，后续更新版本或回滚仍使用同一链接。'
+                  : '在「我的作品」查看版本进度或失败原因。'
+              }
             />
             {publishedResult.app.pendingVisibilityApproval?.status === 'pending' ? (
               <ContextFeedback
@@ -301,14 +331,19 @@ export function WorkspacePublishModal({
                 description="管理员审批通过后将自动对全公司开放；等待期间沿用当前已生效的可见范围。"
               />
             ) : null}
-            <div>
-              <Text type="secondary">固定 HTTPS 访问链接</Text>
-              <Paragraph copyable style={{ marginTop: 4, marginBottom: 0 }}>
-                {publishedResult.app.url}
-              </Paragraph>
-            </div>
+            {ready ? (
+              <div>
+                <Text type="secondary">固定 HTTPS 访问链接</Text>
+                <Paragraph copyable style={{ marginTop: 4, marginBottom: 0 }}>
+                  {publishedResult.app.url}
+                </Paragraph>
+              </div>
+            ) : null}
             <Space wrap size={8}>
-              <StatusTag value={publishedResult.app.status} label="已上线" />
+              <StatusTag
+                value={publishedResult.app.status}
+                label={ready ? '已上线' : '当前应用状态'}
+              />
               <MetadataTag tone="blue" label={`版本 v${publishedResult.revision.revisionNumber}`} />
               <MetadataTag label={`${publishedResult.revision.fileCount} 个文件`} />
             </Space>
@@ -343,6 +378,22 @@ export function WorkspacePublishModal({
                 由服务端直接受控打包，不在请求中搬运对话正文内容。
               </Text>
             </div>
+
+            {targetMode === 'create' && source.kind === 'personal_environment' ? (
+              <Segmented
+                aria-label="托管应用类型"
+                disabled={deployMutation.blocked}
+                options={[
+                  { label: '静态站点', value: 'static' },
+                  { label: '动态 HTTP 应用', value: 'dynamic' },
+                ]}
+                value={newKind}
+                onChange={(value: HostedAppKind) => {
+                  setNewKind(value)
+                  refreshIdempotencyKey()
+                }}
+              />
+            ) : null}
 
             <div>
               <Segmented
@@ -442,32 +493,39 @@ export function WorkspacePublishModal({
               </>
             ) : null}
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-              }}
-            >
-              <div>
-                <Text>单页应用（SPA）前端路由回退</Text>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    开启后，无扩展名的前端深链接路径将回退至 index.html（缺失静态资源仍严格返回 404）。
-                  </Text>
-                </div>
-              </div>
-              <Switch
-                aria-label="SPA 前端路由回退"
-                checked={spaFallback}
-                disabled={deployMutation.blocked}
-                onChange={(checked) => {
-                  setSpaFallback(checked)
-                  refreshIdempotencyKey()
+            {dynamic ? (
+              <Text type="secondary">
+                所选源码目录需包含 soha-host.json。配置 database 可启用持久化业务数据库。
+              </Text>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
                 }}
-              />
-            </div>
+              >
+                <div>
+                  <Text>单页应用（SPA）前端路由回退</Text>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      开启后，无扩展名的前端深链接路径将回退至 index.html（缺失静态资源仍严格返回
+                      404）。
+                    </Text>
+                  </div>
+                </div>
+                <Switch
+                  aria-label="SPA 前端路由回退"
+                  checked={spaFallback}
+                  disabled={deployMutation.blocked}
+                  onChange={(checked) => {
+                    setSpaFallback(checked)
+                    refreshIdempotencyKey()
+                  }}
+                />
+              </div>
+            )}
 
             {targetMode === 'create' || isSelectedAppOwner ? (
               <div>

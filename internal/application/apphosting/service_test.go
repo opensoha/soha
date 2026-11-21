@@ -185,7 +185,7 @@ type testHarness struct {
 	carol    domainidentity.Principal
 }
 
-func newTestHarness(t *testing.T) *testHarness {
+func newTestHarness(t *testing.T, extra ...appapphosting.Option) *testHarness {
 	t.Helper()
 	repo := apphostingrepo.NewMemoryRepository()
 	store := newStubObjectStore()
@@ -210,17 +210,13 @@ func newTestHarness(t *testing.T) *testHarness {
 	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_bob", Username: "bob", DisplayName: "Bob", Department: "Finance", Status: "active", TeamIDs: []string{"team_fin"}})
 	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_carol", Username: "carol", DisplayName: "Carol", Department: "HR", Status: "active", TeamIDs: []string{"team_hr"}})
 
-	svc, err := appapphosting.New(
-		repo,
-		store,
-		audience,
-		perms,
-		audit,
+	options := []appapphosting.Option{
 		appapphosting.WithFallbackGatewayToken("bootstrap-gw-token"),
 		appapphosting.WithSessionValidator(sessions),
 		appapphosting.WithVisitorIDSecret("unit-test-visitor-hmac-secret-key"),
 		appapphosting.WithClock(func() time.Time { return now }),
-	)
+	}
+	svc, err := appapphosting.New(repo, store, audience, perms, audit, append(options, extra...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

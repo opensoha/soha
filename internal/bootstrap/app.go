@@ -87,6 +87,7 @@ func New(ctx context.Context) (*App, error) {
 		delivery.copilotService.Start(infra.lifecycleCtx)
 	}
 	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
+	hostingDone := startHostedDynamicWorker(infra.lifecycleCtx, core.appHostingService, infra.logger)
 	initialized = true
 	return &App{
 		OptionalRuntimes:      optionalRuntimes,
@@ -103,5 +104,6 @@ func New(ctx context.Context) (*App, error) {
 		HTTP:                  httpServer,
 		PersonalGuest:         guestServer,
 		cancel:                infra.cancel,
+		appHostingDone:        hostingDone,
 	}, nil
 }

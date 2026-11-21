@@ -15,6 +15,7 @@ import (
 	domainapphosting "github.com/opensoha/soha/internal/domain/apphosting"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -22,26 +23,6 @@ const visibilityApprovalColumns = `id, app_id, app_name, app_dns_label, requeste
 	current_visibility, requested_visibility, base_route_generation, policy_version,
 	status, reason, reviewer_user_id, review_comment, invalidation_reason,
 	created_at, updated_at, decided_at`
-
-func rejectUnactivatableRevisionTx(tx *gorm.DB, app domainapphosting.App, input appapphosting.ActivateRevisionInput) error {
-	if trimmedActor := strings.TrimSpace(input.ActorUserID); trimmedActor != "" && !app.IsOwnerOrMaintainer(trimmedActor) {
-		_ = tx.Exec(`
-			UPDATE public.hosted_app_revisions
-			SET status = 'failed', failure_stage = 'activate', failure_reason = 'uploader lost owner or maintainer permission before activation'
-			WHERE app_id = ? AND id = ?
-		`, input.AppID, input.RevisionID).Error
-		return apperrors.NewBusiness(apperrors.ErrAccessDenied, "publisher_permission_revoked", "uploader is no longer an authorized owner or maintainer of this application", "上传期间您的作者或协作者权限已变更，本次版本激活已取消")
-	}
-	if app.Status == sohaapi.HostedAppStatusOffline || app.Status == sohaapi.HostedAppStatusSuspendedByAdmin {
-		_ = tx.Exec(`
-			UPDATE public.hosted_app_revisions
-			SET status = 'failed', failure_stage = 'activate', failure_reason = 'application became offline or suspended before activation'
-			WHERE app_id = ? AND id = ?
-		`, input.AppID, input.RevisionID).Error
-		return apperrors.NewBusiness(apperrors.ErrConflict, "app_not_deployable", "application became offline or suspended before activation", "激活前应用已下线或被管理员封停")
-	}
-	return nil
-}
 
 func (r *PostgresRepository) ListVisiblePortalApps(ctx context.Context, principal domainidentity.Principal) ([]domainapphosting.App, error) {
 	userID := strings.TrimSpace(principal.UserID)
@@ -522,6 +503,14 @@ func (r *PostgresRepository) TransferAppOwnership(ctx context.Context, appID, ne
 		`, app.OwnerUserID, string(maintJSON), app.RouteGeneration, nowUTC, app.ID).Error; err != nil {
 			return err
 		}
+		if err := tx.Exec(`
+			UPDATE public.hosted_app_runtime_configs
+			SET visitor_grant = '{}'::jsonb, visitor_request = NULL,
+				sensitive_publisher_ids = '[]'::jsonb, sensitive_publisher_owner_id = ''
+			WHERE app_id = ?
+		`, app.ID).Error; err != nil {
+			return err
+		}
 		if err := invalidateAppPendingApprovalsTx(tx, app.ID, "ownership_transferred", nowUTC); err != nil {
 			return err
 		}
@@ -551,6 +540,11 @@ func (r *PostgresRepository) DeleteApp(ctx context.Context, appID string, verify
 		if err != nil {
 			return err
 		}
+		if app.Kind == sohaapi.HostedAppKindDynamic {
+			if err := enqueueDeletedDynamicRevisionsTx(tx, app.ID); err != nil {
+				return err
+			}
+		}
 		if err := tx.Exec(`DELETE FROM public.hosted_apps WHERE id = ?`, app.ID).Error; err != nil {
 			return err
 		}
@@ -570,6 +564,7 @@ func loadAllAppRevisionsTx(ctx context.Context, tx *gorm.DB, appID string) ([]do
 		FROM public.hosted_app_revisions
 		WHERE app_id = ?
 		ORDER BY revision_number DESC
+		FOR UPDATE
 	`, appID).Rows()
 	if err != nil {
 		return nil, err
@@ -754,7 +749,7 @@ func sanitizeSummaryTeamNames(raw []string) []string {
 func (d *PostgresAudienceDirectory) ResolveUserPrincipal(ctx context.Context, userID string) (domainidentity.Principal, bool, error) {
 	var id, username, status string
 	var rolesRaw, teamsRaw []byte
-	err := d.db.WithContext(ctx).Raw(`
+	err := dbtx.DB(ctx, d.db).Raw(`
 		SELECT u.id::text, u.username, u.status,
 		       COALESCE((
 		           SELECT json_agg(urb.role_id ORDER BY urb.role_id ASC)

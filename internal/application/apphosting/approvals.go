@@ -197,16 +197,20 @@ func (s *Service) DeleteApp(
 		return sohaapi.DeleteHostedAppResult{}, err
 	}
 
-	purgedObjects, cleanupErr := s.purgeDeletedAppRevisions(ctx, revisions)
 	meta := map[string]any{
-		"appId":             deletedApp.ID,
-		"dnsLabel":          deletedApp.DNSLabel,
-		"ownerUserId":       deletedApp.OwnerUserID,
-		"reason":            trimmedReason,
-		"purgedObjectCount": purgedObjects,
+		"appId":       deletedApp.ID,
+		"dnsLabel":    deletedApp.DNSLabel,
+		"ownerUserId": deletedApp.OwnerUserID,
+		"reason":      trimmedReason,
 	}
-	if cleanupErr != nil {
-		meta["storageCleanupError"] = cleanupErr.Error()
+	if deletedApp.Kind == sohaapi.HostedAppKindDynamic {
+		meta["runtimeCleanupMode"] = "background"
+	} else {
+		purgedObjects, cleanupErr := s.purgeDeletedAppRevisions(ctx, revisions)
+		meta["purgedObjectCount"] = purgedObjects
+		if cleanupErr != nil {
+			meta["storageCleanupError"] = cleanupErr.Error()
+		}
 	}
 	s.recordAudit(ctx, principal, "app.delete", "success", deletedApp.ID, "Permanently deleted hosted application", meta)
 	return sohaapi.DeleteHostedAppResult{AppID: deletedApp.ID, Deleted: true}, nil
@@ -228,9 +232,6 @@ func (s *Service) purgeDeletedAppRevisions(ctx context.Context, revisions []doma
 			byIntegration[integrationID] = append(byIntegration[integrationID], keys...)
 			totalKeys += len(keys)
 		}
-	}
-	if totalKeys == 0 {
-		return 0, nil
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()

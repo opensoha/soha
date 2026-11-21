@@ -29619,6 +29619,211 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/runtime-config:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRuntimeConfig
+      summary: Read masked dynamic application configuration
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeConfigResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - AppHosting
+      operationId: updateHostedAppRuntimeConfig
+      summary: Update dynamic application configuration for subsequent revisions
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHostedAppRuntimeConfigRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeConfigResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/runtime-usage:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRuntimeUsage
+      summary: Read bounded managed database usage and warning state
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeUsageResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/visitor-attributes:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppVisitorAttributes
+      summary: Read the application visitor attribute grant and pending request
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - AppHosting
+      operationId: requestHostedAppVisitorAttributes
+      summary: Request additional visitor attributes as the application owner
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestHostedAppVisitorAttributesRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - AppHosting
+      operationId: decideHostedAppVisitorAttributes
+      summary: Review a pending request or revoke granted visitor attributes as an administrator
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideHostedAppVisitorAttributesRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/revisions/{revisionId}/logs:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRevisionLogs
+      summary: Read redacted platform build and runtime events for a revision
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+        - $ref: "#/components/parameters/HostedAppRevisionID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRevisionLogsResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
   /app-hosting/apps/{appId}/rollback:
     post:
       tags:
@@ -70685,6 +70890,9 @@ components:
         - source
         - idempotencyKey
       properties:
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+          description: Application kind for a new workspace deployment. Defaults to static. Dynamic deployments require a personal environment source.
         appId:
           type: string
           maxLength: 128
@@ -70927,6 +71135,14 @@ components:
         bundleSha256:
           type: string
           maxLength: 128
+        imageRef:
+          type: string
+          maxLength: 512
+          description: Immutable OCI image reference verified for this dynamic revision.
+        buildPhase:
+          type: string
+          maxLength: 32
+          description: Current dynamic deployment phase, when a build or readiness check is in progress.
         fileCount:
           type: integer
           format: int32
@@ -71031,6 +71247,219 @@ components:
         reason:
           type: string
           maxLength: 512
+    HostedAppRuntimeConfig:
+      type: object
+      additionalProperties: false
+      required: [environmentKeys, dataWarningBytes]
+      properties:
+        environmentKeys:
+          description: Names of configured environment variables. Values are write-only.
+          type: array
+          items:
+            type: string
+            maxLength: 64
+        sensitivePublisherIds:
+          description: Current maintainers explicitly trusted by the application owner to publish with runtime credentials.
+          type: array
+          items:
+            type: string
+            maxLength: 128
+        dataWarningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+    HostedAppEnvironmentVariableInput:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{0,63}$'
+          maxLength: 64
+        value:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+    UpdateHostedAppRuntimeConfigRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        setEnvironment:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/HostedAppEnvironmentVariableInput"
+        removeEnvironment:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
+        sensitivePublisherIds:
+          description: Replace the current owner-consented set. An empty list clears all consent.
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 128
+        acknowledgeSensitiveAccess:
+          description: Required when granting any maintainer access to application data and runtime secrets through publishing.
+          type: boolean
+        dataWarningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1099511627776
+          x-go-pointer: true
+    HostedAppRuntimeUsageStatus:
+      type: string
+      enum: [available, not_enabled, unavailable]
+      x-enum-varnames: [HostedAppRuntimeUsageStatusAvailable, HostedAppRuntimeUsageStatusNotEnabled, HostedAppRuntimeUsageStatusUnavailable]
+    HostedAppRuntimeUsage:
+      type: object
+      additionalProperties: false
+      required: [status, warningBytes, warning]
+      properties:
+        status:
+          $ref: "#/components/schemas/HostedAppRuntimeUsageStatus"
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          x-go-pointer: true
+        warningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+        warning:
+          type: boolean
+        sampledAt:
+          type: string
+          format: date-time
+          x-go-pointer: true
+    HostedAppVisitorAttribute:
+      type: string
+      enum: [email, department]
+      x-enum-varnames: [HostedAppVisitorAttributeEmail, HostedAppVisitorAttributeDepartment]
+    HostedAppVisitorAttributeRequest:
+      type: object
+      additionalProperties: false
+      required: [id, reason, fields, requestedAt]
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 500
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        requestedAt:
+          type: string
+          format: date-time
+    HostedAppVisitorAttributes:
+      type: object
+      additionalProperties: false
+      required: [granted]
+      properties:
+        granted:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        pending:
+          $ref: "#/components/schemas/HostedAppVisitorAttributeRequest"
+    RequestHostedAppVisitorAttributesRequest:
+      type: object
+      additionalProperties: false
+      required: [fields, reason]
+      properties:
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    DecideHostedAppVisitorAttributesRequest:
+      type: object
+      additionalProperties: false
+      required: [fields]
+      properties:
+        requestId:
+          description: Pending request identifier. Omit with empty fields to revoke the existing grant.
+          type: string
+          maxLength: 128
+        fields:
+          description: Approved subset. Empty fields with a request identifier reject the request.
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+    HostedAppRevisionLog:
+      type: object
+      additionalProperties: false
+      required: [source, code, message, at]
+      properties:
+        source:
+          type: string
+          enum: [build, runtime]
+        code:
+          type: string
+          maxLength: 64
+        message:
+          type: string
+          maxLength: 256
+        at:
+          type: string
+          format: date-time
+    HostedAppRevisionLogs:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/HostedAppRevisionLog"
+    HostedAppRuntimeConfigResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRuntimeConfig"
+    HostedAppRuntimeUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRuntimeUsage"
+    HostedAppVisitorAttributesResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppVisitorAttributes"
+    HostedAppRevisionLogsResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRevisionLogs"
     HostedAppVisitorIdentity:
       type: object
       additionalProperties: false
@@ -71049,6 +71478,10 @@ components:
         displayName:
           type: string
           minLength: 1
+          maxLength: 256
+        department:
+          description: Present only when the application has an administrator-approved grant.
+          type: string
           maxLength: 256
         email:
           type: string
@@ -71198,6 +71631,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        runtimeService:
+          type: string
+          pattern: '^soha-app-[0-9a-f]{32}$'
+          description: Cluster-local service name for a dynamic revision, resolved in the gateway's configured runtime namespace.
         storageIntegrationId:
           type: string
           maxLength: 128

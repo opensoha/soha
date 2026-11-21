@@ -15,10 +15,16 @@ const apiMocks = vi.hoisted(() => ({
   post: vi.fn(),
   put: vi.fn(),
   patch: vi.fn(),
+  scoped: vi.fn(),
 }))
 
 const permissionState = vi.hoisted(() => ({
-  keys: ['workbench.home.view', 'identity.portal.view', 'apphosting.apps.publish', 'observe.ai.chat'],
+  keys: [
+    'workbench.home.view',
+    'identity.portal.view',
+    'apphosting.apps.publish',
+    'observe.ai.chat',
+  ],
 }))
 
 vi.mock('@/services/api-client', () => ({ api: apiMocks }))
@@ -163,7 +169,7 @@ async function flushAsync() {
   })
 }
 
-async function renderMyAppsPage() {
+async function renderMyAppsPage(onClient?: (client: QueryClient) => void) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -171,6 +177,7 @@ async function renderMyAppsPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  onClient?.(queryClient)
   await act(async () => {
     root.render(
       <AntdApp>
@@ -189,6 +196,116 @@ async function renderMyAppsPage() {
 }
 
 describe('Portal My Hosted Apps page', () => {
+  it('loads only the selected dynamic app and revision and keeps credential values out of query state', async () => {
+    const dynamicApp = { ...ownerApp, kind: 'dynamic', pendingVisibilityApproval: undefined }
+    const appPath = '/app-hosting/apps/app-owned'
+    const revision = {
+      id: 'rev-2',
+      appId: 'app-owned',
+      revisionNumber: 2,
+      kind: 'dynamic',
+      status: 'ready',
+      bundleSha256: 'abcdef',
+      fileCount: 1,
+      totalBytes: 21,
+      createdAt: '2026-11-21T01:00:00Z',
+    }
+    const stored = { environmentKeys: ['APP_API_TOKEN'], dataWarningBytes: 200 * 1024 ** 2 }
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('scope=mine'))
+        return { data: { items: [dynamicApp, collaboratorApp], total: 2 } }
+      if (path === appPath) return { data: dynamicApp }
+      if (path === `${appPath}/runtime-config`) return { data: stored }
+      if (path === `${appPath}/runtime-usage`) {
+        return {
+          data: { status: 'not_enabled', warningBytes: stored.dataWarningBytes, warning: false },
+        }
+      }
+      if (path === `${appPath}/revisions/rev-2/logs`) {
+        return {
+          data: {
+            items: [
+              { source: 'runtime', code: 'activated', message: 'Ready', at: revision.createdAt },
+            ],
+          },
+        }
+      }
+      if (path.startsWith(`${appPath}/revisions?`)) return { data: { items: [revision], total: 1 } }
+      return { data: { items: [], total: 0 } }
+    })
+    apiMocks.scoped.mockResolvedValue({ data: stored })
+    let client: QueryClient | undefined
+    const container = await renderMyAppsPage((value) => {
+      client = value
+    })
+    const clickText = async (
+      selector: string,
+      label: string,
+      scope: ParentNode = document.body,
+    ) => {
+      const node = Array.from(scope.querySelectorAll<HTMLElement>(selector)).find(
+        (element) => element.textContent?.replace(/\s+/g, '') === label.replace(/\s+/g, ''),
+      )
+      expect(node).toBeDefined()
+      await act(async () => node?.click())
+      await flushAsync()
+    }
+    await clickText('button', '管理 / 详情', container)
+    expect(
+      apiMocks.get.mock.calls.some(([path]) => /runtime-config|runtime-usage|\/logs$/.test(path)),
+    ).toBe(false)
+
+    await clickText('[role="tab"]', '运行配置')
+    expect(document.body.textContent).toContain('未启用受管数据库')
+    expect(document.body.textContent).toContain('200 MiB（默认值）')
+    expect(document.body.textContent).toContain('APP_API_TOKEN')
+    expect(document.body.textContent).toContain('••••••••')
+
+    const setField = (field: string, value: string) => {
+      const input = Array.from(document.querySelectorAll('label')).find(
+        (label) => label.textContent === field,
+      )?.control as HTMLInputElement
+      expect(input).toBeTruthy()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      return input
+    }
+    const secret = 'fixture-private-value'
+    let password: HTMLInputElement | undefined
+    await act(async () => {
+      setField('变量名', 'APP_API_TOKEN')
+      password = setField('变量值', secret)
+    })
+    expect(password?.type).toBe('password')
+    await clickText('button', '新增或替换变量')
+    expect(apiMocks.scoped).toHaveBeenCalledWith(`${appPath}/runtime-config`, 'usr-emp', {
+      method: 'PUT',
+      body: { setEnvironment: [{ name: 'APP_API_TOKEN', value: secret }] },
+    })
+    expect(document.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('')
+    const writes = client?.getMutationCache().getAll()
+    expect(writes).toHaveLength(1)
+    expect(writes?.[0].state.status).toBe('success')
+    expect(writes?.[0].state.variables).toBeUndefined()
+    expect(
+      JSON.stringify(
+        client
+          ?.getQueryCache()
+          .getAll()
+          .map((entry) => entry.state.data),
+      ),
+    ).not.toContain(secret)
+
+    await clickText('[role="tab"]', '版本与回滚')
+    expect(apiMocks.get.mock.calls.some(([path]) => path.endsWith('/logs'))).toBe(false)
+    await clickText('button', '查看脱敏日志')
+    expect(document.body.textContent).toContain('版本 v2 · 脱敏日志')
+    expect(document.body.textContent).toContain('activated')
+    expect(
+      apiMocks.get.mock.calls.filter(([path]) => path.endsWith('/logs')).map(([path]) => path),
+    ).toEqual([`${appPath}/revisions/rev-2/logs`])
+  })
+
   it('allows non-admin employee to manage owned app, withdraw pending approval, and confirm permanent delete', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.startsWith('/app-hosting/apps?scope=mine')) {

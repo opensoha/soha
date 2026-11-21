@@ -358,6 +358,9 @@ beforeEach(() => {
     if (path.startsWith('/app-hosting/apps/app-online/revisions')) {
       return Promise.resolve({ data: { items: sampleRevisions, total: 1 } })
     }
+    if (path === '/app-hosting/apps/app-online/visitor-attributes') {
+      return Promise.resolve({ data: { granted: [] } })
+    }
     if (path === '/app-hosting/apps/app-online') {
       return Promise.resolve({ data: onlineApp })
     }
@@ -537,6 +540,59 @@ describe('InternalWorkbenchAppHostingPage', () => {
     expect(storageInput?.disabled).toBe(true)
     expect(findButtonByText(container, '保存策略配置')?.disabled).toBe(true)
     expect(findButtonByText(container, '轮换网关令牌')?.disabled).toBe(true)
+  })
+
+  it('reviews a subset of visitor attributes for the selected app without reading environment configuration', async () => {
+    const appPath = '/app-hosting/apps/app-online'
+    const defaultGet = apiMocks.get.getMockImplementation()!
+    const candidate = { ...onlineApp, kind: 'dynamic' }
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path === appPath) return Promise.resolve({ data: candidate })
+      if (path === `${appPath}/runtime-usage`) {
+        return Promise.resolve({
+          data: { status: 'unavailable', warningBytes: 200 * 1024 ** 2, warning: false },
+        })
+      }
+      if (path === `${appPath}/visitor-attributes`) {
+        return Promise.resolve({
+          data: {
+            granted: [],
+            pending: {
+              id: 'request-1',
+              fields: ['email', 'department'],
+              reason: '区分团队',
+              requestedAt: onlineApp.updatedAt,
+            },
+          },
+        })
+      }
+      return defaultGet(path)
+    })
+    apiMocks.put.mockResolvedValueOnce({ data: { granted: ['department'] } })
+
+    const { container } = await renderPage()
+    expect(apiMocks.get.mock.calls.some(([path]) => path.endsWith('/visitor-attributes'))).toBe(
+      false,
+    )
+    await act(async () => findButtonByText(container, '详情')?.click())
+    await flush()
+    const drawer = document.body.querySelector('.ant-drawer')!
+    expect(drawer.textContent).toContain('暂时无法获取用量')
+    expect(drawer.textContent).toContain('区分团队')
+    expect(drawer.textContent).not.toContain('加密环境变量')
+    expect(apiMocks.get.mock.calls.some(([path]) => path.endsWith('/runtime-config'))).toBe(false)
+    const email = Array.from(drawer.querySelectorAll('label'))
+      .find((label) => label.textContent === '邮箱')
+      ?.querySelector('input')
+    expect(email?.checked).toBe(true)
+    await act(async () => email?.click())
+    await act(async () => findButtonByText(drawer, '批准所选字段')?.click())
+    await flush()
+    expect(apiMocks.put).toHaveBeenCalledWith(`${appPath}/visitor-attributes`, {
+      requestId: 'request-1',
+      fields: ['department'],
+    })
+    expect(findButtonByText(drawer, '撤销授权')).toBeDefined()
   })
 
   it('filters global ledger and executes suspend and unsuspend with mandatory reason validation', async () => {

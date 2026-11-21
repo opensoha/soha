@@ -247,6 +247,7 @@ const (
   for (const [typeName, values] of [
     ["IdentityProviderUserMetadataProtocol", [["OIDC", "oidc"], ["Proxy", "proxy"], ["Saml", "saml"]]],
     ["PersonalEnvironmentTemplateMode", [["ObserveOnly", "observe-only"], ["RestrictedWrite", "restricted-write"]]],
+    ["PersonalEnvironmentActionRequestAction", [["Wake", "wake"], ["Sleep", "sleep"], ["Reconcile", "reconcile"]]],
     ["PersonalGuestRuntimeInputKind", [["Browser", "browser"], ["Docker", "docker"], ["Execute", "execute"], ["FileRead", "file_read"], ["FileWrite", "file_write"]]],
     ["ExportDeliveryDocumentParamsFormat", [["JSON", "json"], ["Yaml", "yaml"]]],
     ["DeliveryDraftServiceServiceKind", [["ExternalService", "external_service"], ["HelmRelease", "helm_release"], ["Job", "job"], ["KubernetesWorkload", "kubernetes_workload"]]],
@@ -339,6 +340,11 @@ function applyGoCompatibility(spec) {
   // A positive stopped-process proof must carry explicit known zero. Keep the
   // existing int64 SDK field while preventing omitempty from erasing that zero.
   schemas.NetworkProxyDeploymentRuntimeAck.properties.activeConnections["x-omitempty"] = false;
+
+  // A nil slice omits the update. An empty slice revokes every grant.
+  const sensitivePublishers = schemas.UpdateHostedAppRuntimeConfigRequest.properties.sensitivePublisherIds;
+  sensitivePublishers["x-omitempty"] = false;
+  sensitivePublishers["x-omitzero"] = true;
 
   // Keep Rejected available for the published PersonalAgentAccessDecisionStatus.
   schemas.WorkflowRequestReceipt.properties.submissionStatus["x-enum-varnames"] = [

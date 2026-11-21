@@ -1099,6 +1099,213 @@ func TestHostDeployOrganizationPendingApprovalNotice(t *testing.T) {
 	}
 }
 
+func TestHostDynamicDeployKindAndBuildStatus(t *testing.T) {
+	now := time.Date(2026, 11, 21, 5, 0, 0, 0, time.UTC)
+	sourceDir := t.TempDir()
+	files := map[string]string{
+		"soha-host.json":           `{"template":"node","database":false}`,
+		"server.js":                "require('http').createServer((_, res) => res.end('ok')).listen(8080)\n",
+		"package.json":             `{"name":"ops-api","version":"1.0.0"}`,
+		"package-lock.json":        `{"lockfileVersion":3}`,
+		".venv/lib/ignored.txt":    "ignored",
+		"__pycache__/ignored.pyc":  "ignored",
+		"node_modules/pkg/ignored": "ignored",
+	}
+	for rel, content := range files {
+		full := filepath.Join(sourceDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dynamicApp := sohaapi.HostedApp{
+		ID:                "app_dyn",
+		Name:              "Ops API",
+		Kind:              sohaapi.HostedAppKindDynamic,
+		DNSLabel:          "ops-api-1a2b3c",
+		Host:              "ops-api-1a2b3c.apps.soha.internal",
+		URL:               "https://ops-api-1a2b3c.apps.soha.internal",
+		OwnerUserID:       "u-1",
+		MaintainerUserIDs: []string{"u-1"},
+		Visibility:        sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate},
+		Status:            sohaapi.HostedAppStatusOnline,
+		RouteGeneration:   1,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	staticApp := dynamicApp
+	staticApp.ID = "app_static"
+	staticApp.Name = "Static Board"
+	staticApp.Kind = sohaapi.HostedAppKindStatic
+
+	var (
+		createCalls    int
+		preflightCalls int
+		uploadCalls    int
+		lastCreate     sohaapi.CreateHostedAppRequest
+		lastPreflight  sohaapi.HostedAppPreflightRequest
+		lastUpload     string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/app-hosting/apps":
+			createCalls++
+			if err := json.NewDecoder(r.Body).Decode(&lastCreate); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: dynamicApp})
+		case "GET /api/v1/app-hosting/apps/app_static":
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: staticApp})
+		case "POST /api/v1/app-hosting/apps/app_dyn/deployments/preflight":
+			preflightCalls++
+			if err := json.NewDecoder(r.Body).Decode(&lastPreflight); err != nil {
+				t.Fatal(err)
+			}
+			writeJSON(t, w, sohaapi.HostedAppPreflightResponse{Data: sohaapi.HostedAppPreflightResult{
+				Allowed: true, AppID: dynamicApp.ID, URL: dynamicApp.URL, MaxCompressedBytes: 1 << 20, MaxUncompressedBytes: 4 << 20, MaxFileCount: 100,
+			}})
+		case "POST /api/v1/app-hosting/apps/app_dyn/revisions":
+			uploadCalls++
+			lastUpload = r.URL.RawQuery
+			revisionStatus := sohaapi.HostedAppRevisionStatusValidating
+			if r.URL.Query().Get("idempotencyKey") == "replay-failed-key" {
+				revisionStatus = sohaapi.HostedAppRevisionStatusFailed
+			}
+			raw, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			members := readTarGzMemberNames(t, raw)
+			if strings.Join(members, ",") != "package-lock.json,package.json,server.js,soha-host.json" {
+				t.Fatalf("dynamic upload members = %v", members)
+			}
+			appOut := dynamicApp
+			appOut.ActiveRevisionID = "rev_dyn"
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(t, w, sohaapi.HostedAppDeploymentResponse{Data: sohaapi.HostedAppDeploymentReceipt{
+				App: appOut,
+				Revision: sohaapi.HostedAppRevision{
+					ID:             "rev_dyn",
+					AppID:          dynamicApp.ID,
+					RevisionNumber: 1,
+					Kind:           sohaapi.HostedAppKindDynamic,
+					Status:         revisionStatus,
+					BuildPhase:     "building",
+					ImageRef:       "registry.local/soha/ops-api@sha256:abc",
+					BundleSha256:   strings.Repeat("e", 64),
+					FileCount:      4,
+					TotalBytes:     256,
+					CreatedBy:      "u-1",
+					CreatedAt:      now,
+				},
+			}})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	cfgPath := writeTestConfig(t, server.URL)
+
+	t.Run("dry-run without app-id stays local without server calls", func(t *testing.T) {
+		beforeCreate, beforePreflight, beforeUpload := createCalls, preflightCalls, uploadCalls
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), []string{"host", "deploy", sourceDir, "--kind", "dynamic", "--dry-run", "--output", "json"}, Runtime{
+			Out: &out, Err: &errBuf, ConfigPath: filepath.Join(t.TempDir(), "missing-config.json"),
+		})
+		if code != 0 {
+			t.Fatalf("local dry-run failed (%d): %s", code, errBuf.String())
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+			t.Fatalf("decode dry-run json: %v\n%s", err, out.String())
+		}
+		if payload["dryRun"] != "local_only" || payload["serverPreflight"] != "not_run" {
+			t.Fatalf("unexpected dry-run payload: %+v", payload)
+		}
+		if _, ok := payload["allowed"]; ok {
+			t.Fatalf("local dry-run must not report an Allowed verdict: %+v", payload)
+		}
+		if fileCount, _ := payload["fileCount"].(float64); fileCount <= 0 {
+			t.Fatalf("expected local scan file count, got %+v", payload)
+		}
+		if createCalls != beforeCreate || preflightCalls != beforePreflight || uploadCalls != beforeUpload {
+			t.Fatalf("unexpected server calls: create=%d preflight=%d upload=%d", createCalls, preflightCalls, uploadCalls)
+		}
+	})
+
+	t.Run("rejects --spa for dynamic before server calls", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), []string{"host", "deploy", sourceDir, "--kind", "dynamic", "--spa", "--yes"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath})
+		if code != 2 || !strings.Contains(errBuf.String(), "--spa is not supported for dynamic apps") {
+			t.Fatalf("code=%d err=%s", code, errBuf.String())
+		}
+		if createCalls != 0 || preflightCalls != 0 || uploadCalls != 0 {
+			t.Fatalf("unexpected server calls: create=%d preflight=%d upload=%d", createCalls, preflightCalls, uploadCalls)
+		}
+	})
+
+	t.Run("rejects kind mismatch before mutations", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), []string{"host", "deploy", sourceDir, "--app-id", "app_static", "--kind", "dynamic", "--yes"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath})
+		if code != 1 || !strings.Contains(errBuf.String(), "has kind \"static\", not \"dynamic\"") {
+			t.Fatalf("code=%d err=%s", code, errBuf.String())
+		}
+		if createCalls != 0 || preflightCalls != 0 || uploadCalls != 0 {
+			t.Fatalf("unexpected server calls: create=%d preflight=%d upload=%d", createCalls, preflightCalls, uploadCalls)
+		}
+	})
+
+	t.Run("creates dynamic app and reports validating revision without claiming ready", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), []string{"host", "deploy", sourceDir, "--kind", "dynamic", "--name", "Ops API", "--yes"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath})
+		if code != 0 {
+			t.Fatalf("deploy failed (%d): %s", code, errBuf.String())
+		}
+		if lastCreate.Kind != sohaapi.HostedAppKindDynamic || lastCreate.SpaFallback != nil || !strings.HasPrefix(lastCreate.IdempotencyKey, "host-app-dyn-") {
+			t.Fatalf("unexpected create request: %+v", lastCreate)
+		}
+		if lastPreflight.Kind != sohaapi.HostedAppKindDynamic || lastPreflight.SpaFallback != nil {
+			t.Fatalf("unexpected preflight request: %+v", lastPreflight)
+		}
+		if strings.Contains(lastUpload, "spaFallback") {
+			t.Fatalf("dynamic upload must not send spaFallback: %s", lastUpload)
+		}
+		for _, want := range []string{
+			"Revision: rev_dyn (r1)",
+			"Kind: dynamic",
+			"Revision Status: validating",
+			"Build Phase: building",
+			"Image: registry.local/soha/ops-api@sha256:abc",
+			"Deployment: revision is validating, not ready.",
+			"Check: soha host revisions app_dyn --revision rev_dyn --output json",
+		} {
+			if !strings.Contains(out.String(), want) {
+				t.Fatalf("deploy output missing %q:\n%s", want, out.String())
+			}
+		}
+		if strings.Contains(out.String(), "Revision Status: ready") {
+			t.Fatalf("output must not claim ready while validating:\n%s", out.String())
+		}
+	})
+
+	t.Run("fails when the upload receipt reports a failed revision", func(t *testing.T) {
+		var out, errBuf bytes.Buffer
+		args := []string{"host", "deploy", sourceDir, "--kind", "dynamic", "--name", "Ops API", "--idempotency-key", "replay-failed-key", "--yes", "--output", "json"}
+		code := Run(context.Background(), args, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath})
+		if code != 1 || !strings.Contains(errBuf.String(), "new --idempotency-key") {
+			t.Fatalf("code=%d err=%s", code, errBuf.String())
+		}
+		var receipt sohaapi.HostedAppDeploymentReceipt
+		if err := json.Unmarshal(out.Bytes(), &receipt); err != nil || receipt.Revision.Status != sohaapi.HostedAppRevisionStatusFailed {
+			t.Fatalf("expected failed revision receipt, got %s: %v", out.String(), err)
+		}
+	})
+}
+
 func readTarGzMemberNames(t *testing.T, archive []byte) []string {
 	t.Helper()
 	gz, err := gzip.NewReader(bytes.NewReader(archive))

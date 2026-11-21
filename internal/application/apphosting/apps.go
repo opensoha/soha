@@ -149,6 +149,10 @@ func (s *Service) createAppWithReason(ctx context.Context, principal domainident
 	if err != nil {
 		return sohaapi.HostedApp{}, false, err
 	}
+	maxApps := settings.MaxAppsPerOwner
+	if candidate.Kind == sohaapi.HostedAppKindDynamic {
+		maxApps = min(maxApps, 5)
+	}
 
 	for attempt := 0; attempt < 5; attempt++ {
 		dnsLabel, err := domainapphosting.AllocateDNSLabel(req.Slug, candidate.Name)
@@ -159,12 +163,12 @@ func (s *Service) createAppWithReason(ctx context.Context, principal domainident
 		if initialApproval != nil {
 			initialApproval.AppDNSLabel = dnsLabel
 		}
-		created, savedApproval, reused, err := s.repo.CreateAppWithApproval(ctx, candidate, settings.MaxAppsPerOwner, initialApproval)
+		created, savedApproval, reused, err := s.repo.CreateAppWithApproval(ctx, candidate, maxApps, initialApproval)
 		if errors.Is(err, ErrDNSLabelConflict) {
 			continue
 		}
 		if err != nil {
-			return sohaapi.HostedApp{}, false, wrapAppQuotaError(err, settings.MaxAppsPerOwner)
+			return sohaapi.HostedApp{}, false, wrapAppQuotaError(err, maxApps)
 		}
 		if !reused {
 			s.recordCreateAppAudits(ctx, principal, created, savedApproval)

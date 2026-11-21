@@ -704,7 +704,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		},
 	}})
 
-	contentSecurity, err := newContentSecurityServices(infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, auditService, identityMFAService, cfg.Security.CredentialEncryptionKeys.Active().Secret())
+	contentSecurity, err := newContentSecurityServices(ctx, cfg.Database, infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, auditService, identityMFAService, cfg.Security.CredentialEncryptionKeys.Active().Secret())
 	if err != nil {
 		infra.cancel()
 		return nil, err

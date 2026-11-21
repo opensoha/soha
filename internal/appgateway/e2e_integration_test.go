@@ -190,6 +190,10 @@ type e2eEnv struct {
 }
 
 func setupE2EEnv(t *testing.T) *e2eEnv {
+	return setupE2ERuntimeEnv(t, nil, nil)
+}
+
+func setupE2ERuntimeEnv(t *testing.T, backend appapphosting.DynamicBackend, relay http.RoundTripper) *e2eEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	appaccess.SetRolePermissionMatrix(nil)
@@ -207,6 +211,7 @@ func setupE2EEnv(t *testing.T) *e2eEnv {
 		&auditCapture{},
 		appapphosting.WithSessionValidator(sessions),
 		appapphosting.WithVisitorIDSecret("e2e-pairwise-visitor-secret-key-01"),
+		appapphosting.WithDynamicBackend(backend),
 	)
 	if err != nil {
 		t.Fatalf("new apphosting service: %v", err)
@@ -234,6 +239,9 @@ func setupE2EEnv(t *testing.T) *e2eEnv {
 		CookieSecret:  "0123456789abcdef0123456789abcdef-cookie-secret",
 		S3Prefix:      "hosted-apps",
 	}
+	if backend != nil {
+		gwCfg.RuntimeNamespace = "task135-runtime"
+	}
 	gwSrv1, err := appgateway.NewServer(gwCfg, appgateway.WithObjectReader(bucket))
 	if err != nil {
 		t.Fatalf("NewServer app-gateway replica 1: %v", err)
@@ -241,6 +249,10 @@ func setupE2EEnv(t *testing.T) *e2eEnv {
 	gwSrv2, err := appgateway.NewServer(gwCfg, appgateway.WithObjectReader(bucket))
 	if err != nil {
 		t.Fatalf("NewServer app-gateway replica 2: %v", err)
+	}
+	if relay != nil {
+		appgateway.SetRuntimeTransportForTest(gwSrv1, relay)
+		appgateway.SetRuntimeTransportForTest(gwSrv2, relay)
 	}
 	gatewayHTTP := httptest.NewServer(gwSrv1.Handler())
 	t.Cleanup(gatewayHTTP.Close)

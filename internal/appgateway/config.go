@@ -13,31 +13,34 @@ import (
 )
 
 const (
-	EnvListenAddr        = "SOHA_APP_GATEWAY_LISTEN_ADDR"
-	EnvHTTPRedirectAddr  = "SOHA_APP_GATEWAY_HTTP_REDIRECT_ADDR"
-	EnvHealthAddr        = "SOHA_APP_GATEWAY_HEALTH_ADDR"
-	EnvAppsDomain        = "SOHA_APP_GATEWAY_APPS_DOMAIN"
-	EnvPublicScheme      = "SOHA_APP_GATEWAY_PUBLIC_SCHEME"
-	EnvTLSCertFile       = "SOHA_APP_GATEWAY_TLS_CERT_FILE"
-	EnvTLSKeyFile        = "SOHA_APP_GATEWAY_TLS_KEY_FILE"
-	EnvTrustedProxies    = "SOHA_APP_GATEWAY_TRUSTED_PROXIES"
-	EnvCoreURL           = "SOHA_APP_GATEWAY_CORE_URL"
-	EnvPublicCoreURL     = "SOHA_APP_GATEWAY_PUBLIC_CORE_URL"
-	EnvTokenFile         = "SOHA_APP_GATEWAY_TOKEN_FILE"         //nolint:gosec // G101: environment variable name, not a credential
-	EnvToken             = "SOHA_APP_GATEWAY_TOKEN"              //nolint:gosec // G101: environment variable name, not a credential
-	EnvCookieSecretFile  = "SOHA_APP_GATEWAY_COOKIE_SECRET_FILE" //nolint:gosec // G101: environment variable name, not a credential
-	EnvCookieSecret      = "SOHA_APP_GATEWAY_COOKIE_SECRET"      //nolint:gosec // G101: environment variable name, not a credential
-	EnvS3Endpoint        = "SOHA_APP_GATEWAY_S3_ENDPOINT"
-	EnvS3Bucket          = "SOHA_APP_GATEWAY_S3_BUCKET"
-	EnvS3Region          = "SOHA_APP_GATEWAY_S3_REGION"
-	EnvS3Prefix          = "SOHA_APP_GATEWAY_S3_PREFIX"
-	EnvS3PathStyle       = "SOHA_APP_GATEWAY_S3_PATH_STYLE"
-	EnvS3Insecure        = "SOHA_APP_GATEWAY_S3_INSECURE"
-	EnvS3AccessKeyFile   = "SOHA_APP_GATEWAY_S3_ACCESS_KEY_FILE"
-	EnvS3SecretKeyFile   = "SOHA_APP_GATEWAY_S3_SECRET_KEY_FILE" //nolint:gosec // G101: environment variable name, not a credential
-	EnvS3AccessKeyID     = "SOHA_APP_GATEWAY_S3_ACCESS_KEY_ID"
-	EnvS3SecretAccessKey = "SOHA_APP_GATEWAY_S3_SECRET_ACCESS_KEY" //nolint:gosec // G101: environment variable name, not a credential
-	EnvDecisionCacheTTL  = "SOHA_APP_GATEWAY_DECISION_CACHE_TTL"
+	EnvListenAddr               = "SOHA_APP_GATEWAY_LISTEN_ADDR"
+	EnvHTTPRedirectAddr         = "SOHA_APP_GATEWAY_HTTP_REDIRECT_ADDR"
+	EnvHealthAddr               = "SOHA_APP_GATEWAY_HEALTH_ADDR"
+	EnvAppsDomain               = "SOHA_APP_GATEWAY_APPS_DOMAIN"
+	EnvPublicScheme             = "SOHA_APP_GATEWAY_PUBLIC_SCHEME"
+	EnvTLSCertFile              = "SOHA_APP_GATEWAY_TLS_CERT_FILE"
+	EnvTLSKeyFile               = "SOHA_APP_GATEWAY_TLS_KEY_FILE"
+	EnvTrustedProxies           = "SOHA_APP_GATEWAY_TRUSTED_PROXIES"
+	EnvCoreURL                  = "SOHA_APP_GATEWAY_CORE_URL"
+	EnvPublicCoreURL            = "SOHA_APP_GATEWAY_PUBLIC_CORE_URL"
+	EnvTokenFile                = "SOHA_APP_GATEWAY_TOKEN_FILE"         //nolint:gosec // G101: environment variable name, not a credential
+	EnvToken                    = "SOHA_APP_GATEWAY_TOKEN"              //nolint:gosec // G101: environment variable name, not a credential
+	EnvCookieSecretFile         = "SOHA_APP_GATEWAY_COOKIE_SECRET_FILE" //nolint:gosec // G101: environment variable name, not a credential
+	EnvCookieSecret             = "SOHA_APP_GATEWAY_COOKIE_SECRET"      //nolint:gosec // G101: environment variable name, not a credential
+	EnvS3Endpoint               = "SOHA_APP_GATEWAY_S3_ENDPOINT"
+	EnvS3Bucket                 = "SOHA_APP_GATEWAY_S3_BUCKET"
+	EnvS3Region                 = "SOHA_APP_GATEWAY_S3_REGION"
+	EnvS3Prefix                 = "SOHA_APP_GATEWAY_S3_PREFIX"
+	EnvS3PathStyle              = "SOHA_APP_GATEWAY_S3_PATH_STYLE"
+	EnvS3Insecure               = "SOHA_APP_GATEWAY_S3_INSECURE"
+	EnvS3AccessKeyFile          = "SOHA_APP_GATEWAY_S3_ACCESS_KEY_FILE"
+	EnvS3SecretKeyFile          = "SOHA_APP_GATEWAY_S3_SECRET_KEY_FILE" //nolint:gosec // G101: environment variable name, not a credential
+	EnvS3AccessKeyID            = "SOHA_APP_GATEWAY_S3_ACCESS_KEY_ID"
+	EnvS3SecretAccessKey        = "SOHA_APP_GATEWAY_S3_SECRET_ACCESS_KEY" //nolint:gosec // G101: environment variable name, not a credential
+	EnvDecisionCacheTTL         = "SOHA_APP_GATEWAY_DECISION_CACHE_TTL"
+	EnvRuntimeNamespace         = "SOHA_APP_GATEWAY_RUNTIME_NAMESPACE"
+	EnvRuntimeClusterDomain     = "SOHA_APP_GATEWAY_RUNTIME_CLUSTER_DOMAIN"
+	DefaultRuntimeClusterDomain = "cluster.local"
 )
 
 const (
@@ -98,6 +101,8 @@ type Config struct {
 	S3SecretAccessKey string
 
 	DecisionCacheTTL     time.Duration
+	RuntimeNamespace     string
+	RuntimeClusterDomain string
 	trustedProxyPrefixes []netip.Prefix
 }
 
@@ -128,31 +133,33 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		ListenAddr:        defaultString(get(EnvListenAddr), DefaultListenAddr),
-		HTTPRedirectAddr:  get(EnvHTTPRedirectAddr),
-		HealthAddr:        defaultString(get(EnvHealthAddr), DefaultHealthAddr),
-		AppsDomain:        get(EnvAppsDomain),
-		PublicScheme:      defaultString(strings.ToLower(get(EnvPublicScheme)), DefaultPublicScheme),
-		TLSCertFile:       get(EnvTLSCertFile),
-		TLSKeyFile:        get(EnvTLSKeyFile),
-		TrustedProxies:    splitCSV(get(EnvTrustedProxies)),
-		CoreURL:           get(EnvCoreURL),
-		PublicCoreURL:     get(EnvPublicCoreURL),
-		TokenFile:         get(EnvTokenFile),
-		Token:             get(EnvToken),
-		CookieSecretFile:  get(EnvCookieSecretFile),
-		CookieSecret:      get(EnvCookieSecret),
-		S3Endpoint:        get(EnvS3Endpoint),
-		S3Bucket:          get(EnvS3Bucket),
-		S3Region:          defaultString(get(EnvS3Region), DefaultS3Region),
-		S3Prefix:          get(EnvS3Prefix),
-		S3PathStyle:       pathStyle,
-		S3Insecure:        insecure,
-		S3AccessKeyFile:   get(EnvS3AccessKeyFile),
-		S3SecretKeyFile:   get(EnvS3SecretKeyFile),
-		S3AccessKeyID:     get(EnvS3AccessKeyID),
-		S3SecretAccessKey: get(EnvS3SecretAccessKey),
-		DecisionCacheTTL:  ttl,
+		ListenAddr:           defaultString(get(EnvListenAddr), DefaultListenAddr),
+		HTTPRedirectAddr:     get(EnvHTTPRedirectAddr),
+		HealthAddr:           defaultString(get(EnvHealthAddr), DefaultHealthAddr),
+		AppsDomain:           get(EnvAppsDomain),
+		PublicScheme:         defaultString(strings.ToLower(get(EnvPublicScheme)), DefaultPublicScheme),
+		TLSCertFile:          get(EnvTLSCertFile),
+		TLSKeyFile:           get(EnvTLSKeyFile),
+		TrustedProxies:       splitCSV(get(EnvTrustedProxies)),
+		CoreURL:              get(EnvCoreURL),
+		PublicCoreURL:        get(EnvPublicCoreURL),
+		TokenFile:            get(EnvTokenFile),
+		Token:                get(EnvToken),
+		CookieSecretFile:     get(EnvCookieSecretFile),
+		CookieSecret:         get(EnvCookieSecret),
+		S3Endpoint:           get(EnvS3Endpoint),
+		S3Bucket:             get(EnvS3Bucket),
+		S3Region:             defaultString(get(EnvS3Region), DefaultS3Region),
+		S3Prefix:             get(EnvS3Prefix),
+		S3PathStyle:          pathStyle,
+		S3Insecure:           insecure,
+		S3AccessKeyFile:      get(EnvS3AccessKeyFile),
+		S3SecretKeyFile:      get(EnvS3SecretKeyFile),
+		S3AccessKeyID:        get(EnvS3AccessKeyID),
+		S3SecretAccessKey:    get(EnvS3SecretAccessKey),
+		DecisionCacheTTL:     ttl,
+		RuntimeNamespace:     get(EnvRuntimeNamespace),
+		RuntimeClusterDomain: get(EnvRuntimeClusterDomain),
 	}
 	if err := cfg.NormalizeAndValidate(true); err != nil {
 		return Config{}, err
@@ -187,6 +194,24 @@ func (c *Config) NormalizeAndValidate(requireS3 bool) error {
 	c.trustedProxyPrefixes = prefixes
 	if c.DecisionCacheTTL < 0 {
 		return errors.New("decision cache TTL must not be negative")
+	}
+	runtimeNamespace, err := validateRuntimeNamespace(c.RuntimeNamespace)
+	if err != nil {
+		return err
+	}
+	c.RuntimeNamespace = runtimeNamespace
+	runtimeDomain, err := validateRuntimeClusterDomain(c.RuntimeClusterDomain)
+	if err != nil {
+		return err
+	}
+	c.RuntimeClusterDomain = runtimeDomain
+	if c.RuntimeNamespace != "" {
+		if c.RuntimeClusterDomain == "" {
+			c.RuntimeClusterDomain = DefaultRuntimeClusterDomain
+		}
+		if c.DecisionCacheTTL != 0 {
+			return errors.New("dynamic app hosting requires a zero decision cache TTL")
+		}
 	}
 	if err := c.validateS3Config(requireS3); err != nil {
 		return err

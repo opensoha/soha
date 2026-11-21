@@ -5138,6 +5138,24 @@ func (e HostedAppListScope) Valid() bool {
 	}
 }
 
+// Defines values for HostedAppRevisionLogSource.
+const (
+	HostedAppRevisionLogSourceBuild   HostedAppRevisionLogSource = "build"
+	HostedAppRevisionLogSourceRuntime HostedAppRevisionLogSource = "runtime"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppRevisionLogSource enum.
+func (e HostedAppRevisionLogSource) Valid() bool {
+	switch e {
+	case HostedAppRevisionLogSourceBuild:
+		return true
+	case HostedAppRevisionLogSourceRuntime:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HostedAppRevisionStatus.
 const (
 	HostedAppRevisionStatusEvicted    HostedAppRevisionStatus = "evicted"
@@ -5159,6 +5177,27 @@ func (e HostedAppRevisionStatus) Valid() bool {
 	case HostedAppRevisionStatusUploading:
 		return true
 	case HostedAppRevisionStatusValidating:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppRuntimeUsageStatus.
+const (
+	HostedAppRuntimeUsageStatusAvailable   HostedAppRuntimeUsageStatus = "available"
+	HostedAppRuntimeUsageStatusNotEnabled  HostedAppRuntimeUsageStatus = "not_enabled"
+	HostedAppRuntimeUsageStatusUnavailable HostedAppRuntimeUsageStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppRuntimeUsageStatus enum.
+func (e HostedAppRuntimeUsageStatus) Valid() bool {
+	switch e {
+	case HostedAppRuntimeUsageStatusAvailable:
+		return true
+	case HostedAppRuntimeUsageStatusNotEnabled:
+		return true
+	case HostedAppRuntimeUsageStatusUnavailable:
 		return true
 	default:
 		return false
@@ -5231,6 +5270,24 @@ func (e HostedAppVisibilityMode) Valid() bool {
 	case HostedAppVisibilityModePrivate:
 		return true
 	case HostedAppVisibilityModeSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppVisitorAttribute.
+const (
+	HostedAppVisitorAttributeDepartment HostedAppVisitorAttribute = "department"
+	HostedAppVisitorAttributeEmail      HostedAppVisitorAttribute = "email"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppVisitorAttribute enum.
+func (e HostedAppVisitorAttribute) Valid() bool {
+	switch e {
+	case HostedAppVisitorAttributeDepartment:
+		return true
+	case HostedAppVisitorAttributeEmail:
 		return true
 	default:
 		return false
@@ -12118,19 +12175,19 @@ func (e PersonalEnvironmentState) Valid() bool {
 
 // Defines values for PersonalEnvironmentActionRequestAction.
 const (
-	Reconcile PersonalEnvironmentActionRequestAction = "reconcile"
-	Sleep     PersonalEnvironmentActionRequestAction = "sleep"
-	Wake      PersonalEnvironmentActionRequestAction = "wake"
+	PersonalEnvironmentActionRequestActionReconcile PersonalEnvironmentActionRequestAction = "reconcile"
+	PersonalEnvironmentActionRequestActionSleep     PersonalEnvironmentActionRequestAction = "sleep"
+	PersonalEnvironmentActionRequestActionWake      PersonalEnvironmentActionRequestAction = "wake"
 )
 
 // Valid indicates whether the value is a known member of the PersonalEnvironmentActionRequestAction enum.
 func (e PersonalEnvironmentActionRequestAction) Valid() bool {
 	switch e {
-	case Reconcile:
+	case PersonalEnvironmentActionRequestActionReconcile:
 		return true
-	case Sleep:
+	case PersonalEnvironmentActionRequestActionSleep:
 		return true
-	case Wake:
+	case PersonalEnvironmentActionRequestActionWake:
 		return true
 	default:
 		return false
@@ -20358,6 +20415,15 @@ type DLPShadowSample struct {
 	SizeBytes int64              `json:"sizeBytes"`
 }
 
+// DecideHostedAppVisitorAttributesRequest defines model for DecideHostedAppVisitorAttributesRequest.
+type DecideHostedAppVisitorAttributesRequest struct {
+	// Fields Approved subset. Empty fields with a request identifier reject the request.
+	Fields []HostedAppVisitorAttribute `json:"fields"`
+
+	// RequestID Pending request identifier. Omit with empty fields to revoke the existing grant.
+	RequestID string `json:"requestId,omitempty"`
+}
+
 // DeleteHostedAppRequest defines model for DeleteHostedAppRequest.
 type DeleteHostedAppRequest struct {
 	ConfirmationName string `json:"confirmationName"`
@@ -24349,6 +24415,12 @@ type HostedAppDeploymentResponse struct {
 	Data HostedAppDeploymentReceipt `json:"data"`
 }
 
+// HostedAppEnvironmentVariableInput defines model for HostedAppEnvironmentVariableInput.
+type HostedAppEnvironmentVariableInput struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
 // HostedAppGatewayAccessCheckRequest defines model for HostedAppGatewayAccessCheckRequest.
 type HostedAppGatewayAccessCheckRequest struct {
 	Host      string `json:"host"`
@@ -24363,19 +24435,22 @@ type HostedAppGatewayAccessCheckResponse struct {
 
 // HostedAppGatewayAccessDecision defines model for HostedAppGatewayAccessDecision.
 type HostedAppGatewayAccessDecision struct {
-	ActiveRevisionID     string                      `json:"activeRevisionId,omitempty"`
-	AppID                string                      `json:"appId,omitempty"`
-	AppStatus            HostedAppStatus             `json:"appStatus,omitempty"`
-	Decision             HostedAppAccessDecisionKind `json:"decision"`
-	DNSLabel             string                      `json:"dnsLabel,omitempty"`
-	Files                []HostedAppManifestFile     `json:"files,omitempty"`
-	Host                 string                      `json:"host"`
-	Reason               string                      `json:"reason,omitempty"`
-	RouteGeneration      int64                       `json:"routeGeneration,omitempty"`
-	SpaFallback          bool                        `json:"spaFallback,omitempty"`
-	StorageIntegrationID string                      `json:"storageIntegrationId,omitempty"`
-	StoragePrefix        string                      `json:"storagePrefix,omitempty"`
-	User                 *HostedAppVisitorIdentity   `json:"user,omitempty"`
+	ActiveRevisionID string                      `json:"activeRevisionId,omitempty"`
+	AppID            string                      `json:"appId,omitempty"`
+	AppStatus        HostedAppStatus             `json:"appStatus,omitempty"`
+	Decision         HostedAppAccessDecisionKind `json:"decision"`
+	DNSLabel         string                      `json:"dnsLabel,omitempty"`
+	Files            []HostedAppManifestFile     `json:"files,omitempty"`
+	Host             string                      `json:"host"`
+	Reason           string                      `json:"reason,omitempty"`
+	RouteGeneration  int64                       `json:"routeGeneration,omitempty"`
+
+	// RuntimeService Cluster-local service name for a dynamic revision, resolved in the gateway's configured runtime namespace.
+	RuntimeService       string                    `json:"runtimeService,omitempty"`
+	SpaFallback          bool                      `json:"spaFallback,omitempty"`
+	StorageIntegrationID string                    `json:"storageIntegrationId,omitempty"`
+	StoragePrefix        string                    `json:"storagePrefix,omitempty"`
+	User                 *HostedAppVisitorIdentity `json:"user,omitempty"`
 }
 
 // HostedAppKind defines model for HostedAppKind.
@@ -24446,17 +24521,23 @@ type HostedAppResponse struct {
 
 // HostedAppRevision defines model for HostedAppRevision.
 type HostedAppRevision struct {
-	ActivatedAt          *time.Time              `json:"activatedAt,omitempty"`
-	AppID                string                  `json:"appId"`
-	BundleSha256         string                  `json:"bundleSha256"`
-	CreatedAt            time.Time               `json:"createdAt"`
-	CreatedBy            string                  `json:"createdBy"`
-	Description          string                  `json:"description,omitempty"`
-	FailureReason        string                  `json:"failureReason,omitempty"`
-	FailureStage         string                  `json:"failureStage,omitempty"`
-	FileCount            int32                   `json:"fileCount"`
-	ID                   string                  `json:"id"`
-	IdempotencyKey       string                  `json:"idempotencyKey,omitempty"`
+	ActivatedAt *time.Time `json:"activatedAt,omitempty"`
+	AppID       string     `json:"appId"`
+
+	// BuildPhase Current dynamic deployment phase, when a build or readiness check is in progress.
+	BuildPhase     string    `json:"buildPhase,omitempty"`
+	BundleSha256   string    `json:"bundleSha256"`
+	CreatedAt      time.Time `json:"createdAt"`
+	CreatedBy      string    `json:"createdBy"`
+	Description    string    `json:"description,omitempty"`
+	FailureReason  string    `json:"failureReason,omitempty"`
+	FailureStage   string    `json:"failureStage,omitempty"`
+	FileCount      int32     `json:"fileCount"`
+	ID             string    `json:"id"`
+	IdempotencyKey string    `json:"idempotencyKey,omitempty"`
+
+	// ImageRef Immutable OCI image reference verified for this dynamic revision.
+	ImageRef             string                  `json:"imageRef,omitempty"`
 	Kind                 HostedAppKind           `json:"kind"`
 	RevisionNumber       int64                   `json:"revisionNumber"`
 	SpaFallback          bool                    `json:"spaFallback"`
@@ -24477,6 +24558,27 @@ type HostedAppRevisionListResponse struct {
 	Data HostedAppRevisionList `json:"data"`
 }
 
+// HostedAppRevisionLog defines model for HostedAppRevisionLog.
+type HostedAppRevisionLog struct {
+	At      time.Time                  `json:"at"`
+	Code    string                     `json:"code"`
+	Message string                     `json:"message"`
+	Source  HostedAppRevisionLogSource `json:"source"`
+}
+
+// HostedAppRevisionLogSource defines model for HostedAppRevisionLog.Source.
+type HostedAppRevisionLogSource string
+
+// HostedAppRevisionLogs defines model for HostedAppRevisionLogs.
+type HostedAppRevisionLogs struct {
+	Items []HostedAppRevisionLog `json:"items"`
+}
+
+// HostedAppRevisionLogsResponse defines model for HostedAppRevisionLogsResponse.
+type HostedAppRevisionLogsResponse struct {
+	Data HostedAppRevisionLogs `json:"data"`
+}
+
 // HostedAppRevisionResponse defines model for HostedAppRevisionResponse.
 type HostedAppRevisionResponse struct {
 	Data HostedAppRevision `json:"data"`
@@ -24491,6 +24593,39 @@ type HostedAppRollbackRequest struct {
 	Reason           string `json:"reason,omitempty"`
 	TargetRevisionID string `json:"targetRevisionId"`
 }
+
+// HostedAppRuntimeConfig defines model for HostedAppRuntimeConfig.
+type HostedAppRuntimeConfig struct {
+	DataWarningBytes int64 `json:"dataWarningBytes"`
+
+	// EnvironmentKeys Names of configured environment variables. Values are write-only.
+	EnvironmentKeys []string `json:"environmentKeys"`
+
+	// SensitivePublisherIDs Current maintainers explicitly trusted by the application owner to publish with runtime credentials.
+	SensitivePublisherIDs []string `json:"sensitivePublisherIds,omitempty"`
+}
+
+// HostedAppRuntimeConfigResponse defines model for HostedAppRuntimeConfigResponse.
+type HostedAppRuntimeConfigResponse struct {
+	Data HostedAppRuntimeConfig `json:"data"`
+}
+
+// HostedAppRuntimeUsage defines model for HostedAppRuntimeUsage.
+type HostedAppRuntimeUsage struct {
+	Bytes        *int64                      `json:"bytes,omitempty"`
+	SampledAt    *time.Time                  `json:"sampledAt,omitempty"`
+	Status       HostedAppRuntimeUsageStatus `json:"status"`
+	Warning      bool                        `json:"warning"`
+	WarningBytes int64                       `json:"warningBytes"`
+}
+
+// HostedAppRuntimeUsageResponse defines model for HostedAppRuntimeUsageResponse.
+type HostedAppRuntimeUsageResponse struct {
+	Data HostedAppRuntimeUsage `json:"data"`
+}
+
+// HostedAppRuntimeUsageStatus defines model for HostedAppRuntimeUsageStatus.
+type HostedAppRuntimeUsageStatus string
 
 // HostedAppStatus defines model for HostedAppStatus.
 type HostedAppStatus string
@@ -24597,8 +24732,32 @@ type HostedAppVisibilityScope struct {
 	UserIDs []string                `json:"userIds,omitempty"`
 }
 
+// HostedAppVisitorAttribute defines model for HostedAppVisitorAttribute.
+type HostedAppVisitorAttribute string
+
+// HostedAppVisitorAttributeRequest defines model for HostedAppVisitorAttributeRequest.
+type HostedAppVisitorAttributeRequest struct {
+	Fields      []HostedAppVisitorAttribute `json:"fields"`
+	ID          string                      `json:"id"`
+	Reason      string                      `json:"reason"`
+	RequestedAt time.Time                   `json:"requestedAt"`
+}
+
+// HostedAppVisitorAttributes defines model for HostedAppVisitorAttributes.
+type HostedAppVisitorAttributes struct {
+	Granted []HostedAppVisitorAttribute       `json:"granted"`
+	Pending *HostedAppVisitorAttributeRequest `json:"pending,omitempty"`
+}
+
+// HostedAppVisitorAttributesResponse defines model for HostedAppVisitorAttributesResponse.
+type HostedAppVisitorAttributesResponse struct {
+	Data HostedAppVisitorAttributes `json:"data"`
+}
+
 // HostedAppVisitorIdentity defines model for HostedAppVisitorIdentity.
 type HostedAppVisitorIdentity struct {
+	// Department Present only when the application has an administrator-approved grant.
+	Department  string   `json:"department,omitempty"`
 	DisplayName string   `json:"displayName"`
 	Email       string   `json:"email,omitempty"`
 	ID          string   `json:"id"`
@@ -36271,6 +36430,12 @@ type RepositoryProtocol string
 // RepositoryProvider defines model for RepositoryProvider.
 type RepositoryProvider string
 
+// RequestHostedAppVisitorAttributesRequest defines model for RequestHostedAppVisitorAttributesRequest.
+type RequestHostedAppVisitorAttributesRequest struct {
+	Fields []HostedAppVisitorAttribute `json:"fields"`
+	Reason string                      `json:"reason"`
+}
+
 // ResourceCapability defines model for ResourceCapability.
 type ResourceCapability struct {
 	ContextSchema  JSONSchema `json:"contextSchema,omitempty"`
@@ -38006,6 +38171,18 @@ type UpdateHostedAppRequest struct {
 	Description *string `json:"description,omitempty"`
 	Name        *string `json:"name,omitempty"`
 	SpaFallback *bool   `json:"spaFallback,omitempty"`
+}
+
+// UpdateHostedAppRuntimeConfigRequest defines model for UpdateHostedAppRuntimeConfigRequest.
+type UpdateHostedAppRuntimeConfigRequest struct {
+	// AcknowledgeSensitiveAccess Required when granting any maintainer access to application data and runtime secrets through publishing.
+	AcknowledgeSensitiveAccess bool     `json:"acknowledgeSensitiveAccess,omitempty"`
+	DataWarningBytes           *int64   `json:"dataWarningBytes,omitempty"`
+	RemoveEnvironment          []string `json:"removeEnvironment,omitempty"`
+
+	// SensitivePublisherIDs Replace the current owner-consented set. An empty list clears all consent.
+	SensitivePublisherIDs []string                            `json:"sensitivePublisherIds,omitzero"`
+	SetEnvironment        []HostedAppEnvironmentVariableInput `json:"setEnvironment,omitempty"`
 }
 
 // UpdateHostedAppVisibilityRequest defines model for UpdateHostedAppVisibilityRequest.
@@ -40572,6 +40749,7 @@ type WorkspaceHostedAppDeploymentRequest struct {
 	AppID            string                    `json:"appId,omitempty"`
 	Description      string                    `json:"description,omitempty"`
 	IdempotencyKey   string                    `json:"idempotencyKey"`
+	Kind             HostedAppKind             `json:"kind,omitempty"`
 	Name             string                    `json:"name,omitempty"`
 	Slug             string                    `json:"slug,omitempty"`
 	Source           WorkspaceHostedAppSource  `json:"source"`
@@ -44164,6 +44342,9 @@ type BringHostedAppOnlineJSONRequestBody = HostedAppLifecycleActionRequest
 // RollbackHostedAppJSONRequestBody defines body for RollbackHostedApp for application/json ContentType.
 type RollbackHostedAppJSONRequestBody = HostedAppRollbackRequest
 
+// UpdateHostedAppRuntimeConfigJSONRequestBody defines body for UpdateHostedAppRuntimeConfig for application/json ContentType.
+type UpdateHostedAppRuntimeConfigJSONRequestBody = UpdateHostedAppRuntimeConfigRequest
+
 // SuspendHostedAppJSONRequestBody defines body for SuspendHostedApp for application/json ContentType.
 type SuspendHostedAppJSONRequestBody = HostedAppSuspendRequest
 
@@ -44178,6 +44359,12 @@ type UpdateHostedAppVisibilityJSONRequestBody = UpdateHostedAppVisibilityRequest
 
 // WithdrawHostedAppVisibilityApprovalJSONRequestBody defines body for WithdrawHostedAppVisibilityApproval for application/json ContentType.
 type WithdrawHostedAppVisibilityApprovalJSONRequestBody = HostedAppLifecycleActionRequest
+
+// RequestHostedAppVisitorAttributesJSONRequestBody defines body for RequestHostedAppVisitorAttributes for application/json ContentType.
+type RequestHostedAppVisitorAttributesJSONRequestBody = RequestHostedAppVisitorAttributesRequest
+
+// DecideHostedAppVisitorAttributesJSONRequestBody defines body for DecideHostedAppVisitorAttributes for application/json ContentType.
+type DecideHostedAppVisitorAttributesJSONRequestBody = DecideHostedAppVisitorAttributesRequest
 
 // CheckHostedAppGatewayAccessJSONRequestBody defines body for CheckHostedAppGatewayAccess for application/json ContentType.
 type CheckHostedAppGatewayAccessJSONRequestBody = HostedAppGatewayAccessCheckRequest
@@ -53601,6 +53788,15 @@ const ObserveOnly PersonalEnvironmentTemplateMode = "observe-only"
 
 // Retained for Go SDK source compatibility.
 const RestrictedWrite PersonalEnvironmentTemplateMode = "restricted-write"
+
+// Retained for Go SDK source compatibility.
+const Wake PersonalEnvironmentActionRequestAction = "wake"
+
+// Retained for Go SDK source compatibility.
+const Sleep PersonalEnvironmentActionRequestAction = "sleep"
+
+// Retained for Go SDK source compatibility.
+const Reconcile PersonalEnvironmentActionRequestAction = "reconcile"
 
 // Retained for Go SDK source compatibility.
 const Browser PersonalGuestRuntimeInputKind = "browser"

@@ -64,14 +64,15 @@ func WithClock(now func() time.Time) Option {
 
 // Server serves hosted workspace applications with unified SSO, live access decisions, and S3 static streaming.
 type Server struct {
-	cfg       Config
-	secrets   *secretProvider
-	core      CoreClient
-	objects   ObjectReader
-	cache     *decisionCache
-	now       func() time.Time
-	requireS3 bool
-	draining  atomic.Bool
+	cfg              Config
+	secrets          *secretProvider
+	core             CoreClient
+	objects          ObjectReader
+	cache            *decisionCache
+	now              func() time.Time
+	requireS3        bool
+	runtimeTransport http.RoundTripper
+	draining         atomic.Bool
 }
 
 // NewServer validates configuration and builds a ready-to-serve Workspace App Hosting gateway.
@@ -108,13 +109,14 @@ func NewServer(cfg Config, opts ...Option) (*Server, error) {
 		objectReader = s3Reader
 	}
 	return &Server{
-		cfg:       cfg,
-		secrets:   secrets,
-		core:      coreClient,
-		objects:   objectReader,
-		cache:     newDecisionCache(cfg.DecisionCacheTTL, nowFn),
-		now:       nowFn,
-		requireS3: requireS3,
+		cfg:              cfg,
+		secrets:          secrets,
+		core:             coreClient,
+		objects:          objectReader,
+		cache:            newDecisionCache(cfg.DecisionCacheTTL, nowFn),
+		now:              nowFn,
+		requireS3:        requireS3,
+		runtimeTransport: newRuntimeTransport(),
 	}, nil
 }
 
@@ -466,7 +468,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, host validated
 		writeJSONError(w, http.StatusServiceUnavailable, "GATEWAY_UNAVAILABLE", "Gateway session verifier unavailable")
 		return
 	}
-	decision, err := s.evaluateAccess(r.Context(), host, session)
+	req := sohaapi.HostedAppGatewayAccessCheckRequest{Host: host.Authority}
+	if session != nil {
+		req.SessionID, req.UserID = session.SessionID, session.UserID
+	}
+	decision, err := s.requestAccessDecision(r.Context(), req)
 	if err != nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "GATEWAY_UNAVAILABLE", "Access verification unavailable")
 		return
@@ -518,6 +524,10 @@ func (s *Server) handleAppRequest(w http.ResponseWriter, r *http.Request, host v
 	case sohaapi.HostedAppAccessDecisionKindForbidden:
 		writePlatformStatus(w, r, http.StatusForbidden, "FORBIDDEN", "无权访问该应用", "你不在当前应用的授权可见范围内。")
 	case sohaapi.HostedAppAccessDecisionKindAllow:
+		if decision.RuntimeService != "" {
+			s.serveDynamicApp(w, r, host, cookies, session, decision)
+			return
+		}
 		s.serveAuthorizedApp(w, r, decision)
 	default:
 		writePlatformStatus(w, r, http.StatusForbidden, "FORBIDDEN", "无权访问该应用", "你不在当前应用的授权可见范围内。")
@@ -645,11 +655,7 @@ func (s *Server) evaluateAccess(ctx context.Context, host validatedHost, session
 			return cached, nil
 		}
 	}
-	gatewayToken, err := s.secrets.GatewayToken()
-	if err != nil {
-		return sohaapi.HostedAppGatewayAccessDecision{}, err
-	}
-	decision, err := s.core.CheckHostedAppGatewayAccess(ctx, req, gatewayToken)
+	decision, err := s.requestAccessDecision(ctx, req)
 	if err != nil {
 		return sohaapi.HostedAppGatewayAccessDecision{}, err
 	}
@@ -657,6 +663,14 @@ func (s *Server) evaluateAccess(ctx context.Context, host validatedHost, session
 		s.cache.put(cacheKey, decision, sessionExp)
 	}
 	return decision, nil
+}
+
+func (s *Server) requestAccessDecision(ctx context.Context, req sohaapi.HostedAppGatewayAccessCheckRequest) (sohaapi.HostedAppGatewayAccessDecision, error) {
+	gatewayToken, err := s.secrets.GatewayToken()
+	if err != nil {
+		return sohaapi.HostedAppGatewayAccessDecision{}, err
+	}
+	return s.core.CheckHostedAppGatewayAccess(ctx, req, gatewayToken)
 }
 
 func (s *Server) readVisitorSession(w http.ResponseWriter, host string, cookies []*http.Cookie) (*sessionClaims, bool, error) {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	appapphosting "github.com/opensoha/soha/internal/application/apphosting"
 	domainapphosting "github.com/opensoha/soha/internal/domain/apphosting"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -224,7 +226,7 @@ func (r *PostgresRepository) CreateAppWithApproval(
 		}
 		if maxAppsPerOwner > 0 {
 			var count int64
-			if err := tx.Raw(`SELECT COUNT(1) FROM public.hosted_apps WHERE owner_user_id = ?`, candidate.OwnerUserID).Row().Scan(&count); err != nil {
+			if err := tx.Raw(`SELECT COUNT(1) FROM public.hosted_apps WHERE owner_user_id = ? AND kind = ?`, candidate.OwnerUserID, candidate.Kind).Row().Scan(&count); err != nil {
 				return err
 			}
 			if count >= int64(maxAppsPerOwner) {
@@ -428,7 +430,7 @@ func (r *PostgresRepository) MutateApp(ctx context.Context, appID string, mutate
 		if err != nil {
 			return err
 		}
-		next, err := mutate(current)
+		next, err := mutate(cloneApp(current))
 		if err != nil {
 			return err
 		}
@@ -437,6 +439,11 @@ func (r *PostgresRepository) MutateApp(ctx context.Context, appID string, mutate
 		next.OwnerUserID = current.OwnerUserID
 		if err := persistHostedAppUpdate(tx, next); err != nil {
 			return err
+		}
+		if !slices.Equal(current.MaintainerUserIDs, next.MaintainerUserIDs) {
+			if err := pruneSensitivePublishers(tx, next); err != nil {
+				return err
+			}
 		}
 		if err := syncOrInvalidateApprovalOnMutateTx(tx, current, next); err != nil {
 			return err
@@ -490,7 +497,9 @@ func persistHostedAppUpdate(tx *gorm.DB, app domainapphosting.App) error {
 const hostedRevisionColumns = `id, app_id, revision_number, description, kind, status,
 	bundle_sha256, file_count, total_bytes, spa_fallback, storage_integration_id,
 	storage_prefix, manifest_json, failure_stage, failure_reason,
-	idempotency_key, created_by, created_at, activated_at`
+	idempotency_key, created_by, created_at, activated_at,
+	source_key, build_template, image_ref, build_phase, database_enabled, data_schema, claim_id,
+	next_check_at, claim_expires_at, runtime_environment`
 
 func (r *PostgresRepository) FindRevisionByIdempotencyKey(ctx context.Context, appID, idempotencyKey string) (domainapphosting.Revision, error) {
 	rev, err := scanHostedRevision(r.db.WithContext(ctx).Raw(`
@@ -520,6 +529,7 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 			return err
 		}
 		stored := draft
+		stored.RuntimeEnvironment = nil
 		stored.RevisionNumber = nextNum
 		stored.Status = sohaapi.HostedAppRevisionStatusUploading
 		stored.Files = nonNilManifest(draft.Files)
@@ -555,7 +565,7 @@ func (r *PostgresRepository) FailRevision(ctx context.Context, appID, revisionID
 	res := r.db.WithContext(ctx).Exec(`
 		UPDATE public.hosted_app_revisions
 		SET status = 'failed', failure_stage = ?, failure_reason = ?
-		WHERE app_id = ? AND id = ?
+		WHERE app_id = ? AND id = ? AND (kind <> 'dynamic' OR status = 'uploading')
 	`, stage, truncateString(reason, 1024), appID, revisionID)
 	if res.Error != nil {
 		return res.Error
@@ -570,7 +580,13 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 	var out appapphosting.ActivateRevisionOutput
 	var rejectedConflict error
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		tx := dbtx.DB(ctx, r.db)
+		if input.DynamicClaimID != "" {
+			if err := lockEnabledDynamicHosting(ctx, tx); err != nil {
+				return err
+			}
+		}
 		app, err := getAppWhere(ctx, tx, "id = ?", input.AppID, true)
 		if err != nil {
 			return err
@@ -579,9 +595,21 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		if err != nil {
 			return err
 		}
-		if rejectedErr := rejectUnactivatableRevisionTx(tx, app, input); rejectedErr != nil {
-			rejectedConflict = rejectedErr
-			return nil
+		if err := checkRevisionActivation(app, rev, input); err != nil {
+			return err
+		}
+		failureReason, rejection, err := revisionActivationRejectionTx(tx, app, rev, input)
+		if err != nil {
+			return err
+		}
+		if rejection != nil {
+			rejectedConflict = rejection
+			return markRevisionActivationFailedTx(tx, input, failureReason)
+		}
+		if rev.Kind == sohaapi.HostedAppKindDynamic && input.BeforeActivate != nil {
+			if err := input.BeforeActivate(ctx); err != nil {
+				return err
+			}
 		}
 
 		wasDraft := app.Status == sohaapi.HostedAppStatusDraft
@@ -593,7 +621,8 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		nowUTC := input.Now.UTC()
 		if err := tx.Exec(`
 			UPDATE public.hosted_app_revisions
-			SET status = 'ready', spa_fallback = ?, manifest_json = ?::jsonb, activated_at = ?
+			SET status = 'ready', spa_fallback = ?, manifest_json = ?::jsonb, activated_at = ?,
+				build_phase = '', claim_id = '', claim_expires_at = NULL, next_check_at = NULL
 			WHERE app_id = ? AND id = ?
 		`, input.SpaFallback, string(manifestBytes), nowUTC, input.AppID, input.RevisionID).Error; err != nil {
 			return err
@@ -602,6 +631,7 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		rev.SpaFallback = input.SpaFallback
 		rev.Files = nonNilManifest(input.Files)
 		rev.ActivatedAt = &nowUTC
+		clearDynamicRevisionWork(&rev)
 
 		if wasDraft {
 			app.Status = sohaapi.HostedAppStatusOnline
@@ -613,21 +643,11 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		if err := persistHostedAppUpdate(tx, app); err != nil {
 			return err
 		}
-		if wasDraft {
-			if err := tx.Exec(`
-				UPDATE public.hosted_app_visibility_approvals
-				SET base_route_generation = ?
-				WHERE app_id = ? AND status = 'pending' AND requester_user_id = ? AND base_route_generation = ?
-			`, app.RouteGeneration, app.ID, app.OwnerUserID, prevGen).Error; err != nil {
-				return err
-			}
-		} else {
-			if err := invalidateAppPendingApprovalsTx(tx, app.ID, "route_generation_changed", nowUTC); err != nil {
-				return err
-			}
+		if err := updateApprovalAfterActivation(tx, app, wasDraft, prevGen, nowUTC); err != nil {
+			return err
 		}
 
-		evicted, err := evictExcessPostgresRevisions(ctx, tx, app.ID, app.ActiveRevisionID, input.RetainedRevisionsMax)
+		evicted, err := evictExcessPostgresRevisions(ctx, tx, app.ID, app.ActiveRevisionID, input.RetainedRevisionsMax, nowUTC)
 		if err != nil {
 			return err
 		}
@@ -643,7 +663,18 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 	return out, nil
 }
 
-func evictExcessPostgresRevisions(ctx context.Context, tx *gorm.DB, appID, activeRevisionID string, retainedMax int32) ([]domainapphosting.Revision, error) {
+func updateApprovalAfterActivation(tx *gorm.DB, app domainapphosting.App, wasDraft bool, previousGeneration int64, now time.Time) error {
+	if !wasDraft {
+		return invalidateAppPendingApprovalsTx(tx, app.ID, "route_generation_changed", now)
+	}
+	return tx.Exec(`
+		UPDATE public.hosted_app_visibility_approvals
+		SET base_route_generation = ?
+		WHERE app_id = ? AND status = 'pending' AND requester_user_id = ? AND base_route_generation = ?
+	`, app.RouteGeneration, app.ID, app.OwnerUserID, previousGeneration).Error
+}
+
+func evictExcessPostgresRevisions(ctx context.Context, tx *gorm.DB, appID, activeRevisionID string, retainedMax int32, now time.Time) ([]domainapphosting.Revision, error) {
 	if retainedMax <= 0 {
 		return nil, nil
 	}
@@ -659,10 +690,15 @@ func evictExcessPostgresRevisions(ctx context.Context, tx *gorm.DB, appID, activ
 			kept++
 			continue
 		}
-		if err := tx.Exec(`UPDATE public.hosted_app_revisions SET status = 'evicted' WHERE app_id = ? AND id = ?`, appID, item.ID).Error; err != nil {
+		item.Status = sohaapi.HostedAppRevisionStatusEvicted
+		var cleanupDue *time.Time
+		if dynamicCleanupStatus(item) {
+			item.NextCheckAt = now
+			cleanupDue = &now
+		}
+		if err := tx.Exec(`UPDATE public.hosted_app_revisions SET status = 'evicted', next_check_at = ? WHERE app_id = ? AND id = ?`, cleanupDue, appID, item.ID).Error; err != nil {
 			return nil, err
 		}
-		item.Status = sohaapi.HostedAppRevisionStatusEvicted
 		evicted = append(evicted, item)
 	}
 	return evicted, nil
@@ -716,6 +752,17 @@ func (r *PostgresRepository) ListRevisions(ctx context.Context, appID string, li
 }
 
 func (r *PostgresRepository) RollbackRevision(ctx context.Context, appID, targetRevisionID, idempotencyKey string, now time.Time) (domainapphosting.App, domainapphosting.Revision, bool, error) {
+	return r.rollbackRevision(ctx, appID, targetRevisionID, idempotencyKey, "", now)
+}
+
+func (r *PostgresRepository) RollbackRevisionAs(ctx context.Context, appID, targetRevisionID, idempotencyKey, actorUserID string, now time.Time) (domainapphosting.App, domainapphosting.Revision, bool, error) {
+	if strings.TrimSpace(actorUserID) == "" {
+		return domainapphosting.App{}, domainapphosting.Revision{}, false, apperrors.ErrAccessDenied
+	}
+	return r.rollbackRevision(ctx, appID, targetRevisionID, idempotencyKey, actorUserID, now)
+}
+
+func (r *PostgresRepository) rollbackRevision(ctx context.Context, appID, targetRevisionID, idempotencyKey, actorUserID string, now time.Time) (domainapphosting.App, domainapphosting.Revision, bool, error) {
 	var updatedApp domainapphosting.App
 	var targetRev domainapphosting.Revision
 	var reused bool
@@ -725,12 +772,21 @@ func (r *PostgresRepository) RollbackRevision(ctx context.Context, appID, target
 		if err != nil {
 			return err
 		}
+		if (actorUserID != "" || app.Kind == sohaapi.HostedAppKindDynamic) && !app.IsOwnerOrMaintainer(actorUserID) {
+			return apperrors.ErrAccessDenied
+		}
 		if trimmedKey != "" {
 			replayedRev, hit, replayErr := checkRollbackIdempotencyTx(ctx, tx, appID, targetRevisionID, trimmedKey)
 			if replayErr != nil {
 				return replayErr
 			}
 			if hit {
+				if err := checkRollbackRevisionKind(app, replayedRev); err != nil {
+					return err
+				}
+				if err := checkRollbackRuntimeTx(tx, app, replayedRev, actorUserID); err != nil {
+					return err
+				}
 				updatedApp = app
 				targetRev = replayedRev
 				reused = true
@@ -744,8 +800,11 @@ func (r *PostgresRepository) RollbackRevision(ctx context.Context, appID, target
 		if err != nil {
 			return err
 		}
-		if rev.Status != sohaapi.HostedAppRevisionStatusReady {
-			return apperrors.NewBusiness(apperrors.ErrConflict, "revision_not_ready", "target revision is not in ready state", "目标版本不可用于回滚")
+		if err := checkRollbackCandidate(app, rev); err != nil {
+			return err
+		}
+		if err := checkRollbackRuntimeTx(tx, app, rev, actorUserID); err != nil {
+			return err
 		}
 		nowUTC := now.UTC()
 		if err := applyRollbackUpdatesTx(tx, &app, &rev, trimmedKey, nowUTC); err != nil {
@@ -974,7 +1033,14 @@ func (d *PostgresAudienceDirectory) ResolveVisitor(ctx context.Context, userID s
 	var teamsRaw []byte
 	err := d.db.WithContext(ctx).Raw(`
 		SELECT u.id::text, u.username, COALESCE(NULLIF(u.display_name, ''), u.username),
-		       u.email, u.status,
+		       u.email, COALESCE((
+		           SELECT t.name
+		           FROM public.user_team_bindings utb
+		           JOIN public.teams t ON t.id = utb.team_id
+		           WHERE utb.user_id = u.id
+		           ORDER BY t.name ASC
+		           LIMIT 1
+		       ), '') AS department, u.status,
 		       COALESCE((
 		           SELECT json_agg(utb.team_id ORDER BY utb.team_id)
 		           FROM public.user_team_bindings utb
@@ -984,7 +1050,7 @@ func (d *PostgresAudienceDirectory) ResolveVisitor(ctx context.Context, userID s
 		WHERE u.id::text = ?
 		LIMIT 1
 	`, strings.TrimSpace(userID)).Row().Scan(
-		&profile.ID, &profile.Username, &profile.DisplayName, &profile.Email, &status, &teamsRaw,
+		&profile.ID, &profile.Username, &profile.DisplayName, &profile.Email, &profile.Department, &status, &teamsRaw,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainapphosting.VisitorProfile{}, apperrors.ErrNotFound
@@ -1036,14 +1102,16 @@ func scanHostedApp(scanner rowScanner) (domainapphosting.App, error) {
 func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 	var rev domainapphosting.Revision
 	var kindStr, statusStr string
-	var manifestRaw []byte
-	var activatedAt sql.NullTime
+	var manifestRaw, environmentRaw []byte
+	var activatedAt, nextCheckAt, claimExpiresAt sql.NullTime
 	err := scanner.Scan(
 		&rev.ID, &rev.AppID, &rev.RevisionNumber, &rev.Description, &kindStr, &statusStr,
 		&rev.BundleSha256, &rev.FileCount, &rev.TotalBytes, &rev.SpaFallback,
 		&rev.StorageIntegrationID, &rev.StoragePrefix, &manifestRaw,
 		&rev.FailureStage, &rev.FailureReason, &rev.IdempotencyKey,
 		&rev.CreatedBy, &rev.CreatedAt, &activatedAt,
+		&rev.SourceKey, &rev.BuildTemplate, &rev.ImageRef, &rev.BuildPhase, &rev.Database, &rev.DataSchema, &rev.ClaimID,
+		&nextCheckAt, &claimExpiresAt, &environmentRaw,
 	)
 	if err != nil {
 		return domainapphosting.Revision{}, err
@@ -1055,7 +1123,14 @@ func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 			return domainapphosting.Revision{}, err
 		}
 	}
+	if len(environmentRaw) > 0 {
+		if err := json.Unmarshal(environmentRaw, &rev.RuntimeEnvironment); err != nil {
+			return domainapphosting.Revision{}, err
+		}
+	}
 	rev.CreatedAt = rev.CreatedAt.UTC()
+	rev.NextCheckAt = nextCheckAt.Time.UTC()
+	rev.ClaimExpiresAt = claimExpiresAt.Time.UTC()
 	if activatedAt.Valid {
 		t := activatedAt.Time.UTC()
 		rev.ActivatedAt = &t

@@ -32,6 +32,7 @@ type App struct {
 	HTTP                  *http.Server
 	PersonalGuest         *http.Server
 	cancel                context.CancelFunc
+	appHostingDone        <-chan struct{}
 }
 
 func (a *App) Run() error {
@@ -90,6 +91,13 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.cancel != nil {
 		a.cancel()
+	}
+	if a.appHostingDone != nil {
+		select {
+		case <-a.appHostingDone:
+		case <-ctx.Done():
+			shutdownErr = errors.Join(shutdownErr, ctx.Err())
+		}
 	}
 	if a.CopilotService != nil {
 		shutdownErr = errors.Join(shutdownErr, a.CopilotService.Stop(ctx))

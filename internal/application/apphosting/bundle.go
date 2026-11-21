@@ -196,6 +196,10 @@ func appendSpoolChunk(mem *bytes.Buffer, tempFile **os.File, chunk []byte, total
 }
 
 func extractAndValidateStaticBundle(ctx context.Context, archive io.Reader, settings domainapphosting.Settings) (*validatedBundle, error) {
+	return extractAndValidateBundle(ctx, archive, settings, true)
+}
+
+func extractAndValidateBundle(ctx context.Context, archive io.Reader, settings domainapphosting.Settings, static bool) (*validatedBundle, error) {
 	gz, err := gzip.NewReader(archive)
 	if err != nil {
 		return nil, newBundleRejectedError("invalid_gzip", "uploaded payload is not a valid gzip stream", "上传文件不是合法的 gzip 压缩流")
@@ -241,7 +245,11 @@ func extractAndValidateStaticBundle(ctx context.Context, archive io.Reader, sett
 		}
 		totalBytes += int64(len(data))
 
-		contentType, err := classifyAndInspectBundleFile(ctx, relPath, data, &scannedTextBytes)
+		classify := classifyAndInspectBundleFile
+		if !static {
+			classify = classifyDynamicSourceFile
+		}
+		contentType, err := classify(ctx, relPath, data, &scannedTextBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -256,9 +264,9 @@ func extractAndValidateStaticBundle(ctx context.Context, archive io.Reader, sett
 	}
 
 	if len(files) == 0 {
-		return nil, newBundleRejectedError("empty_tar_bundle", "static bundle contains no regular files", "静态压缩包未包含任何普通文件")
+		return nil, newBundleRejectedError("empty_tar_bundle", "bundle contains no regular files", "压缩包未包含任何普通文件")
 	}
-	if !hasIndexHTML {
+	if static && !hasIndexHTML {
 		return nil, newBundleRejectedError("missing_index_html", "static bundle must contain root index.html", "静态站点压缩包根目录必须包含 index.html")
 	}
 	slices.SortFunc(files, func(a, b extractedBundleFile) int {

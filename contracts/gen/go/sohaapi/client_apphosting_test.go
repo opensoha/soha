@@ -13,6 +13,25 @@ import (
 	"time"
 )
 
+func TestHostedAppRuntimeConfigPreservesEmptyConsent(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ids  []string
+		want string
+	}{
+		{name: "omit", want: `{}`},
+		{name: "clear", ids: []string{}, want: `{"sensitivePublisherIds":[]}`},
+		{name: "grant", ids: []string{"maintainer"}, want: `{"sensitivePublisherIds":["maintainer"]}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(UpdateHostedAppRuntimeConfigRequest{SensitivePublisherIDs: test.ids})
+			if err != nil || string(body) != test.want {
+				t.Fatalf("marshal = %s, %v, want %s", body, err, test.want)
+			}
+		})
+	}
+}
+
 func TestAppHostingEnumsValid(t *testing.T) {
 	for _, kind := range []HostedAppKind{HostedAppKindStatic, HostedAppKindDynamic} {
 		if !kind.Valid() {

@@ -340,6 +340,13 @@ func (r *MemoryRepository) TransferAppOwnership(_ context.Context, appID, newOwn
 	app.RouteGeneration++
 	app.UpdatedAt = nowUTC
 	r.appsByID[app.ID] = cloneApp(app)
+	if runtimeConfig, ok := r.runtimeConfigs[app.ID]; ok {
+		runtimeConfig.VisitorGrant = domainapphosting.VisitorGrant{}
+		runtimeConfig.VisitorRequest = nil
+		runtimeConfig.SensitivePublisherIDs = nil
+		runtimeConfig.SensitivePublisherOwnerID = ""
+		r.runtimeConfigs[app.ID] = runtimeConfig
+	}
 	r.invalidatePendingApprovalForAppLocked(app.ID, "ownership_transferred", nowUTC)
 	return cloneApp(app), previousOwner, nil
 }
@@ -360,12 +367,17 @@ func (r *MemoryRepository) DeleteApp(_ context.Context, appID string, verify fun
 	}
 
 	revs := make([]domainapphosting.Revision, 0, len(r.revisions[trimmedID]))
+	now := time.Now()
 	for _, rev := range r.revisions[trimmedID] {
 		revs = append(revs, cloneRevision(rev))
+		if app.Kind == sohaapi.HostedAppKindDynamic && rev.Kind == sohaapi.HostedAppKindDynamic {
+			r.deletedRuntimeWork[rev.ID] = deletedRuntimeWork(rev, now)
+		}
 	}
 	delete(r.appsByID, trimmedID)
 	delete(r.appIDByDNS, strings.ToLower(app.DNSLabel))
 	delete(r.revisions, trimmedID)
+	delete(r.runtimeConfigs, trimmedID)
 	for hash, ticket := range r.authTickets {
 		if ticket.AppID == trimmedID {
 			delete(r.authTickets, hash)

@@ -89,6 +89,12 @@ func (s *Service) validateWorkspaceDeployRequest(
 	if !req.Source.Kind.Valid() {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_workspace_source", "source.kind must be personal_environment or conversation_artifact", "发布来源必须为 personal_environment 或 conversation_artifact")
 	}
+	if req.Kind != "" && !req.Kind.Valid() {
+		return apperrors.ErrInvalidArgument
+	}
+	if req.Kind == sohaapi.HostedAppKindDynamic && req.Source.Kind != sohaapi.WorkspaceHostedAppSourceKindPersonalEnvironment {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "dynamic_workspace_source_required", "dynamic hosting requires a personal workspace source", "动态应用需要个人工作空间源码目录")
+	}
 	if utf8.RuneCountInString(strings.TrimSpace(req.VisibilityReason)) > 500 {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_reason", "visibilityReason must not exceed 500 characters", "公开申请原因不能超过 500 个字符")
 	}
@@ -126,6 +132,12 @@ func (s *Service) validateExistingTargetAppPreconditions(
 	}
 	if !existing.IsOwnerOrMaintainer(principal.UserID) {
 		return apperrors.ErrAccessDenied
+	}
+	if req.Kind != "" && req.Kind != existing.Kind {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "app_kind_immutable", "application kind cannot be changed", "现有应用的类型不能修改")
+	}
+	if existing.Kind == sohaapi.HostedAppKindDynamic && req.Source.Kind != sohaapi.WorkspaceHostedAppSourceKindPersonalEnvironment {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "dynamic_workspace_source_required", "dynamic hosting requires a personal workspace source", "动态应用需要个人工作空间源码目录")
 	}
 	if (strings.TrimSpace(req.Name) != "" || req.Visibility != nil) && !existing.IsOwner(principal.UserID) {
 		return apperrors.ErrAccessDenied
@@ -172,11 +184,15 @@ func (s *Service) resolveWorkspaceTargetApp(
 	}
 	createKey := deriveChildIdempotencyKey("ws-create", principal.UserID, idemKey)
 	appName := firstNonEmpty(req.Name, inferredTitle, "Workspace App")
+	kind := req.Kind
+	if kind == "" {
+		kind = sohaapi.HostedAppKindStatic
+	}
 	created, reused, err := s.createAppWithReason(ctx, principal, sohaapi.CreateHostedAppRequest{
 		Name:           appName,
 		Slug:           req.Slug,
 		Description:    req.Description,
-		Kind:           sohaapi.HostedAppKindStatic,
+		Kind:           kind,
 		SpaFallback:    req.SpaFallback,
 		Visibility:     req.Visibility,
 		IdempotencyKey: createKey,

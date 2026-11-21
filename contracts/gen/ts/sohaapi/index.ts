@@ -16076,6 +16076,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/app-hosting/apps/{appId}/runtime-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read masked dynamic application configuration */
+        get: operations["getHostedAppRuntimeConfig"];
+        /** Update dynamic application configuration for subsequent revisions */
+        put: operations["updateHostedAppRuntimeConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/runtime-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read bounded managed database usage and warning state */
+        get: operations["getHostedAppRuntimeUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/visitor-attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the application visitor attribute grant and pending request */
+        get: operations["getHostedAppVisitorAttributes"];
+        /** Review a pending request or revoke granted visitor attributes as an administrator */
+        put: operations["decideHostedAppVisitorAttributes"];
+        /** Request additional visitor attributes as the application owner */
+        post: operations["requestHostedAppVisitorAttributes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/revisions/{revisionId}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read redacted platform build and runtime events for a revision */
+        get: operations["getHostedAppRevisionLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/app-hosting/apps/{appId}/rollback": {
         parameters: {
             query?: never;
@@ -36427,6 +36498,8 @@ export interface components {
             entryFileName?: string;
         };
         WorkspaceHostedAppDeploymentRequest: {
+            /** @description Application kind for a new workspace deployment. Defaults to static. Dynamic deployments require a personal environment source. */
+            kind?: components["schemas"]["HostedAppKind"];
             appId?: string;
             name?: string;
             slug?: string;
@@ -36501,6 +36574,10 @@ export interface components {
             kind: components["schemas"]["HostedAppKind"];
             status: components["schemas"]["HostedAppRevisionStatus"];
             bundleSha256: string;
+            /** @description Immutable OCI image reference verified for this dynamic revision. */
+            imageRef?: string;
+            /** @description Current dynamic deployment phase, when a build or readiness check is in progress. */
+            buildPhase?: string;
             /** Format: int32 */
             fileCount: number;
             /** Format: int64 */
@@ -36540,10 +36617,92 @@ export interface components {
             idempotencyKey?: string;
             reason?: string;
         };
+        HostedAppRuntimeConfig: {
+            /** @description Names of configured environment variables. Values are write-only. */
+            environmentKeys: string[];
+            /** @description Current maintainers explicitly trusted by the application owner to publish with runtime credentials. */
+            sensitivePublisherIds?: string[];
+            /** Format: int64 */
+            dataWarningBytes: number;
+        };
+        HostedAppEnvironmentVariableInput: {
+            name: string;
+            value: string;
+        };
+        UpdateHostedAppRuntimeConfigRequest: {
+            setEnvironment?: components["schemas"]["HostedAppEnvironmentVariableInput"][];
+            removeEnvironment?: string[];
+            /** @description Replace the current owner-consented set. An empty list clears all consent. */
+            sensitivePublisherIds?: string[];
+            /** @description Required when granting any maintainer access to application data and runtime secrets through publishing. */
+            acknowledgeSensitiveAccess?: boolean;
+            /** Format: int64 */
+            dataWarningBytes?: number;
+        };
+        /** @enum {string} */
+        HostedAppRuntimeUsageStatus: "available" | "not_enabled" | "unavailable";
+        HostedAppRuntimeUsage: {
+            status: components["schemas"]["HostedAppRuntimeUsageStatus"];
+            /** Format: int64 */
+            bytes?: number;
+            /** Format: int64 */
+            warningBytes: number;
+            warning: boolean;
+            /** Format: date-time */
+            sampledAt?: string;
+        };
+        /** @enum {string} */
+        HostedAppVisitorAttribute: "email" | "department";
+        HostedAppVisitorAttributeRequest: {
+            id: string;
+            reason: string;
+            fields: components["schemas"]["HostedAppVisitorAttribute"][];
+            /** Format: date-time */
+            requestedAt: string;
+        };
+        HostedAppVisitorAttributes: {
+            granted: components["schemas"]["HostedAppVisitorAttribute"][];
+            pending?: components["schemas"]["HostedAppVisitorAttributeRequest"];
+        };
+        RequestHostedAppVisitorAttributesRequest: {
+            fields: components["schemas"]["HostedAppVisitorAttribute"][];
+            reason: string;
+        };
+        DecideHostedAppVisitorAttributesRequest: {
+            /** @description Pending request identifier. Omit with empty fields to revoke the existing grant. */
+            requestId?: string;
+            /** @description Approved subset. Empty fields with a request identifier reject the request. */
+            fields: components["schemas"]["HostedAppVisitorAttribute"][];
+        };
+        HostedAppRevisionLog: {
+            /** @enum {string} */
+            source: "build" | "runtime";
+            code: string;
+            message: string;
+            /** Format: date-time */
+            at: string;
+        };
+        HostedAppRevisionLogs: {
+            items: components["schemas"]["HostedAppRevisionLog"][];
+        };
+        HostedAppRuntimeConfigResponse: {
+            data: components["schemas"]["HostedAppRuntimeConfig"];
+        };
+        HostedAppRuntimeUsageResponse: {
+            data: components["schemas"]["HostedAppRuntimeUsage"];
+        };
+        HostedAppVisitorAttributesResponse: {
+            data: components["schemas"]["HostedAppVisitorAttributes"];
+        };
+        HostedAppRevisionLogsResponse: {
+            data: components["schemas"]["HostedAppRevisionLogs"];
+        };
         HostedAppVisitorIdentity: {
             id: string;
             username?: string;
             displayName: string;
+            /** @description Present only when the application has an administrator-approved grant. */
+            department?: string;
             email?: string;
             teams?: string[];
         };
@@ -36586,6 +36745,8 @@ export interface components {
             routeGeneration?: number;
             spaFallback?: boolean;
             activeRevisionId?: string;
+            /** @description Cluster-local service name for a dynamic revision, resolved in the gateway's configured runtime namespace. */
+            runtimeService?: string;
             storageIntegrationId?: string;
             storagePrefix?: string;
             files?: components["schemas"]["HostedAppManifestFile"][];
@@ -39210,6 +39371,22 @@ export type HostedAppRevisionListResponse = components['schemas']['HostedAppRevi
 export type HostedAppDeploymentReceipt = components['schemas']['HostedAppDeploymentReceipt'];
 export type HostedAppDeploymentResponse = components['schemas']['HostedAppDeploymentResponse'];
 export type HostedAppRollbackRequest = components['schemas']['HostedAppRollbackRequest'];
+export type HostedAppRuntimeConfig = components['schemas']['HostedAppRuntimeConfig'];
+export type HostedAppEnvironmentVariableInput = components['schemas']['HostedAppEnvironmentVariableInput'];
+export type UpdateHostedAppRuntimeConfigRequest = components['schemas']['UpdateHostedAppRuntimeConfigRequest'];
+export type HostedAppRuntimeUsageStatus = components['schemas']['HostedAppRuntimeUsageStatus'];
+export type HostedAppRuntimeUsage = components['schemas']['HostedAppRuntimeUsage'];
+export type HostedAppVisitorAttribute = components['schemas']['HostedAppVisitorAttribute'];
+export type HostedAppVisitorAttributeRequest = components['schemas']['HostedAppVisitorAttributeRequest'];
+export type HostedAppVisitorAttributes = components['schemas']['HostedAppVisitorAttributes'];
+export type RequestHostedAppVisitorAttributesRequest = components['schemas']['RequestHostedAppVisitorAttributesRequest'];
+export type DecideHostedAppVisitorAttributesRequest = components['schemas']['DecideHostedAppVisitorAttributesRequest'];
+export type HostedAppRevisionLog = components['schemas']['HostedAppRevisionLog'];
+export type HostedAppRevisionLogs = components['schemas']['HostedAppRevisionLogs'];
+export type HostedAppRuntimeConfigResponse = components['schemas']['HostedAppRuntimeConfigResponse'];
+export type HostedAppRuntimeUsageResponse = components['schemas']['HostedAppRuntimeUsageResponse'];
+export type HostedAppVisitorAttributesResponse = components['schemas']['HostedAppVisitorAttributesResponse'];
+export type HostedAppRevisionLogsResponse = components['schemas']['HostedAppRevisionLogsResponse'];
 export type HostedAppVisitorIdentity = components['schemas']['HostedAppVisitorIdentity'];
 export type HostedAppTicketExchangeRequest = components['schemas']['HostedAppTicketExchangeRequest'];
 export type HostedAppTicketExchangeResult = components['schemas']['HostedAppTicketExchangeResult'];
@@ -73387,6 +73564,215 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getHostedAppRuntimeConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppRuntimeConfigResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    updateHostedAppRuntimeConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateHostedAppRuntimeConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppRuntimeConfigResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getHostedAppRuntimeUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppRuntimeUsageResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getHostedAppVisitorAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisitorAttributesResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    decideHostedAppVisitorAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideHostedAppVisitorAttributesRequest"];
+            };
+        };
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisitorAttributesResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    requestHostedAppVisitorAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestHostedAppVisitorAttributesRequest"];
+            };
+        };
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisitorAttributesResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getHostedAppRevisionLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+                revisionId: components["parameters"]["HostedAppRevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application hosting management result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppRevisionLogsResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };
     };

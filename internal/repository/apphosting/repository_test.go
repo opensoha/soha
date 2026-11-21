@@ -119,8 +119,8 @@ func TestPostgresRepositorySettingsQuotaTicketAndDNSConflict(t *testing.T) {
 	}
 	mock.ExpectBegin()
 	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("hosted_apps/owner/usr_1").WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT COUNT\(1\) FROM public\.hosted_apps WHERE owner_user_id = \$1`).
-		WithArgs("usr_1").
+	mock.ExpectQuery(`SELECT COUNT\(1\) FROM public\.hosted_apps WHERE owner_user_id = \$1 AND kind = \$2`).
+		WithArgs("usr_1", candidate.Kind).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	mock.ExpectRollback()
 
@@ -131,8 +131,8 @@ func TestPostgresRepositorySettingsQuotaTicketAndDNSConflict(t *testing.T) {
 	// Unique DNS label violation maps to ErrDNSLabelConflict.
 	mock.ExpectBegin()
 	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("hosted_apps/owner/usr_1").WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`SELECT COUNT\(1\) FROM public\.hosted_apps WHERE owner_user_id = \$1`).
-		WithArgs("usr_1").
+	mock.ExpectQuery(`SELECT COUNT\(1\) FROM public\.hosted_apps WHERE owner_user_id = \$1 AND kind = \$2`).
+		WithArgs("usr_1", candidate.Kind).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectExec(`INSERT INTO public\.hosted_apps`).
 		WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "hosted_apps_dns_label_key"})
@@ -197,11 +197,24 @@ func TestPostgresAudienceDirectorySearchAndLiveVisitorResolution(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT u\.id::text.*FROM public\.users u WHERE u\.id::text = \$1`).
 		WithArgs("usr_disabled").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "display_name", "email", "status", "teams"}).
-			AddRow("usr_disabled", "dave", "Dave", "dave@example.com", "disabled", []byte(`["team_fin"]`)))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "display_name", "email", "department", "status", "teams"}).
+			AddRow("usr_disabled", "dave", "Dave", "dave@example.com", "Finance", "disabled", []byte(`["team_fin"]`)))
 
 	if _, err := dir.ResolveVisitor(ctx, "usr_disabled"); !errors.Is(err, domainapphosting.ErrVisitorDisabled) {
 		t.Fatalf("ResolveVisitor disabled = %v, want ErrVisitorDisabled", err)
+	}
+
+	mock.ExpectQuery(`SELECT u\.id::text.*COALESCE.*public\.user_team_bindings.*AS department.*FROM public\.users u WHERE u\.id::text = \$1`).
+		WithArgs("usr_active").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "display_name", "email", "department", "status", "teams"}).
+			AddRow("usr_active", "alice", "Alice", "alice@example.com", "Finance", "active", []byte(`["team_fin","team_ops"]`)))
+
+	profile, err := dir.ResolveVisitor(ctx, "usr_active")
+	if err != nil {
+		t.Fatalf("ResolveVisitor active = %v", err)
+	}
+	if profile.Department != "Finance" || strings.Join(profile.TeamIDs, ",") != "team_fin,team_ops" {
+		t.Fatalf("ResolveVisitor active profile = %#v, want Department Finance and TeamIDs [team_fin team_ops]", profile)
 	}
 
 	memRepo := NewMemoryRepository()

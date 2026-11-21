@@ -14,6 +14,12 @@ import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
+import {
+  HostedAppRevisionLogs,
+  HostedAppRuntimeUsage,
+  HostedAppVisitorAttributes,
+} from '@/features/app-hosting/runtime-controls'
+import { useAuthStore } from '@/stores/auth-store'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
@@ -141,6 +147,10 @@ function HostedAppDetailDrawer({
     (detailQuery.isEnabled === false ? undefined : readableQueryData(detailQuery)) ?? app
   const visibleRevisions =
     revisionsQuery.isEnabled === false ? undefined : readableQueryData(revisionsQuery)
+  const [logRevision, setLogRevision] = useState<HostedAppRevision | null>(null)
+  const currentUserId = useAuthStore((state) => state.user?.userId ?? '')
+  const canUseControls = Boolean(app && canView && !queryAccessDenied(detailQuery))
+  const canReview = canManage && Boolean(currentUserId && currentUserId !== activeApp?.ownerUserId)
 
   const revisionColumns = useMemo<TableColumnsType<HostedAppRevision>>(
     () => [
@@ -195,8 +205,19 @@ function HostedAppDetailDrawer({
         width: 165,
         render: (value: string) => formatDateTime(value),
       },
+      {
+        title: '日志',
+        key: 'logs',
+        width: 125,
+        render: (_, rev) =>
+          canUseControls && rev.kind === 'dynamic' ? (
+            <Button type="link" size="small" onClick={() => setLogRevision(rev)}>
+              查看脱敏日志
+            </Button>
+          ) : null,
+      },
     ],
-    [activeApp?.activeRevisionId],
+    [activeApp?.activeRevisionId, canUseControls],
   )
 
   const statusMeta = activeApp ? formatHostedAppStatus(activeApp.status) : undefined
@@ -254,7 +275,10 @@ function HostedAppDetailDrawer({
           </Space>
         ) : null
       }
-      onClose={onClose}
+      onClose={() => {
+        setLogRevision(null)
+        onClose()
+      }}
     >
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="托管应用详情" />
       <ReadFeedback
@@ -396,6 +420,26 @@ function HostedAppDetailDrawer({
             ]}
           />
 
+          {canUseControls && activeApp.kind === 'dynamic' ? (
+            <HostedAppRuntimeUsage
+              key={activeApp.id}
+              appId={activeApp.id}
+              canSetWarning={canManage && activeApp.status !== 'suspended_by_admin'}
+            />
+          ) : null}
+          {canUseControls ? (
+            <HostedAppVisitorAttributes
+              key={activeApp.id}
+              appId={activeApp.id}
+              access={{
+                role: 'admin',
+                canReview,
+                canApprove: canReview && activeApp.status !== 'suspended_by_admin',
+                canRevoke: canManage,
+              }}
+            />
+          ) : null}
+
           <div className="soha-identity-app-hosting-drawer-section">
             <Text strong>历史版本记录</Text>
             <AdminTable
@@ -416,13 +460,18 @@ function HostedAppDetailDrawer({
               loading={revisionsQuery.isLoading}
               pagination={false}
               rowKey="id"
-              scroll={{ x: 640 }}
+              scroll={{ x: 780 }}
               tableSize="small"
               onRetry={() => {
                 if (revisionsQuery.isEnabled !== false) void revisionsQuery.refetch()
               }}
             />
           </div>
+          <HostedAppRevisionLogs
+            appId={activeApp.id}
+            revision={canUseControls && logRevision?.appId === activeApp.id ? logRevision : null}
+            onClose={() => setLogRevision(null)}
+          />
         </Space>
       ) : null}
     </Drawer>

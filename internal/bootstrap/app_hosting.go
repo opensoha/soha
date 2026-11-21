@@ -13,6 +13,7 @@ import (
 	appaudit "github.com/opensoha/soha/internal/application/audit"
 	appintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	storage "github.com/opensoha/soha/internal/infrastructure/softwareobjectstore"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	apphostingrepo "github.com/opensoha/soha/internal/repository/apphosting"
@@ -52,6 +53,8 @@ func (v appHostingSessionValidator) ValidateBrowserSession(ctx context.Context, 
 }
 
 func newAppHostingService(
+	ctx context.Context,
+	coreDB cfgpkg.DatabaseConfig,
 	infra *infrastructure,
 	sessions identitySessionReader,
 	visitorSecret string,
@@ -60,8 +63,17 @@ func newAppHostingService(
 	audit *appaudit.Service,
 ) (*appapphosting.Service, error) {
 	db := infra.databaseStore.DB()
+	objects := storage.NewProvider(connections)
+	dynamic, err := configureHostedDynamic(ctx, coreDB, db, objects)
+	if err != nil {
+		return nil, fmt.Errorf("configure dynamic app hosting: %w", err)
+	}
 	opts := []appapphosting.Option{
 		appapphosting.WithVisitorIDSecret(visitorSecret),
+		appapphosting.WithDynamicBackend(dynamic),
+	}
+	if dynamic != nil {
+		opts = append(opts, appapphosting.WithRuntimeConfigKey(dynamic.dataKey))
 	}
 	if sessions != nil {
 		opts = append(opts, appapphosting.WithSessionValidator(appHostingSessionValidator{sessions: sessions}))
@@ -71,7 +83,7 @@ func newAppHostingService(
 	}
 	svc, err := appapphosting.New(
 		apphostingrepo.NewRepository(db),
-		storage.NewProvider(connections),
+		objects,
 		apphostingrepo.NewAudienceDirectory(db),
 		permissions,
 		audit,

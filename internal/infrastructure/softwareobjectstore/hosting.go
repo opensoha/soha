@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
@@ -34,6 +35,28 @@ func (p *Provider) PutObject(ctx context.Context, integrationID, key, contentTyp
 		return 0, "", "", err
 	}
 	return store.PutObject(ctx, key, contentType, content)
+}
+
+// PresignHostedSource restricts the build pool to reading one validated source snapshot.
+func (p *Provider) PresignHostedSource(ctx context.Context, integrationID, key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return "", apperrors.ErrInvalidArgument
+	}
+	store, err := p.resolve(ctx, integrationID, true)
+	if err != nil {
+		return "", err
+	}
+	client, ok := store.client.(*s3.Client)
+	if !ok {
+		return "", apperrors.ErrServiceUnavailable
+	}
+	request, err := s3.NewPresignClient(client).PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(store.config.Bucket), Key: aws.String(store.objectKey(key)),
+	}, s3.WithPresignExpires(10*time.Minute))
+	if err != nil {
+		return "", errors.New("failed to sign hosted source snapshot")
+	}
+	return request.URL, nil
 }
 
 // DeleteKeys removes static hosting objects for evicted or failed revisions.

@@ -291,6 +291,16 @@ type Revision struct {
 	CreatedBy            string
 	CreatedAt            time.Time
 	ActivatedAt          *time.Time
+	SourceKey            string
+	BuildTemplate        string
+	ImageRef             string
+	BuildPhase           string
+	Database             bool
+	DataSchema           int
+	ClaimID              string
+	NextCheckAt          time.Time
+	ClaimExpiresAt       time.Time
+	RuntimeEnvironment   map[string]string `json:"-"`
 }
 
 func (r Revision) ToAPI() sohaapi.HostedAppRevision {
@@ -318,6 +328,8 @@ func (r Revision) ToAPI() sohaapi.HostedAppRevision {
 		CreatedBy:            r.CreatedBy,
 		CreatedAt:            r.CreatedAt.UTC(),
 		ActivatedAt:          activatedAt,
+		ImageRef:             r.ImageRef,
+		BuildPhase:           r.BuildPhase,
 	}
 }
 
@@ -353,6 +365,7 @@ type VisitorProfile struct {
 	Username    string
 	DisplayName string
 	Email       string
+	Department  string
 	TeamIDs     []string
 }
 

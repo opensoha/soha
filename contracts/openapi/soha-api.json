@@ -12920,6 +12920,29 @@
         ],
         "type": "object"
       },
+      "DecideHostedAppVisitorAttributesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "description": "Approved subset. Empty fields with a request identifier reject the request.",
+            "items": {
+              "$ref": "#/components/schemas/HostedAppVisitorAttribute"
+            },
+            "maxItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "requestId": {
+            "description": "Pending request identifier. Omit with empty fields to revoke the existing grant.",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields"
+        ],
+        "type": "object"
+      },
       "DeleteHostedAppRequest": {
         "additionalProperties": false,
         "properties": {
@@ -26724,6 +26747,27 @@
         ],
         "type": "object"
       },
+      "HostedAppEnvironmentVariableInput": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
       "HostedAppGatewayAccessCheckRequest": {
         "additionalProperties": false,
         "properties": {
@@ -26803,6 +26847,11 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "runtimeService": {
+            "description": "Cluster-local service name for a dynamic revision, resolved in the gateway's configured runtime namespace.",
+            "pattern": "^soha-app-[0-9a-f]{32}$",
+            "type": "string"
           },
           "spaFallback": {
             "type": "boolean"
@@ -27076,6 +27125,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "buildPhase": {
+            "description": "Current dynamic deployment phase, when a build or readiness check is in progress.",
+            "maxLength": 32,
+            "type": "string"
+          },
           "bundleSha256": {
             "maxLength": 128,
             "type": "string"
@@ -27113,6 +27167,11 @@
           },
           "idempotencyKey": {
             "maxLength": 128,
+            "type": "string"
+          },
+          "imageRef": {
+            "description": "Immutable OCI image reference verified for this dynamic revision.",
+            "maxLength": 512,
             "type": "string"
           },
           "kind": {
@@ -27190,6 +27249,65 @@
         ],
         "type": "object"
       },
+      "HostedAppRevisionLog": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "build",
+              "runtime"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "code",
+          "message",
+          "at"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionLogs": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppRevisionLog"
+            },
+            "maxItems": 50,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "HostedAppRevisionLogsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppRevisionLogs"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "HostedAppRevisionResponse": {
         "additionalProperties": false,
         "properties": {
@@ -27241,6 +27359,107 @@
           "targetRevisionId"
         ],
         "type": "object"
+      },
+      "HostedAppRuntimeConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "dataWarningBytes": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "environmentKeys": {
+            "description": "Names of configured environment variables. Values are write-only.",
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sensitivePublisherIds": {
+            "description": "Current maintainers explicitly trusted by the application owner to publish with runtime credentials.",
+            "items": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "environmentKeys",
+          "dataWarningBytes"
+        ],
+        "type": "object"
+      },
+      "HostedAppRuntimeConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppRuntimeConfig"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppRuntimeUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "sampledAt": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-pointer": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/HostedAppRuntimeUsageStatus"
+          },
+          "warning": {
+            "type": "boolean"
+          },
+          "warningBytes": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "warningBytes",
+          "warning"
+        ],
+        "type": "object"
+      },
+      "HostedAppRuntimeUsageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppRuntimeUsage"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppRuntimeUsageStatus": {
+        "enum": [
+          "available",
+          "not_enabled",
+          "unavailable"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppRuntimeUsageStatusAvailable",
+          "HostedAppRuntimeUsageStatusNotEnabled",
+          "HostedAppRuntimeUsageStatusUnavailable"
+        ]
       },
       "HostedAppStatus": {
         "enum": [
@@ -27643,9 +27862,85 @@
         ],
         "type": "object"
       },
+      "HostedAppVisitorAttribute": {
+        "enum": [
+          "email",
+          "department"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppVisitorAttributeEmail",
+          "HostedAppVisitorAttributeDepartment"
+        ]
+      },
+      "HostedAppVisitorAttributeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppVisitorAttribute"
+            },
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "fields",
+          "requestedAt"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisitorAttributes": {
+        "additionalProperties": false,
+        "properties": {
+          "granted": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppVisitorAttribute"
+            },
+            "type": "array"
+          },
+          "pending": {
+            "$ref": "#/components/schemas/HostedAppVisitorAttributeRequest"
+          }
+        },
+        "required": [
+          "granted"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisitorAttributesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppVisitorAttributes"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "HostedAppVisitorIdentity": {
         "additionalProperties": false,
         "properties": {
+          "department": {
+            "description": "Present only when the application has an administrator-approved grant.",
+            "maxLength": 256,
+            "type": "string"
+          },
           "displayName": {
             "maxLength": 256,
             "minLength": 1,
@@ -69981,6 +70276,30 @@
         ],
         "type": "string"
       },
+      "RequestHostedAppVisitorAttributesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppVisitorAttribute"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ResourceCapability": {
         "additionalProperties": false,
         "properties": {
@@ -76271,6 +76590,48 @@
           "spaFallback": {
             "type": "boolean",
             "x-go-pointer": true
+          }
+        },
+        "type": "object"
+      },
+      "UpdateHostedAppRuntimeConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgeSensitiveAccess": {
+            "description": "Required when granting any maintainer access to application data and runtime secrets through publishing.",
+            "type": "boolean"
+          },
+          "dataWarningBytes": {
+            "format": "int64",
+            "maximum": 1099511627776,
+            "minimum": 1,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "removeEnvironment": {
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "sensitivePublisherIds": {
+            "description": "Replace the current owner-consented set. An empty list clears all consent.",
+            "items": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "setEnvironment": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppEnvironmentVariableInput"
+            },
+            "maxItems": 32,
+            "type": "array"
           }
         },
         "type": "object"
@@ -83963,6 +84324,10 @@
             "maxLength": 128,
             "minLength": 1,
             "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind",
+            "description": "Application kind for a new workspace deployment. Defaults to static. Dynamic deployments require a personal environment source."
           },
           "name": {
             "maxLength": 128,
@@ -94231,6 +94596,53 @@
         ]
       }
     },
+    "/app-hosting/apps/{appId}/revisions/{revisionId}/logs": {
+      "get": {
+        "operationId": "getHostedAppRevisionLogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          },
+          {
+            "$ref": "#/components/parameters/HostedAppRevisionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRevisionLogsResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Read redacted platform build and runtime events for a revision",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
     "/app-hosting/apps/{appId}/rollback": {
       "post": {
         "operationId": "rollbackHostedApp",
@@ -94292,6 +94704,146 @@
           "requiresApproval": false,
           "riskLevel": "mutate"
         }
+      }
+    },
+    "/app-hosting/apps/{appId}/runtime-config": {
+      "get": {
+        "operationId": "getHostedAppRuntimeConfig",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRuntimeConfigResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Read masked dynamic application configuration",
+        "tags": [
+          "AppHosting"
+        ]
+      },
+      "put": {
+        "operationId": "updateHostedAppRuntimeConfig",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHostedAppRuntimeConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRuntimeConfigResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update dynamic application configuration for subsequent revisions",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/runtime-usage": {
+      "get": {
+        "operationId": "getHostedAppRuntimeUsage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppRuntimeUsageResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Read bounded managed database usage and warning state",
+        "tags": [
+          "AppHosting"
+        ]
       }
     },
     "/app-hosting/apps/{appId}/suspend": {
@@ -94568,6 +95120,154 @@
           }
         },
         "summary": "Withdraw the pending organization visibility approval request for a hosted application",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/apps/{appId}/visitor-attributes": {
+      "get": {
+        "operationId": "getHostedAppVisitorAttributes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisitorAttributesResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Read the application visitor attribute grant and pending request",
+        "tags": [
+          "AppHosting"
+        ]
+      },
+      "post": {
+        "operationId": "requestHostedAppVisitorAttributes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestHostedAppVisitorAttributesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisitorAttributesResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Request additional visitor attributes as the application owner",
+        "tags": [
+          "AppHosting"
+        ]
+      },
+      "put": {
+        "operationId": "decideHostedAppVisitorAttributes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideHostedAppVisitorAttributesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisitorAttributesResponse"
+                }
+              }
+            },
+            "description": "Application hosting management result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Review a pending request or revoke granted visitor attributes as an administrator",
         "tags": [
           "AppHosting"
         ]

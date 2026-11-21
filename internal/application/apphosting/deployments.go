@@ -47,7 +47,13 @@ func (s *Service) Preflight(ctx context.Context, principal domainidentity.Princi
 		return sohaapi.HostedAppPreflightResult{}, err
 	}
 	settings = settings.WithDefaults()
+	if req.Kind == sohaapi.HostedAppKindDynamic {
+		settings = dynamicBundleLimits(settings)
+	}
 	blockers, warnings := evaluatePreflight(app, settings, req)
+	if req.Kind == sohaapi.HostedAppKindDynamic && s.dynamic == nil {
+		blockers = append(blockers, "dynamic HTTP application hosting is not configured")
+	}
 
 	return sohaapi.HostedAppPreflightResult{
 		Allowed:              len(blockers) == 0,
@@ -79,9 +85,6 @@ func evaluatePreflight(app domainapphosting.App, settings domainapphosting.Setti
 	}
 	if req.Kind != app.Kind {
 		blockers = append(blockers, fmt.Sprintf("bundle kind %q does not match application kind %q", req.Kind, app.Kind))
-	}
-	if req.Kind == sohaapi.HostedAppKindDynamic {
-		blockers = append(blockers, "dynamic HTTP application hosting is not available in this release")
 	}
 	if req.Kind == sohaapi.HostedAppKindStatic && !req.HasIndexHTML {
 		blockers = append(blockers, "static bundle must contain root index.html")
@@ -150,6 +153,9 @@ func (s *Service) UploadRevision(ctx context.Context, principal domainidentity.P
 	if receipt, handled, err := s.checkUploadIdempotency(ctx, app, settings, normalizedInput.IdempotencyKey, spooled.sha256Hex); handled || err != nil {
 		return receipt, err
 	}
+	if app.Kind == sohaapi.HostedAppKindDynamic {
+		return s.queueDynamicBundle(ctx, principal, app, settings, normalizedInput, spooled)
+	}
 
 	archiveReader, err := spooled.OpenReader()
 	if err != nil {
@@ -198,8 +204,14 @@ func (s *Service) prepareRevisionUpload(ctx context.Context, principal domainide
 	if !app.IsOwnerOrMaintainer(principal.UserID) {
 		return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, apperrors.ErrAccessDenied
 	}
-	if app.Kind != sohaapi.HostedAppKindStatic {
-		return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, apperrors.ErrUnsupportedOperation
+	if app.Kind == sohaapi.HostedAppKindDynamic {
+		if s.dynamic == nil {
+			return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, apperrors.ErrUnsupportedOperation
+		}
+		if input.SpaFallback != nil && *input.SpaFallback {
+			return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, apperrors.ErrInvalidArgument
+		}
+		settings = dynamicBundleLimits(settings)
 	}
 	return app, settings, normalized, nil
 }
@@ -218,7 +230,10 @@ func (s *Service) checkUploadIdempotency(ctx context.Context, app domainapphosti
 	if existing.BundleSha256 != bundleSha256 {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_key_conflict", "idempotencyKey was already used with a different bundle digest", "同一幂等键已被不同内容的构建包占用")
 	}
-	if existing.Status != sohaapi.HostedAppRevisionStatusReady {
+	if app.Kind == sohaapi.HostedAppKindDynamic && existing.Status == sohaapi.HostedAppRevisionStatusUploading {
+		return sohaapi.HostedAppDeploymentReceipt{}, false, nil
+	}
+	if existing.Status != sohaapi.HostedAppRevisionStatusReady && app.Kind != sohaapi.HostedAppKindDynamic {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_revision_not_ready", "previous deployment with this idempotencyKey is not in ready state", "该幂等键关联的上传记录未处于可用状态")
 	}
 	dto, err := s.enrichHostedApp(ctx, settings, app)
@@ -361,6 +376,11 @@ func plannedManifestFiles(appID, revisionID string, files []extractedBundleFile)
 
 func buildRevisionStoreKeys(rev domainapphosting.Revision) []string {
 	keys := make([]string, 0, len(rev.Files))
+	if rev.SourceKey != "" {
+		keys = append(keys, rev.SourceKey)
+	} else if rev.Kind == sohaapi.HostedAppKindDynamic {
+		keys = append(keys, dynamicSourceKey(rev))
+	}
 	for _, file := range rev.Files {
 		keys = append(keys, joinStoragePrefixKey(rev.StoragePrefix, file.ObjectKey))
 	}
@@ -442,7 +462,7 @@ func (s *Service) Rollback(ctx context.Context, principal domainidentity.Princip
 	}
 
 	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
-	updatedApp, targetRev, reused, err := s.repo.RollbackRevision(ctx, app.ID, trimmedRevID, idempotencyKey, s.now())
+	updatedApp, targetRev, reused, err := s.rollbackRevision(ctx, app, principal.UserID, trimmedRevID, idempotencyKey)
 	if err != nil {
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}

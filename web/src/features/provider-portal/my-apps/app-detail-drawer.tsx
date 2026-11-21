@@ -20,8 +20,15 @@ import {
   type HostedAppRevision,
   type HostedAppVisibilityInput,
 } from '@/features/app-hosting'
+import {
+  HostedAppRevisionLogs,
+  HostedAppRuntimeEnvironment,
+  HostedAppRuntimeUsage,
+  HostedAppSensitivePublisherConsent,
+  HostedAppVisitorAttributes,
+} from '@/features/app-hosting/runtime-controls'
 import { useI18n } from '@/i18n'
-import { readableQueryData } from '@/utils/query-feedback'
+import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { CopyOutlined, ExportOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
@@ -83,6 +90,9 @@ export function HostedAppDetailDrawer({
   )
 
   const [activeTab, setActiveTab] = useState('overview')
+  const [logRevision, setLogRevision] = useState<HostedAppRevision | null>(null)
+  const canUseControls = open && !queryAccessDenied(detailQuery)
+  const canEditControls = isOwner && canPublish && app?.status !== 'suspended_by_admin'
   const [nameDraft, setNameDraft] = useState('')
   const [descDraft, setDescDraft] = useState('')
   const [spaFallbackDraft, setSpaFallbackDraft] = useState(true)
@@ -98,6 +108,7 @@ export function HostedAppDetailDrawer({
   useEffect(() => {
     if (!open) {
       setActiveTab('overview')
+      setLogRevision(null)
       setDeleteConfirmName('')
       setMaintainerSearch('')
     }
@@ -264,7 +275,9 @@ export function HostedAppDetailDrawer({
         key: 'bundleSha256',
         title: '包摘要',
         width: 140,
-        render: (_, rev) => <Text code>{rev.bundleSha256 ? rev.bundleSha256.slice(0, 12) : '-'}</Text>,
+        render: (_, rev) => (
+          <Text code>{rev.bundleSha256 ? rev.bundleSha256.slice(0, 12) : '-'}</Text>
+        ),
       },
       {
         key: 'stats',
@@ -300,41 +313,55 @@ export function HostedAppDetailDrawer({
       {
         key: 'actions',
         title: '操作',
-        width: 120,
+        width: 180,
         render: (_, rev) => {
           const canRollback =
             canPublish &&
             app?.status !== 'suspended_by_admin' &&
             rev.status === 'ready' &&
             rev.id !== app?.activeRevisionId
-          if (!canRollback) return <Text type="secondary">-</Text>
+          const canReadLogs = canUseControls && rev.kind === 'dynamic'
+          if (!canRollback && !canReadLogs) return <Text type="secondary">-</Text>
           return (
-            <Popconfirm
-              title={`确认回滚到版本 v${rev.revisionNumber}？`}
-              description="回滚后固定访问地址保持不变，立即切换至该历史版本。"
-              okText="确认回滚"
-              cancelText="取消"
-              disabled={anyBlocked}
-              onConfirm={() => {
-                if (!app) return
-                rollbackMutation.mutate({
-                  appId: app.id,
-                  input: {
-                    targetRevisionId: rev.id,
-                    idempotencyKey: crypto.randomUUID(),
-                  },
-                })
-              }}
-            >
-              <Button size="small" type="link" disabled={anyBlocked}>
-                回滚到此版本
-              </Button>
-            </Popconfirm>
+            <Space size={0} wrap>
+              {canReadLogs ? (
+                <Button size="small" type="link" onClick={() => setLogRevision(rev)}>
+                  查看脱敏日志
+                </Button>
+              ) : null}
+              {canRollback ? (
+                <Popconfirm
+                  title={`确认回滚到版本 v${rev.revisionNumber}？`}
+                  description={
+                    rev.kind === 'dynamic'
+                      ? '回滚程序版本并继续使用当前数据库。兼容检查失败时，当前版本继续提供服务。'
+                      : '回滚后固定访问地址保持不变，立即切换至该历史版本。'
+                  }
+                  okText="确认回滚"
+                  cancelText="取消"
+                  disabled={anyBlocked}
+                  onConfirm={() => {
+                    if (!app) return
+                    rollbackMutation.mutate({
+                      appId: app.id,
+                      input: {
+                        targetRevisionId: rev.id,
+                        idempotencyKey: crypto.randomUUID(),
+                      },
+                    })
+                  }}
+                >
+                  <Button size="small" type="link" disabled={anyBlocked}>
+                    回滚到此版本
+                  </Button>
+                </Popconfirm>
+              ) : null}
+            </Space>
           )
         },
       },
     ],
-    [anyBlocked, app, canPublish, localeCode, rollbackMutation],
+    [anyBlocked, app, canPublish, canUseControls, localeCode, rollbackMutation],
   )
 
   const safeAppUrl = resolveSafeHostedAppUrl(app?.url)
@@ -403,7 +430,10 @@ export function HostedAppDetailDrawer({
                       tone={app.kind === 'dynamic' ? 'purple' : 'blue'}
                       label={hostedAppKindLabel(app.kind)}
                     />
-                    <MetadataTag tone={isOwner ? 'cyan' : 'default'} label={isOwner ? '作者' : '协作者'} />
+                    <MetadataTag
+                      tone={isOwner ? 'cyan' : 'default'}
+                      label={isOwner ? '作者' : '协作者'}
+                    />
                     {app.activeRevisionNumber ? (
                       <MetadataTag label={`当前版本 v${app.activeRevisionNumber}`} />
                     ) : null}
@@ -467,7 +497,9 @@ export function HostedAppDetailDrawer({
                               <Text>
                                 当前生效范围仍为「{hostedAppVisibilitySummary(app.visibility)}
                                 」，待管理员批准后才会切换为全公司可见。
-                                {pendingApproval.reason ? ` 申请说明：${pendingApproval.reason}` : ''}
+                                {pendingApproval.reason
+                                  ? ` 申请说明：${pendingApproval.reason}`
+                                  : ''}
                               </Text>
                               {isOwner ? (
                                 <Button
@@ -654,8 +686,22 @@ export function HostedAppDetailDrawer({
                         showIcon
                         type="info"
                         title="协作权限边界说明"
-                        description="协作维护人可上传发布新版本与执行历史版本回滚，但不能修改可见范围、上下线或删除应用；访问线上页面仍由可见范围独立控制。"
+                        description={
+                          app.kind === 'dynamic'
+                            ? '动态应用协作发布需要作者单独授权。访问线上页面仍由可见范围独立控制。'
+                            : '协作维护人可上传发布新版本与执行历史版本回滚，但不能修改可见范围、上下线或删除应用；访问线上页面仍由可见范围独立控制。'
+                        }
                       />
+                      {isOwner &&
+                      app.kind === 'dynamic' &&
+                      canUseControls &&
+                      activeTab === 'maintainers' ? (
+                        <HostedAppSensitivePublisherConsent
+                          key={app.id}
+                          app={app}
+                          canEdit={canEditControls && !anyBlocked}
+                        />
+                      ) : null}
                       {isOwner ? (
                         <Card size="small" title="编辑协作维护人" variant="outlined">
                           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -739,6 +785,51 @@ export function HostedAppDetailDrawer({
                     />
                   ),
                 },
+                ...(app.kind === 'dynamic' && canUseControls
+                  ? [
+                      {
+                        key: 'runtime',
+                        label: '运行配置',
+                        children:
+                          activeTab === 'runtime' ? (
+                            <Space
+                              key={app.id}
+                              orientation="vertical"
+                              size={12}
+                              style={{ width: '100%' }}
+                            >
+                              <HostedAppRuntimeUsage
+                                appId={app.id}
+                                canSetWarning={canEditControls}
+                              />
+                              {isOwner ? (
+                                <HostedAppRuntimeEnvironment
+                                  appId={app.id}
+                                  ownerId={currentUserId}
+                                  canEdit={canEditControls}
+                                />
+                              ) : null}
+                            </Space>
+                          ) : null,
+                      },
+                    ]
+                  : []),
+                ...(isOwner && canUseControls
+                  ? [
+                      {
+                        key: 'visitor-attributes',
+                        label: '访客属性',
+                        children:
+                          activeTab === 'visitor-attributes' ? (
+                            <HostedAppVisitorAttributes
+                              key={app.id}
+                              appId={app.id}
+                              access={{ role: 'owner', canRequest: canEditControls }}
+                            />
+                          ) : null,
+                      },
+                    ]
+                  : []),
                 ...(isOwner
                   ? [
                       {
@@ -746,7 +837,11 @@ export function HostedAppDetailDrawer({
                         label: '上下线与删除',
                         children: (
                           <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-                            <Card size="small" title="服务上下线（保留版本数据）" variant="outlined">
+                            <Card
+                              size="small"
+                              title="服务上下线（保留版本数据）"
+                              variant="outlined"
+                            >
                               <Space orientation="vertical" size={10} style={{ width: '100%' }}>
                                 <Paragraph type="secondary" style={{ marginBottom: 0 }}>
                                   下线暂停后，包括作者本人在内的所有外部访问立即阻断，但历史版本与固定子域绑定完整保留，后续可随时一键恢复上线。
@@ -850,6 +945,15 @@ export function HostedAppDetailDrawer({
                     ]
                   : []),
               ]}
+            />
+            <HostedAppRevisionLogs
+              appId={app.id}
+              revision={
+                canUseControls && activeTab === 'revisions' && logRevision?.appId === app.id
+                  ? logRevision
+                  : null
+              }
+              onClose={() => setLogRevision(null)}
             />
           </>
         ) : null}

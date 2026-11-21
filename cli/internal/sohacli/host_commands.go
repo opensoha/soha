@@ -19,7 +19,7 @@ var hostSlugPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 func hostCommandSpec() commandSpec {
 	return commandSpec{
 		Name:    "host",
-		Usage:   "soha host <deploy|list|get|revisions|rollback|visibility|maintainers|offline|online|delete|audience> [options]",
+		Usage:   "soha host <deploy|list|get|config|revisions|rollback|visibility|maintainers|offline|online|delete|audience> [options]",
 		Summary: "Deploy and manage workspace hosted web applications",
 		Examples: []string{
 			"soha host deploy ./dist --name \"Quarterly Report\" --dry-run --profile local",
@@ -35,10 +35,11 @@ func hostCoreSubcommandSpecs() []commandSpec {
 	return []commandSpec{
 		{
 			Name:    "deploy",
-			Usage:   "soha host deploy [dir] [--app-id ID] [--name NAME] [--slug SLUG] [--description TEXT] [--spa] [--visibility private|selected|organization] [--user ID]... [--team ID]... [--reason TEXT] [--idempotency-key KEY] [--dry-run] [--yes] [--profile NAME] [--output text|json]",
-			Summary: "Scan, preflight, and upload a static web bundle to workspace App Hosting",
+			Usage:   "soha host deploy [dir] [--kind static|dynamic] [--app-id ID] [--name NAME] [--slug SLUG] [--description TEXT] [--spa] [--visibility private|selected|organization] [--user ID]... [--team ID]... [--reason TEXT] [--idempotency-key KEY] [--dry-run] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Scan, preflight, and upload a static web bundle or dynamic source to workspace App Hosting",
 			Examples: []string{
 				"soha host deploy ./dist --name \"Ops Dashboard\" --dry-run --profile local",
+				"soha host deploy ./service --kind dynamic --name \"Ops API\" --dry-run --profile local",
 				"soha host deploy ./dist --name \"Ops Dashboard\" --spa --yes --profile local",
 				"soha host deploy ./dist --app-id app_123 --idempotency-key deploy-r2 --yes --profile local",
 			},
@@ -59,6 +60,15 @@ func hostCoreSubcommandSpecs() []commandSpec {
 			Examples: []string{
 				"soha host get app_123 --profile local",
 				"soha host get app_123 --output json --profile local",
+			},
+		},
+		{
+			Name:    "config",
+			Usage:   "soha host config <app-id> [--set-env NAME]... [--remove-env NAME]... [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Read masked runtime configuration or stage environment changes for a new revision",
+			Examples: []string{
+				"soha host config app_123 --profile local",
+				"soha host config app_123 --set-env APP_TOKEN --yes --profile local",
 			},
 		},
 		{
@@ -142,7 +152,7 @@ func hostGovernanceSubcommandSpecs() []commandSpec {
 
 func runHost(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) == 0 {
-		return usageError{message: "host requires a subcommand: deploy, list, get, revisions, rollback, visibility, maintainers, offline, online, delete, or audience"}
+		return usageError{message: "host requires a subcommand: deploy, list, get, config, revisions, rollback, visibility, maintainers, offline, online, delete, or audience"}
 	}
 	switch args[0] {
 	case "deploy":
@@ -151,6 +161,8 @@ func runHost(ctx context.Context, args []string, rt Runtime) error {
 		return runHostList(ctx, args[1:], rt)
 	case "get":
 		return runHostGet(ctx, args[1:], rt)
+	case "config":
+		return runHostConfig(ctx, args[1:], rt)
 	case "revisions":
 		return runHostRevisions(ctx, args[1:], rt)
 	case "rollback":
@@ -168,7 +180,7 @@ func runHost(ctx context.Context, args []string, rt Runtime) error {
 	case "audience":
 		return runHostAudience(ctx, args[1:], rt)
 	default:
-		return usageError{message: fmt.Sprintf("unknown host command %q; expected deploy, list, get, revisions, rollback, visibility, maintainers, offline, online, delete, or audience", args[0])}
+		return usageError{message: fmt.Sprintf("unknown host command %q; expected deploy, list, get, config, revisions, rollback, visibility, maintainers, offline, online, delete, or audience", args[0])}
 	}
 }
 
@@ -180,6 +192,7 @@ type hostDeployOptions struct {
 	slug             string
 	description      string
 	descExplicit     bool
+	kind             sohaapi.HostedAppKind
 	spa              bool
 	spaExplicit      bool
 	visibilityInput  *sohaapi.HostedAppVisibilityInput
@@ -197,6 +210,7 @@ func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error
 	name := fs.String("name", "", "display name for the hosted app")
 	slug := fs.String("slug", "", "optional subdomain slug prefix when creating a new app")
 	description := fs.String("description", "", "application or revision description")
+	kind := fs.String("kind", "static", "app kind: static or dynamic")
 	spa := fs.Bool("spa", false, "enable SPA index.html fallback for extensionless routes")
 	visibility := fs.String("visibility", "", "visibility mode: private, selected, or organization (defaults to private for new apps)")
 	var userIDs repeatableFlag
@@ -205,7 +219,7 @@ func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error
 	fs.Var(&teamIDs, "team", "authorized team/department ID when --visibility=selected (repeatable)")
 	reason := fs.String("reason", "", "optional reason when requesting visibility update (<= 500 chars)")
 	idempotencyKey := fs.String("idempotency-key", "", "idempotency key for safe retries (1..128 chars)")
-	dryRun := fs.Bool("dry-run", false, "scan local bundle and run server preflight without uploading")
+	dryRun := fs.Bool("dry-run", false, "scan local bundle; with --app-id also run server preflight, without uploading")
 	yes := fs.Bool("yes", false, "confirm publishing without interactive prompt")
 	profile := fs.String("profile", "", "profile name")
 	output := fs.String("output", "text", "output format: text or json")
@@ -229,6 +243,7 @@ func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error
 		slug:             strings.TrimSpace(*slug),
 		description:      strings.TrimSpace(*description),
 		descExplicit:     hostFlagWasSet(fs, "description"),
+		kind:             sohaapi.HostedAppKind(strings.ToLower(strings.TrimSpace(*kind))),
 		spa:              *spa,
 		spaExplicit:      hostFlagWasSet(fs, "spa"),
 		visibilityReason: strings.TrimSpace(*reason),
@@ -252,6 +267,12 @@ func resolveHostDeployDir(positionals []string) string {
 }
 
 func validateHostDeployMetadata(opts *hostDeployOptions, visibilitySet bool, rawVisibility string, userIDs, teamIDs []string) error {
+	if !opts.kind.Valid() {
+		return usageError{message: "--kind must be static or dynamic"}
+	}
+	if opts.kind == sohaapi.HostedAppKindDynamic && opts.spaExplicit {
+		return usageError{message: "--spa is not supported for dynamic apps"}
+	}
 	if opts.slug != "" {
 		if opts.appID != "" {
 			return usageError{message: "--slug can only be set when creating a new app; subdomain labels are immutable"}
@@ -292,16 +313,28 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	if err != nil {
 		return err
 	}
-	bundle, err := buildHostStaticBundle(opts.dir)
+	var bundle hostStaticBundle
+	if opts.kind == sohaapi.HostedAppKindDynamic {
+		bundle, err = buildHostDynamicBundle(opts.dir)
+	} else {
+		bundle, err = buildHostStaticBundle(opts.dir)
+	}
 	if err != nil {
 		return err
+	}
+	if opts.dryRun && opts.appID == "" {
+		return writeHostLocalDryRunOutput(rt.Out, opts.format, bundle)
 	}
 	if !opts.dryRun && !opts.yes {
 		targetLabel := opts.appID
 		if targetLabel == "" {
 			targetLabel = firstNonEmptyString(opts.name, inferDefaultHostedAppName(bundle.AbsDir))
 		}
-		confirmed, confirmErr := confirmAction(rt, fmt.Sprintf("Deploy static bundle %s (%d files, %d bytes) to %s?", terminalLabel(opts.dir), bundle.FileCount, bundle.UncompressedBytes, terminalLabel(targetLabel)))
+		kindLabel := "static bundle"
+		if opts.kind == sohaapi.HostedAppKindDynamic {
+			kindLabel = "dynamic source"
+		}
+		confirmed, confirmErr := confirmAction(rt, fmt.Sprintf("Deploy %s %s (%d files, %d bytes) to %s (%s)?", kindLabel, terminalLabel(opts.dir), bundle.FileCount, bundle.UncompressedBytes, terminalLabel(targetLabel), opts.kind))
 		if confirmErr != nil {
 			return confirmErr
 		}
@@ -320,15 +353,18 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	}
 
 	compressed := bundle.CompressedBytes
-	preflight, err := client.PreflightDeployment(ctx, app.ID, sohaapi.HostedAppPreflightRequest{
-		Kind:              sohaapi.HostedAppKindStatic,
+	preflightRequest := sohaapi.HostedAppPreflightRequest{
+		Kind:              opts.kind,
 		CompressedBytes:   &compressed,
 		UncompressedBytes: bundle.UncompressedBytes,
 		FileCount:         bundle.FileCount,
 		HasIndexHTML:      bundle.HasIndexHTML,
-		SpaFallback:       &spaFallback,
 		SamplePaths:       bundle.SamplePaths,
-	})
+	}
+	if opts.kind == sohaapi.HostedAppKindStatic {
+		preflightRequest.SpaFallback = &spaFallback
+	}
+	preflight, err := client.PreflightDeployment(ctx, app.ID, preflightRequest)
 	if err != nil {
 		return err
 	}
@@ -351,11 +387,14 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	if uploadKey == "" {
 		uploadKey = defaultUploadIdempotencyKey(app, bundle.BundleSHA256, spaFallback, opts.description)
 	}
-	receipt, err := client.UploadRevision(ctx, app.ID, bytes.NewReader(bundle.Archive), sohaapi.UploadHostedAppRevisionParams{
+	uploadParams := sohaapi.UploadHostedAppRevisionParams{
 		IdempotencyKey: uploadKey,
-		SpaFallback:    &spaFallback,
 		Description:    opts.description,
-	})
+	}
+	if opts.kind == sohaapi.HostedAppKindStatic {
+		uploadParams.SpaFallback = &spaFallback
+	}
+	receipt, err := client.UploadRevision(ctx, app.ID, bytes.NewReader(bundle.Archive), uploadParams)
 	if err != nil {
 		return err
 	}
@@ -363,7 +402,13 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	if opts.visibilityInput != nil && opts.visibilityInput.Mode == sohaapi.HostedAppVisibilityModeOrganization {
 		note = firstNonEmptyString(formatPendingApprovalSubmissionNote(receipt.App), formatPendingApprovalSubmissionNote(app))
 	}
-	return writeHostDeploymentReceiptOutput(rt.Out, opts.format, receipt, uploadKey, note)
+	if err := writeHostDeploymentReceiptOutput(rt.Out, opts.format, receipt, uploadKey, note); err != nil {
+		return err
+	}
+	if opts.kind == sohaapi.HostedAppKindDynamic && receipt.Revision.Status == sohaapi.HostedAppRevisionStatusFailed {
+		return fmt.Errorf("dynamic revision failed; after correcting the cause, retry with --app-id %s and a new --idempotency-key", terminalLabel(receipt.App.ID))
+	}
+	return nil
 }
 
 func resolveDeployTargetApp(ctx context.Context, client *hostClient, opts hostDeployOptions, bundle hostStaticBundle) (sohaapi.HostedApp, bool, error) {
@@ -372,7 +417,13 @@ func resolveDeployTargetApp(ctx context.Context, client *hostClient, opts hostDe
 		if err != nil {
 			return sohaapi.HostedApp{}, false, err
 		}
+		if app.Kind != opts.kind {
+			return sohaapi.HostedApp{}, false, fmt.Errorf("hosted app %s has kind %q, not %q; refusing deployment before any mutation", app.ID, app.Kind, opts.kind)
+		}
 		spaFallback := app.SpaFallback
+		if opts.kind == sohaapi.HostedAppKindDynamic {
+			spaFallback = false
+		}
 		if opts.spaExplicit {
 			spaFallback = opts.spa
 		}
@@ -390,17 +441,20 @@ func resolveDeployTargetApp(ctx context.Context, client *hostClient, opts hostDe
 	spaFallback := opts.spa
 	createKey := opts.idempotencyKey
 	if createKey == "" {
-		createKey = defaultCreateAppIdempotencyKey(bundle.AbsDir, appName, opts.slug, vis)
+		createKey = defaultCreateAppIdempotencyKey(opts.kind, bundle.AbsDir, appName, opts.slug, vis)
 	}
-	app, err := client.CreateApp(ctx, sohaapi.CreateHostedAppRequest{
+	createRequest := sohaapi.CreateHostedAppRequest{
 		Name:           appName,
 		Slug:           opts.slug,
 		Description:    opts.description,
-		Kind:           sohaapi.HostedAppKindStatic,
-		SpaFallback:    &spaFallback,
+		Kind:           opts.kind,
 		Visibility:     &vis,
 		IdempotencyKey: createKey,
-	})
+	}
+	if opts.kind == sohaapi.HostedAppKindStatic {
+		createRequest.SpaFallback = &spaFallback
+	}
+	app, err := client.CreateApp(ctx, createRequest)
 	if err != nil {
 		return sohaapi.HostedApp{}, false, err
 	}
@@ -1083,7 +1137,19 @@ func hostFlagWasSet(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
-func defaultCreateAppIdempotencyKey(absDir, name, slug string, vis sohaapi.HostedAppVisibilityInput) string {
+func defaultCreateAppIdempotencyKey(kind sohaapi.HostedAppKind, absDir, name, slug string, vis sohaapi.HostedAppVisibilityInput) string {
+	if kind == sohaapi.HostedAppKindDynamic {
+		return hashIdempotencyKey(
+			"host-app-dyn-",
+			string(kind),
+			absDir,
+			name,
+			slug,
+			string(vis.Mode),
+			strings.Join(vis.UserIDs, ","),
+			strings.Join(vis.TeamIDs, ","),
+		)
+	}
 	return hashIdempotencyKey(
 		"host-app-",
 		absDir,

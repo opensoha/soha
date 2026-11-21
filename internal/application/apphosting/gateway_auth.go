@@ -419,13 +419,24 @@ func (s *Service) buildAllowedAccessDecision(ctx context.Context, base sohaapi.H
 		return sohaapi.HostedAppGatewayAccessDecision{}, err
 	}
 	identity := visitor.ToPairwiseVisitorIdentity(s.visitorIDSecret, app.ID)
+	s.addOptionalVisitorIdentity(ctx, app, visitor, &identity)
 	base.Decision = sohaapi.HostedAppAccessDecisionKindAllow
 	base.ActiveRevisionID = rev.ID
+	base.User = &identity
+	if rev.Kind == sohaapi.HostedAppKindDynamic {
+		if !s.DynamicEnabled() || rev.ImageRef == "" || !dynamicRevisionPattern.MatchString(rev.ID) {
+			base.Decision = sohaapi.HostedAppAccessDecisionKindOffline
+			base.Reason = "dynamic revision is unavailable"
+			base.User = nil
+			return base, nil
+		}
+		base.RuntimeService = "soha-app-" + strings.TrimPrefix(rev.ID, "rev_")
+		return base, nil
+	}
 	base.SpaFallback = app.SpaFallback
 	base.StorageIntegrationID = rev.StorageIntegrationID
 	base.StoragePrefix = rev.StoragePrefix
 	base.Files = slices.Clone(rev.Files)
-	base.User = &identity
 	return base, nil
 }
 

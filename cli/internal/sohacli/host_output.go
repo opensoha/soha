@@ -49,6 +49,7 @@ func writeHostPreflightOutput(destination io.Writer, format string, bundle hostS
 	}
 	out.Printf("Preflight: %s\n", verdict)
 	out.Printf("App ID: %s\n", safeHostField(result.AppID))
+	out.Printf("Kind: %s\n", safeHostField(string(bundle.Kind)))
 	out.Printf("URL: %s\n", safeHostField(result.URL))
 	out.Printf("Bundle: files=%d uncompressedBytes=%d compressedBytes=%d sha256=%s\n",
 		bundle.FileCount, bundle.UncompressedBytes, bundle.CompressedBytes, bundle.BundleSHA256)
@@ -63,6 +64,28 @@ func writeHostPreflightOutput(destination io.Writer, format string, bundle hostS
 	return out.Err()
 }
 
+func writeHostLocalDryRunOutput(destination io.Writer, format string, bundle hostStaticBundle) error {
+	if format == "json" {
+		return writePrettyJSON(destination, sanitizeCLIJSONValue(map[string]any{
+			"dryRun":            "local_only",
+			"serverPreflight":   "not_run",
+			"kind":              string(bundle.Kind),
+			"dir":               bundle.Dir,
+			"fileCount":         bundle.FileCount,
+			"uncompressedBytes": bundle.UncompressedBytes,
+			"compressedBytes":   bundle.CompressedBytes,
+			"bundleSha256":      bundle.BundleSHA256,
+		}))
+	}
+	out := newCheckedWriter(destination)
+	out.Println("Local scan: passed")
+	out.Println("Server preflight: not run (pass --app-id to run it)")
+	out.Printf("Kind: %s\n", safeHostField(string(bundle.Kind)))
+	out.Printf("Bundle: files=%d uncompressedBytes=%d compressedBytes=%d sha256=%s\n",
+		bundle.FileCount, bundle.UncompressedBytes, bundle.CompressedBytes, bundle.BundleSHA256)
+	return out.Err()
+}
+
 func writeHostDeploymentReceiptOutput(destination io.Writer, format string, receipt sohaapi.HostedAppDeploymentReceipt, idempotencyKey, note string) error {
 	if format == "json" {
 		return writePrettyJSON(destination, sanitizeCLIJSONValue(receipt))
@@ -74,6 +97,18 @@ func writeHostDeploymentReceiptOutput(destination io.Writer, format string, rece
 		out.Printf("Revision: %s (r%d)\n", safeHostField(receipt.Revision.ID), receipt.Revision.RevisionNumber)
 	} else {
 		out.Printf("Revision: %s\n", safeHostField(receipt.Revision.ID))
+	}
+	if strings.TrimSpace(string(receipt.Revision.Kind)) != "" {
+		out.Printf("Kind: %s\n", safeHostField(string(receipt.Revision.Kind)))
+	}
+	if strings.TrimSpace(string(receipt.Revision.Status)) != "" {
+		out.Printf("Revision Status: %s\n", safeHostField(string(receipt.Revision.Status)))
+	}
+	if strings.TrimSpace(receipt.Revision.BuildPhase) != "" {
+		out.Printf("Build Phase: %s\n", safeHostField(receipt.Revision.BuildPhase))
+	}
+	if strings.TrimSpace(receipt.Revision.ImageRef) != "" {
+		out.Printf("Image: %s\n", safeHostField(receipt.Revision.ImageRef))
 	}
 	out.Printf("Visibility: %s\n", formatHostVisibility(receipt.App.Visibility))
 	if receipt.App.PendingVisibilityApproval != nil {
@@ -90,6 +125,10 @@ func writeHostDeploymentReceiptOutput(destination io.Writer, format string, rece
 	}
 	if receipt.ReusedIdempotencyKey {
 		out.Println("Reused Idempotency Key: true")
+	}
+	if receipt.Revision.Kind == sohaapi.HostedAppKindDynamic && receipt.Revision.Status != sohaapi.HostedAppRevisionStatusReady {
+		out.Printf("Deployment: revision is %s, not ready.\n", safeHostField(firstNonEmptyString(string(receipt.Revision.Status), "unknown")))
+		out.Printf("Check: soha host revisions %s --revision %s --output json\n", safeHostField(receipt.App.ID), safeHostField(receipt.Revision.ID))
 	}
 	if strings.TrimSpace(note) != "" {
 		out.Printf("Note: %s\n", safeHostField(note))
@@ -347,6 +386,12 @@ func writeHostedAppRevisionDetailOutput(destination io.Writer, format string, re
 	out.Printf("Revision Number: %d\n", rev.RevisionNumber)
 	out.Printf("Kind: %s\n", safeHostField(string(rev.Kind)))
 	out.Printf("Status: %s\n", safeHostField(string(rev.Status)))
+	if strings.TrimSpace(rev.BuildPhase) != "" {
+		out.Printf("Build Phase: %s\n", safeHostField(rev.BuildPhase))
+	}
+	if strings.TrimSpace(rev.ImageRef) != "" {
+		out.Printf("Image: %s\n", safeHostField(rev.ImageRef))
+	}
 	out.Printf("SPA Fallback: %t\n", rev.SpaFallback)
 	out.Printf("Files: %d\n", rev.FileCount)
 	out.Printf("Total Bytes: %d\n", rev.TotalBytes)

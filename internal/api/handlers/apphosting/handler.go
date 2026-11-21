@@ -78,12 +78,13 @@ type AccessTokenParser interface {
 }
 
 type Capabilities struct {
-	Settings    SettingsService
-	Apps        AppService
-	Lifecycle   LifecycleService
-	Approvals   ApprovalService
-	Deployments DeploymentService
-	GatewayAuth GatewayAuthService
+	Settings        SettingsService
+	Apps            AppService
+	Lifecycle       LifecycleService
+	Approvals       ApprovalService
+	Deployments     DeploymentService
+	GatewayAuth     GatewayAuthService
+	RuntimeControls RuntimeControlsService
 }
 
 type Option func(*Handler)
@@ -97,13 +98,14 @@ func WithAccessTokenParser(parser AccessTokenParser) Option {
 }
 
 type Handler struct {
-	settings    SettingsService
-	apps        AppService
-	lifecycle   LifecycleService
-	approvals   ApprovalService
-	deployments DeploymentService
-	gatewayAuth GatewayAuthService
-	tokenParser AccessTokenParser
+	settings        SettingsService
+	apps            AppService
+	lifecycle       LifecycleService
+	approvals       ApprovalService
+	deployments     DeploymentService
+	gatewayAuth     GatewayAuthService
+	runtimeControls RuntimeControlsService
+	tokenParser     AccessTokenParser
 }
 
 func New[T interface {
@@ -113,28 +115,31 @@ func New[T interface {
 	ApprovalService
 	DeploymentService
 	GatewayAuthService
+	RuntimeControlsService
 }](service T, opts ...Option) *Handler {
 	if isTypedNil(service) {
 		return NewFromCapabilities(Capabilities{}, opts...)
 	}
 	return NewFromCapabilities(Capabilities{
-		Settings:    service,
-		Apps:        service,
-		Lifecycle:   service,
-		Approvals:   service,
-		Deployments: service,
-		GatewayAuth: service,
+		Settings:        service,
+		Apps:            service,
+		Lifecycle:       service,
+		Approvals:       service,
+		Deployments:     service,
+		GatewayAuth:     service,
+		RuntimeControls: service,
 	}, opts...)
 }
 
 func NewFromCapabilities(caps Capabilities, opts ...Option) *Handler {
 	h := &Handler{
-		settings:    cleanNil(caps.Settings),
-		apps:        cleanNil(caps.Apps),
-		lifecycle:   cleanNil(caps.Lifecycle),
-		approvals:   cleanNil(caps.Approvals),
-		deployments: cleanNil(caps.Deployments),
-		gatewayAuth: cleanNil(caps.GatewayAuth),
+		settings:        cleanNil(caps.Settings),
+		apps:            cleanNil(caps.Apps),
+		lifecycle:       cleanNil(caps.Lifecycle),
+		approvals:       cleanNil(caps.Approvals),
+		deployments:     cleanNil(caps.Deployments),
+		gatewayAuth:     cleanNil(caps.GatewayAuth),
+		runtimeControls: cleanNil(caps.RuntimeControls),
 	}
 	for _, opt := range opts {
 		if opt != nil {

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 const (
@@ -27,6 +30,7 @@ const (
 type hostStaticBundle struct {
 	Dir               string
 	AbsDir            string
+	Kind              sohaapi.HostedAppKind
 	Archive           []byte
 	BundleSHA256      string
 	CompressedBytes   int64
@@ -43,6 +47,14 @@ type hostBundleEntry struct {
 }
 
 func buildHostStaticBundle(dir string) (hostStaticBundle, error) {
+	return buildHostBundle(dir, sohaapi.HostedAppKindStatic)
+}
+
+func buildHostDynamicBundle(dir string) (hostStaticBundle, error) {
+	return buildHostBundle(dir, sohaapi.HostedAppKindDynamic)
+}
+
+func buildHostBundle(dir string, kind sohaapi.HostedAppKind) (hostStaticBundle, error) {
 	targetDir := strings.TrimSpace(dir)
 	if targetDir == "" {
 		targetDir = "."
@@ -62,7 +74,7 @@ func buildHostStaticBundle(dir string) (hostStaticBundle, error) {
 		return hostStaticBundle{}, fmt.Errorf("resolve bundle directory %q: %w", targetDir, err)
 	}
 
-	entries, err := scanHostBundleDirectory(absDir, "")
+	entries, err := scanHostBundleDirectory(absDir, "", kind)
 	if err != nil {
 		return hostStaticBundle{}, err
 	}
@@ -90,8 +102,13 @@ func buildHostStaticBundle(dir string) (hostStaticBundle, error) {
 			samplePaths = append(samplePaths, entry.relPath)
 		}
 	}
-	if !hasIndex {
+	if kind == sohaapi.HostedAppKindStatic && !hasIndex {
 		return hostStaticBundle{}, fmt.Errorf("bundle directory %q is missing root index.html; build your static frontend first and pass the output directory (for example: soha host deploy ./dist)", targetDir)
+	}
+	if kind == sohaapi.HostedAppKindDynamic {
+		if err := validateHostDynamicBundle(entries); err != nil {
+			return hostStaticBundle{}, err
+		}
 	}
 
 	archiveBytes, actualUncompressed, err := writeDeterministicTarGz(entries)
@@ -106,17 +123,74 @@ func buildHostStaticBundle(dir string) (hostStaticBundle, error) {
 	return hostStaticBundle{
 		Dir:               targetDir,
 		AbsDir:            absDir,
+		Kind:              kind,
 		Archive:           archiveBytes,
 		BundleSHA256:      hex.EncodeToString(sum[:]),
 		CompressedBytes:   int64(len(archiveBytes)),
 		UncompressedBytes: actualUncompressed,
 		FileCount:         fileCount,
-		HasIndexHTML:      true,
+		HasIndexHTML:      hasIndex,
 		SamplePaths:       samplePaths,
 	}, nil
 }
 
-func scanHostBundleDirectory(currentAbs, currentRel string) ([]hostBundleEntry, error) {
+func validateHostDynamicBundle(entries []hostBundleEntry) error {
+	byPath := make(map[string]hostBundleEntry, len(entries))
+	for _, entry := range entries {
+		byPath[entry.relPath] = entry
+	}
+
+	configEntry, ok := byPath["soha-host.json"]
+	if !ok {
+		return fmt.Errorf("dynamic source is missing root soha-host.json; add {\"template\":\"node\"|\"python\",\"database\":true|false}")
+	}
+	raw, err := readRegularBundleFile(configEntry.fullPath, configEntry.relPath)
+	if err != nil {
+		return err
+	}
+	var config struct {
+		Template      string `json:"template"`
+		Database      *bool  `json:"database"`
+		SchemaVersion int    `json:"schemaVersion"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return fmt.Errorf("invalid soha-host.json: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("invalid soha-host.json: trailing content is not allowed")
+	}
+	if config.Database == nil {
+		return fmt.Errorf("invalid soha-host.json: database must be true or false")
+	}
+	if (!*config.Database && config.SchemaVersion != 0) || config.SchemaVersion < 0 || config.SchemaVersion > 2 {
+		return fmt.Errorf("invalid soha-host.json: schemaVersion requires a database and must be 1 or 2 if specified")
+	}
+
+	var required []string
+	switch config.Template {
+	case "node":
+		required = []string{"server.js", "package.json", "package-lock.json"}
+	case "python":
+		required = []string{"app.py", "requirements.txt"}
+	default:
+		return fmt.Errorf("invalid soha-host.json: template must be node or python")
+	}
+	missing := make([]string, 0, len(required))
+	for _, name := range required {
+		if _, exists := byPath[name]; !exists {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("dynamic %s source is missing required root file(s): %s", config.Template, strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedAppKind) ([]hostBundleEntry, error) {
 	dirEntries, err := os.ReadDir(currentAbs)
 	if err != nil {
 		return nil, fmt.Errorf("read directory %q: %w", firstNonEmptyString(currentRel, "."), err)
@@ -124,7 +198,7 @@ func scanHostBundleDirectory(currentAbs, currentRel string) ([]hostBundleEntry, 
 	var collected []hostBundleEntry
 	for _, item := range dirEntries {
 		name := item.Name()
-		if isIgnoredHostBundleEntry(name) {
+		if isIgnoredHostBundleEntry(name, kind) {
 			continue
 		}
 		relPath := name
@@ -146,7 +220,7 @@ func scanHostBundleDirectory(currentAbs, currentRel string) ([]hostBundleEntry, 
 			return nil, fmt.Errorf("bundle contains sensitive file %q (%s); remove secret or credential files before deploying", relPath, reason)
 		}
 		if info.IsDir() {
-			nested, err := scanHostBundleDirectory(fullPath, relPath)
+			nested, err := scanHostBundleDirectory(fullPath, relPath, kind)
 			if err != nil {
 				return nil, err
 			}
@@ -171,10 +245,12 @@ func scanHostBundleDirectory(currentAbs, currentRel string) ([]hostBundleEntry, 
 	return collected, nil
 }
 
-func isIgnoredHostBundleEntry(name string) bool {
+func isIgnoredHostBundleEntry(name string, kind sohaapi.HostedAppKind) bool {
 	switch name {
 	case ".git", "node_modules", ".DS_Store":
 		return true
+	case ".venv", "venv", "__pycache__", "deps":
+		return kind == sohaapi.HostedAppKindDynamic
 	default:
 		return false
 	}

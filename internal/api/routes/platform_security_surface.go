@@ -234,6 +234,16 @@ func appHostingMutationSecuritySurface(method, path string) (nonPlatformMutation
 		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "reject", appaccess.PermAppHostingAdminManage, true), true
 	case strings.HasSuffix(path, "/visibility-approval/withdraw"):
 		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "withdraw", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/visitor-attributes") && method == "PUT":
+		return nonPlatformMutationEntry("HostedAppVisitorAttributes", "review", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/visitor-attributes"):
+		return nonPlatformMutationEntry("HostedAppVisitorAttributes", "request", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/runtime-config"):
+		return nonPlatformMutationSecuritySurfaceEntry{
+			ResourceKind: "HostedAppRuntimeConfig", Action: "update",
+			PermissionKey:     "apphosting.apps.publish|apphosting.admin.manage",
+			DynamicPermission: true, ScopeRequired: true, AuditRequired: true,
+		}, true
 	case strings.HasSuffix(path, "/maintainers"):
 		return nonPlatformMutationEntry("HostedApp", "maintainers", appaccess.PermAppHostingAppsPublish, true), true
 	case strings.HasSuffix(path, "/transfer"):
@@ -247,7 +257,7 @@ func appHostingMutationSecuritySurface(method, path string) (nonPlatformMutation
 			ScopeRequired:     true,
 			AuditRequired:     true,
 		}, true
-	case strings.HasSuffix(path, "/suspend") && !strings.HasSuffix(path, "/unsuspend"):
+	case strings.HasSuffix(path, "/suspend"):
 		return nonPlatformMutationEntry("HostedApp", "suspend", appaccess.PermAppHostingAdminManage, true), true
 	case strings.HasSuffix(path, "/unsuspend"):
 		return nonPlatformMutationEntry("HostedApp", "unsuspend", appaccess.PermAppHostingAdminManage, true), true
