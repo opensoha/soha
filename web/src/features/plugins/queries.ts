@@ -1,15 +1,16 @@
 import { queryOptions } from '@tanstack/react-query'
 import { pluginApi } from './plugin-api'
 import { pluginKeys } from './keys'
-import type { PluginMarketplaceFilters } from './plugin-model'
+import type { PluginMarketplaceFilters, PluginRepositoryRefsRequest } from './plugin-model'
 import { normalizePluginMarketplaceFilters } from './plugin-model'
 
 export const pluginQueries = {
-  marketplace: (filters: PluginMarketplaceFilters = {}) => {
+  marketplace: (filters: PluginMarketplaceFilters = {}, enabled = true) => {
     const normalized = normalizePluginMarketplaceFilters(filters)
     return queryOptions({
       queryKey: pluginKeys.marketplaceList(normalized),
-      queryFn: () => pluginApi.marketplace(normalized),
+      queryFn: () => pluginApi.marketplaceWithMeta(normalized),
+      enabled,
     })
   },
   marketplaceDetail: (pluginId: string, filters: PluginMarketplaceFilters = {}, enabled = true) => {
@@ -26,6 +27,17 @@ export const pluginQueries = {
       queryKey: pluginKeys.installedList(),
       queryFn: pluginApi.installed,
       enabled,
+    }),
+  updates: (pluginIds: readonly string[], enabled: boolean) =>
+    queryOptions({
+      queryKey: [...pluginKeys.updates(), pluginIds],
+      queryFn: () => (pluginIds.length ? pluginApi.updates(pluginIds) : Promise.resolve([])),
+      enabled: enabled && pluginIds.length > 0,
+    }),
+  repositoryRefs: (input: PluginRepositoryRefsRequest) =>
+    queryOptions({
+      queryKey: pluginKeys.repositoryRefs(input),
+      queryFn: ({ signal }) => pluginApi.repositoryRefs(input, signal),
     }),
   installedDetail: (pluginId: string, enabled = true) => {
     const id = pluginId.trim()

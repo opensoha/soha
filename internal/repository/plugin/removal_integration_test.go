@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,7 +32,7 @@ func TestPluginRemovalRollsBackCompanionRetirementWithPostgres(t *testing.T) {
 	}
 	store, err := dbstore.New(config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql",
-		Password: "test-only", SSLMode: "disable",
+		Password: "test-only", SSLMode: "disable", MaxOpenConns: 1,
 	}, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
@@ -49,10 +50,11 @@ func TestPluginRemovalRollsBackCompanionRetirementWithPostgres(t *testing.T) {
 		_ = store.DB().Exec("DELETE FROM companion_artifacts WHERE plugin_id = ?", id).Error
 		_ = store.DB().Exec("DELETE FROM installed_plugins WHERE id = ?", id).Error
 	})
-	if _, err := plugins.UpsertInstalled(ctx, domainplugin.InstalledPlugin{
+	installed, err := plugins.UpsertInstalled(ctx, domainplugin.InstalledPlugin{
 		ID: id, Name: "test pack", Version: "1.0.0", Type: "companion-pack",
 		Status: "enabled", InstalledAt: now, UpdatedAt: now,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := companions.PutArtifact(ctx, domaincompanion.Artifact{
@@ -60,6 +62,44 @@ func TestPluginRemovalRollsBackCompanionRetirementWithPostgres(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("artifact_update_rolls_back", func(t *testing.T) {
+		updateCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		interrupted := errors.New("plugin update interrupted after artifact activation")
+		_, err := plugins.UpdateInstalled(updateCtx, installed, installed, func(ctx context.Context, next *domainplugin.InstalledPlugin) error {
+			const version = "2.0.0"
+			if _, err := companions.PutArtifact(ctx, domaincompanion.Artifact{
+				PluginID: id, Version: version, SizeBytes: 1, InstalledAt: now,
+			}); err != nil {
+				return err
+			}
+			items, err := companions.ListArtifacts(ctx, id)
+			if err != nil || len(items) != 2 {
+				return fmt.Errorf("list artifacts in update: count=%d err=%v", len(items), err)
+			}
+			if _, err := companions.ActivateArtifact(ctx, id, version, now); err != nil {
+				return err
+			}
+			active, err := companions.GetActiveArtifact(ctx, id)
+			if err != nil || active.Version != version {
+				return fmt.Errorf("active artifact in update: version=%q err=%v", active.Version, err)
+			}
+			next.Version = active.Version
+			return interrupted
+		})
+		if !errors.Is(err, interrupted) {
+			t.Fatalf("interrupted update = %v, want %v", err, interrupted)
+		}
+		items, err := companions.ListArtifacts(t.Context(), id)
+		if err != nil || len(items) != 1 || items[0].Version != installed.Version || !items[0].Active {
+			t.Fatalf("artifacts after rollback = %#v, err=%v", items, err)
+		}
+		current, err := plugins.GetInstalled(t.Context(), id)
+		if err != nil || current.Version != installed.Version || !current.UpdatedAt.Equal(installed.UpdatedAt) {
+			t.Fatalf("installation after rollback = %#v, err=%v", current, err)
+		}
+	})
+
 	retire := func(ctx context.Context, item domainplugin.InstalledPlugin) error {
 		return companions.RetireArtifacts(ctx, item.ID, now)
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -74,8 +75,9 @@ type Service struct {
 	marketplaceMu sync.RWMutex
 	marketplace   MarketplaceProvider
 	extensions    *ExtensionRegistry
+	projectionMu  sync.Mutex
 	companions    CompanionArtifactLifecycle
-	adHocProvider func(string) (MarketplaceProvider, error)
+	repositories  *repositoryDistribution
 }
 
 type Option func(*Service)
@@ -91,9 +93,6 @@ func NewWithOptions(repo domainplugin.Repository, permissions *appaccess.Permiss
 		audit:       audit,
 		marketplace: NewCompositeMarketplaceProvider(),
 		extensions:  NewExtensionRegistry(),
-	}
-	s.adHocProvider = func(marketplaceURL string) (MarketplaceProvider, error) {
-		return NewAdHocRemoteMarketplaceProvider(MarketplaceSource{ID: "ad-hoc", URL: marketplaceURL})
 	}
 	for _, option := range options {
 		if option != nil {
@@ -126,31 +125,40 @@ func WithCompanionArtifacts(lifecycle CompanionArtifactLifecycle) Option {
 }
 
 func (s *Service) ListMarketplace(ctx context.Context, principal domainidentity.Principal, filter domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error) {
+	result, err := s.ListMarketplaceWithSources(ctx, principal, filter)
+	return result.Items, err
+}
+
+func (s *Service) ListMarketplaceWithSources(ctx context.Context, principal domainidentity.Principal, filter domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginView); err != nil {
-		return nil, err
+		return sohaapi.MarketplacePluginListEnvelope{}, err
 	}
 	provider, err := s.providerFor(filter.MarketplaceURL)
 	if err != nil {
-		return nil, err
+		return sohaapi.MarketplacePluginListEnvelope{}, err
 	}
 	installed, err := s.repo.ListInstalled(ctx)
 	if err != nil {
-		return nil, err
+		return sohaapi.MarketplacePluginListEnvelope{}, err
 	}
 	installedIDs := map[string]bool{}
 	for _, item := range installed {
 		installedIDs[item.ID] = true
 	}
-	marketplaceItems, err := provider.List(ctx, filter)
+	result, err := listMarketplaceProvider(ctx, provider, filter)
 	if err != nil {
-		return nil, err
+		if result.Meta != nil {
+			err = apperrors.NewBusiness(err, "", "The requested plugin marketplace sources are unavailable.", "请求的插件市场来源暂时不可用。")
+		}
+		return sohaapi.MarketplacePluginListEnvelope{}, err
 	}
-	items := make([]domainplugin.MarketplacePlugin, 0, len(marketplaceItems))
-	for _, item := range marketplaceItems {
+	items := make([]domainplugin.MarketplacePlugin, 0, len(result.Items))
+	for _, item := range result.Items {
 		item.Installed = installedIDs[item.ID]
 		items = append(items, item)
 	}
-	return items, nil
+	result.Items = items
+	return result, nil
 }
 
 func (s *Service) GetMarketplace(ctx context.Context, principal domainidentity.Principal, ref domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error) {
@@ -217,6 +225,10 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	return s.installResolved(ctx, principal, input, resolved)
+}
+
+func (s *Service) installResolved(ctx context.Context, principal domainidentity.Principal, input domainplugin.PluginInstallRequest, resolved ResolvedManifest) (domainplugin.InstalledPlugin, error) {
 	manifest := resolved.Manifest
 	if err := validateManifest(manifest); err != nil {
 		return domainplugin.InstalledPlugin{}, err
@@ -224,33 +236,6 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 	checksum, checksumStatus, err := checksumEvidence(manifest, input.ExpectedChecksum, resolved)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
-	}
-	var artifactRecords []domainplugin.PluginArtifactRecord
-	activeVersion := ""
-	if manifest.Type == "companion-pack" {
-		if s.companions == nil {
-			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
-		}
-		descriptor := input.Package
-		if descriptor == nil {
-			descriptor = resolved.Package
-		}
-		if descriptor == nil {
-			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion package descriptor is required", apperrors.ErrInvalidArgument)
-		}
-		if _, err := s.companions.Install(ctx, manifest, *descriptor); err != nil {
-			return domainplugin.InstalledPlugin{}, err
-		}
-		if input.Enable {
-			if _, err := s.companions.Activate(ctx, manifest.ID, manifest.Version); err != nil {
-				return domainplugin.InstalledPlugin{}, err
-			}
-		}
-		artifactRecords, err = s.companions.Records(ctx, manifest.ID)
-		if err != nil {
-			return domainplugin.InstalledPlugin{}, err
-		}
-		activeVersion = activeArtifactVersion(artifactRecords)
 	}
 	now := time.Now().UTC()
 	status := statusDisabled
@@ -262,7 +247,7 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 		status = statusEnabled
 		enabledAt = &now
 	}
-	item := domainplugin.InstalledPlugin{
+	candidate := domainplugin.InstalledPlugin{
 		ID:                   manifest.ID,
 		Name:                 manifest.Name,
 		Version:              manifest.Version,
@@ -270,11 +255,10 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 		Type:                 manifest.Type,
 		Status:               status,
 		Source:               firstNonEmpty(resolved.Source, input.Source, "direct-manifest"),
+		SourceInfo:           resolved.SourceInfo,
 		Manifest:             manifest,
 		ChecksumStatus:       checksumStatus,
 		SignatureStatus:      firstNonEmpty(resolved.SignatureStatus, integrityStatus(manifest)),
-		ActiveVersion:        activeVersion,
-		Artifacts:            artifactRecords,
 		RequestedPermissions: manifest.Permissions,
 		ConfiguredSecretRefs: map[string]string{},
 		InstalledBy:          firstNonEmpty(principal.UserID, principal.UserName, "system"),
@@ -289,13 +273,43 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 			"configured":       configured,
 		},
 	}
-	item, err = s.repo.UpsertInstalled(ctx, item)
+	var prepare func(context.Context) error
+	if manifest.Type == "companion-pack" {
+		prepare = func(installContext context.Context) error {
+			return s.upgradeCompanionArtifact(installContext, candidate, manifest, input, resolved)
+		}
+	}
+	item, created, err := s.repo.CreateInstalled(ctx, candidate, prepare)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.reconcileItem(item)
+	if !created && !sameInstallation(item, candidate) {
+		return domainplugin.InstalledPlugin{}, repositorySourceConflict()
+	}
+	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if !created {
+		return item, nil
+	}
+	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "install", item, "installed plugin manifest snapshot")
 	return item, nil
+}
+
+func sameInstallation(current, candidate domainplugin.InstalledPlugin) bool {
+	if current.SourceInfo != nil && candidate.SourceInfo != nil {
+		return current.Version == candidate.Version &&
+			samePluginSource(current.SourceInfo, candidate.SourceInfo) &&
+			metadataString(current.Metadata, "manifestChecksum") == metadataString(candidate.Metadata, "manifestChecksum")
+	}
+	if repositoryInstalled(current) || repositoryInstalled(candidate) {
+		return false
+	}
+	return current.Version == candidate.Version && current.Source == candidate.Source &&
+		metadataString(current.Metadata, "sourceId") == metadataString(candidate.Metadata, "sourceId") &&
+		metadataString(current.Metadata, "marketplaceUrl") == metadataString(candidate.Metadata, "marketplaceUrl") &&
+		metadataString(current.Metadata, "manifestChecksum") == metadataString(candidate.Metadata, "manifestChecksum")
 }
 
 func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.InstalledPlugin, error) {
@@ -306,6 +320,7 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	expected := item
 	now := time.Now().UTC()
 	if manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs, item.Metadata) {
 		item.Status = statusEnabled
@@ -327,11 +342,11 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 		item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 	}
 	item.UpdatedAt = now
-	item, err = s.repo.UpsertInstalled(ctx, item)
+	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.reconcileItem(item)
+	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "enable", item, "enabled plugin")
 	return item, nil
 }
@@ -344,16 +359,17 @@ func (s *Service) Disable(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	expected := item
 	now := time.Now().UTC()
 	item.Status = statusDisabled
 	item.DisabledAt = &now
 	item.EnabledAt = nil
 	item.UpdatedAt = now
-	item, err = s.repo.UpsertInstalled(ctx, item)
+	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.extensions.UnregisterPlugin(item.ID)
+	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "disable", item, "disabled plugin")
 	return item, nil
 }
@@ -366,13 +382,27 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	if repositoryInstalled(current) {
+		return domainplugin.InstalledPlugin{}, repositorySourceConflict()
+	}
 	if input.PluginID == "" {
 		input.PluginID = pluginID
+	}
+	if err := s.constrainLegacyUpgrade(current, &input); err != nil {
+		return domainplugin.InstalledPlugin{}, err
 	}
 	resolved, err := s.resolveInstallManifest(ctx, input)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	if current.SourceInfo != nil && !samePluginSource(current.SourceInfo, resolved.SourceInfo) {
+		return domainplugin.InstalledPlugin{}, repositorySourceConflict()
+	}
+	return s.upgradeResolved(ctx, principal, current, input, resolved)
+}
+
+func (s *Service) upgradeResolved(ctx context.Context, principal domainidentity.Principal, current domainplugin.InstalledPlugin, input domainplugin.PluginInstallRequest, resolved ResolvedManifest) (domainplugin.InstalledPlugin, error) {
+	expected := current
 	manifest := resolved.Manifest
 	if strings.TrimSpace(manifest.ID) != current.ID {
 		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: upgraded manifest id must match installed plugin id", apperrors.ErrInvalidArgument)
@@ -387,14 +417,12 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	if err := s.upgradeCompanionArtifact(ctx, current, manifest, input, resolved); err != nil {
-		return domainplugin.InstalledPlugin{}, err
-	}
 	current.Name = manifest.Name
 	current.Version = manifest.Version
 	current.Publisher = manifest.Publisher
 	current.Type = manifest.Type
 	current.Source = firstNonEmpty(resolved.Source, input.Source, current.Source)
+	current.SourceInfo = resolved.SourceInfo
 	current.Manifest = manifest
 	current.ChecksumStatus = checksumStatus
 	current.SignatureStatus = firstNonEmpty(resolved.SignatureStatus, integrityStatus(manifest))
@@ -413,14 +441,20 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 		current.EnabledAt = nil
 		current.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 	}
-	item, err := s.repo.UpsertInstalled(ctx, current)
+	var prepare func(context.Context, *domainplugin.InstalledPlugin) error
+	if manifest.Type == "companion-pack" {
+		prepare = func(ctx context.Context, _ *domainplugin.InstalledPlugin) error {
+			return s.upgradeCompanionArtifact(ctx, expected, manifest, input, resolved)
+		}
+	}
+	item, err := s.repo.UpdateInstalled(ctx, expected, current, prepare)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.reconcileItem(item)
+	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "upgrade", item, "upgraded plugin manifest snapshot")
 	return item, nil
 }
@@ -462,12 +496,12 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	expected := item
 	if input.SecretRefs != nil {
 		item.ConfiguredSecretRefs = normalizeStringMap(input.SecretRefs)
 	}
 	if input.Metadata != nil {
-		item.Metadata = normalizeMetadata(input.Metadata)
-		item.Metadata["permissionModel"] = "requested-only"
+		item.Metadata = updatePluginMetadata(item.Metadata, input.Metadata)
 	}
 	now := time.Now().UTC()
 	if input.Enabled != nil {
@@ -506,11 +540,11 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 		}
 	}
 	item.UpdatedAt = now
-	item, err = s.repo.UpsertInstalled(ctx, item)
+	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.reconcileItem(item)
+	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "configure", item, "configured plugin")
 	return item, nil
 }
@@ -528,7 +562,7 @@ func (s *Service) Remove(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return err
 	}
-	s.extensions.UnregisterPlugin(pluginID)
+	s.reconcileCurrent(ctx, pluginID)
 	s.recordAudit(ctx, principal, "remove", item, "removed plugin")
 	return nil
 }
@@ -547,11 +581,7 @@ func (s *Service) ActivateCompanion(ctx context.Context, principal domainidentit
 	if item.Type != "companion-pack" || s.companions == nil {
 		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
 	}
-	active, err := s.companions.Activate(ctx, pluginID, input.Version)
-	if err != nil {
-		return domainplugin.InstalledPlugin{}, err
-	}
-	return s.publishActiveCompanion(ctx, principal, item, active, "activate")
+	return s.publishActiveCompanion(ctx, principal, item, input.Version, "activate", s.companions.Activate)
 }
 
 func (s *Service) RollbackCompanion(ctx context.Context, principal domainidentity.Principal, pluginID, idempotencyKey string, input domainplugin.CompanionRollbackRequest) (domainplugin.InstalledPlugin, error) {
@@ -571,11 +601,7 @@ func (s *Service) RollbackCompanion(ctx context.Context, principal domainidentit
 	if item.Type != "companion-pack" || s.companions == nil {
 		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
 	}
-	active, err := s.companions.Rollback(ctx, pluginID, input.Version)
-	if err != nil {
-		return domainplugin.InstalledPlugin{}, err
-	}
-	return s.publishActiveCompanion(ctx, principal, item, active, "rollback")
+	return s.publishActiveCompanion(ctx, principal, item, input.Version, "rollback", s.companions.Rollback)
 }
 
 func (s *Service) OpenCompanionAsset(ctx context.Context, principal domainidentity.Principal, pluginID, assetPath string) (io.ReadCloser, string, string, error) {
@@ -592,29 +618,38 @@ func (s *Service) OpenCompanionAsset(ctx context.Context, principal domainidenti
 	return s.companions.OpenAsset(ctx, pluginID, assetPath)
 }
 
-func (s *Service) publishActiveCompanion(ctx context.Context, principal domainidentity.Principal, item domainplugin.InstalledPlugin, active domainplugin.PluginArtifactRecord, action string) (domainplugin.InstalledPlugin, error) {
-	pack, err := s.companions.ActivePack(ctx, item.ID)
-	if err != nil {
-		return domainplugin.InstalledPlugin{}, err
-	}
-	now := time.Now().UTC()
-	item.Version = active.Version
-	item.Manifest.Version = active.Version
-	item.Manifest.CompanionPack = &pack
-	item.Status = statusEnabled
-	item.EnabledAt = &now
-	item.DisabledAt = nil
-	item.ChecksumStatus = string(active.ChecksumStatus)
-	item.SignatureStatus = string(active.SignatureStatus)
-	item.UpdatedAt = now
-	item, err = s.repo.UpsertInstalled(ctx, item)
+func (s *Service) publishActiveCompanion(
+	ctx context.Context, principal domainidentity.Principal, item domainplugin.InstalledPlugin, version, action string,
+	selectArtifact func(context.Context, string, string) (domainplugin.PluginArtifactRecord, error),
+) (domainplugin.InstalledPlugin, error) {
+	item, err := s.repo.UpdateInstalled(ctx, item, item, func(txCtx context.Context, next *domainplugin.InstalledPlugin) error {
+		active, err := selectArtifact(txCtx, next.ID, version)
+		if err != nil {
+			return err
+		}
+		pack, err := s.companions.ActivePack(txCtx, next.ID)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		next.Version = active.Version
+		next.Manifest.Version = active.Version
+		next.Manifest.CompanionPack = &pack
+		next.Status = statusEnabled
+		next.EnabledAt = &now
+		next.DisabledAt = nil
+		next.ChecksumStatus = string(active.ChecksumStatus)
+		next.SignatureStatus = string(active.SignatureStatus)
+		next.UpdatedAt = now
+		return nil
+	})
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	s.reconcileItem(item)
+	s.reconcileCurrent(ctx, item.ID)
 	summary := "activated companion pack"
 	if action == "rollback" {
 		summary = "rolled back companion pack"
@@ -664,6 +699,8 @@ func (s *Service) ListExtensions(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) Reconcile(ctx context.Context) error {
+	s.projectionMu.Lock()
+	defer s.projectionMu.Unlock()
 	items, err := s.repo.ListInstalled(ctx)
 	if err != nil {
 		return err
@@ -672,6 +709,20 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		s.reconcileItem(item)
 	}
 	return nil
+}
+
+func (s *Service) reconcileCurrent(ctx context.Context, pluginID string) {
+	s.projectionMu.Lock()
+	defer s.projectionMu.Unlock()
+	// Mutation callbacks can finish out of order after committing; project the current row.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	item, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		s.extensions.UnregisterPlugin(pluginID)
+		return
+	}
+	s.reconcileItem(item)
 }
 
 func (s *Service) reconcileItem(item domainplugin.InstalledPlugin) {
@@ -693,6 +744,7 @@ func (s *Service) resolveInstallManifest(ctx context.Context, input domainplugin
 			Source:          firstNonEmpty(input.Source, "direct-manifest"),
 			SourceID:        input.SourceID,
 			MarketplaceURL:  input.MarketplaceURL,
+			SourceInfo:      &domainplugin.PluginSourceInfo{Kind: domainplugin.SourceKindDirectManifest, CanonicalSource: "direct-manifest"},
 			Package:         input.Package,
 		}, nil
 	}
@@ -723,10 +775,7 @@ func (s *Service) providerFor(marketplaceURL string) (MarketplaceProvider, error
 	if provider, ok := configuredMarketplaceProviderForURL(marketplace, marketplaceURL); ok {
 		return provider, nil
 	}
-	if s.adHocProvider == nil {
-		return nil, fmt.Errorf("%w: ad-hoc marketplace urls are not enabled", apperrors.ErrInvalidArgument)
-	}
-	return s.adHocProvider(marketplaceURL)
+	return nil, fmt.Errorf("%w: marketplace URL is not configured on this server", apperrors.ErrInvalidArgument)
 }
 
 // ReconfigureMarketplace atomically publishes a fully constructed provider.
@@ -831,6 +880,16 @@ func manifestChecksum(manifest domainplugin.PluginManifest, expected string) (st
 }
 
 func checksumEvidence(manifest domainplugin.PluginManifest, expected string, resolved ResolvedManifest) (string, string, error) {
+	if resolved.RawChecksum != "" {
+		expected = strings.TrimSpace(expected)
+		if expected != "" && expected != resolved.RawChecksum {
+			return resolved.RawChecksum, "mismatch", fmt.Errorf("%w: manifest checksum mismatch", apperrors.ErrInvalidArgument)
+		}
+		if expected != "" {
+			return resolved.RawChecksum, "verified", nil
+		}
+		return resolved.RawChecksum, resolved.ChecksumStatus, nil
+	}
 	if strings.TrimSpace(expected) != "" {
 		return manifestChecksum(manifest, expected)
 	}

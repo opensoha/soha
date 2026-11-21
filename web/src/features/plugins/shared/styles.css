@@ -83,6 +83,13 @@
   flex-shrink: 0;
 }
 
+.soha-plugin-update-version,
+.soha-plugin-release-name {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .soha-plugin-market-card-source {
   display: flex;
   flex-wrap: wrap;
@@ -313,6 +320,33 @@
   padding: 10px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.soha-plugin-repository-dialog,
+.soha-plugin-repository-review {
+  width: 100%;
+}
+
+.soha-plugin-repository-review .ant-descriptions-item-content,
+.soha-plugin-permission-diff,
+.soha-plugin-digest {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.soha-plugin-digest {
+  font-family: var(--ant-font-family-code);
+  font-size: 12px;
+}
+
+.soha-plugin-repository-installed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 6px;
+  padding: 12px;
 }
 
 .soha-plugin-extension-list {

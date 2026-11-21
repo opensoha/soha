@@ -9,5 +9,5 @@ use (
 
 replace (
 	github.com/opensoha/soha/contracts v0.2.0 => ./contracts
-	github.com/opensoha/soha/contracts v0.2.1 => ./contracts
+	github.com/opensoha/soha/contracts v0.2.2 => ./contracts
 )

@@ -1541,6 +1541,309 @@ func TestRunPluginCommands(t *testing.T) {
 	}
 }
 
+func TestRunPluginRepositoryInstallPreviewConfirm(t *testing.T) {
+	const token = "preview-token-secret"
+	var previewBodies []map[string]any
+	var installBodies []map[string]any
+	counts := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer profile-token" {
+			t.Fatalf("unexpected Authorization header %q", r.Header.Get("Authorization"))
+		}
+		counts[r.Method+" "+r.URL.Path]++
+		switch r.URL.Path {
+		case "/api/v1/plugins/repository/preview":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode preview: %v", err)
+			}
+			previewBodies = append(previewBodies, body)
+			writeJSON(t, w, map[string]any{"data": pluginRepositoryPreviewFixture(token)})
+		case "/api/v1/plugins/repository/install":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode install: %v", err)
+			}
+			installBodies = append(installBodies, body)
+			writeJSON(t, w, map[string]any{"data": installedPluginFixture("installed")})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	configPath := writeTestConfig(t, server.URL)
+	var out, errOut bytes.Buffer
+	code := Run(context.Background(), []string{
+		"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin",
+		"--ref", "v1.2.0", "--yes", "--json",
+	}, Runtime{Out: &out, Err: &errOut, ConfigPath: configPath})
+	if code != 0 {
+		t.Fatalf("repository install returned %d: stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	jsonText := out.String() + errOut.String()
+	if strings.Contains(jsonText, token) || strings.Contains(jsonText, `"previewToken"`) {
+		t.Fatalf("repository preview leaked its token: %s", jsonText)
+	}
+	if strings.ContainsAny(jsonText, "\x1b\u202e") {
+		t.Fatalf("repository preview emitted terminal controls: %q", jsonText)
+	}
+	if len(installBodies) != 1 || len(installBodies[0]) != 1 || installBodies[0]["previewToken"] != token {
+		t.Fatalf("install must send only the preview token by default: %#v", installBodies)
+	}
+	if len(previewBodies) != 1 || previewBodies[0]["repositoryUrl"] != "https://github.com/example/plugin" || previewBodies[0]["ref"] != "v1.2.0" {
+		t.Fatalf("unexpected preview request: %#v", previewBodies)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	code = Run(context.Background(), []string{
+		"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin",
+		"--enable", "--yes",
+	}, Runtime{Out: &out, Err: &errOut, ConfigPath: configPath})
+	if code != 0 {
+		t.Fatalf("enabled repository install returned %d: stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if _, ok := previewBodies[1]["ref"]; ok {
+		t.Fatalf("empty ref should be omitted: %#v", previewBodies[1])
+	}
+	if len(installBodies[1]) != 2 || installBodies[1]["enable"] != true || installBodies[1]["previewToken"] != token {
+		t.Fatalf("explicit --enable must be the only extra install field: %#v", installBodies[1])
+	}
+	if strings.Contains(out.String()+errOut.String(), token) {
+		t.Fatalf("human repository output leaked its token")
+	}
+	if strings.ContainsAny(out.String()+errOut.String(), "\x1b\u202e") {
+		t.Fatalf("human repository preview emitted terminal controls")
+	}
+}
+
+func TestRunPluginRepositoryNoLegacyFallback(t *testing.T) {
+	t.Run("missing-resource-is-not-an-unsupported-endpoint", func(t *testing.T) {
+		missing := &httpStatusError{StatusCode: http.StatusNotFound, Code: "not_found"}
+		if got := repositoryPluginEndpointError(missing); got != missing {
+			t.Fatalf("missing repository resource was treated as an unsupported endpoint: %v", got)
+		}
+	})
+
+	t.Run("preview-unavailable", func(t *testing.T) {
+		counts := map[string]int{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			counts[r.Method+" "+r.URL.Path]++
+			http.Error(w, "not found", http.StatusNotFound)
+		}))
+		defer server.Close()
+		var out, errOut bytes.Buffer
+		code := Run(context.Background(), []string{
+			"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "--yes", "--json",
+		}, Runtime{Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+		if code == 0 || !strings.Contains(errOut.String(), "no legacy fallback") {
+			t.Fatalf("unavailable preview should fail without fallback: code=%d stderr=%s", code, errOut.String())
+		}
+		if counts["POST /api/v1/plugins/repository/preview"] != 1 || counts["POST /api/v1/plugins/install"] != 0 || counts["POST /api/v1/plugins/repository/install"] != 0 {
+			t.Fatalf("unexpected calls after preview failure: %#v", counts)
+		}
+	})
+
+	t.Run("install-unavailable", func(t *testing.T) {
+		counts := map[string]int{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			counts[r.Method+" "+r.URL.Path]++
+			switch r.URL.Path {
+			case "/api/v1/plugins/repository/preview":
+				writeJSON(t, w, map[string]any{"data": pluginRepositoryPreviewFixture("preview-token")})
+			default:
+				http.Error(w, "not found", http.StatusNotFound)
+			}
+		}))
+		defer server.Close()
+		var out, errOut bytes.Buffer
+		code := Run(context.Background(), []string{
+			"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "--yes", "--json",
+		}, Runtime{Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+		if code == 0 || !strings.Contains(errOut.String(), "no legacy fallback") {
+			t.Fatalf("unavailable confirm should fail without fallback: code=%d stderr=%s", code, errOut.String())
+		}
+		if counts["POST /api/v1/plugins/repository/preview"] != 1 || counts["POST /api/v1/plugins/repository/install"] != 1 || counts["POST /api/v1/plugins/install"] != 0 {
+			t.Fatalf("unexpected calls after confirm failure: %#v", counts)
+		}
+	})
+
+	t.Run("server-error-does-not-echo-token", func(t *testing.T) {
+		const token = "preview-token-secret"
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/v1/plugins/repository/preview":
+				writeJSON(t, w, map[string]any{"data": pluginRepositoryPreviewFixture(token)})
+			case "/api/v1/plugins/repository/install":
+				http.Error(w, `{"error":"rejected preview-token-secret"}`, http.StatusConflict)
+			default:
+				t.Fatalf("unexpected path %s", r.URL.Path)
+			}
+		}))
+		defer server.Close()
+		var out, errOut bytes.Buffer
+		code := Run(context.Background(), []string{
+			"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "--yes", "--json",
+		}, Runtime{Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+		if code == 0 || strings.Contains(out.String()+errOut.String(), token) {
+			t.Fatalf("server token echo was not redacted: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+	})
+}
+
+func TestRunPluginRepositoryConfirmationRequiredBeforeWrite(t *testing.T) {
+	installs := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/plugins/repository/preview":
+			writeJSON(t, w, map[string]any{"data": pluginRepositoryPreviewFixture("preview-token")})
+		case "/api/v1/plugins/repository/install":
+			installs++
+			writeJSON(t, w, map[string]any{"data": installedPluginFixture("installed")})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	var out, errOut bytes.Buffer
+	code := Run(context.Background(), []string{
+		"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin",
+	}, Runtime{In: bytes.NewReader(nil), Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+	if code == 0 || !strings.Contains(errOut.String(), "--yes") {
+		t.Fatalf("non-interactive preview should stop before write: code=%d stderr=%s", code, errOut.String())
+	}
+	if installs != 0 {
+		t.Fatalf("unconfirmed repository install wrote %d times", installs)
+	}
+}
+
+func TestRunPluginRepositoryFlagsRejectAmbiguousSource(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "unexpected", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	configPath := writeTestConfig(t, server.URL)
+	for _, args := range [][]string{
+		{"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "--source", "other", "--yes"},
+		{"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "--manifest", "plugin.json", "--yes"},
+		{"plugin", "install", "--profile", "dev", "--repository", "https://github.com/example/plugin", "plugin-id", "--yes"},
+		{"plugin", "upgrade", "--profile", "dev", "--repository", "--version", "1.0.0", "plugin-id", "--yes"},
+		{"plugin", "install", "--profile", "dev", "--yes", "plugin-id"},
+	} {
+		var out bytes.Buffer
+		if code := Run(context.Background(), args, Runtime{Out: &out, Err: &bytes.Buffer{}, ConfigPath: configPath}); code == 0 {
+			t.Fatalf("%v accepted ambiguous repository source flags", args)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("ambiguous repository flags made %d HTTP requests", requests)
+	}
+}
+
+func TestRunPluginRepositoryUpgradeUsesStoredSourceAndPermissions(t *testing.T) {
+	const token = "upgrade-preview-token"
+	upgrades := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/plugins/example.plugin":
+			installed := installedPluginFixture("installed")
+			installed["requestedPermissions"] = map[string]any{
+				"required": []string{"ai.gateway.view"},
+				"domain":   []string{"workspace.resource.view"},
+			}
+			installed["sourceInfo"] = map[string]any{
+				"kind":            "github-repo",
+				"canonicalSource": "https://github.com/example/plugin",
+				"commitSha":       strings.Repeat("a", 40),
+				"official":        false,
+				"pinnedRef":       "v1.0.0",
+			}
+			writeJSON(t, w, map[string]any{"data": installed})
+		case "/api/v1/plugins/repository/preview":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode preview: %v", err)
+			}
+			if body["repositoryUrl"] != "https://github.com/example/plugin" || body["ref"] != nil {
+				t.Fatalf("upgrade must preview the stored source: %#v", body)
+			}
+			preview := pluginRepositoryPreviewFixture(token)
+			preview["manifest"].(map[string]any)["id"] = "example.plugin"
+			preview["manifest"].(map[string]any)["permissions"] = map[string]any{
+				"required": []string{"ai.gateway.view", "ai.gateway.invoke"},
+				"domain":   []string{"workspace.resource.view", "workspace.resource.write"},
+			}
+			writeJSON(t, w, map[string]any{"data": preview})
+		case "/api/v1/plugins/example.plugin/repository/upgrade":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode upgrade: %v", err)
+			}
+			if body["previewToken"] != token || body["confirmPermissionIncrease"] != true {
+				t.Fatalf("unexpected repository upgrade body: %#v", body)
+			}
+			upgrades++
+			writeJSON(t, w, map[string]any{"data": installedPluginFixture("enabled")})
+		case "/api/v1/plugins/example.plugin/upgrade":
+			t.Fatalf("repository upgrade fell back to the legacy route")
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	var out, errOut bytes.Buffer
+	code := Run(context.Background(), []string{
+		"plugin", "upgrade", "--profile", "dev", "--repository", "--yes", "--confirm-permission-increase", "--json", "example.plugin",
+	}, Runtime{Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+	if code != 0 {
+		t.Fatalf("repository upgrade returned %d: stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if upgrades != 1 || strings.Contains(out.String()+errOut.String(), token) {
+		t.Fatalf("unexpected upgrade result: calls=%d stdout=%s stderr=%s", upgrades, out.String(), errOut.String())
+	}
+	for _, want := range []string{"ai.gateway.invoke", "workspace.resource.write"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("upgrade review did not show added permission %q: %s", want, errOut.String())
+		}
+	}
+
+	upgrades = 0
+	out.Reset()
+	errOut.Reset()
+	code = Run(context.Background(), []string{
+		"plugin", "upgrade", "--profile", "dev", "--repository", "--yes", "example.plugin",
+	}, Runtime{Out: &out, Err: &errOut, ConfigPath: writeTestConfig(t, server.URL)})
+	if code == 0 || !strings.Contains(errOut.String(), "--confirm-permission-increase") {
+		t.Fatalf("unacknowledged permissions should stop before write: code=%d stderr=%s", code, errOut.String())
+	}
+	if upgrades != 0 {
+		t.Fatalf("unacknowledged repository upgrade wrote %d times", upgrades)
+	}
+}
+
+func pluginRepositoryPreviewFixture(token string) map[string]any {
+	manifest := pluginManifestFixture()
+	manifest["description"] = "safe\x1b[2Jdescription\u202e"
+	return map[string]any{
+		"manifest": manifest,
+		"sourceInfo": map[string]any{
+			"kind":                "github-repo",
+			"canonicalSource":     "https://github.com/example/plugin",
+			"commitSha":           strings.Repeat("a", 40),
+			"rawManifestChecksum": "sha256:" + strings.Repeat("b", 64),
+			"official":            false,
+			"pinnedRef":           "v1.2.0",
+		},
+		"checksumStatus":  "computed",
+		"signatureStatus": "unverified",
+		"previewToken":    token,
+		"expiresAt":       "2026-11-21T12:00:00Z",
+	}
+}
+
 func TestRunPluginMarketplaceSourceFlags(t *testing.T) {
 	var searchQuery url.Values
 	var showQuery url.Values
