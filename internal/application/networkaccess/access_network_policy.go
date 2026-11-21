@@ -25,6 +25,7 @@ type AccessNetworkDecision struct {
 	VLANID                int    `json:"-"`
 	FilterID              string `json:"-"`
 	SessionTimeoutSeconds int    `json:"-"`
+	StrictOnline          bool   `json:"-"`
 }
 
 // MatchAccessNetwork selects only from the authenticated NAS's site. Retired rows
@@ -87,16 +88,20 @@ func canonicalBSSID(value string) string {
 }
 
 func EvaluateAccessNetwork(now time.Time, network domain.AccessNetwork, method string, subject domain.Subject, device domain.Device, site domain.Site, snapshot domain.PolicySnapshot) AccessNetworkDecision {
+	return evaluateAccessNetwork(now, network, method, subject, device, site, snapshot, false)
+}
+
+func evaluateAccessNetwork(now time.Time, network domain.AccessNetwork, method string, subject domain.Subject, device domain.Device, site domain.Site, snapshot domain.PolicySnapshot, strictQualified bool) AccessNetworkDecision {
 	cfg := network.Configuration
-	decision := AccessNetworkDecision{AccessNetworkID: network.ID, Name: cfg.Name, ReasonCode: "access_network_disabled"}
+	decision := AccessNetworkDecision{AccessNetworkID: network.ID, Name: cfg.Name, ReasonCode: "access_network_disabled", StrictOnline: cfg.Kind == domain.AccessNetworkStrict}
 	if network.Deleted || !cfg.Enabled || cfg.SiteID != site.ID {
 		return decision
 	}
-	if cfg.Kind != domain.AccessNetworkStandard {
+	method = strings.ReplaceAll(method, "-", "_")
+	if cfg.Kind != domain.AccessNetworkStandard && !(decision.StrictOnline && strictQualified && method == "eap_tls") {
 		decision.ReasonCode = "access_network_requires_other_admission"
 		return decision
 	}
-	method = strings.ReplaceAll(method, "-", "_")
 	if method == "eap_ttls_pap" {
 		input := AdmissionInput{SubjectUserID: subject.UserID, DeviceID: device.ID, SiteID: site.ID, Mode: domain.ModeInternalDirect}
 		if admissionDenyReason(input, subject, device, site, snapshot) != "" {

@@ -413,6 +413,9 @@ func (h *handler) radiusPostAuth(c *gin.Context) {
 		"reply:Session-Timeout": attribute(fmt.Sprint(result.RadiusAttributes.SessionTimeoutSeconds)),
 		"reply:Class":           attribute(result.SessionID),
 	}
+	if result.RadiusAttributes.Reauthenticate {
+		attributes["reply:Termination-Action"] = attribute("RADIUS-Request")
+	}
 	if result.RadiusAttributes.VLANID != 0 {
 		attributes["reply:Tunnel-Type"] = attribute("VLAN")
 		attributes["reply:Tunnel-Medium-Type"] = attribute("IEEE-802")

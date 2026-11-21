@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +143,42 @@ func (s *accessRepositoryScenario) checkAccessNetworkNASReadback(t *testing.T) {
 	}
 	record(next, "stop", now.Add(4*time.Second))
 	assertReadback(device, networkID, "ended")
+
+	t.Run("StrictDisconnectRequiresExactCurrentAccounting", func(t *testing.T) {
+		at := now.Add(5 * time.Minute)
+		strict := add("strict", at)
+		if err := s.store.Exec(s.ctx, `UPDATE network_nas_authorizations SET strict_ui_epoch=$1 WHERE session_id=$2`, strings.Repeat("b", 64), strict); err != nil {
+			t.Fatal(err)
+		}
+		claim := func(label string, when time.Time, expectedAccounting string) {
+			t.Helper()
+			id := strict + "-" + label
+			command := domain.SessionCommand{ID: id, SessionID: strict, RuntimeID: s.runtimeID, NASID: s.nasBinding.NASID,
+				Action: domain.SessionActionDisconnect, TargetAccessProfile: domain.ProfileDeny, PolicyVersion: s.snapshot.PolicyVersion,
+				Status: domain.SessionCommandPending, ReasonCode: "strict_ui_lease_expired", PlanHash: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(id))),
+				EffectiveAt: when, ExpiresAt: when.Add(time.Minute), CreatedAt: when}
+			if _, err := s.repository.CreateSessionCommand(s.ctx, command); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.repository.ClaimNASSessionCommand(s.ctx, s.runtimeID, when)
+			if expectedAccounting == "" {
+				if !errors.Is(err, apperrors.ErrNotFound) {
+					t.Fatalf("unconfirmed or superseded strict command was delivered: %+v, %v", got, err)
+				}
+				saved, err := s.repository.GetSessionCommand(s.ctx, id)
+				if err != nil || saved.Status != domain.SessionCommandUnsupported {
+					t.Fatalf("strict command suppression was not persisted: %+v, %v", saved, err)
+				}
+			} else if err != nil || got.ID != id || !got.StrictOnline || got.AccountingSessionID != expectedAccounting {
+				t.Fatalf("strict command lost its exact accounting target: %+v, %v", got, err)
+			}
+		}
+		claim("unconfirmed", at, "")
+		record(strict, "start", at.Add(time.Second))
+		claim("confirmed", at.Add(2*time.Second), strict)
+		add("strict-newer", at.Add(3*time.Second))
+		claim("superseded", at.Add(4*time.Second), "")
+	})
 }
 
 func (s *accessRepositoryScenario) prepareNASAdmissionRoleSession(t *testing.T, now time.Time) (string, string) {

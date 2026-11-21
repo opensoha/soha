@@ -117,12 +117,17 @@ func (r *Repository) SaveAccessNetwork(ctx context.Context, item domain.AccessNe
 		if err := validateAccessNetworkBindings(tx, item.Configuration); err != nil {
 			return err
 		}
+		if item.Configuration.Enabled && item.Configuration.Kind == domain.AccessNetworkStrict {
+			if err := requireStrictNetworkDrained(tx, item.ID, item.Configuration, now); err != nil {
+				return err
+			}
+		}
 		if item.Configuration.Enabled && item.Configuration.Kind != domain.AccessNetworkBootstrap {
 			if err := ensureAccessNetworkSelectorsDoNotConflict(ctx, tx, item.ID, item.Configuration); err != nil {
 				return err
 			}
 		}
-		activate := item.Configuration.Enabled && item.Configuration.Kind == domain.AccessNetworkStandard
+		activate := item.Configuration.Enabled && item.Configuration.Kind != domain.AccessNetworkBootstrap
 		if activate && !existing.Activated {
 			if err := checkLegacyPasswordSessions(tx, item.Configuration.SiteID, item.UpdatedAt); err != nil {
 				return err
@@ -139,6 +144,38 @@ func (r *Repository) SaveAccessNetwork(ctx context.Context, item domain.AccessNe
 		return domain.AccessNetwork{}, normalizeDatabaseError(err)
 	}
 	return r.GetAccessNetwork(ctx, item.ID)
+}
+
+func requireStrictNetworkDrained(tx *gorm.DB, networkID string, cfg domain.AccessNetworkInput, now time.Time) error {
+	attachment := "(a.called_station_id !~ '^([[:xdigit:]]{2}[:-]){5}[[:xdigit:]]{2}:' OR substr(a.called_station_id,19)=?)"
+	attachmentArgs := []any{cfg.SSID}
+	if cfg.AccessMedium == domain.AccessMediumWired {
+		attachment = "((? AND (a.nas_port_id='' OR a.nas_port_id IN ?)) OR (? AND (a.nas_port IS NULL OR a.nas_port BETWEEN ? AND ?)))"
+		attachmentArgs = []any{len(cfg.PortIDs) > 0, cfg.PortIDs, cfg.PortStart != nil, cfg.PortStart, cfg.PortEnd}
+	}
+	args := append([]any{networkID, cfg.SiteID, cfg.NASBindingIDs, cfg.SiteID}, attachmentArgs...)
+	args = append(args, now)
+	var live bool
+	err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM network_nas_authorizations a
+		LEFT JOIN network_nas_session_evidence e USING (tenant_id, workspace_id, session_id)
+		LEFT JOIN network_runtime_sessions s ON s.tenant_id=a.tenant_id AND s.workspace_id=a.workspace_id AND s.id=a.session_id
+		WHERE a.tenant_id='default' AND a.workspace_id='default'
+		  AND (a.access_network_id=? OR (a.access_network_id='' AND s.site_id=?) OR (EXISTS (
+			SELECT 1 FROM network_access_nas_bindings b
+			WHERE b.tenant_id=a.tenant_id AND b.workspace_id=a.workspace_id AND b.id IN ? AND b.site_id=?
+			  AND (b.id=a.admission_binding_id OR (b.runtime_id=a.runtime_id AND b.nas_id=a.nas_id))
+		  ) AND `+attachment+`))
+		  AND a.decision='allow' AND a.strict_ui_epoch=''
+		  AND (a.valid_until>? OR s.status NOT IN ('revoked','expired') OR (e.state='active' AND e.stopped_at IS NULL))
+	)`, args...).Row().Scan(&live)
+	if err != nil {
+		return err
+	}
+	if live {
+		return accessNetworkConflict("strict_network_requires_drained_sessions", "End the current sessions before enabling strict mode.", "启用严格模式前请先结束现有会话。")
+	}
+	return nil
 }
 
 func checkLegacyPasswordSessions(tx *gorm.DB, siteID string, now time.Time) error {
@@ -236,6 +273,15 @@ func validateAccessNetworkBindings(tx *gorm.DB, cfg domain.AccessNetworkInput) e
 		}
 		if err != nil {
 			return err
+		}
+		if cfg.Enabled && cfg.Kind == domain.AccessNetworkStrict {
+			binding, err := New(tx).GetNASBinding(tx.Statement.Context, bindingID)
+			if err != nil {
+				return err
+			}
+			if !binding.SupportsStrictOnline() {
+				return accessNetworkInvalid("strict_nas_qualification_required", "Strict online admission requires qualified NAS hardware.", "启用严格在线准入前需要完成 NAS 实机验收。")
+			}
 		}
 	}
 	return nil

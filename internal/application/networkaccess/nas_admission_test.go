@@ -130,6 +130,40 @@ func TestNASAdmissionRetriesAreBoundedAndFallBackToDisconnect(t *testing.T) {
 	}
 }
 
+func TestStrictNASAdmissionFencesLoginEpoch(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := admissionSnapshot(now)
+	snapshot.Binding.AccessMedium = domain.AccessMediumWired
+	snapshot.Binding.StrictOnlineQualified = true
+	snapshot.Binding.DisconnectSupported = true
+	snapshot.Binding.EAPServerTrust = &domain.EAPServerTrust{EapMethod: "tls"}
+	snapshot.AccessNetworkID = "strict"
+	snapshot.Attachment.NASPortID = "Gi1/0/1"
+	snapshot.AuthenticationMethod = networkprotocol.NASAuthenticationEAPTLS
+	snapshot.AccessNetworks = []domain.AccessNetwork{{ID: "strict", Activated: true, Configuration: domain.AccessNetworkInput{
+		SiteID: snapshot.Site.ID, AccessMedium: domain.AccessMediumWired, Kind: domain.AccessNetworkStrict, Enabled: true,
+		NASBindingIDs: []string{snapshot.Binding.ID}, PortIDs: []string{snapshot.Attachment.NASPortID},
+		VLANID: 500, SessionTimeoutSeconds: 900, Rules: []domain.AccessNetworkRule{{Effect: domain.PolicyEffectAllow}},
+	}}}
+	loginUntil := now.Add(30 * time.Second)
+	snapshot.StrictUIEpoch = "original-login"
+	snapshot.StrictUI = domain.StrictUILease{SubjectID: snapshot.Session.SubjectID, Epoch: "original-login", Until: &loginUntil}
+	if decision := evaluateNASAdmission(snapshot, now); decision.Profile == domain.ProfileDeny || decision.RadiusAttributes == nil ||
+		decision.RadiusAttributes.SessionTimeoutSeconds != domain.StrictNASReauthenticationSeconds || !decision.RadiusAttributes.Reauthenticate {
+		t.Fatalf("bound current login did not admit with reauthentication: %+v", decision)
+	}
+	snapshot.StrictUI.Epoch = "new-login"
+	expired := reconcileNASAdmission(snapshot, now)
+	if expired == nil || expired.Profile != domain.ProfileDeny || expired.Command == nil ||
+		expired.Command.Action != domain.SessionActionDisconnect || expired.Command.SessionID != snapshot.Session.ID {
+		t.Fatalf("new login did not fence the old NAS session: %+v", expired)
+	}
+	snapshot.Binding.StrictOnlineQualified = false
+	if decision := EvaluateNASNetwork(now, snapshot); decision.Allowed {
+		t.Fatal("unqualified NAS could enable strict admission")
+	}
+}
+
 func TestNASAdmissionKeepsSelectedAccessNetwork(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := admissionSnapshot(now)

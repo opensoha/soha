@@ -10,6 +10,7 @@ import (
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/networkaccess"
+	runtime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
 )
@@ -54,6 +55,10 @@ func (s *Service) EndpointPresence(ctx context.Context, identity networkidentity
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err
 	}
+	uiLease, err := s.strictUILease(ctx, payload, uiState, credential, message.OccurredAt, now)
+	if err != nil {
+		return networkprotocol.RuntimeMessage{}, err
+	}
 
 	digest := sha256.Sum256(message.Payload)
 	policyVersion := payload.PolicyVersion
@@ -70,6 +75,7 @@ func (s *Service) EndpointPresence(ctx context.Context, identity networkidentity
 			UILastObservedAt: payload.UIObservedAt, ConfigurationVersion: payload.ConfigurationVersion, PolicyVersion: policyVersion,
 			LastObservedAt: &message.OccurredAt, LastReceivedAt: &now},
 		CredentialID: credential.ID, PayloadHash: fmt.Sprintf("sha256:%x", digest), HeartbeatIntervalSeconds: interval,
+		StrictUI: uiLease,
 	})
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err
@@ -77,6 +83,33 @@ func (s *Service) EndpointPresence(ctx context.Context, identity networkidentity
 	return s.outbound(identity, networkprotocol.MessageEndpointPresenceResult, networkprotocol.EndpointPresenceResult{
 		Accepted: true, PresenceEpoch: record.Epoch, ReceivedAt: *record.LastReceivedAt, NextHeartbeatSeconds: interval, AdmissionPolicyVersion: snapshot.PolicyVersion,
 	}, now.Add(s.options.MaxClockSkew))
+}
+
+func (s *Service) strictUILease(ctx context.Context, payload networkprotocol.EndpointPresenceRequest, uiState sohaapi.NetworkEndpointPresenceUIState, credential runtime.Credential, occurredAt, now time.Time) (domain.StrictUILease, error) {
+	if payload.UILogin == nil {
+		return domain.StrictUILease{}, nil
+	}
+	login := payload.UILogin
+	if login.SubjectID != credential.SubjectID || !slices.Contains(credential.Capabilities, "endpoint-ui-lease-v1") ||
+		!slices.Contains(credential.Capabilities, "endpoint-ui-presence-v1") {
+		return domain.StrictUILease{}, unauthorizedRuntime()
+	}
+	if uiState != sohaapi.NetworkEndpointPresenceUIStateOnline || payload.UIObservedAt == nil || payload.Status != "healthy" {
+		return domain.StrictUILease{}, nil
+	}
+	sessionDeadline, err := s.store.StrictUISessionDeadline(ctx, login.SubjectID, login.SessionID, now)
+	if err != nil {
+		return domain.StrictUILease{}, err
+	}
+	// Both clocks bound the proof. Delayed or future-dated traffic must never
+	// extend the life of a local observation.
+	until := minTime(minTime(now, occurredAt), *payload.UIObservedAt).Add(domain.StrictUILeaseDuration)
+	until = minTime(until, minTime(credential.ExpiresAt, sessionDeadline))
+	if !until.After(now) {
+		return domain.StrictUILease{}, nil
+	}
+	epoch := sha256.Sum256([]byte(credential.ID + "\x00" + payload.BootID + "\x00" + login.Epoch + "\x00" + login.SessionID))
+	return domain.StrictUILease{SubjectID: credential.SubjectID, Epoch: fmt.Sprintf("%x", epoch), Until: &until}, nil
 }
 
 func (s *Service) NASAccounting(ctx context.Context, identity networkidentity.Identity, raw []byte) error {

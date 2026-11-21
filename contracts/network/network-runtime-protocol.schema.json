@@ -756,6 +756,17 @@
           "type": "string",
           "format": "date-time"
         },
+        "uiLogin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subjectId", "epoch", "sessionId"],
+          "properties": {
+            "subjectId": { "$ref": "#/$defs/Identifier" },
+            "sessionId": { "$ref": "#/$defs/Identifier" },
+            "epoch": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+          },
+          "description": "Login scope reported by an administrator-provisioned endpoint UI presence service. The account must match the authenticated runtime credential."
+        },
         "capabilities": {
           "type": "array",
           "maxItems": 16,
@@ -1377,6 +1388,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 86400
+        },
+        "reauthenticate": {
+          "type": "boolean",
+          "description": "Request RADIUS reauthentication when the bounded session timeout expires."
         }
       }
     },
@@ -1551,6 +1566,7 @@
               "endpoint-presence-v1",
               "nas-session-accounting-v1",
               "endpoint-ui-presence-v1",
+              "endpoint-ui-lease-v1",
               "windows-channel-controls-v1",
               "radius-eap-ttls-pap-v1",
               "radius-ttls-pap-verifier-v1",

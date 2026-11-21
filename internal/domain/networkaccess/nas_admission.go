@@ -56,15 +56,23 @@ func NASRadiusProfile(networkID, siteID, profile string, network *networkprotoco
 }
 
 func (network AccessNetwork) ManagesNASAdmission() bool {
-	return network.Activated || network.Configuration.Enabled && network.Configuration.Kind == AccessNetworkStandard
+	return network.Activated || network.Configuration.Enabled && network.Configuration.Kind != AccessNetworkBootstrap
 }
 
 func (network AccessNetwork) ActiveNASBinding(binding NASBinding) bool {
 	cfg := network.Configuration
-	return !network.Deleted && cfg.Enabled && cfg.Kind == AccessNetworkStandard && cfg.SiteID == binding.SiteID &&
+	return !network.Deleted && cfg.Enabled && (cfg.Kind == AccessNetworkStandard || cfg.Kind == AccessNetworkStrict && binding.SupportsStrictOnline()) && cfg.SiteID == binding.SiteID &&
 		binding.Status == StatusActive && (binding.AccessMedium == "" || cfg.AccessMedium == binding.AccessMedium) &&
 		slices.Contains(cfg.NASBindingIDs, binding.ID)
 }
+
+func (binding NASBinding) SupportsStrictOnline() bool {
+	return binding.StrictOnlineQualified && binding.Status == StatusActive && binding.DisconnectSupported && binding.EAPServerTrust != nil &&
+		(binding.EAPServerTrust.EapMethod == "" || binding.EAPServerTrust.EapMethod == "tls")
+}
+
+// Even a reauthentication just before the lease expires must fit the 60-second trial target.
+const StrictNASReauthenticationSeconds = 25
 
 func (network AccessNetwork) ProfileRevision(profile networkprotocol.AdmissionProfile) string {
 	revision := networkprotocol.AdmissionProfileRevision(profile)
@@ -89,6 +97,8 @@ type NASAdmissionSnapshot struct {
 	RadiusAttributes                *networkprotocol.RadiusAttributes
 	Revision                        int64
 	Attempts                        int
+	StrictUI                        StrictUILease
+	StrictUIEpoch                   string
 }
 
 type NASAdmissionMutation struct {

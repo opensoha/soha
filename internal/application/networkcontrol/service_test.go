@@ -119,6 +119,13 @@ func (store *controlStoreStub) EndpointPresence(context.Context, string) (domain
 	return store.presenceRecord, nil
 }
 
+func (store *controlStoreStub) StrictUISessionDeadline(_ context.Context, subjectID, sessionID string, now time.Time) (time.Time, error) {
+	if subjectID == "user-1" && sessionID == "active-session" {
+		return now.Add(27 * time.Second), nil
+	}
+	return time.Time{}, nil
+}
+
 func (store *controlStoreStub) PublishedEndpointResponsePolicies(context.Context) ([]domainnetworkaccess.EndpointResponsePolicy, error) {
 	return store.responsePolicies, nil
 }

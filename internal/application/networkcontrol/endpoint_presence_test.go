@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	domain "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
@@ -57,6 +58,69 @@ func TestServiceEndpointPresenceRequiresBoundProtectedService(t *testing.T) {
 	store.credential.Capabilities = nil
 	if _, err := service.EndpointPresence(context.Background(), identity, runtimeMessageJSON(t, now, identity, networkprotocol.MessageEndpointPresenceRequest, payload)); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("missing capability error = %v", err)
+	}
+}
+
+func TestStrictUILeaseRequiresFreshBoundLogin(t *testing.T) {
+	now := time.Date(2026, 11, 22, 9, 0, 0, 0, time.UTC)
+	service, store, identity := endpointPresenceFixture(t, now)
+	store.credential.Capabilities = append(store.credential.Capabilities, "endpoint-ui-lease-v1")
+	store.credential.SubjectID = "user-1"
+	previous := now.Add(-5 * time.Second)
+	payload := networkprotocol.EndpointPresenceRequest{
+		DeviceID: "device-1", BootID: "boot-1", Sequence: 1, Status: "healthy", UIState: "online", UIObservedAt: &previous,
+		UILogin: &networkprotocol.EndpointUILogin{SubjectID: "user-1", Epoch: "11111111111111111111111111111111", SessionID: "active-session"},
+	}
+	send := func() error {
+		t.Helper()
+		_, err := service.EndpointPresence(context.Background(), identity, runtimeMessageJSON(t, now, identity, networkprotocol.MessageEndpointPresenceRequest, payload))
+		return err
+	}
+	if err := send(); err != nil {
+		t.Fatal(err)
+	}
+	lease := store.presenceRecord.StrictUI
+	if !lease.CurrentFor("user-1", now) || lease.CurrentFor("other", now) || !lease.Until.Equal(previous.Add(30*time.Second)) {
+		t.Fatalf("incorrect bound lease %+v", lease)
+	}
+	store.endpointRestriction.Epoch = 3
+	for _, runtimeID := range []string{identity.ID, "different-endpoint"} {
+		authorization := domain.NASAuthorization{Decision: access.DecisionAllow, AccessProfile: access.ProfileFull, CreatedAt: now}
+		err := service.applyEndpointAdmission(context.Background(), &authorization, access.Subject{UserID: "user-1"}, access.Device{ID: payload.DeviceID}, access.NASBinding{}, runtimeID)
+		if err != nil || authorization.RestrictionEpoch != 3 || (authorization.Decision == access.DecisionAllow) != (runtimeID == identity.ID) {
+			t.Fatalf("strict authorization for runtime %q: %+v, %v", runtimeID, authorization, err)
+		}
+	}
+	payload.BootID = "boot-2"
+	if err := send(); err != nil || store.presenceRecord.StrictUI.Epoch == lease.Epoch {
+		t.Fatalf("changed boot retained epoch: %+v, %v", store.presenceRecord.StrictUI, err)
+	}
+	payload.UILogin.SubjectID = "other"
+	if err := send(); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("foreign login was accepted: %v", err)
+	}
+	payload.UILogin.SubjectID = "user-1"
+	stale := now.Add(-30 * time.Second)
+	payload.UIObservedAt = &stale
+	if err := send(); err != nil || store.presenceRecord.StrictUI.Until != nil {
+		t.Fatalf("expired local proof renewed: %+v, %v", store.presenceRecord.StrictUI, err)
+	}
+	payload.UIObservedAt, payload.UIState = &now, "offline"
+	if err := send(); err != nil || store.presenceRecord.StrictUI.Until != nil {
+		t.Fatalf("offline report held a lease: %+v, %v", store.presenceRecord.StrictUI, err)
+	}
+	payload.UIObservedAt, payload.UIState = &now, "online"
+	if err := send(); err != nil || store.presenceRecord.StrictUI.Until == nil || !store.presenceRecord.StrictUI.Until.Equal(now.Add(27*time.Second)) {
+		t.Fatalf("lease exceeded login session deadline: %+v, %v", store.presenceRecord.StrictUI, err)
+	}
+	payload.UILogin.SessionID = "revoked-session"
+	if err := send(); err != nil || store.presenceRecord.StrictUI.Until != nil {
+		t.Fatalf("revoked session retained lease: %+v, %v", store.presenceRecord.StrictUI, err)
+	}
+	payload.UILogin.SessionID = "active-session"
+	store.credential.Capabilities = []string{"endpoint-presence-v1", "endpoint-ui-presence-v1"}
+	if err := send(); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("credential without scoped capability was accepted: %v", err)
 	}
 }
 

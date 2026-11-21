@@ -88,15 +88,22 @@ func (r *Repository) nasAdmissionSnapshot(ctx context.Context, sessionID string,
 	}
 	var credentialID, subjectID, deviceID, stationID, method, requestID string
 	var attributes []byte
-	if err := r.db.WithContext(ctx).Raw(`SELECT s.admission_floor_profile, COALESCE(NULLIF(s.admission_inputs_hash,''),a.admission_inputs_hash), COALESCE(s.admission_radius_attributes,a.radius_attributes,'null'::jsonb), s.admission_revision, s.admission_attempts, COALESCE(a.credential_id,''), a.subject_id, a.device_id, COALESCE(a.station_id,''), a.authentication_method,a.request_id,a.access_network_id,a.admission_binding_id,a.called_station_id,a.nas_port_id,a.nas_port
+	if err := r.db.WithContext(ctx).Raw(`SELECT s.admission_floor_profile, COALESCE(NULLIF(s.admission_inputs_hash,''),a.admission_inputs_hash), COALESCE(s.admission_radius_attributes,a.radius_attributes,'null'::jsonb), s.admission_revision, s.admission_attempts, COALESCE(a.credential_id,''), a.subject_id, a.device_id, COALESCE(a.station_id,''), a.authentication_method,a.request_id,a.access_network_id,a.admission_binding_id,a.called_station_id,a.nas_port_id,a.nas_port,a.strict_ui_epoch
         FROM network_runtime_sessions s JOIN network_nas_authorizations a ON a.tenant_id=s.tenant_id AND a.workspace_id=s.workspace_id AND a.session_id=s.id
-        WHERE s.tenant_id='default' AND s.workspace_id='default' AND s.id=? AND a.runtime_id=s.runtime_id AND a.nas_id=s.nas_id AND a.decision='allow' AND a.authentication_method IN ('eap-tls','eap-ttls-pap')`, sessionID).Row().Scan(&item.FloorProfile, &item.InputsHash, &attributes, &item.Revision, &item.Attempts, &credentialID, &subjectID, &deviceID, &stationID, &method, &requestID, &item.AccessNetworkID, &item.BindingID, &item.Attachment.CalledStationID, &item.Attachment.NASPortID, &item.Attachment.NASPort); err != nil {
+        WHERE s.tenant_id='default' AND s.workspace_id='default' AND s.id=? AND a.runtime_id=s.runtime_id AND a.nas_id=s.nas_id AND a.decision='allow' AND a.authentication_method IN ('eap-tls','eap-ttls-pap')`, sessionID).Row().Scan(&item.FloorProfile, &item.InputsHash, &attributes, &item.Revision, &item.Attempts, &credentialID, &subjectID, &deviceID, &stationID, &method, &requestID, &item.AccessNetworkID, &item.BindingID, &item.Attachment.CalledStationID, &item.Attachment.NASPortID, &item.Attachment.NASPort, &item.StrictUIEpoch); err != nil {
 		return item, err
 	}
 	if err := json.Unmarshal(attributes, &item.RadiusAttributes); err != nil {
 		return item, err
 	}
 	item.AuthenticationMethod = method
+	if item.StrictUIEpoch != "" {
+		presence, err := r.EndpointPresence(ctx, item.Session.DeviceID)
+		if err != nil && !missingAdmissionRecord(err) {
+			return item, err
+		}
+		item.StrictUI = presence.StrictUI
+	}
 	item.StrongBinding = (credentialID != "" || method == "eap-ttls-pap") && subjectID == item.Session.SubjectID && deviceID == item.Session.DeviceID && domain.ValidStationID(stationID)
 	if err := r.loadNASAdmissionAttributes(ctx, &item); err != nil {
 		return item, err

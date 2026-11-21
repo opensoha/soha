@@ -295,6 +295,17 @@ func TestRouterTranslatesRADIUSPostAuthWithoutXLAT(t *testing.T) {
 			t.Fatalf("RADIUS post-auth response missing %s: %s", fragment, response.Body.String())
 		}
 	}
+	if strings.Contains(response.Body.String(), `"reply:Termination-Action"`) {
+		t.Fatal("ordinary admission unexpectedly requires reauthentication")
+	}
+	service.radiusResult.RadiusAttributes = &networkprotocol.RadiusAttributes{SessionTimeoutSeconds: 25, Reauthenticate: true}
+	strictBody := strings.Replace(body, "password-compatible", "eap-tls", 1)
+	request = authenticatedRuntimeRequest(t, http.MethodPost, "/api/network-control/v1/runtimes/freeradius-hq/radius:post-auth", strictBody, "nas", "freeradius-hq")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reply:Termination-Action"`) || !strings.Contains(response.Body.String(), `"RADIUS-Request"`) {
+		t.Fatalf("strict RADIUS post-auth status = %d, body = %s", response.Code, response.Body.String())
+	}
 
 	service.radiusResult = networkprotocol.NASAuthorizationResult{Decision: "deny", ReasonCode: "subject_not_active"}
 	request = authenticatedRuntimeRequest(t, http.MethodPost, "/api/network-control/v1/runtimes/freeradius-hq/radius:post-auth", body, "nas", "freeradius-hq")

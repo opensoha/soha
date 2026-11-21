@@ -173,6 +173,7 @@ type Session struct {
 }
 
 type NASAuthorization struct {
+	StrictUIEpoch             string
 	AccessNetworkID           string
 	AdmissionBindingID        string
 	AccessNetworkCatalogHash  string

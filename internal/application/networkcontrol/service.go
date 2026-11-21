@@ -39,6 +39,7 @@ type Store interface {
 	ActivateEAPCertificate(context.Context, domainnetworkruntime.Credential, networkprotocol.EAPCertificateActivateRequest, time.Time) (networkprotocol.EAPCertificateActivateResult, error)
 	SaveEndpointPresence(context.Context, domainnetworkaccess.PresenceRecord) (domainnetworkaccess.PresenceRecord, error)
 	EndpointPresence(context.Context, string) (domainnetworkaccess.PresenceRecord, error)
+	StrictUISessionDeadline(context.Context, string, string, time.Time) (time.Time, error)
 	EndpointRestriction(context.Context, string, string) (domainnetworkaccess.EndpointRestriction, error)
 	PublishedEndpointResponsePolicies(context.Context) ([]domainnetworkaccess.EndpointResponsePolicy, error)
 	RecordNASAccounting(context.Context, string, networkprotocol.RadiusAccountingRequest, time.Time, time.Duration) error
@@ -685,7 +686,8 @@ func (s *Service) NextNASSessionCommand(ctx context.Context, identity networkide
 	if command.RuntimeID != identity.ID || command.ID == "" || command.SessionID == "" || command.NASID == "" {
 		return networkprotocol.RuntimeMessage{}, fmt.Errorf("claimed NAS session command does not match runtime")
 	}
-	if command.StationID != "" && command.StationID != command.DeviceID && !slices.Contains(credential.Capabilities, "nas-session-accounting-v1") {
+	nasAccounting := slices.Contains(credential.Capabilities, "nas-session-accounting-v1")
+	if !nasAccounting && (command.StrictOnline || command.StationID != "" && command.StationID != command.DeviceID) {
 		if err := s.store.CompleteNASSessionCommand(ctx, identity.ID, networkprotocol.NASSessionCommandResult{CommandID: command.ID, SessionID: command.SessionID, Status: domainnetworkaccess.SessionCommandUnsupported, ReasonCode: "nas_station_binding_capability_required", CompletedAt: now}, now); err != nil {
 			return networkprotocol.RuntimeMessage{}, err
 		}
@@ -697,7 +699,7 @@ func (s *Service) NextNASSessionCommand(ctx context.Context, identity networkide
 		Action: command.Action, TargetAccessProfile: command.TargetAccessProfile, PolicyVersion: command.PolicyVersion,
 		EffectiveAt: command.EffectiveAt, ReasonCode: command.ReasonCode, RadiusAttributes: command.RadiusAttributes,
 	}
-	if slices.Contains(credential.Capabilities, "nas-session-accounting-v1") {
+	if nasAccounting {
 		payload.StationID, payload.AccountingSessionID, payload.NASPortID = command.StationID, command.AccountingSessionID, command.NASPortID
 	}
 	return s.outbound(identity, networkprotocol.MessageNASSessionCommand, payload, minTime(now.Add(s.options.MaxClockSkew), command.ExpiresAt))
@@ -773,7 +775,14 @@ func (s *Service) authorizeNAS(ctx context.Context, identity networkidentity.Ide
 	if passwordProof != nil && authorization.Decision != domainnetworkaccess.DecisionAllow {
 		return nasAuthorizationResult(authorization), nil
 	}
-	if err := s.applyEndpointAdmission(ctx, &authorization, principal.subject, principal.device, binding); err != nil {
+	strictRuntimeID := ""
+	if decision.StrictOnline {
+		strictRuntimeID = endpointCredential.RuntimeID
+		if decision.Allowed && strictRuntimeID == "" {
+			return networkprotocol.NASAuthorizationResult{}, unauthorizedRuntime()
+		}
+	}
+	if err := s.applyEndpointAdmission(ctx, &authorization, principal.subject, principal.device, binding, strictRuntimeID); err != nil {
 		return networkprotocol.NASAuthorizationResult{}, err
 	}
 	admissionProfile, err := s.applyNASAttributes(ctx, &authorization, decision, binding.SiteID)

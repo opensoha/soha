@@ -152,6 +152,10 @@ func validateEndpointAuthorization(tx *gorm.DB, authorization domainnetworkrunti
 	if presence.PayloadHash != authorization.PresenceHash {
 		return staleNASAuthorization()
 	}
+	if authorization.Decision == domainnetworkaccess.DecisionAllow && authorization.StrictUIEpoch != "" &&
+		(presence.StrictUI.Epoch != authorization.StrictUIEpoch || !presence.StrictUI.CurrentFor(authorization.SubjectID, time.Now().UTC())) {
+		return staleNASAuthorization()
+	}
 	var binding domainnetworkaccess.NASBinding
 	if authorization.ManagedBindingID != "" {
 		binding, err = repo.GetNASBinding(tx.Statement.Context, authorization.ManagedBindingID)
@@ -181,6 +185,9 @@ func staleNASAuthorization() error {
 }
 
 func nasAuthorizationReplayMatches(saved, current domainnetworkruntime.NASAuthorization) bool {
+	if saved.StrictUIEpoch != current.StrictUIEpoch {
+		return false
+	}
 	if !saved.ValidUntil.After(current.CreatedAt) || saved.PolicyVersion != current.PolicyVersion || saved.Decision != current.Decision || saved.AccessProfile != current.AccessProfile || saved.ReasonCode != current.ReasonCode || saved.CredentialID != current.CredentialID || saved.StationID != current.StationID || saved.InputsHash != current.InputsHash || saved.AccessNetworkID != current.AccessNetworkID || saved.AdmissionBindingID != current.AdmissionBindingID {
 		return false
 	}
@@ -212,6 +219,7 @@ func nasSessionStatus(profile string) string {
 }
 
 type nasAuthorizationRow struct {
+	StrictUIEpoch        string        `gorm:"column:strict_ui_epoch"`
 	AccessNetworkID      string        `gorm:"column:access_network_id"`
 	AdmissionBindingID   string        `gorm:"column:admission_binding_id"`
 	CalledStationID      string        `gorm:"column:called_station_id"`
@@ -246,6 +254,7 @@ func (nasAuthorizationRow) TableName() string { return "network_nas_authorizatio
 func nasAuthorizationRowFromDomain(value domainnetworkruntime.NASAuthorization) (nasAuthorizationRow, error) {
 	row := nasAuthorizationRow{TenantID: "default", WorkspaceID: "default", RuntimeID: value.RuntimeID, RequestID: value.RequestID, RequestHash: value.RequestHash, NASID: value.NASID, SubjectID: value.SubjectID, DeviceID: value.DeviceID, AuthenticationMethod: value.AuthenticationMethod, SessionID: value.SessionID, Decision: value.Decision, AccessProfile: value.AccessProfile, PolicyVersion: value.PolicyVersion, ReasonCode: value.ReasonCode, ValidUntil: value.ValidUntil, CreatedAt: value.CreatedAt}
 	row.CredentialID, row.StationID = value.CredentialID, value.StationID
+	row.StrictUIEpoch = value.StrictUIEpoch
 	row.InputsHash = value.InputsHash
 	row.AccessNetworkID, row.AdmissionBindingID = value.AccessNetworkID, value.AdmissionBindingID
 	row.CalledStationID, row.NASPortID, row.NASPort = value.Attachment.CalledStationID, value.Attachment.NASPortID, value.Attachment.NASPort
@@ -265,6 +274,7 @@ func nasAuthorizationRowFromDomain(value domainnetworkruntime.NASAuthorization) 
 func (row nasAuthorizationRow) domain() (domainnetworkruntime.NASAuthorization, error) {
 	value := domainnetworkruntime.NASAuthorization{RequestID: row.RequestID, RequestHash: row.RequestHash, RuntimeID: row.RuntimeID, NASID: row.NASID, SubjectID: row.SubjectID, DeviceID: row.DeviceID, AuthenticationMethod: row.AuthenticationMethod, SessionID: row.SessionID, Decision: row.Decision, AccessProfile: row.AccessProfile, PolicyVersion: row.PolicyVersion, ReasonCode: row.ReasonCode, ValidUntil: row.ValidUntil, CreatedAt: row.CreatedAt}
 	value.CredentialID, value.StationID = row.CredentialID, row.StationID
+	value.StrictUIEpoch = row.StrictUIEpoch
 	value.InputsHash = row.InputsHash
 	value.AccessNetworkID, value.AdmissionBindingID = row.AccessNetworkID, row.AdmissionBindingID
 	value.Attachment = domainnetworkaccess.NASAttachment{CalledStationID: row.CalledStationID, NASPortID: row.NASPortID, NASPort: row.NASPort}
@@ -343,14 +353,18 @@ func validateNASAccessNetwork(tx *gorm.DB, repo *networkaccessrepo.Repository, a
 		return err
 	}
 	var id string
-	if err := tx.Raw(`SELECT id FROM network_access_nas_bindings
+	var strictQualified bool
+	if err := tx.Raw(`SELECT id, strict_online_qualified FROM network_access_nas_bindings
 		WHERE tenant_id='default' AND workspace_id='default' AND id=? AND site_id=? AND nas_id=? AND runtime_id=?
 			AND status='active' AND COALESCE(access_medium,'')=? FOR SHARE`,
-		binding.ID, binding.SiteID, binding.NASID, binding.RuntimeID, binding.AccessMedium).Row().Scan(&id); err != nil {
+		binding.ID, binding.SiteID, binding.NASID, binding.RuntimeID, binding.AccessMedium).Row().Scan(&id, &strictQualified); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return staleNASAuthorization()
 		}
 		return err
+	}
+	if authorization.Decision == domainnetworkaccess.DecisionAllow && authorization.StrictUIEpoch != "" && !strictQualified {
+		return staleNASAuthorization()
 	}
 	networks, err := repo.ListAccessNetworks(ctx, binding.SiteID)
 	if err != nil {

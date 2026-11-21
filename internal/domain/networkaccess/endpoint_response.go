@@ -47,6 +47,19 @@ type PresenceRecord struct {
 	PayloadHash              string
 	Epoch                    int
 	HeartbeatIntervalSeconds int
+	StrictUI                 StrictUILease
+}
+
+const StrictUILeaseDuration = 30 * time.Second
+
+type StrictUILease struct {
+	SubjectID string
+	Epoch     string
+	Until     *time.Time
+}
+
+func (lease StrictUILease) CurrentFor(subjectID string, now time.Time) bool {
+	return subjectID != "" && lease.SubjectID == subjectID && lease.Epoch != "" && lease.Until != nil && now.Before(*lease.Until)
 }
 
 type NASSessionObservation struct {

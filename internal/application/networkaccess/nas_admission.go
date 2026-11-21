@@ -48,7 +48,7 @@ func EvaluateNASNetwork(now time.Time, snapshot domain.NASAdmissionSnapshot) Acc
 		if snapshot.AuthenticationMethod == networkprotocol.NASAuthenticationPasswordCompatible {
 			return AccessNetworkDecision{AccessNetworkID: matched.ID, ReasonCode: "access_network_authentication_method_denied"}
 		}
-		return EvaluateAccessNetwork(now, *matched, snapshot.AuthenticationMethod, snapshot.Subject, snapshot.Device, snapshot.Site, snapshot.Policies)
+		return evaluateAccessNetwork(now, *matched, snapshot.AuthenticationMethod, snapshot.Subject, snapshot.Device, snapshot.Site, snapshot.Policies, snapshot.Binding.SupportsStrictOnline())
 	}
 	if managed {
 		return AccessNetworkDecision{ReasonCode: "access_network_attachment_unmatched"}
@@ -77,7 +77,14 @@ func NASNetworkAttributes(decision AccessNetworkDecision) *networkprotocol.Radiu
 	if !decision.Allowed || decision.AccessNetworkID == "" {
 		return nil
 	}
-	return &networkprotocol.RadiusAttributes{VLANID: decision.VLANID, FilterID: decision.FilterID, SessionTimeoutSeconds: decision.SessionTimeoutSeconds}
+	attributes := &networkprotocol.RadiusAttributes{VLANID: decision.VLANID, FilterID: decision.FilterID, SessionTimeoutSeconds: decision.SessionTimeoutSeconds}
+	if decision.StrictOnline {
+		if attributes.SessionTimeoutSeconds == 0 || attributes.SessionTimeoutSeconds > domain.StrictNASReauthenticationSeconds {
+			attributes.SessionTimeoutSeconds = domain.StrictNASReauthenticationSeconds
+		}
+		attributes.Reauthenticate = true
+	}
+	return attributes
 }
 
 func evaluateNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) domain.NASAdmissionMutation {
@@ -90,6 +97,11 @@ func evaluateNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) d
 	}
 	decision := EvaluateNASNetwork(now, snapshot)
 	profile, reason := NASInitialProfile(decision, snapshot.AuthenticationMethod)
+	if snapshot.StrictUIEpoch != "" || decision.StrictOnline {
+		if !decision.StrictOnline || snapshot.StrictUIEpoch != snapshot.StrictUI.Epoch || !snapshot.StrictUI.CurrentFor(session.SubjectID, now) {
+			profile, reason = domain.ProfileDeny, "strict_ui_lease_expired"
+		}
+	}
 	if decision.Allowed && decision.AccessNetworkID == "" {
 		reason = "nas_admission_revalidated"
 	}
@@ -116,7 +128,10 @@ func evaluateNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) d
 			if decision.AccessNetworkID != "" && snapshot.Site.DeviceGovernance == domain.DeviceGovernanceVerified {
 				timeout = min(timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
 			}
-			attributes = &networkprotocol.RadiusAttributes{VLANID: binding.VLANID, FilterID: binding.FilterID, SessionTimeoutSeconds: timeout}
+			if decision.StrictOnline {
+				timeout = min(domain.StrictNASReauthenticationSeconds, timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
+			}
+			attributes = &networkprotocol.RadiusAttributes{VLANID: binding.VLANID, FilterID: binding.FilterID, SessionTimeoutSeconds: timeout, Reauthenticate: decision.StrictOnline}
 		}
 	}
 
@@ -131,7 +146,7 @@ func nasAdmissionMappingChanged(snapshot domain.NASAdmissionSnapshot, attributes
 func nasAdmissionCommand(snapshot domain.NASAdmissionSnapshot, mutation *domain.NASAdmissionMutation, mappingChanged, retry bool, now time.Time) domain.SessionCommand {
 	session := snapshot.Session
 	action := domain.SessionActionCoA
-	if mutation.Profile == domain.ProfileDeny || mappingChanged || !snapshot.Binding.CoASupported || retry && session.LatestCommand.Action == domain.SessionActionCoA {
+	if snapshot.StrictUIEpoch != "" || mutation.Profile == domain.ProfileDeny || mappingChanged || !snapshot.Binding.CoASupported || retry && session.LatestCommand.Action == domain.SessionActionCoA {
 		action = domain.SessionActionDisconnect
 	}
 	if mappingChanged {

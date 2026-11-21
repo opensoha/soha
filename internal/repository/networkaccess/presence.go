@@ -14,13 +14,15 @@ import (
 
 const presenceColumns = `device_id, runtime_id, credential_id, boot_id, sequence, payload_hash, presence_epoch,
     service_state, ui_state, configuration_version, policy_version, observed_at, received_at,
-    healthy_since, healthy_samples, ui_observed_at, ui_healthy_since, ui_healthy_samples, heartbeat_interval_seconds`
+    healthy_since, healthy_samples, ui_observed_at, ui_healthy_since, ui_healthy_samples, heartbeat_interval_seconds,
+    ui_lease_subject_id, ui_lease_epoch, ui_lease_until`
 
 func scanPresence(row scanner) (domain.PresenceRecord, error) {
 	var item domain.PresenceRecord
 	err := row.Scan(&item.DeviceID, &item.RuntimeID, &item.CredentialID, &item.BootID, &item.Sequence, &item.PayloadHash, &item.Epoch,
 		&item.ServiceState, &item.UIState, &item.ConfigurationVersion, &item.PolicyVersion, &item.LastObservedAt, &item.LastReceivedAt,
-		&item.HealthySince, &item.HealthySamples, &item.UILastObservedAt, &item.UIHealthySince, &item.UIHealthySamples, &item.HeartbeatIntervalSeconds)
+		&item.HealthySince, &item.HealthySamples, &item.UILastObservedAt, &item.UIHealthySince, &item.UIHealthySamples, &item.HeartbeatIntervalSeconds,
+		&item.StrictUI.SubjectID, &item.StrictUI.Epoch, &item.StrictUI.Until)
 	return item, err
 }
 
@@ -57,8 +59,9 @@ func (r *Repository) SaveEndpointPresence(ctx context.Context, incoming domain.P
 		if err := tx.Exec(`INSERT INTO network_endpoint_presence
             (device_id, runtime_id, credential_id, boot_id, sequence, payload_hash, presence_epoch,
              service_state, ui_state, configuration_version, policy_version, observed_at, received_at,
-             healthy_since, healthy_samples, ui_observed_at, ui_healthy_since, ui_healthy_samples, heartbeat_interval_seconds)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             healthy_since, healthy_samples, ui_observed_at, ui_healthy_since, ui_healthy_samples, heartbeat_interval_seconds,
+             ui_lease_subject_id, ui_lease_epoch, ui_lease_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tenant_id, workspace_id, device_id) DO UPDATE SET
              runtime_id=EXCLUDED.runtime_id, credential_id=EXCLUDED.credential_id, boot_id=EXCLUDED.boot_id,
              sequence=EXCLUDED.sequence, payload_hash=EXCLUDED.payload_hash, presence_epoch=EXCLUDED.presence_epoch,
@@ -67,10 +70,12 @@ func (r *Repository) SaveEndpointPresence(ctx context.Context, incoming domain.P
              observed_at=EXCLUDED.observed_at, received_at=EXCLUDED.received_at,
              healthy_since=EXCLUDED.healthy_since, healthy_samples=EXCLUDED.healthy_samples,
              ui_observed_at=EXCLUDED.ui_observed_at, ui_healthy_since=EXCLUDED.ui_healthy_since, ui_healthy_samples=EXCLUDED.ui_healthy_samples,
-             heartbeat_interval_seconds=EXCLUDED.heartbeat_interval_seconds`,
+             heartbeat_interval_seconds=EXCLUDED.heartbeat_interval_seconds,
+             ui_lease_subject_id=EXCLUDED.ui_lease_subject_id, ui_lease_epoch=EXCLUDED.ui_lease_epoch, ui_lease_until=EXCLUDED.ui_lease_until`,
 			incoming.DeviceID, incoming.RuntimeID, incoming.CredentialID, incoming.BootID, incoming.Sequence, incoming.PayloadHash, incoming.Epoch,
 			incoming.ServiceState, incoming.UIState, incoming.ConfigurationVersion, incoming.PolicyVersion, incoming.LastObservedAt, incoming.LastReceivedAt,
-			incoming.HealthySince, incoming.HealthySamples, incoming.UILastObservedAt, incoming.UIHealthySince, incoming.UIHealthySamples, incoming.HeartbeatIntervalSeconds).Error; err != nil {
+			incoming.HealthySince, incoming.HealthySamples, incoming.UILastObservedAt, incoming.UIHealthySince, incoming.UIHealthySamples, incoming.HeartbeatIntervalSeconds,
+			incoming.StrictUI.SubjectID, incoming.StrictUI.Epoch, incoming.StrictUI.Until).Error; err != nil {
 			return err
 		}
 		saved = incoming

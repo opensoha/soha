@@ -174,7 +174,7 @@ func (s *Service) accessNetworkChoices(ctx context.Context, principal identity.P
 func (s *Service) evaluateAvailableAccessNetwork(ctx context.Context, now time.Time, item domain.AccessNetwork, subject domain.Subject, device domain.Device, site domain.Site, snapshot domain.PolicySnapshot, bindings map[string]domain.NASBinding) (AccessNetworkDecision, error) {
 	for _, method := range []string{"eap_tls", "eap_ttls_pap"} {
 		if hasActiveAccessNetworkBinding(item, bindings, method) {
-			decision, err := CheckAccessNetworkProfile(ctx, EvaluateAccessNetwork(now, item, method, subject, device, site, snapshot), method, site.ID, s.store.FindSiteProfileBinding)
+			decision, err := CheckAccessNetworkProfile(ctx, evaluateAccessNetwork(now, item, method, subject, device, site, snapshot, item.Configuration.Kind == domain.AccessNetworkStrict), method, site.ID, s.store.FindSiteProfileBinding)
 			if err != nil || decision.Allowed {
 				return decision, err
 			}

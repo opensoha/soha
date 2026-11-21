@@ -32,7 +32,7 @@ func (s *Service) applyNASAttributes(ctx context.Context, authorization *runtime
 		authorization.Decision, authorization.AccessProfile, authorization.ReasonCode = access.DecisionDeny, access.ProfileDeny, "site_profile_binding_unavailable"
 		return nil, nil
 	}
-	authorization.RadiusAttributes = &networkprotocol.RadiusAttributes{VLANID: profile.VLANID, FilterID: profile.FilterID, SessionTimeoutSeconds: profile.SessionTimeoutSeconds}
+	authorization.RadiusAttributes = &networkprotocol.RadiusAttributes{VLANID: profile.VLANID, FilterID: profile.FilterID, SessionTimeoutSeconds: profile.SessionTimeoutSeconds, Reauthenticate: decision.StrictOnline}
 	authorization.ValidUntil = authorization.CreatedAt.Add(time.Duration(profile.SessionTimeoutSeconds) * time.Second)
 	return profile, nil
 }

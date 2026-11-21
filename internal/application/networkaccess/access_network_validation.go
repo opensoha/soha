@@ -15,9 +15,6 @@ func validateAccessNetwork(input *domain.AccessNetworkInput) error {
 	if !oneOf(input.Kind, domain.AccessNetworkStandard, domain.AccessNetworkStrict, domain.AccessNetworkBootstrap) || input.Priority < 1 || input.Priority > 10000 {
 		return invalid("kind or priority is invalid")
 	}
-	if input.Kind == domain.AccessNetworkStrict && input.Enabled {
-		return invalid("strict online admission can only be saved as a disabled draft")
-	}
 	if len(input.NASBindingIDs) > 128 || len(input.BSSIDs) > 32 || len(input.PortIDs) > 128 || len(input.Rules) > 128 {
 		return invalid("network selector or rule count exceeds its limit")
 	}

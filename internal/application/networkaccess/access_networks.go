@@ -152,8 +152,9 @@ func (s *Service) PreviewAccessNetworks(ctx context.Context, principal identity.
 	result := make([]AccessNetworkDecision, 0, len(items))
 	now := time.Now()
 	for _, item := range items {
-		decision := EvaluateAccessNetwork(now, item, method, subject, device, site, snapshot)
-		if decision.Allowed && !hasActiveAccessNetworkBinding(item, bindings, method) {
+		available := hasActiveAccessNetworkBinding(item, bindings, method)
+		decision := evaluateAccessNetwork(now, item, method, subject, device, site, snapshot, available)
+		if decision.Allowed && !available {
 			decision.Allowed, decision.ReasonCode, decision.AccessProfile = false, "access_network_nas_unavailable", ""
 		}
 		decision, err = CheckAccessNetworkProfile(ctx, decision, method, siteID, s.store.FindSiteProfileBinding)
