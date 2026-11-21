@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/s3endpoint"
 )
 
 const (
@@ -32,6 +34,7 @@ const (
 	EnvS3Region                 = "SOHA_APP_GATEWAY_S3_REGION"
 	EnvS3Prefix                 = "SOHA_APP_GATEWAY_S3_PREFIX"
 	EnvS3PathStyle              = "SOHA_APP_GATEWAY_S3_PATH_STYLE"
+	EnvS3BucketEndpoint         = "SOHA_APP_GATEWAY_S3_BUCKET_ENDPOINT"
 	EnvS3Insecure               = "SOHA_APP_GATEWAY_S3_INSECURE"
 	EnvS3AccessKeyFile          = "SOHA_APP_GATEWAY_S3_ACCESS_KEY_FILE"
 	EnvS3SecretKeyFile          = "SOHA_APP_GATEWAY_S3_SECRET_KEY_FILE" //nolint:gosec // G101: environment variable name, not a credential
@@ -94,6 +97,7 @@ type Config struct {
 	S3Region          string
 	S3Prefix          string
 	S3PathStyle       bool
+	S3BucketEndpoint  bool
 	S3Insecure        bool
 	S3AccessKeyFile   string
 	S3SecretKeyFile   string
@@ -121,6 +125,10 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		return strings.TrimSpace(val)
 	}
 	pathStyle, err := parseEnvBool(get(EnvS3PathStyle), true, EnvS3PathStyle)
+	if err != nil {
+		return Config{}, err
+	}
+	bucketEndpoint, err := parseEnvBool(get(EnvS3BucketEndpoint), false, EnvS3BucketEndpoint)
 	if err != nil {
 		return Config{}, err
 	}
@@ -152,6 +160,7 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		S3Region:             defaultString(get(EnvS3Region), DefaultS3Region),
 		S3Prefix:             get(EnvS3Prefix),
 		S3PathStyle:          pathStyle,
+		S3BucketEndpoint:     bucketEndpoint,
 		S3Insecure:           insecure,
 		S3AccessKeyFile:      get(EnvS3AccessKeyFile),
 		S3SecretKeyFile:      get(EnvS3SecretKeyFile),
@@ -251,6 +260,11 @@ func (c *Config) validateS3Config(requireS3 bool) error {
 	}
 	c.S3Prefix = cleanedPrefix
 	c.S3Bucket = strings.TrimSpace(c.S3Bucket)
+	if c.S3BucketEndpoint {
+		if err := s3endpoint.ValidateBucketEndpoint(c.S3Endpoint, c.S3PathStyle, c.S3Insecure); err != nil {
+			return err
+		}
+	}
 	if !requireS3 && strings.TrimSpace(c.S3Endpoint) == "" && c.S3Bucket == "" {
 		return nil
 	}

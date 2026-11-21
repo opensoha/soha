@@ -70,6 +70,22 @@ describe('S3 object storage integration model', () => {
     ).toBe('cos')
   })
 
+  it('persists a bucket-bound endpoint through S3 configuration', () => {
+    const { configuration = [] } = createS3StorageIntegration({
+      ...s3StorageFormValues(),
+      endpoint: 'https://objects.example.test',
+      region: 'cn-hangzhou',
+      pathStyle: false,
+      bucketEndpoint: true,
+    })
+    expect(configuration).toContainEqual({ key: 'bucket_endpoint', value: 'true' })
+    const saved = { ...integration, configuration }
+    expect(s3StorageFormValues(saved).bucketEndpoint).toBe(true)
+    expect(updateS3StorageIntegration(saved, s3StorageFormValues(saved)).configuration).toEqual(
+      configuration,
+    )
+  })
+
   it('keeps immutable endpoint configuration and only rotates entered credentials', () => {
     const values = s3StorageFormValues(integration)
     expect(values.secretAccessKey).toBe('')

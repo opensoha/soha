@@ -45,6 +45,7 @@ func TestLoadConfigDefaultsAndNormalization(t *testing.T) {
 	require.Equal(t, "http://minio.internal:9000", cfg.S3Endpoint)
 	require.Equal(t, "us-east-1", cfg.S3Region)
 	require.True(t, cfg.S3PathStyle)
+	require.False(t, cfg.S3BucketEndpoint)
 	require.False(t, cfg.S3Insecure)
 	require.Equal(t, time.Duration(0), cfg.DecisionCacheTTL)
 
@@ -61,6 +62,23 @@ func TestLoadConfigDefaultsAndNormalization(t *testing.T) {
 	require.Equal(t, 2*time.Second, custom.DecisionCacheTTL)
 	require.Equal(t, "hosted-apps", custom.S3Prefix)
 	require.Len(t, custom.trustedProxyPrefixes, 3)
+}
+
+func TestLoadConfigBucketEndpoint(t *testing.T) {
+	env := baseTestEnv()
+	env[EnvS3Endpoint] = "https://objects.example.test"
+	env[EnvS3BucketEndpoint] = "true"
+	_, err := LoadConfigFromLookup(mapLookup(env))
+	require.Error(t, err)
+
+	env[EnvS3PathStyle] = "false"
+	cfg, err := LoadConfigFromLookup(mapLookup(env))
+	require.NoError(t, err)
+	require.True(t, cfg.S3BucketEndpoint)
+
+	env[EnvS3Insecure] = "true"
+	_, err = LoadConfigFromLookup(mapLookup(env))
+	require.Error(t, err)
 }
 
 func TestLoadConfigRejectsInvalidSettings(t *testing.T) {

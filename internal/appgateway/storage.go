@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/internal/platform/s3endpoint"
 )
 
 // ObjectStream wraps a streamed static asset body and metadata from object storage.
@@ -52,6 +53,11 @@ func newS3ObjectReaderWithSecrets(cfg Config, secrets *secretProvider) (*S3Objec
 	if secrets == nil {
 		return nil, errors.New("secret provider is required")
 	}
+	if cfg.S3BucketEndpoint {
+		if err := s3endpoint.ValidateBucketEndpoint(cfg.S3Endpoint, cfg.S3PathStyle, cfg.S3Insecure); err != nil {
+			return nil, err
+		}
+	}
 	creds := aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
 		accessKey, secretKey, err := secrets.S3Credentials()
 		if err != nil {
@@ -63,10 +69,14 @@ func newS3ObjectReaderWithSecrets(cfg Config, secrets *secretProvider) (*S3Objec
 			Source:          "soha-app-gateway",
 		}, nil
 	})
+	httpClient := newS3HTTPClient(cfg.S3Insecure)
+	if cfg.S3BucketEndpoint {
+		httpClient.CheckRedirect = s3endpoint.RejectRedirect
+	}
 	awsCfg := aws.Config{
 		Region:                     defaultString(strings.TrimSpace(cfg.S3Region), DefaultS3Region),
 		Credentials:                creds,
-		HTTPClient:                 newS3HTTPClient(cfg.S3Insecure),
+		HTTPClient:                 httpClient,
 		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
 	}
@@ -75,6 +85,9 @@ func newS3ObjectReaderWithSecrets(cfg Config, secrets *secretProvider) (*S3Objec
 	client := s3.NewFromConfig(awsCfg, func(opts *s3.Options) {
 		opts.UsePathStyle = pathStyle
 		opts.BaseEndpoint = aws.String(endpoint)
+		if cfg.S3BucketEndpoint {
+			s3endpoint.ConfigureBucketEndpoint(opts, strings.TrimSpace(cfg.S3Bucket))
+		}
 	})
 	return &S3ObjectReader{
 		bucket: strings.TrimSpace(cfg.S3Bucket),

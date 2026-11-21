@@ -622,6 +622,7 @@ func TestResolveObjectKeyNoDoublePrefixingAndTraversalRejection(t *testing.T) {
 		want           string
 		wantErr        bool
 	}{
+		{"dedicated bucket uses hosting prefix", "", "hosted-apps", "app_1/rev_1/index.html", "hosted-apps/app_1/rev_1/index.html", false},
 		{"all three share hosted-apps prefix", "hosted-apps", "hosted-apps", "hosted-apps/app_1/rev_1/index.html", "hosted-apps/app_1/rev_1/index.html", false},
 		{"objectKey relative to hosted-apps", "hosted-apps", "hosted-apps", "app_1/rev_1/index.html", "hosted-apps/app_1/rev_1/index.html", false},
 		{"objectKey relative to revision prefix", "hosted-apps", "hosted-apps/app_1/rev_1", "assets/main.js", "hosted-apps/app_1/rev_1/assets/main.js", false},

@@ -26,6 +26,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
+	"github.com/opensoha/soha/internal/platform/s3endpoint"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 	"go.uber.org/zap"
 )
@@ -550,8 +551,18 @@ func validateS3StorageConfiguration(enabled bool, fields []sohaapi.SystemIntegra
 	if err := validateS3Location(config); err != nil {
 		return err
 	}
-	if _, err := parseOptionalBool(config["path_style"]); err != nil {
+	pathStyle, err := parseOptionalBool(config["path_style"])
+	if err != nil {
 		return fmt.Errorf("%w: s3 path_style must be a boolean", apperrors.ErrInvalidArgument)
+	}
+	bucketEndpoint, err := parseOptionalBool(config["bucket_endpoint"])
+	if err != nil {
+		return fmt.Errorf("%w: s3 bucket_endpoint must be a boolean", apperrors.ErrInvalidArgument)
+	}
+	if bucketEndpoint {
+		if err := s3endpoint.ValidateBucketEndpoint(config["endpoint"], pathStyle, insecure); err != nil {
+			return fmt.Errorf("%w: %w", apperrors.ErrInvalidArgument, err)
+		}
 	}
 	if prefix := strings.Trim(config["prefix"], "/"); strings.Contains(prefix, "..") || len(prefix) > 512 {
 		return fmt.Errorf("%w: invalid s3 object prefix", apperrors.ErrInvalidArgument)
@@ -563,7 +574,7 @@ func validateS3StorageConfiguration(enabled bool, fields []sohaapi.SystemIntegra
 }
 
 func validateS3ConfigurationKeys(config map[string]string) error {
-	allowed := map[string]bool{"endpoint": true, "bucket": true, "region": true, "path_style": true, "insecure": true, "allow_private": true, "prefix": true}
+	allowed := map[string]bool{"endpoint": true, "bucket": true, "region": true, "path_style": true, "bucket_endpoint": true, "insecure": true, "allow_private": true, "prefix": true}
 	for key := range config {
 		if !allowed[key] {
 			return fmt.Errorf("%w: unsupported s3 storage configuration key %s", apperrors.ErrInvalidArgument, key)
