@@ -358,6 +358,44 @@ func TestWorkPulseLifetimeRules(t *testing.T) {
 	}
 }
 
+func TestWorkPulseConfiguredLifetimeThroughPublishing(t *testing.T) {
+	f := newFixture(t)
+	owner := employee("user-a", "team-a")
+	policy := f.service.config.(*fakeSettings)
+	policy.value.WorkPulseDefaultLifetimeHours, policy.value.WorkPulseMaxLifetimeDays = 48, 20
+	asset, err := f.service.Create(t.Context(), owner, domain.AssetInput{
+		Kind: domain.KindWorkPulse, Title: "网关迁移", Body: "证书轮换中", WorkStatus: "in_progress",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.service.List(t.Context(), owner, "mine", domain.KindWorkPulse, 0)
+	if err != nil || page.Defaults.WorkPulseDefaultLifetimeHours != 48 || page.Defaults.WorkPulseMaxLifetimeDays != 20 {
+		t.Fatalf("publishing defaults = %+v, %v", page.Defaults, err)
+	}
+
+	input := ActionRequest{ExpectedDigest: asset.DraftDigest, Audience: knowledge.AccessScope{Visibility: "teams", Teams: []string{"team-a"}}}
+	published, err := f.service.Act(t.Context(), owner, asset.ID, "publish", input)
+	if version := published.Asset.Published; err != nil || version == nil || version.ExpiresAt == nil ||
+		version.ExpiresAt.Sub(version.PublishedAt) != 48*time.Hour {
+		t.Fatalf("configured default was not applied: %+v, %v", published, err)
+	}
+	now := nowUTC()
+	for _, hours := range []int{480, 481} {
+		expires, err := expiresAt(policy.value, domain.KindWorkPulse, ActionRequest{LifetimeHours: hours}, now)
+		if hours == 480 && (err != nil || expires == nil || expires.Sub(now) != 480*time.Hour) ||
+			hours == 481 && !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("configured maximum for %d hours: %v, %v", hours, expires, err)
+		}
+	}
+	policy.value.WorkPulseDefaultLifetimeHours, policy.value.WorkPulseMaxLifetimeDays = 12, 1
+	got, err := f.service.Get(t.Context(), owner, asset.ID)
+	if err != nil || got.Published == nil || got.Published.ExpiresAt == nil ||
+		!got.Published.ExpiresAt.Equal(*published.Asset.Published.ExpiresAt) {
+		t.Fatalf("settings update changed an existing deadline: %+v, %v", got, err)
+	}
+}
+
 func TestWorkPulseOrganizationApprovalKeepsOriginalCap(t *testing.T) {
 	f := newFixture(t)
 	owner := employee("user-a")

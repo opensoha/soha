@@ -28,9 +28,11 @@ type Page struct {
 }
 
 type PublishingDefaults struct {
-	Visibility   string `json:"visibility"`
-	LifetimeDays int    `json:"lifetimeDays"`
-	Permanent    bool   `json:"allowPermanentExperienceCards"`
+	WorkPulseDefaultLifetimeHours int    `json:"workPulseDefaultLifetimeHours"`
+	WorkPulseMaxLifetimeDays      int    `json:"workPulseMaxLifetimeDays"`
+	Visibility                    string `json:"visibility"`
+	LifetimeDays                  int    `json:"lifetimeDays"`
+	Permanent                     bool   `json:"allowPermanentExperienceCards"`
 }
 
 type Version struct {

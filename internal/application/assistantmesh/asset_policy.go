@@ -126,17 +126,21 @@ func findingsFor(ctx context.Context, input domain.AssetInput) []string {
 	return findings
 }
 
+func workPulseLifetime(settings domainsettings.AssistantMeshSettings) (defaultHours, maxDays int) {
+	defaults := domainsettings.DefaultAssistantMeshSettings()
+	return configuredValue(settings.WorkPulseDefaultLifetimeHours, defaults.WorkPulseDefaultLifetimeHours),
+		configuredValue(settings.WorkPulseMaxLifetimeDays, defaults.WorkPulseMaxLifetimeDays)
+}
+
 func expiresAt(settings domainsettings.AssistantMeshSettings, kind string, request ActionRequest, now time.Time) (*time.Time, error) {
 	if kind == domain.KindWorkPulse {
 		if request.Permanent || request.LifetimeDays != 0 {
 			return nil, fmt.Errorf("%w: work pulses require an hours lifetime", apperrors.ErrInvalidArgument)
 		}
-		hours := request.LifetimeHours
-		if hours == 0 {
-			hours = 24
-		}
-		if hours < 1 || hours > 336 {
-			return nil, fmt.Errorf("%w: work pulse lifetime hours must be between 1 and 336", apperrors.ErrInvalidArgument)
+		defaultHours, maxDays := workPulseLifetime(settings)
+		hours := configuredValue(request.LifetimeHours, defaultHours)
+		if maxHours := maxDays * 24; hours < 1 || hours > maxHours {
+			return nil, fmt.Errorf("%w: work pulse lifetime hours must be between 1 and %d", apperrors.ErrInvalidArgument, maxHours)
 		}
 		expires := now.Add(time.Duration(hours) * time.Hour)
 		return &expires, nil

@@ -22,6 +22,10 @@ func (h *SettingsHandler) GetAssistantMeshSettings(c *gin.Context) {
 
 func (h *SettingsHandler) UpdateAssistantMeshSettings(c *gin.Context) {
 	var input struct {
+		DefaultProfileOpen            json.RawMessage `json:"defaultProfileOpen"`
+		WorkPulseDefaultLifetimeHours json.RawMessage `json:"workPulseDefaultLifetimeHours"`
+		WorkPulseMaxLifetimeDays      json.RawMessage `json:"workPulseMaxLifetimeDays"`
+		ReceptionMinScore             json.RawMessage `json:"receptionMinScore"`
 		InquiryPairLimitPerHour       json.RawMessage `json:"inquiryPairLimitPerHour"`
 		InquiryCallerLimitPerDay      json.RawMessage `json:"inquiryCallerLimitPerDay"`
 		InquiryMergeWindowHours       json.RawMessage `json:"inquiryMergeWindowHours"`
@@ -68,11 +72,18 @@ func (h *SettingsHandler) UpdateAssistantMeshSettings(c *gin.Context) {
 		{input.InquiryPendingLimit, &settings.InquiryPendingLimit},
 		{input.InquiryTimeoutHours, &settings.InquiryTimeoutHours},
 		{input.InquiryRetentionDays, &settings.InquiryRetentionDays},
+		{input.WorkPulseDefaultLifetimeHours, &settings.WorkPulseDefaultLifetimeHours},
+		{input.WorkPulseMaxLifetimeDays, &settings.WorkPulseMaxLifetimeDays},
 	} {
 		if len(field.raw) > 0 && (json.Unmarshal(field.raw, field.value) != nil || *field.value < 1) {
-			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid inquiry governance setting")
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Assistant Mesh numeric setting")
 			return
 		}
+	}
+	if !decodeOptionalMeshSetting(input.DefaultProfileOpen, &settings.DefaultProfileOpen) ||
+		!decodeOptionalMeshSetting(input.ReceptionMinScore, &settings.ReceptionMinScore) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Assistant Mesh governance setting")
+		return
 	}
 	item, err := h.ai.UpdateAssistantMeshSettings(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), settings)
 	if err != nil {
@@ -80,4 +91,8 @@ func (h *SettingsHandler) UpdateAssistantMeshSettings(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func decodeOptionalMeshSetting[T bool | float64](raw json.RawMessage, value **T) bool {
+	return len(raw) == 0 || (json.Unmarshal(raw, value) == nil && *value != nil)
 }

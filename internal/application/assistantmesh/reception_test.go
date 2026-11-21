@@ -27,8 +27,9 @@ const (
 
 type receptionTestStore struct {
 	ReceptionStore
-	profile   domain.Profile
-	inquiries map[string]domain.Inquiry
+	profile     domain.Profile
+	inquiries   map[string]domain.Inquiry
+	afterCreate func()
 }
 
 func (s *receptionTestStore) GetProfile(context.Context, string) (domain.Profile, error) {
@@ -46,6 +47,9 @@ func (s *receptionTestStore) GetInquiry(_ context.Context, caller, request strin
 }
 func (s *receptionTestStore) CreateInquiry(_ context.Context, item domain.Inquiry, _ domain.InquiryLimits) (domain.Inquiry, error) {
 	s.inquiries[item.RequestID] = item
+	if s.afterCreate != nil {
+		s.afterCreate()
+	}
 	return item, nil
 }
 func (s *receptionTestStore) CompleteInquiry(_ context.Context, item domain.Inquiry) error {
@@ -157,6 +161,48 @@ func TestReceptionFiltersDiscoveryAndEveryAnswerRead(t *testing.T) {
 	item, err = svc.Ask(ctx, caller, ask)
 	if err != nil || item.Status != domain.InquiryPending || item.Answer != "" {
 		t.Fatalf("model-flight revocation disclosed data: %+v, %v", item, err)
+	}
+}
+
+func TestReceptionThresholdFallsBackWithoutCallingModel(t *testing.T) {
+	f := newFixture(t)
+	caller, owner := employee(receptionCaller, "team-a"), employee(receptionOwner, "team-a")
+	for _, p := range []identity.Principal{caller, owner} {
+		f.service.users.(*fakeUsers).users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
+	}
+	publishReceptionFact(t, f, "shared", "order sync retry backoff", "procedure", knowledge.AccessScope{Visibility: "teams", Teams: []string{"team-a"}}, nil)
+	publishReceptionFact(t, f, "private", "order sync", "private notes", knowledge.AccessScope{Visibility: "private"}, nil)
+	model := &receptionTestModel{}
+	store := &receptionTestStore{
+		profile:   domain.Profile{OwnerID: owner.UserID, Open: true},
+		inquiries: map[string]domain.Inquiry{},
+	}
+	svc := NewReception(f.service, store, receptionTestIdentities{caller.UserID: caller, owner.UserID: owner}, receptionTestAccess{}, model)
+	policy := f.service.config.(*fakeSettings)
+	policy.value.ReceptionMinScore = new(0.51)
+	miss := InquiryInput{OwnerID: owner.UserID, RequestID: receptionReq, Question: "How does order sync work?"}
+	item, err := svc.Ask(t.Context(), caller, miss)
+	if err != nil || item.Status != domain.InquiryPending || len(model.facts) != 0 {
+		t.Fatalf("expected todo without sending any material to model: %+v, %v", item, err)
+	}
+
+	policy.value.ReceptionMinScore = new(0.5)
+	hit := miss
+	hit.RequestID = receptionReq2
+	item, err = svc.Ask(t.Context(), caller, hit)
+	if err != nil || item.Status != domain.InquiryAnswered || len(model.facts) != 1 || model.facts[0].Citation.AssetID != "shared" {
+		t.Fatalf("expected scoped answer on threshold: %+v, %v", item, err)
+	}
+	item, err = svc.Ask(t.Context(), caller, miss)
+	if err != nil || item.Status != domain.InquiryPending || len(model.facts) != 1 {
+		t.Fatalf("settings update changed an existing receipt: %+v, %v", item, err)
+	}
+
+	store.afterCreate = func() { policy.value.ReceptionMinScore = new(0.51) }
+	hit.RequestID = "6c0b7698-ee22-4c2a-96ce-902dbd39bb18"
+	item, err = svc.Ask(t.Context(), caller, hit)
+	if err != nil || item.Status != domain.InquiryPending || len(model.facts) != 1 {
+		t.Fatalf("threshold increased before model dispatch: %+v, %v", item, err)
 	}
 }
 

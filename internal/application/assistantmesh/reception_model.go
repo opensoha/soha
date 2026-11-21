@@ -203,10 +203,10 @@ func receptionTerms(text string) map[string]struct{} {
 	return terms
 }
 
-func receptionScore(question, topic string) int {
+func receptionScore(question, topic string) (score int, coverage float64) {
 	question, topic = strings.ToLower(question), strings.ToLower(topic)
 	if utf8.RuneCountInString(topic) >= 3 && strings.Contains(question, topic) {
-		return 100
+		return 100, 1
 	}
 	terms, match := receptionTerms(topic), 0
 	for term := range receptionTerms(question) {
@@ -214,24 +214,27 @@ func receptionScore(question, topic string) int {
 			match++
 		}
 	}
-	return match
+	if len(terms) == 0 {
+		return 0, 0
+	}
+	return match, float64(match) / float64(len(terms))
 }
 
 func matchesReceptionTopic(question string, topics []string) bool {
 	for _, topic := range topics {
-		if receptionScore(question, topic) >= 2 {
+		if score, _ := receptionScore(question, topic); score >= 2 {
 			return true
 		}
 	}
 	return false
 }
 
-func bestReceptionFact(question string, facts []ReceptionFact) (ReceptionFact, bool) {
+func bestReceptionFact(question string, facts []ReceptionFact, minScore float64) (ReceptionFact, bool) {
 	var best ReceptionFact
 	score := 1
 	for _, fact := range facts {
-		current := receptionScore(question, fact.Citation.Title)
-		if current > score {
+		current, coverage := receptionScore(question, fact.Citation.Title)
+		if current > score && coverage >= minScore {
 			best, score = fact, current
 		}
 	}

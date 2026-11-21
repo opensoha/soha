@@ -72,13 +72,30 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
         <Form<Settings>
           key={JSON.stringify(settings)}
           layout="vertical"
-          initialValues={{ delegationLifetimeHours: 4, ...inquiryDefaults, ...settings }}
+          scrollToFirstError={{ focus: true }}
+          initialValues={{
+            delegationLifetimeHours: 4,
+            ...inquiryDefaults,
+            ...settings,
+            defaultProfileOpen: settings.defaultProfileOpen ?? false,
+            workPulseDefaultLifetimeHours: settings.workPulseDefaultLifetimeHours ?? 24,
+            workPulseMaxLifetimeDays: settings.workPulseMaxLifetimeDays ?? 14,
+            receptionMinScore: settings.receptionMinScore ?? 0,
+          }}
           disabled={!editable || save.isPending}
           onFinish={(values) => {
             if (editable && !save.isPending) save.mutate(values)
           }}
         >
           <Form.Item label="启用组织助手互联" name="enabled" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="新用户默认开放助手名片"
+            name="defaultProfileOpen"
+            valuePropName="checked"
+            extra="仅在员工首次 Heya 审批通过时应用；员工可自行关闭，已有明确设置保持不变。"
+          >
             <Switch />
           </Form.Item>
           <Form.Item
@@ -111,6 +128,46 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
           >
             <Switch />
           </Form.Item>
+          <Typography.Title level={5}>工作进度发布</Typography.Title>
+          <Form.Item
+            label="新工作进度默认有效期（小时）"
+            name="workPulseDefaultLifetimeHours"
+            dependencies={['workPulseMaxLifetimeDays']}
+            extra="发布时留空采用此值；不能超过最大有效期。"
+            rules={[
+              {
+                required: true,
+                type: 'integer',
+                min: 1,
+                max: 168,
+                message: '请输入 1–168 的整数小时',
+              },
+              ({ getFieldValue }) => ({
+                validator: async (_, hours?: number) => {
+                  const maxDays = getFieldValue('workPulseMaxLifetimeDays')
+                  if (
+                    typeof hours === 'number' &&
+                    typeof maxDays === 'number' &&
+                    hours > maxDays * 24
+                  ) {
+                    throw new Error(`不能超过最大有效期 ${maxDays * 24} 小时`)
+                  }
+                },
+              }),
+            ]}
+          >
+            <InputNumber min={1} max={168} precision={0} inputMode="numeric" />
+          </Form.Item>
+          <Form.Item
+            label="工作进度最大有效期（天）"
+            name="workPulseMaxLifetimeDays"
+            extra="保存后约束新的工作进度发布与问询分享；已发布内容沿用原有效期。"
+            rules={[
+              { required: true, type: 'integer', min: 1, max: 90, message: '请输入 1–90 的整数天' },
+            ]}
+          >
+            <InputNumber min={1} max={90} precision={0} inputMode="numeric" />
+          </Form.Item>
           <Form.Item
             label="新本机委托超时（小时）"
             name="delegationLifetimeHours"
@@ -120,6 +177,16 @@ export function AssistantMeshSettings({ owner }: { owner: string }) {
             <InputNumber min={1} max={72} precision={0} />
           </Form.Item>
           <Typography.Title level={5}>问询治理</Typography.Title>
+          <Form.Item
+            label="自动答复相关度门槛"
+            name="receptionMinScore"
+            extra="按问题命中的标题词占比判定。低于门槛时转待办，设为 0 沿用原有匹配条件。"
+            rules={[
+              { required: true, type: 'number', min: 0, max: 1, message: '请输入 0–1 的数值' },
+            ]}
+          >
+            <InputNumber min={0} max={1} step={0.01} inputMode="decimal" />
+          </Form.Item>
           <Row gutter={16}>
             {inquiryFields.map((field) => (
               <Col key={field.name} xs={24} md={12}>

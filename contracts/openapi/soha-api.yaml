@@ -37995,6 +37995,18 @@ components:
               maximum: 365
             allowPermanentExperienceCards:
               type: boolean
+            workPulseDefaultLifetimeHours:
+              type: integer
+              minimum: 1
+              maximum: 168
+              default: 24
+              description: Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.
+            workPulseMaxLifetimeDays:
+              type: integer
+              minimum: 1
+              maximum: 90
+              default: 14
+              description: Maximum Work Pulse lifetime in days for publication and inquiry sharing.
           additionalProperties: false
         items:
           type: array
@@ -38058,8 +38070,8 @@ components:
         lifetimeHours:
           type: integer
           minimum: 1
-          maximum: 336
-          description: Work Pulse lifetime in hours. Defaults to 24.
+          maximum: 2160
+          description: Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
         permanent:
           type: boolean
         reason:
@@ -38194,6 +38206,28 @@ components:
           maximum: 365
           default: 7
           description: Body retention recorded when inquiries close. Omission preserves the existing value on update.
+        defaultProfileOpen:
+          type: boolean
+          default: false
+          description: Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.
+        workPulseDefaultLifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          default: 24
+          description: Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.
+        workPulseMaxLifetimeDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 14
+          description: Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.
+        receptionMinScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0
+          description: Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.
       additionalProperties: false
     AssistantMeshInquiryAuditInput:
       type: object
@@ -38510,7 +38544,11 @@ components:
         kind: { type: string, enum: [experience_card, work_pulse] }
         audience:
           $ref: "#/components/schemas/AssistantMeshAudience"
-        lifetimeHours: { type: integer, minimum: 1, maximum: 336 }
+        lifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 2160
+          description: Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
         lifetimeDays: { type: integer, minimum: 7, maximum: 365 }
         workStatus:
           $ref: "#/components/schemas/AssistantMeshWorkStatus"

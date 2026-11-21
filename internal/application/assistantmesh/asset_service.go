@@ -138,7 +138,9 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 			items = append(items, item)
 		}
 	}
+	defaultHours, maxDays := workPulseLifetime(settings)
 	page := Page{Items: items, Defaults: PublishingDefaults{
+		WorkPulseDefaultLifetimeHours: defaultHours, WorkPulseMaxLifetimeDays: maxDays,
 		Visibility: settings.DefaultVisibility, LifetimeDays: settings.ExperienceCardLifetimeDays,
 		Permanent: settings.AllowPermanentExperienceCards,
 	}}

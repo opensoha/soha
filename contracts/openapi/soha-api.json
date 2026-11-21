@@ -7259,8 +7259,8 @@
             "type": "integer"
           },
           "lifetimeHours": {
-            "description": "Work Pulse lifetime in hours. Defaults to 24.",
-            "maximum": 336,
+            "description": "Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.",
+            "maximum": 2160,
             "minimum": 1,
             "type": "integer"
           },
@@ -7536,6 +7536,20 @@
                   "projects"
                 ],
                 "type": "string"
+              },
+              "workPulseDefaultLifetimeHours": {
+                "default": 24,
+                "description": "Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.",
+                "maximum": 168,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "workPulseMaxLifetimeDays": {
+                "default": 14,
+                "description": "Maximum Work Pulse lifetime in days for publication and inquiry sharing.",
+                "maximum": 90,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
@@ -8459,7 +8473,8 @@
             "type": "integer"
           },
           "lifetimeHours": {
-            "maximum": 336,
+            "description": "Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.",
+            "maximum": 2160,
             "minimum": 1,
             "type": "integer"
           },
@@ -8692,6 +8707,11 @@
           "allowPermanentExperienceCards": {
             "type": "boolean"
           },
+          "defaultProfileOpen": {
+            "default": false,
+            "description": "Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.",
+            "type": "boolean"
+          },
           "defaultVisibility": {
             "description": "The suggested initial audience kind. Specific teams or projects must be selected during publication.",
             "enum": [
@@ -8768,6 +8788,27 @@
             "maxItems": 100,
             "type": "array",
             "uniqueItems": true
+          },
+          "receptionMinScore": {
+            "default": 0,
+            "description": "Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "workPulseDefaultLifetimeHours": {
+            "default": 24,
+            "description": "Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.",
+            "maximum": 168,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workPulseMaxLifetimeDays": {
+            "default": 14,
+            "description": "Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.",
+            "maximum": 90,
+            "minimum": 1,
+            "type": "integer"
           }
         },
         "required": [

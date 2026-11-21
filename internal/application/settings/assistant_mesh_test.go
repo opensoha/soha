@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -51,7 +52,15 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if err != nil || defaults.Enabled || defaults.ExperienceCardLifetimeDays != 90 || defaults.DelegationLifetimeHours != 4 || defaults.DefaultVisibility != "private" || !defaults.AllowPermanentExperienceCards {
 		t.Fatalf("defaults = %+v, %v", defaults, err)
 	}
+	if defaults.DefaultProfileOpen == nil || *defaults.DefaultProfileOpen || defaults.ReceptionMinScore == nil ||
+		*defaults.ReceptionMinScore != 0 || defaults.WorkPulseDefaultLifetimeHours != 24 || defaults.WorkPulseMaxLifetimeDays != 14 {
+		t.Fatalf("policy defaults = %+v", defaults)
+	}
 	input := defaults
+	input.DefaultProfileOpen = new(true)
+	input.ReceptionMinScore = new(0.75)
+	input.WorkPulseDefaultLifetimeHours = 36
+	input.WorkPulseMaxLifetimeDays = 21
 	input.Enabled = true
 	input.ExperienceCardLifetimeDays = 120
 	input.DelegationLifetimeHours = 12
@@ -75,6 +84,12 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if entry.ActorID != "alice" || entry.Metadata["before"].(map[string]any)["enabled"] != false || entry.Metadata["after"].(map[string]any)["enabled"] != true {
 		t.Fatalf("unexpected audit: %+v", audit.entries)
 	}
+	if before, after := entry.Metadata["before"].(map[string]any), entry.Metadata["after"].(map[string]any); before["defaultProfileOpen"] != false || after["defaultProfileOpen"] != true || after["receptionMinScore"] != 0.75 ||
+		after["workPulseDefaultLifetimeHours"] != 36 || after["workPulseMaxLifetimeDays"] != 21 {
+		t.Fatalf("policy audit = %+v", entry)
+	}
+	input.DefaultProfileOpen, input.ReceptionMinScore = nil, nil
+	input.WorkPulseDefaultLifetimeHours, input.WorkPulseMaxLifetimeDays = 0, 0
 	input.DelegationLifetimeHours = 0
 	input.InquiryPairLimitPerHour = 0
 	input.InquiryRetentionDays = 0
@@ -82,7 +97,20 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if err != nil || saved.DelegationLifetimeHours != 12 || saved.InquiryPairLimitPerHour != 16 || saved.InquiryRetentionDays != 25 {
 		t.Fatalf("legacy update lost timeout: %+v, %v", saved, err)
 	}
-
+	if saved.DefaultProfileOpen == nil || !*saved.DefaultProfileOpen || saved.ReceptionMinScore == nil ||
+		*saved.ReceptionMinScore != 0.75 || saved.WorkPulseDefaultLifetimeHours != 36 || saved.WorkPulseMaxLifetimeDays != 21 {
+		t.Fatalf("legacy update lost new settings: %+v", saved)
+	}
+	input.WorkPulseMaxLifetimeDays = 1
+	if _, err := service.UpdateAssistantMeshSettings(ctx, editor, input); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("reduced maximum below stored default: %v", err)
+	}
+	input.WorkPulseDefaultLifetimeHours = 24
+	input.DefaultProfileOpen, input.ReceptionMinScore = new(false), new(0.0)
+	saved, err = service.UpdateAssistantMeshSettings(ctx, editor, input)
+	if err != nil || saved.DefaultProfileOpen == nil || *saved.DefaultProfileOpen || saved.ReceptionMinScore == nil || *saved.ReceptionMinScore != 0 {
+		t.Fatalf("explicit false and zero were not saved: %+v, %v", saved, err)
+	}
 }
 
 func TestAssistantMeshSettingsRejectsInvalidUpdates(t *testing.T) {
@@ -98,6 +126,10 @@ func TestAssistantMeshSettingsRejectsInvalidUpdates(t *testing.T) {
 		"out-of-range lifetime": func(in *domainsettings.AssistantMeshSettings) { in.ExperienceCardLifetimeDays = 366 },
 		"paired limit":          func(in *domainsettings.AssistantMeshSettings) { in.InquiryPairLimitPerHour = 61 },
 		"pending limit":         func(in *domainsettings.AssistantMeshSettings) { in.InquiryPendingLimit = 4 },
+		"work pulse default":    func(in *domainsettings.AssistantMeshSettings) { in.WorkPulseDefaultLifetimeHours = 169 },
+		"work pulse maximum":    func(in *domainsettings.AssistantMeshSettings) { in.WorkPulseMaxLifetimeDays = 91 },
+		"reception score":       func(in *domainsettings.AssistantMeshSettings) { in.ReceptionMinScore = new(1.01) },
+		"nonfinite score":       func(in *domainsettings.AssistantMeshSettings) { in.ReceptionMinScore = new(math.NaN()) },
 		"body retention":        func(in *domainsettings.AssistantMeshSettings) { in.InquiryRetentionDays = 366 },
 		"organization default":  func(in *domainsettings.AssistantMeshSettings) { in.DefaultVisibility = "organization" },
 		"invalid reviewer ID":   func(in *domainsettings.AssistantMeshSettings) { in.OrganizationApproverUserIDs = []string{"reviewer"} },

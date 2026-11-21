@@ -1099,6 +1099,16 @@ describe('settings ai page rendering', () => {
         defaultVisibility: 'private',
         experienceCardLifetimeDays: 90,
         allowPermanentExperienceCards: true,
+        inquiryPairLimitPerHour: 5,
+        inquiryCallerLimitPerDay: 30,
+        inquiryMergeWindowHours: 24,
+        inquiryPendingLimit: 20,
+        inquiryTimeoutHours: 72,
+        inquiryRetentionDays: 7,
+        defaultProfileOpen: true,
+        workPulseDefaultLifetimeHours: 48,
+        workPulseMaxLifetimeDays: 2,
+        receptionMinScore: 0.75,
       }
       apiPutMock.mockResolvedValueOnce({ data: expected })
       const container = await renderWithProviders(
@@ -1114,6 +1124,37 @@ describe('settings ai page rendering', () => {
       }
       const saveButton = findSaveButton()
       if (!saveButton) throw new Error('Assistant Mesh save button not shown')
+      const getNumber = (name: string) => {
+        const input = container.querySelector<HTMLInputElement>(`input[id="${name}"]`)
+        if (!input) throw new Error(`Assistant Mesh setting ${name} not shown`)
+        return input
+      }
+      const setNumber = (name: string, value: string) => {
+        const input = getNumber(name)
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          input,
+          value,
+        )
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      expect(getNumber('workPulseDefaultLifetimeHours').value).toBe('24')
+      expect(getNumber('workPulseMaxLifetimeDays').value).toBe('14')
+      expect(Number(getNumber('receptionMinScore').value)).toBe(0)
+      const openSwitch = container.querySelector<HTMLButtonElement>(
+        'button[id="defaultProfileOpen"]',
+      )
+      expect(openSwitch?.getAttribute('aria-checked')).toBe('false')
+      await act(async () => {
+        openSwitch?.click()
+        setNumber('workPulseDefaultLifetimeHours', '48')
+        setNumber('workPulseMaxLifetimeDays', '1')
+        setNumber('receptionMinScore', '0.75')
+      })
+      await act(async () => saveButton.click())
+      await vi.waitFor(() => expect(container.textContent).toContain('24 小时'))
+      expect(apiPutMock).not.toHaveBeenCalledWith(path, expect.anything())
+
+      await act(async () => setNumber('workPulseMaxLifetimeDays', '2'))
       await act(async () => {
         saveButton.click()
         await new Promise((resolve) => setTimeout(resolve, 0))

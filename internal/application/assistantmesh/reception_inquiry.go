@@ -53,7 +53,7 @@ func (s *Reception) Ask(ctx context.Context, p identity.Principal, input Inquiry
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		return InquiryView{}, err
 	}
-	return s.createInquiry(ctx, caller, item, policy.Limits)
+	return s.createInquiry(ctx, caller, item, policy)
 }
 
 func inquiryQuestionKey(question string) string {
@@ -62,7 +62,7 @@ func inquiryQuestionKey(question string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal, item domain.Inquiry, limits domain.InquiryLimits) (InquiryView, error) {
+func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal, item domain.Inquiry, policy InquiryPolicy) (InquiryView, error) {
 	if _, err := s.openOwner(ctx, item.OwnerID); err != nil {
 		return InquiryView{}, err
 	}
@@ -73,11 +73,11 @@ func (s *Reception) createInquiry(ctx context.Context, caller identity.Principal
 	if len(facts) == 0 {
 		return InquiryView{}, apperrors.ErrNotFound
 	}
-	fact, matched := bestReceptionFact(item.Question, facts)
+	fact, matched := bestReceptionFact(item.Question, facts, policy.ReceptionMinScore)
 	if s.model != nil && matched {
 		item.Status = domain.InquiryProcessing
 	}
-	result, err := s.store.CreateInquiry(ctx, item, limits)
+	result, err := s.store.CreateInquiry(ctx, item, policy.Limits)
 	if err != nil {
 		return InquiryView{}, err
 	}
@@ -129,6 +129,13 @@ func (s *Reception) tryReceptionAnswer(ctx context.Context, caller identity.Prin
 	visible, err := s.citationVisible(ctx, caller, item.OwnerID, fact.Citation)
 	if err != nil || !visible {
 		return "", err
+	}
+	policy, err := s.assets.InquiryPolicy(ctx)
+	if err != nil {
+		return "", err
+	}
+	if _, coverage := receptionScore(item.Question, fact.Citation.Title); coverage < policy.ReceptionMinScore {
+		return "", nil
 	}
 	answer, err := s.model.AnswerReception(ctx, caller, item.Question, fact)
 	if err != nil || answer == "" {

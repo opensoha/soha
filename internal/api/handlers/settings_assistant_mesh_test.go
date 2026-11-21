@@ -18,6 +18,11 @@ func TestAssistantMeshSettingsRequest(t *testing.T) {
 	}{
 		{"explicit false", valid, http.StatusOK},
 		{"valid optional governance", strings.Replace(valid, "{", `{"inquiryRetentionDays":14,`, 1), http.StatusOK},
+		{"explicit false and zero", strings.Replace(valid, "{", `{"defaultProfileOpen":false,"receptionMinScore":0,`, 1), http.StatusOK},
+		{"null default profile", strings.Replace(valid, "{", `{"defaultProfileOpen":null,`, 1), http.StatusBadRequest},
+		{"null reception score", strings.Replace(valid, "{", `{"receptionMinScore":null,`, 1), http.StatusBadRequest},
+		{"fractional pulse hours", strings.Replace(valid, "{", `{"workPulseDefaultLifetimeHours":2.5,`, 1), http.StatusBadRequest},
+		{"zero pulse maximum", strings.Replace(valid, "{", `{"workPulseMaxLifetimeDays":0,`, 1), http.StatusBadRequest},
 		{"explicit null retention", strings.Replace(valid, "{", `{"inquiryRetentionDays":null,`, 1), http.StatusBadRequest},
 		{"explicit zero limit", strings.Replace(valid, "{", `{"inquiryPendingLimit":0,`, 1), http.StatusBadRequest},
 		{"missing enabled", strings.Replace(valid, `"enabled":false,`, "", 1), http.StatusBadRequest},

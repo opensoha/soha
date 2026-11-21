@@ -466,7 +466,7 @@ func receptionPostgres(t *testing.T) *dbstore.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	dir := t.TempDir()
-	for _, name := range []string{"0001_init.sql", "0113_heya_access.sql", "0154_assistant_mesh_assets.sql", "0155_assistant_mesh_reception.sql", "0157_assistant_mesh_delegations.sql", "0158_assistant_mesh_feishu.sql", "0159_assistant_mesh_inquiry_retention.sql", "0160_assistant_mesh_inheritance_delete_guard.sql"} {
+	for _, name := range []string{"0001_init.sql", "0113_heya_access.sql", "0154_assistant_mesh_assets.sql", "0155_assistant_mesh_reception.sql", "0157_assistant_mesh_delegations.sql", "0158_assistant_mesh_feishu.sql", "0159_assistant_mesh_inquiry_retention.sql", "0160_assistant_mesh_inheritance_delete_guard.sql", "0163_assistant_mesh_profile_defaults.sql"} {
 		contents, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "postgres", name))
 		if err != nil {
 			t.Fatal(err)

@@ -18922,7 +18922,7 @@ type AssistantMeshActionRequest struct {
 	ExpectedDigest string `json:"expectedDigest,omitempty"`
 	LifetimeDays   int    `json:"lifetimeDays,omitempty"`
 
-	// LifetimeHours Work Pulse lifetime in hours. Defaults to 24.
+	// LifetimeHours Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
 	LifetimeHours int                                                                   `json:"lifetimeHours,omitempty"`
 	Parameters    map[string]AssistantMeshActionRequest_Parameters_AdditionalProperties `json:"parameters,omitempty"`
 	Permanent     bool                                                                  `json:"permanent,omitempty"`
@@ -19016,6 +19016,12 @@ type AssistantMeshAssetPage struct {
 		AllowPermanentExperienceCards bool                                               `json:"allowPermanentExperienceCards"`
 		LifetimeDays                  int                                                `json:"lifetimeDays"`
 		Visibility                    AssistantMeshAssetPagePublishingDefaultsVisibility `json:"visibility"`
+
+		// WorkPulseDefaultLifetimeHours Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.
+		WorkPulseDefaultLifetimeHours int `json:"workPulseDefaultLifetimeHours,omitempty"`
+
+		// WorkPulseMaxLifetimeDays Maximum Work Pulse lifetime in days for publication and inquiry sharing.
+		WorkPulseMaxLifetimeDays int `json:"workPulseMaxLifetimeDays,omitempty"`
 	} `json:"publishingDefaults,omitempty"`
 }
 
@@ -19311,14 +19317,16 @@ type AssistantMeshInquiryReplyInput struct {
 
 // AssistantMeshInquiryShareReplyInput defines model for AssistantMeshInquiryShareReplyInput.
 type AssistantMeshInquiryShareReplyInput struct {
-	Answer        string                                  `json:"answer"`
-	Audience      AssistantMeshAudience                   `json:"audience"`
-	Kind          AssistantMeshInquiryShareReplyInputKind `json:"kind"`
-	LifetimeDays  int                                     `json:"lifetimeDays,omitempty"`
-	LifetimeHours int                                     `json:"lifetimeHours,omitempty"`
-	Summary       string                                  `json:"summary"`
-	Title         string                                  `json:"title"`
-	WorkStatus    AssistantMeshWorkStatus                 `json:"workStatus,omitempty"`
+	Answer       string                                  `json:"answer"`
+	Audience     AssistantMeshAudience                   `json:"audience"`
+	Kind         AssistantMeshInquiryShareReplyInputKind `json:"kind"`
+	LifetimeDays int                                     `json:"lifetimeDays,omitempty"`
+
+	// LifetimeHours Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
+	LifetimeHours int                     `json:"lifetimeHours,omitempty"`
+	Summary       string                  `json:"summary"`
+	Title         string                  `json:"title"`
+	WorkStatus    AssistantMeshWorkStatus `json:"workStatus,omitempty"`
 }
 
 // AssistantMeshInquiryShareReplyInputKind defines model for AssistantMeshInquiryShareReplyInput.Kind.
@@ -19399,6 +19407,9 @@ type AssistantMeshReceptionProfileInput struct {
 type AssistantMeshSettings struct {
 	AllowPermanentExperienceCards bool `json:"allowPermanentExperienceCards"`
 
+	// DefaultProfileOpen Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.
+	DefaultProfileOpen bool `json:"defaultProfileOpen,omitempty"`
+
 	// DefaultVisibility The suggested initial audience kind. Specific teams or projects must be selected during publication.
 	DefaultVisibility AssistantMeshSettingsDefaultVisibility `json:"defaultVisibility"`
 
@@ -19427,6 +19438,15 @@ type AssistantMeshSettings struct {
 
 	// OrganizationApproverUserIDs Explicit reviewer user IDs. An empty list uses platform administrators.
 	OrganizationApproverUserIDs []openapi_types.UUID `json:"organizationApproverUserIds"`
+
+	// ReceptionMinScore Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.
+	ReceptionMinScore float32 `json:"receptionMinScore,omitempty"`
+
+	// WorkPulseDefaultLifetimeHours Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.
+	WorkPulseDefaultLifetimeHours int `json:"workPulseDefaultLifetimeHours,omitempty"`
+
+	// WorkPulseMaxLifetimeDays Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.
+	WorkPulseMaxLifetimeDays int `json:"workPulseMaxLifetimeDays,omitempty"`
 }
 
 // AssistantMeshSettingsDefaultVisibility The suggested initial audience kind. Specific teams or projects must be selected during publication.

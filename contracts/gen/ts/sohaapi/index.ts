@@ -19855,6 +19855,16 @@ export interface components {
                 visibility: "private" | "teams" | "projects";
                 lifetimeDays: number;
                 allowPermanentExperienceCards: boolean;
+                /**
+                 * @description Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.
+                 * @default 24
+                 */
+                workPulseDefaultLifetimeHours?: number;
+                /**
+                 * @description Maximum Work Pulse lifetime in days for publication and inquiry sharing.
+                 * @default 14
+                 */
+                workPulseMaxLifetimeDays?: number;
             };
             items: components["schemas"]["AssistantMeshAsset"][];
             nextOffset?: number;
@@ -19876,7 +19886,7 @@ export interface components {
             expectedDigest?: string;
             audience?: components["schemas"]["AssistantMeshAudience"];
             lifetimeDays?: number;
-            /** @description Work Pulse lifetime in hours. Defaults to 24. */
+            /** @description Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum. */
             lifetimeHours?: number;
             permanent?: boolean;
             reason?: string;
@@ -19950,6 +19960,26 @@ export interface components {
              * @default 7
              */
             inquiryRetentionDays?: number;
+            /**
+             * @description Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.
+             * @default false
+             */
+            defaultProfileOpen?: boolean;
+            /**
+             * @description Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.
+             * @default 24
+             */
+            workPulseDefaultLifetimeHours?: number;
+            /**
+             * @description Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.
+             * @default 14
+             */
+            workPulseMaxLifetimeDays?: number;
+            /**
+             * @description Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.
+             * @default 0
+             */
+            receptionMinScore?: number;
         };
         AssistantMeshInquiryAuditInput: {
             /** Format: uuid */
@@ -20114,6 +20144,7 @@ export interface components {
             /** @enum {string} */
             kind: "experience_card" | "work_pulse";
             audience: components["schemas"]["AssistantMeshAudience"];
+            /** @description Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum. */
             lifetimeHours?: number;
             lifetimeDays?: number;
             workStatus?: components["schemas"]["AssistantMeshWorkStatus"];

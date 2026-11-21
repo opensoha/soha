@@ -57,7 +57,7 @@ func (s *Service) UpdateAssistantMeshSettings(ctx context.Context, principal dom
 		return domainsettings.AssistantMeshSettings{}, err
 	}
 	meta := requestctx.FromContext(ctx)
-	after := assistantMeshValues(input)
+	after := make(map[string]any)
 	err := s.assistantMeshWriter.UpdateAssistantMesh(ctx, principal.UserID, after, func(tx context.Context, raw map[string]any, found bool) error {
 		before, err := decodeAssistantMeshSettings(raw, found)
 		if err != nil {
@@ -65,11 +65,13 @@ func (s *Service) UpdateAssistantMeshSettings(ctx context.Context, principal dom
 		}
 		if input.DelegationLifetimeHours == 0 {
 			input.DelegationLifetimeHours = before.DelegationLifetimeHours
-			after["delegationLifetimeHours"] = input.DelegationLifetimeHours
 		}
-		retainInquirySettings(&input, before)
-		for _, field := range assistantMeshInquiryFields(&input) {
-			after[field.key] = *field.value
+		retainAssistantMeshPolicy(&input, before)
+		if err := validateWorkPulseLifetime(input); err != nil {
+			return err
+		}
+		for key, value := range assistantMeshValues(input) {
+			after[key] = value
 		}
 		return s.audit.Record(tx, domainaudit.Entry{
 			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
@@ -113,10 +115,13 @@ func validateAssistantMeshSettings(input domainsettings.AssistantMeshSettings) e
 	if input.OrganizationApproverUserIDs == nil || len(input.OrganizationApproverUserIDs) > 100 {
 		return fmt.Errorf("%w: invalid publication reviewer list", apperrors.ErrInvalidArgument)
 	}
-	for _, field := range assistantMeshInquiryFields(&input) {
+	for _, field := range assistantMeshBoundedFields(&input) {
 		if *field.value != 0 && (*field.value < field.minimum || *field.value > field.maximum) {
 			return fmt.Errorf("%w: %s must be between %d and %d", apperrors.ErrInvalidArgument, field.key, field.minimum, field.maximum)
 		}
+	}
+	if score := input.ReceptionMinScore; score != nil && !(*score >= 0 && *score <= 1) {
+		return fmt.Errorf("%w: receptionMinScore must be between 0 and 1", apperrors.ErrInvalidArgument)
 	}
 	seen := make(map[string]struct{}, len(input.OrganizationApproverUserIDs))
 	for _, id := range input.OrganizationApproverUserIDs {
@@ -144,12 +149,24 @@ func decodeAssistantMeshSettings(raw map[string]any, found bool) (domainsettings
 	if err := json.Unmarshal(data, &item); err != nil {
 		return domainsettings.AssistantMeshSettings{}, err
 	}
-	retainInquirySettings(&item, domainsettings.DefaultAssistantMeshSettings())
-	return item, validateAssistantMeshSettings(item)
+	retainAssistantMeshPolicy(&item, domainsettings.DefaultAssistantMeshSettings())
+	if err := validateAssistantMeshSettings(item); err != nil {
+		return item, err
+	}
+	return item, validateWorkPulseLifetime(item)
+}
+
+func validateWorkPulseLifetime(item domainsettings.AssistantMeshSettings) error {
+	if item.WorkPulseDefaultLifetimeHours > item.WorkPulseMaxLifetimeDays*24 {
+		return fmt.Errorf("%w: default Work Pulse lifetime exceeds the maximum", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func assistantMeshValues(item domainsettings.AssistantMeshSettings) map[string]any {
 	values := map[string]any{
+		"defaultProfileOpen":            *item.DefaultProfileOpen,
+		"receptionMinScore":             *item.ReceptionMinScore,
 		"delegationLifetimeHours":       item.DelegationLifetimeHours,
 		"enabled":                       item.Enabled,
 		"organizationApproverUserIds":   item.OrganizationApproverUserIDs,
@@ -157,32 +174,40 @@ func assistantMeshValues(item domainsettings.AssistantMeshSettings) map[string]a
 		"experienceCardLifetimeDays":    item.ExperienceCardLifetimeDays,
 		"allowPermanentExperienceCards": item.AllowPermanentExperienceCards,
 	}
-	for _, field := range assistantMeshInquiryFields(&item) {
+	for _, field := range assistantMeshBoundedFields(&item) {
 		values[field.key] = *field.value
 	}
 	return values
 }
 
-type inquirySettingField struct {
+type meshBoundedSetting struct {
 	key              string
 	value            *int
 	minimum, maximum int
 }
 
-func assistantMeshInquiryFields(item *domainsettings.AssistantMeshSettings) []inquirySettingField {
-	return []inquirySettingField{
+func assistantMeshBoundedFields(item *domainsettings.AssistantMeshSettings) []meshBoundedSetting {
+	return []meshBoundedSetting{
 		{"inquiryPairLimitPerHour", &item.InquiryPairLimitPerHour, 1, 60},
 		{"inquiryCallerLimitPerDay", &item.InquiryCallerLimitPerDay, 1, 500},
 		{"inquiryMergeWindowHours", &item.InquiryMergeWindowHours, 1, 168},
 		{"inquiryPendingLimit", &item.InquiryPendingLimit, 5, 200},
 		{"inquiryTimeoutHours", &item.InquiryTimeoutHours, 1, 720},
 		{"inquiryRetentionDays", &item.InquiryRetentionDays, 1, 365},
+		{"workPulseDefaultLifetimeHours", &item.WorkPulseDefaultLifetimeHours, 1, 168},
+		{"workPulseMaxLifetimeDays", &item.WorkPulseMaxLifetimeDays, 1, 90},
 	}
 }
 
-func retainInquirySettings(input *domainsettings.AssistantMeshSettings, old domainsettings.AssistantMeshSettings) {
-	before := assistantMeshInquiryFields(&old)
-	for i, field := range assistantMeshInquiryFields(input) {
+func retainAssistantMeshPolicy(input *domainsettings.AssistantMeshSettings, old domainsettings.AssistantMeshSettings) {
+	if input.DefaultProfileOpen == nil {
+		input.DefaultProfileOpen = old.DefaultProfileOpen
+	}
+	if input.ReceptionMinScore == nil {
+		input.ReceptionMinScore = old.ReceptionMinScore
+	}
+	before := assistantMeshBoundedFields(&old)
+	for i, field := range assistantMeshBoundedFields(input) {
 		if *field.value == 0 {
 			*field.value = *before[i].value
 		}

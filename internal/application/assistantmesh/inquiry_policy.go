@@ -9,8 +9,9 @@ import (
 )
 
 type InquiryPolicy struct {
-	Limits  domain.InquiryLimits
-	Timeout time.Duration
+	Limits            domain.InquiryLimits
+	Timeout           time.Duration
+	ReceptionMinScore float64
 }
 
 func (s *Service) InquiryPolicy(ctx context.Context) (InquiryPolicy, error) {
@@ -19,6 +20,10 @@ func (s *Service) InquiryPolicy(ctx context.Context) (InquiryPolicy, error) {
 		return InquiryPolicy{}, err
 	}
 	defaults := settings.DefaultAssistantMeshSettings()
+	minScore := *defaults.ReceptionMinScore
+	if value.ReceptionMinScore != nil {
+		minScore = *value.ReceptionMinScore
+	}
 	return InquiryPolicy{
 		Limits: domain.InquiryLimits{
 			PairPerHour:  configuredValue(value.InquiryPairLimitPerHour, defaults.InquiryPairLimitPerHour),
@@ -27,7 +32,8 @@ func (s *Service) InquiryPolicy(ctx context.Context) (InquiryPolicy, error) {
 			MergeWindow:  time.Duration(configuredValue(value.InquiryMergeWindowHours, defaults.InquiryMergeWindowHours)) * time.Hour,
 			Retention:    time.Duration(configuredValue(value.InquiryRetentionDays, defaults.InquiryRetentionDays)) * 24 * time.Hour,
 		},
-		Timeout: time.Duration(configuredValue(value.InquiryTimeoutHours, defaults.InquiryTimeoutHours)) * time.Hour,
+		Timeout:           time.Duration(configuredValue(value.InquiryTimeoutHours, defaults.InquiryTimeoutHours)) * time.Hour,
+		ReceptionMinScore: minScore,
 	}, nil
 }
 
