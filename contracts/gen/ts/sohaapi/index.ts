@@ -10025,6 +10025,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Checks up to 24 installed plugins for higher stable releases from their recorded sources. Pass the installed IDs visible on the current page to check a specific set. */
+        get: operations["listPluginUpdates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/repository/refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Reads a page of public published releases or branch choices for a GitHub plugin repository. */
+        post: operations["listPluginRepositoryRefs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/repository/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires plugin.install before fetching a supported public repository. Resolves the requested revision to a full commit and validates the root manifest without installing or enabling the plugin. */
+        post: operations["previewRepositoryPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/repository/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Installs the immutable repository version reviewed in preview. Clients must not fall back to the legacy install route when this operation is unavailable. */
+        post: operations["installRepositoryPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/install": {
         parameters: {
             query?: never;
@@ -10115,6 +10183,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["upgradeInstalledPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plugins/{pluginID}/repository/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Upgrades a repository-installed plugin using a preview token bound to a new immutable commit from its existing source. Clients must not fall back to the legacy upgrade route when this operation is unavailable. */
+        post: operations["upgradeRepositoryPlugin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -31963,6 +32048,8 @@ export interface components {
         MarketplacePluginVersion: {
             version: string;
             manifestUrl: string;
+            /** @description Publisher-declared source commit for this immutable release. This declaration is not a signature or proof of origin. */
+            commitSha?: string;
             packageUrl?: string;
             checksum?: string;
             signature?: string;
@@ -32055,11 +32142,14 @@ export interface components {
             source: string;
             sourceId?: string;
             sourceUrl?: string;
+            /** @description Public GitHub repository registered by the marketplace catalog. Release data is queried separately. */
+            repositoryUrl?: string;
             riskLevel?: string;
             latestVersion?: string;
             categories?: string[];
             verified?: boolean;
             publisherInfo?: components["schemas"]["MarketplacePublisher"];
+            sourceInfo?: components["schemas"]["PluginSourceInfo"];
             compatibility?: components["schemas"]["PluginCompatibility"];
             versions?: components["schemas"]["MarketplacePluginVersion"][];
             advisories?: components["schemas"]["MarketplaceAdvisory"][];
@@ -32173,6 +32263,105 @@ export interface components {
         SoftwareStorageEnvelope: {
             data: components["schemas"]["SoftwareStorage"];
         };
+        /** @description Server-computed distribution source. Never use author-provided catalog or manifest claims as trust evidence. */
+        PluginSourceInfo: {
+            /** @enum {string} */
+            kind: "marketplace" | "github-repo" | "direct-manifest";
+            canonicalSource: string;
+            sourceId?: string;
+            /** @description Selected repository revision, including a qualified release tag when available. Use commitSha for the immutable revision. */
+            pinnedRef?: string;
+            /** @description The author repository for a repository-backed marketplace installation. */
+            repositoryUrl?: string;
+            commitSha?: string;
+            /** @description Digest of the original manifest bytes, not of a reserialized JSON object. */
+            rawManifestChecksum?: string;
+            /** @description True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification. */
+            official: boolean;
+        };
+        PluginRepositoryPreviewRequest: {
+            /** @description Public GitHub repository, tree revision, or published release tag URL. The manifest must be at the repository root. */
+            repositoryUrl: string;
+            /** @description Optional branch, tag or commit. A ref in the URL must match this value if both are supplied. A bare URL selects the latest stable release, or asks the caller to explicitly select a branch when no stable release exists. */
+            ref?: string;
+            /** @description Marketplace plugin identity. Supply with marketplaceSourceId for a registered repository preview. */
+            pluginId?: string;
+            /** @description Configured repository catalog source. The server verifies the plugin and repository binding. */
+            marketplaceSourceId?: string;
+        };
+        PluginRepositoryRefsRequest: {
+            repositoryUrl: string;
+            /** @enum {string} */
+            kind: "release" | "branch";
+            page?: number;
+        };
+        PluginRepositoryRef: {
+            name: string;
+            version?: string;
+            /** @description True for a published prerelease. Prereleases require an explicit revision choice. */
+            prerelease?: boolean;
+            /** Format: date-time */
+            publishedAt?: string;
+            releaseUrl?: string;
+        };
+        PluginRepositoryRefList: {
+            refs: components["schemas"]["PluginRepositoryRef"][];
+            hasMore: boolean;
+        };
+        PluginRepositoryRefListEnvelope: {
+            data: components["schemas"]["PluginRepositoryRefList"];
+        };
+        PluginUpdate: {
+            pluginId: string;
+            repositoryUrl: string;
+            installedVersion: string;
+            targetVersion: string;
+            ref: string;
+            releaseUrl?: string;
+            marketplaceSourceId?: string;
+        };
+        PluginUpdateListEnvelope: {
+            items: components["schemas"]["PluginUpdate"][];
+        };
+        PluginRepositoryPreviewSource: {
+            /** @constant */
+            kind: "github-repo";
+            canonicalSource: string;
+            /** @description Selected repository revision, including a qualified release tag when available. */
+            pinnedRef?: string;
+            commitSha: string;
+            /** @description Digest of the original repository manifest bytes. */
+            rawManifestChecksum: string;
+            /** @description True when the server confirms that the repository was selected from a configured official catalog. */
+            official: boolean;
+        };
+        PluginRepositoryPreview: {
+            manifest: components["schemas"]["PluginManifest"];
+            sourceInfo: components["schemas"]["PluginRepositoryPreviewSource"];
+            /** @description A computed digest can bind confirmation to the preview; it does not authenticate the publisher. */
+            checksumStatus: string;
+            /** @description A signature declared by a repository is not verified until checked against a trusted key. */
+            signatureStatus: string;
+            /** @description Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest. */
+            previewToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        PluginRepositoryPreviewEnvelope: {
+            data: components["schemas"]["PluginRepositoryPreview"];
+        };
+        PluginRepositoryInstallRequest: {
+            /** @description An unexpired token issued to the same caller and scope by the repository preview endpoint. */
+            previewToken: string;
+            /** @description Repository installs are disabled unless enabled explicitly. */
+            enable?: boolean;
+        };
+        PluginRepositoryUpgradeRequest: {
+            /** @description An unexpired token issued to the same caller and scope for the selected repository version. */
+            previewToken: string;
+            /** @description Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization. */
+            confirmPermissionIncrease?: boolean;
+        };
         InstalledPlugin: {
             id: string;
             name: string;
@@ -32182,6 +32371,7 @@ export interface components {
             /** @enum {string} */
             status: "installed" | "pending_config" | "enabled" | "disabled" | "failed" | "deprecated";
             source: string;
+            sourceInfo?: components["schemas"]["PluginSourceInfo"];
             manifest: components["schemas"]["PluginManifest"];
             checksumStatus: string;
             signatureStatus?: string;
@@ -32282,6 +32472,17 @@ export interface components {
         };
         MarketplacePluginListEnvelope: {
             items: components["schemas"]["MarketplacePlugin"][];
+            meta?: components["schemas"]["MarketplacePluginListMeta"];
+        };
+        MarketplacePluginListMeta: {
+            sources?: components["schemas"]["MarketplaceSourceStatus"][];
+        };
+        MarketplaceSourceStatus: {
+            sourceId: string;
+            /** @enum {string} */
+            status: "available" | "unavailable";
+            /** @description Stable warning code for an unavailable source, when known. */
+            code?: string;
         };
         InstalledPluginEnvelope: {
             data: components["schemas"]["InstalledPlugin"];
@@ -37834,6 +38035,19 @@ export type SoftwarePackageVisibility = components['schemas']['SoftwarePackageVi
 export type SoftwarePackageStatus = components['schemas']['SoftwarePackageStatus'];
 export type SoftwareStorage = components['schemas']['SoftwareStorage'];
 export type SoftwareStorageEnvelope = components['schemas']['SoftwareStorageEnvelope'];
+export type PluginSourceInfo = components['schemas']['PluginSourceInfo'];
+export type PluginRepositoryPreviewRequest = components['schemas']['PluginRepositoryPreviewRequest'];
+export type PluginRepositoryRefsRequest = components['schemas']['PluginRepositoryRefsRequest'];
+export type PluginRepositoryRef = components['schemas']['PluginRepositoryRef'];
+export type PluginRepositoryRefList = components['schemas']['PluginRepositoryRefList'];
+export type PluginRepositoryRefListEnvelope = components['schemas']['PluginRepositoryRefListEnvelope'];
+export type PluginUpdate = components['schemas']['PluginUpdate'];
+export type PluginUpdateListEnvelope = components['schemas']['PluginUpdateListEnvelope'];
+export type PluginRepositoryPreviewSource = components['schemas']['PluginRepositoryPreviewSource'];
+export type PluginRepositoryPreview = components['schemas']['PluginRepositoryPreview'];
+export type PluginRepositoryPreviewEnvelope = components['schemas']['PluginRepositoryPreviewEnvelope'];
+export type PluginRepositoryInstallRequest = components['schemas']['PluginRepositoryInstallRequest'];
+export type PluginRepositoryUpgradeRequest = components['schemas']['PluginRepositoryUpgradeRequest'];
 export type InstalledPlugin = components['schemas']['InstalledPlugin'];
 export type PluginInstallRequest = components['schemas']['PluginInstallRequest'];
 export type CompanionActivationRequest = components['schemas']['CompanionActivationRequest'];
@@ -37848,6 +38062,8 @@ export type PluginConfigRequest = components['schemas']['PluginConfigRequest'];
 export type PluginManifestEnvelope = components['schemas']['PluginManifestEnvelope'];
 export type MarketplacePluginEnvelope = components['schemas']['MarketplacePluginEnvelope'];
 export type MarketplacePluginListEnvelope = components['schemas']['MarketplacePluginListEnvelope'];
+export type MarketplacePluginListMeta = components['schemas']['MarketplacePluginListMeta'];
+export type MarketplaceSourceStatus = components['schemas']['MarketplaceSourceStatus'];
 export type InstalledPluginEnvelope = components['schemas']['InstalledPluginEnvelope'];
 export type InstalledPluginListEnvelope = components['schemas']['InstalledPluginListEnvelope'];
 export type GovernedAITokenBinding = components['schemas']['GovernedAITokenBinding'];
@@ -58655,6 +58871,125 @@ export interface operations {
             };
         };
     };
+    listPluginUpdates: {
+        parameters: {
+            query?: {
+                pluginId?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A list of available same-source upgrades. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginUpdateListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+            504: components["responses"]["Error"];
+        };
+    };
+    listPluginRepositoryRefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryRefsRequest"];
+            };
+        };
+        responses: {
+            /** @description The requested page of repository revisions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepositoryRefListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
+    previewRepositoryPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Validated manifest and opaque short-lived confirmation token. Clients must not persist, log or decode the token. */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepositoryPreviewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+            504: components["responses"]["Error"];
+        };
+    };
+    installRepositoryPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Installed plugin snapshot. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPluginEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
     installPlugin: {
         parameters: {
             query?: never;
@@ -58677,6 +59012,7 @@ export interface operations {
                     "application/json": components["schemas"]["InstalledPluginEnvelope"];
                 };
             };
+            409: components["responses"]["Error"];
         };
     };
     getInstalledPlugin: {
@@ -58813,6 +59149,38 @@ export interface operations {
                     "application/json": components["schemas"]["InstalledPluginEnvelope"];
                 };
             };
+            409: components["responses"]["Error"];
+        };
+    };
+    upgradeRepositoryPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pluginID: components["parameters"]["PluginID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryUpgradeRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated plugin snapshot from the existing source. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPluginEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     configureInstalledPlugin: {
