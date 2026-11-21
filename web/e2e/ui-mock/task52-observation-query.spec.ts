@@ -557,8 +557,13 @@ test('successful dashboard import carries the receipt to the saved record', asyn
   await page.goto('/monitoring-workbench/dashboards')
   await page.getByRole('button', { name: '导入仪表盘', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '添加仪表盘', exact: true }).click()
-  await expect(page).toHaveURL(/dashboards\/dash-qa/)
-  await expect(page.getByText('已导入 1 个面板')).toBeVisible()
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname.endsWith('/dashboards/dash-qa') &&
+      ['from', 'to', 'range'].every((key) => url.searchParams.has(key)),
+  )
+  const receipt = page.locator('.soha-operation-feedback').filter({ hasText: '仪表盘记录已保存' })
+  await expect(receipt.getByText('已导入 1 个面板')).toBeVisible()
   expect(state.writes.filter((r) => r.path.endsWith('/imports'))).toHaveLength(1)
   verifyBrowserEvidence(evidence)
 })

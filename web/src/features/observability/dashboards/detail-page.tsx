@@ -61,7 +61,8 @@ const lineColors = [
 export function ObservabilityDashboardDetailPage() {
   const dashboardId = decodeURIComponent(useParams<{ dashboardId: string }>().dashboardId ?? '')
   const navigate = useNavigate()
-  const imported = useLocation().state?.importedDashboard as
+  const { state } = useLocation()
+  const imported = state?.importedDashboard as
     | { id: string; panelCount: number; warnings: string[] }
     | undefined
   const [searchParams, setSearchParams] = useSearchParams()
@@ -106,16 +107,17 @@ export function ObservabilityDashboardDetailPage() {
     (next: DashboardPlaybackWindow, nextVariables = variables) => {
       setSearchParams(dashboardPlaybackParams(searchParams, next, nextVariables), {
         replace: true,
+        state,
       })
     },
-    [searchParams, setSearchParams, variables],
+    [searchParams, setSearchParams, state, variables],
   )
 
   useEffect(() => {
     if (!dashboardData) return
     const next = dashboardPlaybackParams(searchParams, playback, variables)
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
-  }, [dashboardData, playback, searchParams, setSearchParams, variableSignature, variables])
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true, state })
+  }, [dashboardData, playback, searchParams, setSearchParams, state, variableSignature, variables])
 
   useEffect(() => {
     if (!playing || dashboardQuery.isError || !dashboardData) return
