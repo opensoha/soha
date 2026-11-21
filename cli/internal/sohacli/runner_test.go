@@ -1771,8 +1771,13 @@ func TestRunPluginRepositoryUpgradeUsesStoredSourceAndPermissions(t *testing.T) 
 				t.Fatalf("upgrade must preview the stored source: %#v", body)
 			}
 			preview := pluginRepositoryPreviewFixture(token)
-			preview["manifest"].(map[string]any)["id"] = "example.plugin"
-			preview["manifest"].(map[string]any)["permissions"] = map[string]any{
+			manifest, ok := preview["manifest"].(map[string]any)
+			if !ok {
+				t.Error("preview fixture is missing a manifest")
+				return
+			}
+			manifest["id"] = "example.plugin"
+			manifest["permissions"] = map[string]any{
 				"required": []string{"ai.gateway.view", "ai.gateway.invoke"},
 				"domain":   []string{"workspace.resource.view", "workspace.resource.write"},
 			}

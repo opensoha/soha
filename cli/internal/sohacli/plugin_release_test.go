@@ -82,7 +82,12 @@ func TestRepositoryMarketplaceUpgradeDiscoversRelease(t *testing.T) {
 						t.Fatalf("preview input: %+v", input)
 					}
 					preview := pluginRepositoryPreviewFixture("preview-token")
-					preview["manifest"].(map[string]any)["id"] = "example.plugin"
+					manifest, ok := preview["manifest"].(map[string]any)
+					if !ok {
+						t.Error("preview fixture is missing a manifest")
+						return
+					}
+					manifest["id"] = "example.plugin"
 					writeJSON(t, w, map[string]any{"data": preview})
 					previews++
 				case "/api/v1/plugins/example.plugin/repository/upgrade":

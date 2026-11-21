@@ -269,7 +269,11 @@ func pluginRepositoryPreviewDocument(preview PluginRepositoryPreview) (map[strin
 	if !ok {
 		return nil, fmt.Errorf("cannot sanitize repository preview")
 	}
-	return terminalSafePluginPreview(sanitized).(map[string]any), nil
+	display, ok := terminalSafePluginPreview(sanitized).(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("cannot format repository preview")
+	}
+	return display, nil
 }
 
 func terminalSafePluginPreview(value any) any {
