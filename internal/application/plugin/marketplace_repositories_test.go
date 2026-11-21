@@ -96,18 +96,25 @@ func TestMarketplaceRepositoryRegistrationBindsPreviewAndConfirmation(t *testing
 	installed, err := service.InstallRepository(ctx, actor, confirm)
 	require.NoError(t, err)
 	requireMarketplaceRegistrationProvenance(t, installed, server.URL+"/repositories.json", repoURL, upstream.commit)
+	checkMarketplaceRegistrationUpgrade(t, service, actor, input, upstream, installed)
+}
+
+func checkMarketplaceRegistrationUpgrade(t *testing.T, service *Service, actor domainidentity.Principal, input domainplugin.PluginRepositoryPreviewRequest, upstream *fixtureRepository, installed domainplugin.InstalledPlugin) {
+	t.Helper()
+	ctx := t.Context()
+	repoURL := input.RepositoryURL
 	upstream.commit = strings.Repeat("b", 40)
-	upstream.manifest = bytes.Replace(raw, []byte(`"version": "0.1.0"`), []byte(`"version": "0.2.0"`), 1)
+	upstream.manifest = bytes.Replace(upstream.manifest, []byte(`"version": "0.1.0"`), []byte(`"version": "0.2.0"`), 1)
 	input.Ref = "refs/tags/v0.2.0"
 	direct, err := service.PreviewRepository(ctx, actor, domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: repoURL, Ref: input.Ref})
 	require.NoError(t, err)
 	require.False(t, direct.SourceInfo.Official, "direct preview received official identity")
-	if _, err := service.UpgradeRepository(ctx, actor, pluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: direct.PreviewToken}); !errors.Is(err, apperrors.ErrConflict) {
+	if _, err := service.UpgradeRepository(ctx, actor, input.PluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: direct.PreviewToken}); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("direct proof could upgrade a marketplace installation: %v", err)
 	}
-	preview, err = service.PreviewRepository(ctx, actor, input)
+	preview, err := service.PreviewRepository(ctx, actor, input)
 	require.NoError(t, err)
-	updated, err := service.UpgradeRepository(ctx, actor, pluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: preview.PreviewToken})
+	updated, err := service.UpgradeRepository(ctx, actor, input.PluginID, domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: preview.PreviewToken})
 	require.NoError(t, err)
 	require.Equal(t, "0.2.0", updated.Version)
 	require.WithinDuration(t, installed.InstalledAt, updated.InstalledAt, 0)

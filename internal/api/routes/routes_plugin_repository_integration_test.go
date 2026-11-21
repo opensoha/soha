@@ -140,8 +140,16 @@ func TestRepositoryDistributionRoutesWithPostgres(t *testing.T) {
 	require.NoError(t, err)
 	callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/install", string(manifestInput), http.StatusConflict)
 
-	next := callDistributionRoute(t, server, "installer", http.MethodPost, previewPath,
+	checkDistributionRouteUpgrade(t, server, repo, id)
+}
+
+func checkDistributionRouteUpgrade(t *testing.T, server *httptest.Server, repo *repoplugin.Repository, id string) {
+	t.Helper()
+	next := callDistributionRoute(t, server, "installer", http.MethodPost, "/plugins/repository/preview",
 		`{"repositoryUrl":"`+distributionFixtureURL+`","ref":"v0.2.0"}`, http.StatusOK)
+	var preview struct {
+		Data domainplugin.PluginRepositoryPreview
+	}
 	require.NoError(t, json.Unmarshal(next, &preview))
 	require.Equal(t, distributionNextSHA, preview.Data.SourceInfo.CommitSha)
 	upgradePath := "/plugins/" + id + "/repository/upgrade"
@@ -151,7 +159,7 @@ func TestRepositoryDistributionRoutesWithPostgres(t *testing.T) {
 	require.Contains(t, string(rejected), "plugin_permission_increase", "the upgrade did not require explicit permission acknowledgement")
 	confirmed := `{"previewToken":"` + preview.Data.PreviewToken + `","confirmPermissionIncrease":true}`
 	callDistributionRoute(t, server, "installer", http.MethodPost, upgradePath, confirmed, http.StatusOK)
-	item, err = repo.GetInstalled(t.Context(), id)
+	item, err := repo.GetInstalled(t.Context(), id)
 	require.NoError(t, err)
 	require.Equal(t, "0.2.0", item.Version)
 	require.Equal(t, "enabled", item.Status)
@@ -163,6 +171,7 @@ func testDistributionCLI(t *testing.T, cliBinary, server, id, checksum string) {
 	t.Helper()
 	binary, err := filepath.Abs(cliBinary)
 	require.NoError(t, err)
+	// #nosec G703 -- The test runner explicitly selects the local CLI fixture path via SOHA_PLUGIN_TEST_CLI.
 	file, err := os.Stat(binary)
 	require.NoError(t, err)
 	require.True(t, file.Mode().IsRegular(), "SOHA_PLUGIN_TEST_CLI must point to a regular binary")
