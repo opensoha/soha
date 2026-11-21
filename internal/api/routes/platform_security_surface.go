@@ -226,6 +226,27 @@ func appHostingMutationSecuritySurface(method, path string) (nonPlatformMutation
 		return nonPlatformMutationEntry("AppHostingSettings", "update", appaccess.PermAppHostingAdminManage, false), true
 	case path == "/api/v1/app-hosting/settings/gateway-token/rotate":
 		return nonPlatformMutationEntry("AppHostingGatewayToken", "rotate", appaccess.PermAppHostingAdminManage, false), true
+	case path == "/api/v1/app-hosting/workspace-deployments":
+		return nonPlatformMutationEntry("HostedAppRevision", "workspace-deploy", appaccess.PermAppHostingAppsPublish, false), true
+	case strings.HasPrefix(path, "/api/v1/app-hosting/approvals/") && strings.HasSuffix(path, "/approve"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "approve", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasPrefix(path, "/api/v1/app-hosting/approvals/") && strings.HasSuffix(path, "/reject"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "reject", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/visibility-approval/withdraw"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "withdraw", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/maintainers"):
+		return nonPlatformMutationEntry("HostedApp", "maintainers", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/transfer"):
+		return nonPlatformMutationEntry("HostedApp", "transfer", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/delete"):
+		return nonPlatformMutationSecuritySurfaceEntry{
+			ResourceKind:      "HostedApp",
+			Action:            "delete",
+			PermissionKey:     "apphosting.apps.publish|apphosting.admin.manage",
+			DynamicPermission: true,
+			ScopeRequired:     true,
+			AuditRequired:     true,
+		}, true
 	case strings.HasSuffix(path, "/suspend") && !strings.HasSuffix(path, "/unsuspend"):
 		return nonPlatformMutationEntry("HostedApp", "suspend", appaccess.PermAppHostingAdminManage, true), true
 	case strings.HasSuffix(path, "/unsuspend"):

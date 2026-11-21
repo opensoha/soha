@@ -46,6 +46,7 @@ import { providerPortalQueries } from '../queries'
 import { PortalUserAvatar } from '../shared/account-menu'
 import { PortalApplicationAvatar, portalStatusLabels } from '../shared/application-ui'
 import { formatPortalDateTime, portalApplicationSearchText } from '../shared/formatters'
+import { PortalViewNav } from '../shared/portal-view-nav'
 import type { PortalSecuritySummary } from '../shared/types'
 
 const { Paragraph, Text } = Typography
@@ -525,6 +526,7 @@ export function SohaProviderPortalPage() {
   return (
     <div className="soha-provider-portal soha-provider-portal-home">
       <main className="soha-portal-main">
+        <PortalViewNav active="enterprise" />
         <ReadFeedback query={bootstrapQuery} label="应用门户" />
         <ReadFeedback
           query={announcementQuery}

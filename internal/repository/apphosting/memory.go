@@ -27,6 +27,7 @@ type MemoryRepository struct {
 	revisions           map[string][]domainapphosting.Revision
 	authTickets         map[string]domainapphosting.AuthTicket
 	rollbackIdempotency map[string]domainapphosting.RollbackIdempotencyRecord
+	approvals           map[string]domainapphosting.VisibilityApproval
 }
 
 func NewMemoryRepository() *MemoryRepository {
@@ -37,6 +38,7 @@ func NewMemoryRepository() *MemoryRepository {
 		revisions:           make(map[string][]domainapphosting.Revision),
 		authTickets:         make(map[string]domainapphosting.AuthTicket),
 		rollbackIdempotency: make(map[string]domainapphosting.RollbackIdempotencyRecord),
+		approvals:           make(map[string]domainapphosting.VisibilityApproval),
 	}
 }
 
@@ -49,15 +51,34 @@ func (r *MemoryRepository) GetSettings(_ context.Context) (domainapphosting.Sett
 func (r *MemoryRepository) SaveSettings(_ context.Context, mutate func(current domainapphosting.Settings) (domainapphosting.Settings, error)) (domainapphosting.Settings, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	next, err := mutate(cloneSettings(r.settings.WithDefaults()))
+	prev := cloneSettings(r.settings.WithDefaults())
+	next, err := mutate(prev)
 	if err != nil {
 		return domainapphosting.Settings{}, err
 	}
-	r.settings = cloneSettings(next.WithDefaults())
+	normalized := cloneSettings(next.WithDefaults())
+	if normalized.OrganizationVisibilityPolicy != prev.OrganizationVisibilityPolicy || normalized.PolicyVersion != prev.PolicyVersion {
+		decidedAt := time.Now().UTC()
+		if normalized.UpdatedAt != nil {
+			decidedAt = normalized.UpdatedAt.UTC()
+		}
+		r.invalidateAllPendingApprovalsLocked("policy_changed", decidedAt)
+	}
+	r.settings = normalized
 	return cloneSettings(r.settings), nil
 }
 
-func (r *MemoryRepository) CreateApp(_ context.Context, candidate domainapphosting.App, maxAppsPerOwner int32) (domainapphosting.App, bool, error) {
+func (r *MemoryRepository) CreateApp(ctx context.Context, candidate domainapphosting.App, maxAppsPerOwner int32) (domainapphosting.App, bool, error) {
+	created, _, reused, err := r.CreateAppWithApproval(ctx, candidate, maxAppsPerOwner, nil)
+	return created, reused, err
+}
+
+func (r *MemoryRepository) CreateAppWithApproval(
+	_ context.Context,
+	candidate domainapphosting.App,
+	maxAppsPerOwner int32,
+	initialApproval *domainapphosting.VisibilityApproval,
+) (domainapphosting.App, *domainapphosting.VisibilityApproval, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -65,9 +86,9 @@ func (r *MemoryRepository) CreateApp(_ context.Context, candidate domainapphosti
 		for _, existing := range r.appsByID {
 			if existing.OwnerUserID == candidate.OwnerUserID && existing.IdempotencyKey == candidate.IdempotencyKey {
 				if existing.RequestFingerprint != candidate.RequestFingerprint {
-					return domainapphosting.App{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_key_conflict", "idempotencyKey already used with different create parameters", "同一幂等键已被不同参数的应用创建请求占用")
+					return domainapphosting.App{}, nil, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_key_conflict", "idempotencyKey already used with different create parameters", "同一幂等键已被不同参数的应用创建请求占用")
 				}
-				return cloneApp(existing), true, nil
+				return cloneApp(existing), r.findPendingApprovalForAppLocked(existing.ID), true, nil
 			}
 		}
 	}
@@ -79,18 +100,29 @@ func (r *MemoryRepository) CreateApp(_ context.Context, candidate domainapphosti
 		}
 	}
 	if maxAppsPerOwner > 0 && ownerCount >= maxAppsPerOwner {
-		return domainapphosting.App{}, false, domainapphosting.ErrQuotaExceeded
+		return domainapphosting.App{}, nil, false, domainapphosting.ErrQuotaExceeded
 	}
 	lowerDNS := strings.ToLower(candidate.DNSLabel)
 	if _, exists := r.appIDByDNS[lowerDNS]; exists {
-		return domainapphosting.App{}, false, appapphosting.ErrDNSLabelConflict
+		return domainapphosting.App{}, nil, false, appapphosting.ErrDNSLabelConflict
 	}
 
 	stored := cloneApp(candidate)
 	stored.DNSLabel = lowerDNS
 	r.appsByID[stored.ID] = stored
 	r.appIDByDNS[lowerDNS] = stored.ID
-	return cloneApp(stored), false, nil
+
+	var savedApproval *domainapphosting.VisibilityApproval
+	if initialApproval != nil {
+		apv := cloneApproval(*initialApproval)
+		apv.AppID = stored.ID
+		apv.AppName = stored.Name
+		apv.AppDNSLabel = stored.DNSLabel
+		r.approvals[apv.ID] = apv
+		copied := cloneApproval(apv)
+		savedApproval = &copied
+	}
+	return cloneApp(stored), savedApproval, false, nil
 }
 
 func (r *MemoryRepository) GetAppByID(_ context.Context, appID string) (domainapphosting.App, error) {
@@ -125,6 +157,12 @@ func (r *MemoryRepository) ListApps(_ context.Context, filter domainapphosting.A
 	needle := strings.ToLower(strings.TrimSpace(filter.Query))
 	for _, item := range r.appsByID {
 		if filter.Scope != sohaapi.HostedAppListScopeAll && !item.IsOwnerOrMaintainer(filter.MemberUserID) {
+			continue
+		}
+		if filter.OwnerUserID != "" && item.OwnerUserID != filter.OwnerUserID {
+			continue
+		}
+		if filter.TeamFilterActive && !slices.Contains(filter.TeamMemberUserIDs, item.OwnerUserID) {
 			continue
 		}
 		if filter.Status != "" && item.Status != filter.Status {
@@ -170,6 +208,17 @@ func (r *MemoryRepository) MutateApp(_ context.Context, appID string, mutate fun
 	next.ID = current.ID
 	next.DNSLabel = current.DNSLabel
 	next.OwnerUserID = current.OwnerUserID
+	decidedAt := next.UpdatedAt.UTC()
+	if decidedAt.IsZero() {
+		decidedAt = time.Now().UTC()
+	}
+	if next.Status == sohaapi.HostedAppStatusSuspendedByAdmin {
+		r.invalidatePendingApprovalForAppLocked(current.ID, "app_suspended", decidedAt)
+	} else if next.RouteGeneration != current.RouteGeneration {
+		r.invalidatePendingApprovalForAppLocked(current.ID, "route_generation_changed", decidedAt)
+	} else if next.Name != current.Name {
+		r.syncPendingApprovalAppNameLocked(current.ID, next.Name)
+	}
 	r.appsByID[current.ID] = cloneApp(next)
 	return cloneApp(next), nil
 }
@@ -242,6 +291,12 @@ func (r *MemoryRepository) ActivateRevision(_ context.Context, input appapphosti
 	if revIdx < 0 {
 		return appapphosting.ActivateRevisionOutput{}, apperrors.ErrNotFound
 	}
+	if trimmedActor := strings.TrimSpace(input.ActorUserID); trimmedActor != "" && !app.IsOwnerOrMaintainer(trimmedActor) {
+		list[revIdx].Status = sohaapi.HostedAppRevisionStatusFailed
+		list[revIdx].FailureStage = "activate"
+		list[revIdx].FailureReason = "uploader lost owner or maintainer permission before activation"
+		return appapphosting.ActivateRevisionOutput{}, apperrors.NewBusiness(apperrors.ErrAccessDenied, "publisher_permission_revoked", "uploader is no longer an authorized owner or maintainer of this application", "上传期间您的作者或协作者权限已变更，本次版本激活已取消")
+	}
 	if app.Status == sohaapi.HostedAppStatusOffline || app.Status == sohaapi.HostedAppStatusSuspendedByAdmin {
 		list[revIdx].Status = sohaapi.HostedAppRevisionStatusFailed
 		list[revIdx].FailureStage = "activate"
@@ -249,13 +304,15 @@ func (r *MemoryRepository) ActivateRevision(_ context.Context, input appapphosti
 		return appapphosting.ActivateRevisionOutput{}, apperrors.NewBusiness(apperrors.ErrConflict, "app_not_deployable", "application became offline or suspended before activation", "激活前应用已下线或被管理员封停")
 	}
 
+	wasDraft := app.Status == sohaapi.HostedAppStatusDraft
+	prevGen := app.RouteGeneration
 	nowUTC := input.Now.UTC()
 	list[revIdx].Status = sohaapi.HostedAppRevisionStatusReady
 	list[revIdx].SpaFallback = input.SpaFallback
 	list[revIdx].Files = slices.Clone(input.Files)
 	list[revIdx].ActivatedAt = &nowUTC
 
-	if app.Status == sohaapi.HostedAppStatusDraft {
+	if wasDraft {
 		app.Status = sohaapi.HostedAppStatusOnline
 	}
 	app.ActiveRevisionID = list[revIdx].ID
@@ -263,6 +320,11 @@ func (r *MemoryRepository) ActivateRevision(_ context.Context, input appapphosti
 	app.RouteGeneration++
 	app.UpdatedAt = nowUTC
 	r.appsByID[app.ID] = cloneApp(app)
+	if wasDraft {
+		r.advanceInitialDraftApprovalBaseGenLocked(app.ID, app.OwnerUserID, prevGen, app.RouteGeneration)
+	} else {
+		r.invalidatePendingApprovalForAppLocked(app.ID, "route_generation_changed", nowUTC)
+	}
 
 	evicted := evictExcessMemoryRevisions(list, app.ActiveRevisionID, input.RetainedRevisionsMax)
 	return appapphosting.ActivateRevisionOutput{
@@ -373,6 +435,7 @@ func (r *MemoryRepository) RollbackRevision(_ context.Context, appID, targetRevi
 	app.RouteGeneration++
 	app.UpdatedAt = nowUTC
 	r.appsByID[appID] = cloneApp(app)
+	r.invalidatePendingApprovalForAppLocked(appID, "route_generation_changed", nowUTC)
 	if trimmedKey != "" {
 		r.rollbackIdempotency[appID+"\x00"+trimmedKey] = domainapphosting.RollbackIdempotencyRecord{
 			AppID:            appID,
@@ -410,10 +473,12 @@ type MemoryUser struct {
 	ID          string
 	Username    string
 	DisplayName string
+	AvatarURL   string
 	Email       string
 	Department  string
 	Status      string
 	TeamIDs     []string
+	Roles       []string
 }
 
 type MemoryAudienceDirectory struct {
@@ -436,7 +501,17 @@ func (d *MemoryAudienceDirectory) UpsertUser(user MemoryUser) {
 		user.Status = "active"
 	}
 	user.TeamIDs = slices.Clone(user.TeamIDs)
+	user.Roles = slices.Clone(user.Roles)
 	d.users[user.ID] = user
+}
+
+func (d *MemoryAudienceDirectory) SetUserRoles(userID string, roles []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if u, ok := d.users[userID]; ok {
+		u.Roles = slices.Clone(roles)
+		d.users[userID] = u
+	}
 }
 
 func (d *MemoryAudienceDirectory) SetUserStatus(userID, status string) {

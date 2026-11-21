@@ -35,7 +35,14 @@ func (s *Service) UpdateSettings(ctx context.Context, principal domainidentity.P
 	actor := firstNonEmpty(principal.UserID, principal.UserName)
 
 	updated, err := s.repo.SaveSettings(ctx, func(current domainapphosting.Settings) (domainapphosting.Settings, error) {
-		next := mergeSettingsUpdate(current.WithDefaults(), req)
+		base := current.WithDefaults()
+		next, err := mergeSettingsUpdate(base, req)
+		if err != nil {
+			return domainapphosting.Settings{}, err
+		}
+		if next.OrganizationVisibilityPolicy != base.OrganizationVisibilityPolicy {
+			next.PolicyVersion = base.PolicyVersion + 1
+		}
 		next.UpdatedBy = actor
 		next.UpdatedAt = &now
 		if err := next.Validate(); err != nil {
@@ -47,10 +54,12 @@ func (s *Service) UpdateSettings(ctx context.Context, principal domainidentity.P
 		return sohaapi.AppHostingSettings{}, err
 	}
 	s.recordAudit(ctx, principal, "settings.update", "success", "default", "Updated workspace App Hosting settings", map[string]any{
-		"enabled":                     updated.Enabled,
-		"appsDomain":                  updated.AppsDomain,
-		"storageIntegrationId":        updated.StorageIntegrationID,
-		"allowOrganizationVisibility": updated.AllowOrganizationVisibility,
+		"enabled":                      updated.Enabled,
+		"appsDomain":                   updated.AppsDomain,
+		"storageIntegrationId":         updated.StorageIntegrationID,
+		"allowOrganizationVisibility":  updated.AllowOrganizationVisibility,
+		"organizationVisibilityPolicy": updated.OrganizationVisibilityPolicy,
+		"policyVersion":                updated.PolicyVersion,
 	})
 	return updated.ToAPI(s.fallbackGatewayTokenSHA256 != ""), nil
 }
@@ -111,7 +120,7 @@ func (s *Service) verifyGatewayToken(ctx context.Context, rawBearerToken string)
 	return domainapphosting.Settings{}, apperrors.ErrUnauthorized
 }
 
-func mergeSettingsUpdate(base domainapphosting.Settings, req sohaapi.AppHostingSettingsUpdateRequest) domainapphosting.Settings {
+func mergeSettingsUpdate(base domainapphosting.Settings, req sohaapi.AppHostingSettingsUpdateRequest) (domainapphosting.Settings, error) {
 	next := base
 	next.Enabled = req.Enabled
 	if trimmed := strings.TrimSpace(req.AppsDomain); trimmed != "" {
@@ -126,9 +135,34 @@ func mergeSettingsUpdate(base domainapphosting.Settings, req sohaapi.AppHostingS
 	if trimmed := strings.TrimSpace(req.StoragePrefix); trimmed != "" {
 		next.StoragePrefix = strings.Trim(trimmed, "/")
 	}
+	if err := applyOrganizationPolicyUpdate(&next, req); err != nil {
+		return domainapphosting.Settings{}, err
+	}
+	applyQuotaLimitsUpdate(&next, req)
+	return next.WithDefaults(), nil
+}
+
+func applyOrganizationPolicyUpdate(next *domainapphosting.Settings, req sohaapi.AppHostingSettingsUpdateRequest) error {
+	if req.OrganizationVisibilityPolicy != "" {
+		if !req.OrganizationVisibilityPolicy.Valid() {
+			return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_organization_visibility_policy", "organizationVisibilityPolicy must be allow_direct, require_approval, or disabled", "全公司公开策略必须为 allow_direct、require_approval 或 disabled")
+		}
+		next.OrganizationVisibilityPolicy = req.OrganizationVisibilityPolicy
+		next.AllowOrganizationVisibility = req.OrganizationVisibilityPolicy != sohaapi.AppHostingOrganizationVisibilityPolicyDisabled
+		return nil
+	}
 	if req.AllowOrganizationVisibility != nil {
 		next.AllowOrganizationVisibility = *req.AllowOrganizationVisibility
+		if *req.AllowOrganizationVisibility {
+			next.OrganizationVisibilityPolicy = sohaapi.AppHostingOrganizationVisibilityPolicyAllowDirect
+		} else {
+			next.OrganizationVisibilityPolicy = sohaapi.AppHostingOrganizationVisibilityPolicyDisabled
+		}
 	}
+	return nil
+}
+
+func applyQuotaLimitsUpdate(next *domainapphosting.Settings, req sohaapi.AppHostingSettingsUpdateRequest) {
 	if req.MaxBundleCompressedBytes > 0 {
 		next.MaxBundleCompressedBytes = req.MaxBundleCompressedBytes
 	}
@@ -144,7 +178,6 @@ func mergeSettingsUpdate(base domainapphosting.Settings, req sohaapi.AppHostingS
 	if req.RetainedRevisionsPerApp > 0 {
 		next.RetainedRevisionsPerApp = req.RetainedRevisionsPerApp
 	}
-	return next.WithDefaults()
 }
 
 func generateOpaqueToken(prefix string, numBytes int) (string, error) {

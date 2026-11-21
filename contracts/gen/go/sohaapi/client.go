@@ -1141,12 +1141,28 @@ func (c *Client) ListAppHostingAudienceCandidates(ctx context.Context, params Li
 	return out.Data, nil
 }
 
+func (c *Client) ListPortalHostedApps(ctx context.Context, params ListPortalHostedAppsParams) (PortalHostedAppCatalog, error) {
+	var out PortalHostedAppCatalogResponse
+	values := url.Values{}
+	addQueryString(values, "query", params.Query)
+	addQueryString(values, "kind", string(params.Kind))
+	addQueryString(values, "authorUserId", params.AuthorUserID)
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/portal/apps"+encodeQuery(values), true, nil, &out); err != nil {
+		return PortalHostedAppCatalog{}, err
+	}
+	return out.Data, nil
+}
+
 func (c *Client) ListHostedApps(ctx context.Context, params ListHostedAppsParams) (HostedAppList, error) {
 	var out HostedAppListResponse
 	values := url.Values{}
 	addQueryString(values, "scope", string(params.Scope))
 	addQueryString(values, "query", params.Query)
 	addQueryString(values, "status", string(params.Status))
+	addQueryString(values, "ownerUserId", params.OwnerUserID)
+	addQueryString(values, "teamId", params.TeamID)
 	addQueryInt(values, "limit", params.Limit)
 	addQueryInt(values, "offset", params.Offset)
 	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/apps"+encodeQuery(values), true, nil, &out); err != nil {
@@ -1221,6 +1237,96 @@ func (c *Client) SuspendHostedApp(ctx context.Context, appID string, req HostedA
 
 func (c *Client) UnsuspendHostedApp(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
 	return c.mutateHostedAppLifecycle(ctx, appID, "unsuspend", req)
+}
+
+func (c *Client) UpdateHostedAppMaintainers(ctx context.Context, appID string, req UpdateHostedAppMaintainersRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "maintainers")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPut, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) TransferHostedAppOwnership(ctx context.Context, appID string, req TransferHostedAppOwnershipRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "transfer")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) DeleteHostedApp(ctx context.Context, appID string, req DeleteHostedAppRequest) (DeleteHostedAppResult, error) {
+	path, err := hostedAppPath(appID, "delete")
+	if err != nil {
+		return DeleteHostedAppResult{}, err
+	}
+	var out DeleteHostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return DeleteHostedAppResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListHostedAppVisibilityApprovals(ctx context.Context, params ListHostedAppVisibilityApprovalsParams) (HostedAppVisibilityApprovalList, error) {
+	var out HostedAppVisibilityApprovalListResponse
+	values := url.Values{}
+	addQueryString(values, "scope", string(params.Scope))
+	addQueryString(values, "status", string(params.Status))
+	addQueryString(values, "appId", params.AppID)
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/approvals"+encodeQuery(values), true, nil, &out); err != nil {
+		return HostedAppVisibilityApprovalList{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) WithdrawHostedAppVisibilityApproval(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	return c.mutateHostedAppLifecycle(ctx, appID, "visibility-approval/withdraw", req)
+}
+
+func (c *Client) ApproveHostedAppVisibility(ctx context.Context, approvalID string, req *ApproveHostedAppVisibilityRequest) (HostedAppVisibilityApprovalDecisionResult, error) {
+	path, err := hostedAppApprovalPath(approvalID, "approve")
+	if err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	payload := ApproveHostedAppVisibilityRequest{}
+	if req != nil {
+		payload = *req
+	}
+	var out HostedAppVisibilityApprovalDecisionResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, payload, &out); err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RejectHostedAppVisibility(ctx context.Context, approvalID string, req RejectHostedAppVisibilityRequest) (HostedAppVisibilityApprovalDecisionResult, error) {
+	path, err := hostedAppApprovalPath(approvalID, "reject")
+	if err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	var out HostedAppVisibilityApprovalDecisionResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) DeployHostedAppFromWorkspace(ctx context.Context, req WorkspaceHostedAppDeploymentRequest) (WorkspaceHostedAppDeploymentResult, error) {
+	var out WorkspaceHostedAppDeploymentResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/app-hosting/workspace-deployments", true, req, &out); err != nil {
+		return WorkspaceHostedAppDeploymentResult{}, err
+	}
+	return out.Data, nil
 }
 
 func (c *Client) mutateHostedAppLifecycle(ctx context.Context, appID, action string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
@@ -1373,6 +1479,18 @@ func hostedAppPath(appID, suffix string) (string, error) {
 		return "", fmt.Errorf("app ID is required")
 	}
 	base := "/app-hosting/apps/" + url.PathEscape(trimmed)
+	if suffix == "" {
+		return base, nil
+	}
+	return base + "/" + suffix, nil
+}
+
+func hostedAppApprovalPath(approvalID, suffix string) (string, error) {
+	trimmed := strings.TrimSpace(approvalID)
+	if trimmed == "" {
+		return "", fmt.Errorf("approval ID is required")
+	}
+	base := "/app-hosting/approvals/" + url.PathEscape(trimmed)
 	if suffix == "" {
 		return base, nil
 	}

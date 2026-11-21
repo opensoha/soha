@@ -1177,6 +1177,9 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
 	copilotService.SetInstrumentation(infra.logger.Named("copilot"), infra.runtimeMetrics)
 	copilotService.SetSecretLeaseService(core.secretService)
+	if core.appHostingService != nil {
+		core.appHostingService.SetWorkspaceBundleSource(copilotService)
+	}
 	agentProviderService, err := appagentharness.NewProviderControlPlane(
 		appagentharness.NewProviderReconciler(core.pluginExtensions),
 		core.permissionResolver,

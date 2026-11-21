@@ -776,6 +776,27 @@ func (e AnnouncementReceiptState) Valid() bool {
 	}
 }
 
+// Defines values for AppHostingOrganizationVisibilityPolicy.
+const (
+	AppHostingOrganizationVisibilityPolicyAllowDirect     AppHostingOrganizationVisibilityPolicy = "allow_direct"
+	AppHostingOrganizationVisibilityPolicyDisabled        AppHostingOrganizationVisibilityPolicy = "disabled"
+	AppHostingOrganizationVisibilityPolicyRequireApproval AppHostingOrganizationVisibilityPolicy = "require_approval"
+)
+
+// Valid indicates whether the value is a known member of the AppHostingOrganizationVisibilityPolicy enum.
+func (e AppHostingOrganizationVisibilityPolicy) Valid() bool {
+	switch e {
+	case AppHostingOrganizationVisibilityPolicyAllowDirect:
+		return true
+	case AppHostingOrganizationVisibilityPolicyDisabled:
+		return true
+	case AppHostingOrganizationVisibilityPolicyRequireApproval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApplicationDeliveryActionKind.
 const (
 	ApplicationDeliveryActionKindBuild       ApplicationDeliveryActionKind = "build"
@@ -5063,6 +5084,24 @@ func (e HostedAppAccessDecisionKind) Valid() bool {
 	}
 }
 
+// Defines values for HostedAppApprovalListScope.
+const (
+	HostedAppApprovalListScopeAll  HostedAppApprovalListScope = "all"
+	HostedAppApprovalListScopeMine HostedAppApprovalListScope = "mine"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppApprovalListScope enum.
+func (e HostedAppApprovalListScope) Valid() bool {
+	switch e {
+	case HostedAppApprovalListScopeAll:
+		return true
+	case HostedAppApprovalListScopeMine:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HostedAppKind.
 const (
 	HostedAppKindDynamic HostedAppKind = "dynamic"
@@ -5144,6 +5183,33 @@ func (e HostedAppStatus) Valid() bool {
 	case HostedAppStatusOnline:
 		return true
 	case HostedAppStatusSuspendedByAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostedAppVisibilityApprovalStatus.
+const (
+	HostedAppVisibilityApprovalStatusApproved    HostedAppVisibilityApprovalStatus = "approved"
+	HostedAppVisibilityApprovalStatusInvalidated HostedAppVisibilityApprovalStatus = "invalidated"
+	HostedAppVisibilityApprovalStatusPending     HostedAppVisibilityApprovalStatus = "pending"
+	HostedAppVisibilityApprovalStatusRejected    HostedAppVisibilityApprovalStatus = "rejected"
+	HostedAppVisibilityApprovalStatusWithdrawn   HostedAppVisibilityApprovalStatus = "withdrawn"
+)
+
+// Valid indicates whether the value is a known member of the HostedAppVisibilityApprovalStatus enum.
+func (e HostedAppVisibilityApprovalStatus) Valid() bool {
+	switch e {
+	case HostedAppVisibilityApprovalStatusApproved:
+		return true
+	case HostedAppVisibilityApprovalStatusInvalidated:
+		return true
+	case HostedAppVisibilityApprovalStatusPending:
+		return true
+	case HostedAppVisibilityApprovalStatusRejected:
+		return true
+	case HostedAppVisibilityApprovalStatusWithdrawn:
 		return true
 	default:
 		return false
@@ -15248,6 +15314,24 @@ func (e WorkflowRunScope) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceHostedAppSourceKind.
+const (
+	WorkspaceHostedAppSourceKindConversationArtifact WorkspaceHostedAppSourceKind = "conversation_artifact"
+	WorkspaceHostedAppSourceKindPersonalEnvironment  WorkspaceHostedAppSourceKind = "personal_environment"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceHostedAppSourceKind enum.
+func (e WorkspaceHostedAppSourceKind) Valid() bool {
+	switch e {
+	case WorkspaceHostedAppSourceKindConversationArtifact:
+		return true
+	case WorkspaceHostedAppSourceKindPersonalEnvironment:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentProviderRolloutAction.
 const (
 	AgentProviderRolloutActionPause    AgentProviderRolloutAction = "pause"
@@ -17977,22 +18061,27 @@ type AppHostingGatewayTokenSecret struct {
 	Token     string    `json:"token"`
 }
 
+// AppHostingOrganizationVisibilityPolicy defines model for AppHostingOrganizationVisibilityPolicy.
+type AppHostingOrganizationVisibilityPolicy string
+
 // AppHostingSettings defines model for AppHostingSettings.
 type AppHostingSettings struct {
-	AllowOrganizationVisibility bool       `json:"allowOrganizationVisibility"`
-	AppsDomain                  string     `json:"appsDomain"`
-	Enabled                     bool       `json:"enabled"`
-	GatewayTokenConfigured      bool       `json:"gatewayTokenConfigured"`
-	MaxAppsPerOwner             int32      `json:"maxAppsPerOwner"`
-	MaxBundleCompressedBytes    int64      `json:"maxBundleCompressedBytes"`
-	MaxBundleFileCount          int32      `json:"maxBundleFileCount"`
-	MaxBundleUncompressedBytes  int64      `json:"maxBundleUncompressedBytes"`
-	PublicScheme                string     `json:"publicScheme"`
-	RetainedRevisionsPerApp     int32      `json:"retainedRevisionsPerApp"`
-	StorageIntegrationID        string     `json:"storageIntegrationId"`
-	StoragePrefix               string     `json:"storagePrefix"`
-	UpdatedAt                   *time.Time `json:"updatedAt,omitempty"`
-	UpdatedBy                   string     `json:"updatedBy,omitempty"`
+	AllowOrganizationVisibility  bool                                   `json:"allowOrganizationVisibility"`
+	AppsDomain                   string                                 `json:"appsDomain"`
+	Enabled                      bool                                   `json:"enabled"`
+	GatewayTokenConfigured       bool                                   `json:"gatewayTokenConfigured"`
+	MaxAppsPerOwner              int32                                  `json:"maxAppsPerOwner"`
+	MaxBundleCompressedBytes     int64                                  `json:"maxBundleCompressedBytes"`
+	MaxBundleFileCount           int32                                  `json:"maxBundleFileCount"`
+	MaxBundleUncompressedBytes   int64                                  `json:"maxBundleUncompressedBytes"`
+	OrganizationVisibilityPolicy AppHostingOrganizationVisibilityPolicy `json:"organizationVisibilityPolicy,omitempty"`
+	PolicyVersion                int64                                  `json:"policyVersion,omitempty"`
+	PublicScheme                 string                                 `json:"publicScheme"`
+	RetainedRevisionsPerApp      int32                                  `json:"retainedRevisionsPerApp"`
+	StorageIntegrationID         string                                 `json:"storageIntegrationId"`
+	StoragePrefix                string                                 `json:"storagePrefix"`
+	UpdatedAt                    *time.Time                             `json:"updatedAt,omitempty"`
+	UpdatedBy                    string                                 `json:"updatedBy,omitempty"`
 }
 
 // AppHostingSettingsResponse defines model for AppHostingSettingsResponse.
@@ -18002,17 +18091,18 @@ type AppHostingSettingsResponse struct {
 
 // AppHostingSettingsUpdateRequest defines model for AppHostingSettingsUpdateRequest.
 type AppHostingSettingsUpdateRequest struct {
-	AllowOrganizationVisibility *bool  `json:"allowOrganizationVisibility,omitempty"`
-	AppsDomain                  string `json:"appsDomain,omitempty"`
-	Enabled                     bool   `json:"enabled"`
-	MaxAppsPerOwner             int32  `json:"maxAppsPerOwner,omitempty"`
-	MaxBundleCompressedBytes    int64  `json:"maxBundleCompressedBytes,omitempty"`
-	MaxBundleFileCount          int32  `json:"maxBundleFileCount,omitempty"`
-	MaxBundleUncompressedBytes  int64  `json:"maxBundleUncompressedBytes,omitempty"`
-	PublicScheme                string `json:"publicScheme,omitempty"`
-	RetainedRevisionsPerApp     int32  `json:"retainedRevisionsPerApp,omitempty"`
-	StorageIntegrationID        string `json:"storageIntegrationId,omitempty"`
-	StoragePrefix               string `json:"storagePrefix,omitempty"`
+	AllowOrganizationVisibility  *bool                                  `json:"allowOrganizationVisibility,omitempty"`
+	AppsDomain                   string                                 `json:"appsDomain,omitempty"`
+	Enabled                      bool                                   `json:"enabled"`
+	MaxAppsPerOwner              int32                                  `json:"maxAppsPerOwner,omitempty"`
+	MaxBundleCompressedBytes     int64                                  `json:"maxBundleCompressedBytes,omitempty"`
+	MaxBundleFileCount           int32                                  `json:"maxBundleFileCount,omitempty"`
+	MaxBundleUncompressedBytes   int64                                  `json:"maxBundleUncompressedBytes,omitempty"`
+	OrganizationVisibilityPolicy AppHostingOrganizationVisibilityPolicy `json:"organizationVisibilityPolicy,omitempty"`
+	PublicScheme                 string                                 `json:"publicScheme,omitempty"`
+	RetainedRevisionsPerApp      int32                                  `json:"retainedRevisionsPerApp,omitempty"`
+	StorageIntegrationID         string                                 `json:"storageIntegrationId,omitempty"`
+	StoragePrefix                string                                 `json:"storagePrefix,omitempty"`
 }
 
 // Application defines model for Application.
@@ -18559,6 +18649,11 @@ type ApprovalTrace struct {
 	StageHistory           []ApprovalStageTrace    `json:"stageHistory,omitempty"`
 	TeamApprovedCounts     map[string]int          `json:"teamApprovedCounts,omitempty"`
 	WorkflowRunID          string                  `json:"workflowRunId,omitempty"`
+}
+
+// ApproveHostedAppVisibilityRequest defines model for ApproveHostedAppVisibilityRequest.
+type ApproveHostedAppVisibilityRequest struct {
+	Comment string `json:"comment,omitempty"`
 }
 
 // AuditLog defines model for AuditLog.
@@ -20261,6 +20356,23 @@ type DLPShadowSample struct {
 	Index     int                `json:"index"`
 	Published *DLPShadowDecision `json:"published,omitempty"`
 	SizeBytes int64              `json:"sizeBytes"`
+}
+
+// DeleteHostedAppRequest defines model for DeleteHostedAppRequest.
+type DeleteHostedAppRequest struct {
+	ConfirmationName string `json:"confirmationName"`
+	Reason           string `json:"reason,omitempty"`
+}
+
+// DeleteHostedAppResponse defines model for DeleteHostedAppResponse.
+type DeleteHostedAppResponse struct {
+	Data DeleteHostedAppResult `json:"data"`
+}
+
+// DeleteHostedAppResult defines model for DeleteHostedAppResult.
+type DeleteHostedAppResult struct {
+	AppID   string `json:"appId"`
+	Deleted bool   `json:"deleted"`
 }
 
 // DeliveryAccessResult A deployment entry candidate and optional bounded probe from the Soha control plane. This does not establish reachability from a developer's network or business correctness.
@@ -24195,27 +24307,35 @@ type HelmReleaseImportResultEnvelope struct {
 
 // HostedApp defines model for HostedApp.
 type HostedApp struct {
-	ActiveRevisionID  string                   `json:"activeRevisionId,omitempty"`
-	CreatedAt         time.Time                `json:"createdAt"`
-	Description       string                   `json:"description,omitempty"`
-	DNSLabel          string                   `json:"dnsLabel"`
-	Host              string                   `json:"host"`
-	ID                string                   `json:"id"`
-	Kind              HostedAppKind            `json:"kind"`
-	MaintainerUserIDs []string                 `json:"maintainerUserIds"`
-	Name              string                   `json:"name"`
-	OwnerUserID       string                   `json:"ownerUserId"`
-	RouteGeneration   int64                    `json:"routeGeneration"`
-	SpaFallback       bool                     `json:"spaFallback"`
-	Status            HostedAppStatus          `json:"status"`
-	SuspendedReason   string                   `json:"suspendedReason,omitempty"`
-	UpdatedAt         time.Time                `json:"updatedAt"`
-	URL               string                   `json:"url"`
-	Visibility        HostedAppVisibilityScope `json:"visibility"`
+	ActiveRevisionID          string                       `json:"activeRevisionId,omitempty"`
+	ActiveRevisionNumber      int64                        `json:"activeRevisionNumber,omitempty"`
+	CreatedAt                 time.Time                    `json:"createdAt"`
+	Description               string                       `json:"description,omitempty"`
+	DNSLabel                  string                       `json:"dnsLabel"`
+	Host                      string                       `json:"host"`
+	ID                        string                       `json:"id"`
+	Kind                      HostedAppKind                `json:"kind"`
+	MaintainerUserIDs         []string                     `json:"maintainerUserIds"`
+	Maintainers               []HostedAppUserSummary       `json:"maintainers,omitempty"`
+	Name                      string                       `json:"name"`
+	OwnerProfile              *HostedAppUserSummary        `json:"ownerProfile,omitempty"`
+	OwnerUserID               string                       `json:"ownerUserId"`
+	PendingVisibilityApproval *HostedAppVisibilityApproval `json:"pendingVisibilityApproval,omitempty"`
+	RouteGeneration           int64                        `json:"routeGeneration"`
+	SpaFallback               bool                         `json:"spaFallback"`
+	Status                    HostedAppStatus              `json:"status"`
+	SuspendedReason           string                       `json:"suspendedReason,omitempty"`
+	TotalBytes                int64                        `json:"totalBytes,omitempty"`
+	UpdatedAt                 time.Time                    `json:"updatedAt"`
+	URL                       string                       `json:"url"`
+	Visibility                HostedAppVisibilityScope     `json:"visibility"`
 }
 
 // HostedAppAccessDecisionKind defines model for HostedAppAccessDecisionKind.
 type HostedAppAccessDecisionKind string
+
+// HostedAppApprovalListScope defines model for HostedAppApprovalListScope.
+type HostedAppApprovalListScope string
 
 // HostedAppDeploymentReceipt defines model for HostedAppDeploymentReceipt.
 type HostedAppDeploymentReceipt struct {
@@ -24404,6 +24524,61 @@ type HostedAppTicketExchangeResult struct {
 	SessionID       string                   `json:"sessionId"`
 	User            HostedAppVisitorIdentity `json:"user"`
 }
+
+// HostedAppUserSummary defines model for HostedAppUserSummary.
+type HostedAppUserSummary struct {
+	AvatarURL   string   `json:"avatarUrl,omitempty"`
+	DisplayName string   `json:"displayName"`
+	TeamNames   []string `json:"teamNames"`
+	UserID      string   `json:"userId"`
+}
+
+// HostedAppVisibilityApproval defines model for HostedAppVisibilityApproval.
+type HostedAppVisibilityApproval struct {
+	AppDNSLabel         string                            `json:"appDnsLabel"`
+	AppID               string                            `json:"appId"`
+	AppName             string                            `json:"appName"`
+	BaseRouteGeneration int64                             `json:"baseRouteGeneration"`
+	CreatedAt           time.Time                         `json:"createdAt"`
+	CurrentVisibility   HostedAppVisibilityScope          `json:"currentVisibility"`
+	DecidedAt           *time.Time                        `json:"decidedAt,omitempty"`
+	ID                  string                            `json:"id"`
+	InvalidationReason  string                            `json:"invalidationReason,omitempty"`
+	PolicyVersion       int64                             `json:"policyVersion"`
+	Reason              string                            `json:"reason,omitempty"`
+	RequestedVisibility HostedAppVisibilityScope          `json:"requestedVisibility"`
+	RequesterProfile    *HostedAppUserSummary             `json:"requesterProfile,omitempty"`
+	RequesterUserID     string                            `json:"requesterUserId"`
+	ReviewComment       string                            `json:"reviewComment,omitempty"`
+	ReviewerUserID      string                            `json:"reviewerUserId,omitempty"`
+	Status              HostedAppVisibilityApprovalStatus `json:"status"`
+	UpdatedAt           time.Time                         `json:"updatedAt"`
+}
+
+// HostedAppVisibilityApprovalDecisionResponse defines model for HostedAppVisibilityApprovalDecisionResponse.
+type HostedAppVisibilityApprovalDecisionResponse struct {
+	Data HostedAppVisibilityApprovalDecisionResult `json:"data"`
+}
+
+// HostedAppVisibilityApprovalDecisionResult defines model for HostedAppVisibilityApprovalDecisionResult.
+type HostedAppVisibilityApprovalDecisionResult struct {
+	App      HostedApp                   `json:"app"`
+	Approval HostedAppVisibilityApproval `json:"approval"`
+}
+
+// HostedAppVisibilityApprovalList defines model for HostedAppVisibilityApprovalList.
+type HostedAppVisibilityApprovalList struct {
+	Items []HostedAppVisibilityApproval `json:"items"`
+	Total int                           `json:"total"`
+}
+
+// HostedAppVisibilityApprovalListResponse defines model for HostedAppVisibilityApprovalListResponse.
+type HostedAppVisibilityApprovalListResponse struct {
+	Data HostedAppVisibilityApprovalList `json:"data"`
+}
+
+// HostedAppVisibilityApprovalStatus defines model for HostedAppVisibilityApprovalStatus.
+type HostedAppVisibilityApprovalStatus string
 
 // HostedAppVisibilityInput defines model for HostedAppVisibilityInput.
 type HostedAppVisibilityInput struct {
@@ -35581,6 +35756,42 @@ type PortalBootstrapEnvelope struct {
 	Data PortalBootstrap `json:"data"`
 }
 
+// PortalHostedAppAuthorSummary defines model for PortalHostedAppAuthorSummary.
+type PortalHostedAppAuthorSummary struct {
+	AvatarURL       string   `json:"avatarUrl,omitempty"`
+	DisplayName     string   `json:"displayName"`
+	TeamNames       []string `json:"teamNames"`
+	UserID          string   `json:"userId"`
+	VisibleAppCount int      `json:"visibleAppCount"`
+}
+
+// PortalHostedAppCatalog defines model for PortalHostedAppCatalog.
+type PortalHostedAppCatalog struct {
+	Authors        []PortalHostedAppAuthorSummary `json:"authors"`
+	Items          []PortalHostedAppItem          `json:"items"`
+	MyAppsCount    int                            `json:"myAppsCount"`
+	SelectedAuthor *PortalHostedAppAuthorSummary  `json:"selectedAuthor,omitempty"`
+	Total          int                            `json:"total"`
+}
+
+// PortalHostedAppCatalogResponse defines model for PortalHostedAppCatalogResponse.
+type PortalHostedAppCatalogResponse struct {
+	Data PortalHostedAppCatalog `json:"data"`
+}
+
+// PortalHostedAppItem defines model for PortalHostedAppItem.
+type PortalHostedAppItem struct {
+	Author      HostedAppUserSummary `json:"author"`
+	Description string               `json:"description"`
+	DNSLabel    string               `json:"dnsLabel"`
+	Host        string               `json:"host"`
+	ID          string               `json:"id"`
+	Kind        HostedAppKind        `json:"kind"`
+	Name        string               `json:"name"`
+	UpdatedAt   time.Time            `json:"updatedAt"`
+	URL         string               `json:"url"`
+}
+
 // PortalLaunchDecision defines model for PortalLaunchDecision.
 type PortalLaunchDecision struct {
 	Application      IdentityApplication             `json:"application"`
@@ -35803,6 +36014,11 @@ type RegistryConnectionMetadata struct {
 	CaCertificate    string `json:"caCertificate,omitempty"`
 	SecretConfigured bool   `json:"secretConfigured"`
 	SecretStorage    string `json:"secretStorage"`
+}
+
+// RejectHostedAppVisibilityRequest defines model for RejectHostedAppVisibilityRequest.
+type RejectHostedAppVisibilityRequest struct {
+	Comment string `json:"comment"`
 }
 
 // ReleaseBundle defines model for ReleaseBundle.
@@ -37744,6 +37960,12 @@ type ToolInvocationResultEnvelope struct {
 	Data ToolInvocationResult `json:"data"`
 }
 
+// TransferHostedAppOwnershipRequest defines model for TransferHostedAppOwnershipRequest.
+type TransferHostedAppOwnershipRequest struct {
+	NewOwnerUserID string `json:"newOwnerUserId"`
+	Reason         string `json:"reason,omitempty"`
+}
+
 // UpdateAISkillsRequest defines model for UpdateAISkillsRequest.
 type UpdateAISkillsRequest struct {
 	SkillsRegistry []AISkillSettings `json:"skillsRegistry"`
@@ -37753,6 +37975,9 @@ type UpdateAISkillsRequest struct {
 type UpdateAIWorkbenchModelRequest struct {
 	WorkbenchModel AIWorkbenchModelSettings `json:"workbenchModel"`
 }
+
+// UpdateAppHostingSettingsRequest defines model for UpdateAppHostingSettingsRequest.
+type UpdateAppHostingSettingsRequest = AppHostingSettingsUpdateRequest
 
 // UpdateBrandingSettingsRequest defines model for UpdateBrandingSettingsRequest.
 type UpdateBrandingSettingsRequest struct {
@@ -37771,6 +37996,11 @@ type UpdateBrandingSettingsRequest struct {
 	Slogan              string `json:"slogan,omitempty"`
 }
 
+// UpdateHostedAppMaintainersRequest defines model for UpdateHostedAppMaintainersRequest.
+type UpdateHostedAppMaintainersRequest struct {
+	MaintainerUserIDs []string `json:"maintainerUserIds"`
+}
+
 // UpdateHostedAppRequest defines model for UpdateHostedAppRequest.
 type UpdateHostedAppRequest struct {
 	Description *string `json:"description,omitempty"`
@@ -37780,6 +38010,7 @@ type UpdateHostedAppRequest struct {
 
 // UpdateHostedAppVisibilityRequest defines model for UpdateHostedAppVisibilityRequest.
 type UpdateHostedAppVisibilityRequest struct {
+	Reason     string                   `json:"reason,omitempty"`
 	Visibility HostedAppVisibilityInput `json:"visibility"`
 }
 
@@ -40336,6 +40567,45 @@ type WorkflowTriggerRequest struct {
 	WorkflowName             string                   `json:"workflowName,omitempty"`
 }
 
+// WorkspaceHostedAppDeploymentRequest defines model for WorkspaceHostedAppDeploymentRequest.
+type WorkspaceHostedAppDeploymentRequest struct {
+	AppID            string                    `json:"appId,omitempty"`
+	Description      string                    `json:"description,omitempty"`
+	IdempotencyKey   string                    `json:"idempotencyKey"`
+	Name             string                    `json:"name,omitempty"`
+	Slug             string                    `json:"slug,omitempty"`
+	Source           WorkspaceHostedAppSource  `json:"source"`
+	SpaFallback      *bool                     `json:"spaFallback,omitempty"`
+	Visibility       *HostedAppVisibilityInput `json:"visibility,omitempty"`
+	VisibilityReason string                    `json:"visibilityReason,omitempty"`
+}
+
+// WorkspaceHostedAppDeploymentResponse defines model for WorkspaceHostedAppDeploymentResponse.
+type WorkspaceHostedAppDeploymentResponse struct {
+	Data WorkspaceHostedAppDeploymentResult `json:"data"`
+}
+
+// WorkspaceHostedAppDeploymentResult defines model for WorkspaceHostedAppDeploymentResult.
+type WorkspaceHostedAppDeploymentResult struct {
+	App      HostedApp         `json:"app"`
+	Created  bool              `json:"created"`
+	Revision HostedAppRevision `json:"revision"`
+}
+
+// WorkspaceHostedAppSource defines model for WorkspaceHostedAppSource.
+type WorkspaceHostedAppSource struct {
+	ArtifactID         string                       `json:"artifactId,omitempty"`
+	AssistantID        string                       `json:"assistantId,omitempty"`
+	EntryFileName      string                       `json:"entryFileName,omitempty"`
+	EnvironmentVersion int64                        `json:"environmentVersion,omitempty"`
+	Kind               WorkspaceHostedAppSourceKind `json:"kind"`
+	SessionID          string                       `json:"sessionId,omitempty"`
+	SourcePath         string                       `json:"sourcePath,omitempty"`
+}
+
+// WorkspaceHostedAppSourceKind defines model for WorkspaceHostedAppSourceKind.
+type WorkspaceHostedAppSourceKind string
+
 // AIClientID defines model for AIClientID.
 type AIClientID = string
 
@@ -40449,6 +40719,9 @@ type EvaluationRunID = string
 
 // GitLabProjectIDQuery defines model for GitLabProjectIDQuery.
 type GitLabProjectIDQuery = string
+
+// HostedAppApprovalID defines model for HostedAppApprovalID.
+type HostedAppApprovalID = string
 
 // HostedAppID defines model for HostedAppID.
 type HostedAppID = string
@@ -41396,13 +41669,24 @@ type ListAnnouncementReceiptsParams struct {
 	PageSize int                      `form:"pageSize,omitempty" json:"pageSize,omitempty"`
 }
 
+// ListHostedAppVisibilityApprovalsParams defines parameters for ListHostedAppVisibilityApprovals.
+type ListHostedAppVisibilityApprovalsParams struct {
+	Scope  HostedAppApprovalListScope        `form:"scope,omitempty" json:"scope,omitempty"`
+	Status HostedAppVisibilityApprovalStatus `form:"status,omitempty" json:"status,omitempty"`
+	AppID  string                            `form:"appId,omitempty" json:"appId,omitempty"`
+	Limit  int                               `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset int                               `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // ListHostedAppsParams defines parameters for ListHostedApps.
 type ListHostedAppsParams struct {
-	Scope  HostedAppListScope `form:"scope,omitempty" json:"scope,omitempty"`
-	Query  string             `form:"query,omitempty" json:"query,omitempty"`
-	Status HostedAppStatus    `form:"status,omitempty" json:"status,omitempty"`
-	Limit  int                `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset int                `form:"offset,omitempty" json:"offset,omitempty"`
+	Scope       HostedAppListScope `form:"scope,omitempty" json:"scope,omitempty"`
+	Query       string             `form:"query,omitempty" json:"query,omitempty"`
+	Status      HostedAppStatus    `form:"status,omitempty" json:"status,omitempty"`
+	OwnerUserID string             `form:"ownerUserId,omitempty" json:"ownerUserId,omitempty"`
+	TeamID      string             `form:"teamId,omitempty" json:"teamId,omitempty"`
+	Limit       int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset      int                `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListHostedAppRevisionsParams defines parameters for ListHostedAppRevisions.
@@ -41429,6 +41713,15 @@ type StartHostedAppBrowserAuthParams struct {
 	Host         string `form:"host" json:"host"`
 	ReturnPath   string `form:"returnPath,omitempty" json:"returnPath,omitempty"`
 	GatewayState string `form:"gatewayState,omitempty" json:"gatewayState,omitempty"`
+}
+
+// ListPortalHostedAppsParams defines parameters for ListPortalHostedApps.
+type ListPortalHostedAppsParams struct {
+	Query        string        `form:"query,omitempty" json:"query,omitempty"`
+	Kind         HostedAppKind `form:"kind,omitempty" json:"kind,omitempty"`
+	AuthorUserID string        `form:"authorUserId,omitempty" json:"authorUserId,omitempty"`
+	Limit        int           `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset       int           `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListApplicationEnvironmentsParams defines parameters for ListApplicationEnvironments.
@@ -43841,14 +44134,26 @@ type ValidateAlertRuleJSONRequestBody = AlertRuleInput
 // AssignAlertOwnershipJSONRequestBody defines body for AssignAlertOwnership for application/json ContentType.
 type AssignAlertOwnershipJSONRequestBody = AlertOwnershipInput
 
+// ApproveHostedAppVisibilityJSONRequestBody defines body for ApproveHostedAppVisibility for application/json ContentType.
+type ApproveHostedAppVisibilityJSONRequestBody = ApproveHostedAppVisibilityRequest
+
+// RejectHostedAppVisibilityJSONRequestBody defines body for RejectHostedAppVisibility for application/json ContentType.
+type RejectHostedAppVisibilityJSONRequestBody = RejectHostedAppVisibilityRequest
+
 // CreateHostedAppJSONRequestBody defines body for CreateHostedApp for application/json ContentType.
 type CreateHostedAppJSONRequestBody = CreateHostedAppRequest
 
 // UpdateHostedAppJSONRequestBody defines body for UpdateHostedApp for application/json ContentType.
 type UpdateHostedAppJSONRequestBody = UpdateHostedAppRequest
 
+// DeleteHostedAppJSONRequestBody defines body for DeleteHostedApp for application/json ContentType.
+type DeleteHostedAppJSONRequestBody = DeleteHostedAppRequest
+
 // PreflightHostedAppDeploymentJSONRequestBody defines body for PreflightHostedAppDeployment for application/json ContentType.
 type PreflightHostedAppDeploymentJSONRequestBody = HostedAppPreflightRequest
+
+// UpdateHostedAppMaintainersJSONRequestBody defines body for UpdateHostedAppMaintainers for application/json ContentType.
+type UpdateHostedAppMaintainersJSONRequestBody = UpdateHostedAppMaintainersRequest
 
 // TakeHostedAppOfflineJSONRequestBody defines body for TakeHostedAppOffline for application/json ContentType.
 type TakeHostedAppOfflineJSONRequestBody = HostedAppLifecycleActionRequest
@@ -43862,11 +44167,17 @@ type RollbackHostedAppJSONRequestBody = HostedAppRollbackRequest
 // SuspendHostedAppJSONRequestBody defines body for SuspendHostedApp for application/json ContentType.
 type SuspendHostedAppJSONRequestBody = HostedAppSuspendRequest
 
+// TransferHostedAppOwnershipJSONRequestBody defines body for TransferHostedAppOwnership for application/json ContentType.
+type TransferHostedAppOwnershipJSONRequestBody = TransferHostedAppOwnershipRequest
+
 // UnsuspendHostedAppJSONRequestBody defines body for UnsuspendHostedApp for application/json ContentType.
 type UnsuspendHostedAppJSONRequestBody = HostedAppLifecycleActionRequest
 
 // UpdateHostedAppVisibilityJSONRequestBody defines body for UpdateHostedAppVisibility for application/json ContentType.
 type UpdateHostedAppVisibilityJSONRequestBody = UpdateHostedAppVisibilityRequest
+
+// WithdrawHostedAppVisibilityApprovalJSONRequestBody defines body for WithdrawHostedAppVisibilityApproval for application/json ContentType.
+type WithdrawHostedAppVisibilityApprovalJSONRequestBody = HostedAppLifecycleActionRequest
 
 // CheckHostedAppGatewayAccessJSONRequestBody defines body for CheckHostedAppGatewayAccess for application/json ContentType.
 type CheckHostedAppGatewayAccessJSONRequestBody = HostedAppGatewayAccessCheckRequest
@@ -43879,6 +44190,9 @@ type UpdateAppHostingSettingsJSONRequestBody = AppHostingSettingsUpdateRequest
 
 // RotateAppHostingGatewayTokenJSONRequestBody defines body for RotateAppHostingGatewayToken for application/json ContentType.
 type RotateAppHostingGatewayTokenJSONRequestBody = AppHostingGatewayTokenRotateRequest
+
+// DeployHostedAppFromWorkspaceJSONRequestBody defines body for DeployHostedAppFromWorkspace for application/json ContentType.
+type DeployHostedAppFromWorkspaceJSONRequestBody = WorkspaceHostedAppDeploymentRequest
 
 // CreateApplicationEnvironmentJSONRequestBody defines body for CreateApplicationEnvironment for application/json ContentType.
 type CreateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput

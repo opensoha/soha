@@ -144,4 +144,12 @@ func TestCanAccessAndVisibilityNormalization(t *testing.T) {
 	}, noOrgSettings); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("expected ErrAccessDenied when AllowOrganizationVisibility=false, got %v", err)
 	}
+
+	// Portal visibility never includes private apps even for the owner.
+	if VisibleInPortal(baseApp, owner, settings) {
+		t.Fatal("private app must never be visible in Colleague Works portal")
+	}
+	if !VisibleInPortal(selectedApp, owner, settings) || !VisibleInPortal(selectedApp, financeColleague, settings) || VisibleInPortal(selectedApp, stranger, settings) {
+		t.Fatal("unexpected VisibleInPortal evaluation for selected app")
+	}
 }

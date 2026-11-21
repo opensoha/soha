@@ -723,7 +723,7 @@ func TestHostHelpCompletionAndDocsMetadata(t *testing.T) {
 	if code := Run(context.Background(), []string{"help", "host"}, Runtime{Out: &helpOut, Err: &bytes.Buffer{}}); code != 0 {
 		t.Fatalf("help host returned %d", code)
 	}
-	for _, sub := range []string{"deploy", "list", "get", "revisions", "rollback", "visibility", "offline", "online", "audience"} {
+	for _, sub := range []string{"deploy", "list", "get", "revisions", "rollback", "visibility", "maintainers", "offline", "online", "delete", "audience"} {
 		if !strings.Contains(helpOut.String(), sub) {
 			t.Fatalf("help host missing %q: %s", sub, helpOut.String())
 		}
@@ -734,8 +734,367 @@ func TestHostHelpCompletionAndDocsMetadata(t *testing.T) {
 		if code := Run(context.Background(), []string{"completion", shell}, Runtime{Out: &compOut, Err: &bytes.Buffer{}}); code != 0 {
 			t.Fatalf("completion %s returned %d", shell, code)
 		}
-		if !strings.Contains(compOut.String(), "host") || !strings.Contains(compOut.String(), "audience") {
-			t.Fatalf("completion %s missing host subcommands: %s", shell, compOut.String())
+		for _, want := range []string{"host", "maintainers", "delete", "audience"} {
+			if !strings.Contains(compOut.String(), want) {
+				t.Fatalf("completion %s missing %q: %s", shell, want, compOut.String())
+			}
+		}
+	}
+}
+
+func TestHostMaintainersInspectUpdateAndClear(t *testing.T) {
+	now := time.Date(2026, 11, 21, 4, 0, 0, 0, time.UTC)
+	alice := sohaapi.HostedAppUserSummary{UserID: "usr_alice", DisplayName: "Alice Chen", TeamNames: []string{"Growth Analytics"}}
+	bob := sohaapi.HostedAppUserSummary{UserID: "usr_bob", DisplayName: "Bob Li", TeamNames: []string{"Platform"}}
+	carol := sohaapi.HostedAppUserSummary{UserID: "usr_carol", DisplayName: "Carol Wu", TeamNames: []string{"Finance"}}
+
+	currentApp := sohaapi.HostedApp{
+		ID:                "app_collab",
+		Name:              "Growth Board",
+		Kind:              sohaapi.HostedAppKindStatic,
+		DNSLabel:          "growth-board-1a2b3c",
+		Host:              "growth-board-1a2b3c.apps.soha.internal",
+		URL:               "https://growth-board-1a2b3c.apps.soha.internal",
+		OwnerUserID:       "usr_alice",
+		OwnerProfile:      &alice,
+		MaintainerUserIDs: []string{"usr_bob"},
+		Maintainers:       []sohaapi.HostedAppUserSummary{bob},
+		Visibility:        sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate},
+		Status:            sohaapi.HostedAppStatusOnline,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	var lastPutBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/app-hosting/apps/app_collab":
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: currentApp})
+		case "PUT /api/v1/app-hosting/apps/app_collab/maintainers":
+			raw, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lastPutBody = strings.TrimSpace(string(raw))
+			var req sohaapi.UpdateHostedAppMaintainersRequest
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Fatal(err)
+			}
+			currentApp.MaintainerUserIDs = req.MaintainerUserIDs
+			if len(req.MaintainerUserIDs) == 0 {
+				currentApp.Maintainers = nil
+			} else {
+				currentApp.Maintainers = []sohaapi.HostedAppUserSummary{bob, carol}
+			}
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: currentApp})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	cfgPath := writeTestConfig(t, server.URL)
+
+	var out, errBuf bytes.Buffer
+	if code := Run(context.Background(), []string{"host", "maintainers", "app_collab"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("inspect maintainers failed (%d): %s", code, errBuf.String())
+	}
+	for _, want := range []string{"Owner: Alice Chen (usr_alice) [teams=Growth Analytics]", "Maintainers (1):", "usr_bob\tBob Li\tPlatform", "协作者仅具备更新版本与回滚权限，访问仍由可见范围控制"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("inspect maintainers missing %q:\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	if code := Run(context.Background(), []string{"host", "maintainers", "app_collab", "--users", "usr_bob,usr_carol,usr_bob"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("update maintainers failed (%d): %s", code, errBuf.String())
+	}
+	if !strings.Contains(lastPutBody, `"maintainerUserIds":["usr_bob","usr_carol"]`) || !strings.Contains(out.String(), "Carol Wu\tFinance") {
+		t.Fatalf("unexpected update maintainers result: body=%s out=%s", lastPutBody, out.String())
+	}
+
+	out.Reset()
+	if code := Run(context.Background(), []string{"host", "maintainers", "app_collab", "--clear"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("clear maintainers failed (%d): %s", code, errBuf.String())
+	}
+	if lastPutBody != `{"maintainerUserIds":[]}` || !strings.Contains(out.String(), "Maintainers: none") {
+		t.Fatalf("expected non-null empty maintainerUserIds array, got body=%s out=%s", lastPutBody, out.String())
+	}
+
+	for _, badArgs := range [][]string{
+		{"host", "maintainers"},
+		{"host", "maintainers", "app_collab", "--users", "usr_bob", "--clear"},
+		{"host", "maintainers", "app_collab", "--users", ""},
+	} {
+		if code := Run(context.Background(), badArgs, Runtime{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, ConfigPath: cfgPath}); code != 2 {
+			t.Fatalf("Run(%v) = %d, want 2", badArgs, code)
+		}
+	}
+}
+
+func TestHostDeleteRequiresExactNameConfirmation(t *testing.T) {
+	var deleteCalls int
+	var gotReq sohaapi.DeleteHostedAppRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/app-hosting/apps/app_del/delete" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		deleteCalls++
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		if gotReq.ConfirmationName != "Quarterly Sales Dashboard" {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(t, w, map[string]any{"error": map[string]any{"message": "confirmation name mismatch"}})
+			return
+		}
+		writeJSON(t, w, sohaapi.DeleteHostedAppResponse{
+			Data: sohaapi.DeleteHostedAppResult{AppID: "app_del", Deleted: true},
+		})
+	}))
+	defer server.Close()
+	cfgPath := writeTestConfig(t, server.URL)
+
+	for _, missingConfirm := range [][]string{
+		{"host", "delete", "app_del"},
+		{"host", "delete", "app_del", "--yes"},
+		{"host", "delete", "app_del", "--confirm", "   "},
+	} {
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), missingConfirm, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath})
+		if code != 2 || deleteCalls != 0 {
+			t.Fatalf("Run(%v) = %d, deleteCalls=%d, stderr=%s", missingConfirm, code, deleteCalls, errBuf.String())
+		}
+		if !strings.Contains(errBuf.String(), "--confirm") || !strings.Contains(errBuf.String(), "需传入精确应用名称二次确认") {
+			t.Fatalf("expected actionable --confirm error, got %s", errBuf.String())
+		}
+	}
+
+	var out, errBuf bytes.Buffer
+	if code := Run(context.Background(), []string{"host", "delete", "app_del", "--confirm", "Wrong Name"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 1 {
+		t.Fatalf("expected server name mismatch exit 1, got %d", code)
+	}
+
+	out.Reset()
+	errBuf.Reset()
+	code := Run(context.Background(), []string{"host", "delete", "app_del", "--confirm", "Quarterly Sales Dashboard", "--reason", "retired report"}, Runtime{
+		Out:        &out,
+		Err:        &errBuf,
+		ConfigPath: cfgPath,
+	})
+	if code != 0 || gotReq.Reason != "retired report" {
+		t.Fatalf("delete failed (%d): reason=%q err=%s", code, gotReq.Reason, errBuf.String())
+	}
+	for _, want := range []string{"App ID: app_del", "Confirmed Name: Quarterly Sales Dashboard", "Deleted: true"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("delete output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func newApprovalFixtureApp(now time.Time) sohaapi.HostedApp {
+	alice := sohaapi.HostedAppUserSummary{UserID: "usr_alice", DisplayName: "Alice Chen", TeamNames: []string{"Growth"}}
+	bob := sohaapi.HostedAppUserSummary{UserID: "usr_bob", DisplayName: "Bob Li", TeamNames: []string{"Platform"}}
+	return sohaapi.HostedApp{
+		ID:                "app_org",
+		Name:              "Quarterly Metrics",
+		Kind:              sohaapi.HostedAppKindStatic,
+		DNSLabel:          "quarterly-metrics-1a2b3c",
+		Host:              "quarterly-metrics-1a2b3c.apps.soha.internal",
+		URL:               "https://quarterly-metrics-1a2b3c.apps.soha.internal",
+		OwnerUserID:       "usr_alice",
+		OwnerProfile:      &alice,
+		MaintainerUserIDs: []string{"usr_bob"},
+		Maintainers:       []sohaapi.HostedAppUserSummary{bob},
+		Visibility:        sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModeSelected, TeamIDs: []string{"team_ops"}},
+		Status:            sohaapi.HostedAppStatusOnline,
+		ActiveRevisionID:  "rev_2",
+		RouteGeneration:   3,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+}
+
+func TestHostVisibilityPendingApprovalWithdrawAndDetailListEnhancements(t *testing.T) {
+	now := time.Date(2026, 11, 21, 4, 15, 0, 0, time.UTC)
+	appState := newApprovalFixtureApp(now)
+	var lastVisReason, lastWithdrawReason string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "PUT /api/v1/app-hosting/apps/app_org/visibility":
+			var req sohaapi.UpdateHostedAppVisibilityRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			lastVisReason = req.Reason
+			appState.PendingVisibilityApproval = &sohaapi.HostedAppVisibilityApproval{
+				ID:                  "appr_77",
+				AppID:               "app_org",
+				AppName:             appState.Name,
+				AppDNSLabel:         appState.DNSLabel,
+				RequesterUserID:     "usr_alice",
+				CurrentVisibility:   appState.Visibility,
+				RequestedVisibility: sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModeOrganization},
+				BaseRouteGeneration: 3,
+				PolicyVersion:       2,
+				Status:              sohaapi.HostedAppVisibilityApprovalStatusPending,
+				Reason:              req.Reason,
+				CreatedAt:           now,
+				UpdatedAt:           now,
+			}
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: appState})
+		case "GET /api/v1/app-hosting/apps/app_org":
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: appState})
+		case "GET /api/v1/app-hosting/apps":
+			writeJSON(t, w, sohaapi.HostedAppListResponse{Data: sohaapi.HostedAppList{Items: []sohaapi.HostedApp{appState}, Total: 1}})
+		case "POST /api/v1/app-hosting/apps/app_org/visibility-approval/withdraw":
+			var req sohaapi.HostedAppLifecycleActionRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			lastWithdrawReason = req.Reason
+			appState.PendingVisibilityApproval = nil
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: appState})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	cfgPath := writeTestConfig(t, server.URL)
+
+	var out, errBuf bytes.Buffer
+	if code := Run(context.Background(), []string{"host", "visibility", "app_org", "--mode", "organization", "--reason", "Open to all staff", "--yes"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("visibility approval request failed (%d): %s", code, errBuf.String())
+	}
+	if lastVisReason != "Open to all staff" || strings.Contains(out.String(), "Visibility: organization") || strings.Contains(out.String(), "visibility is now organization") {
+		t.Fatalf("must not claim organization visibility before approval:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "已提交全公司公开审批申请（单号 appr_77），审批通过前继续维持当前可见范围 selected") {
+		t.Fatalf("missing pending approval notice:\n%s", out.String())
+	}
+
+	out.Reset()
+	if code := Run(context.Background(), []string{"host", "get", "app_org"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("host get failed (%d): %s", code, errBuf.String())
+	}
+	for _, want := range []string{"Pending Visibility Approval: appr_77 (status=pending requested=organization current=selected reason=\"Open to all staff\")", "Maintainers: Bob Li (usr_bob) [teams=Platform]"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("host get missing %q:\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	if code := Run(context.Background(), []string{"host", "list"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("host list failed (%d): %s", code, errBuf.String())
+	}
+	for _, want := range []string{"maintainers=Bob Li(usr_bob)", "pendingApproval=appr_77(pending->organization)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("host list missing %q:\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	if code := Run(context.Background(), []string{"host", "visibility", "app_org", "--withdraw", "--reason", "revise scope"}, Runtime{Out: &out, Err: &errBuf, ConfigPath: cfgPath}); code != 0 {
+		t.Fatalf("withdraw failed (%d): %s", code, errBuf.String())
+	}
+	if lastWithdrawReason != "revise scope" || strings.Contains(out.String(), "Pending Visibility Approval:") || !strings.Contains(out.String(), "withdrawn; effective visibility remains selected") {
+		t.Fatalf("unexpected withdraw output:\n%s", out.String())
+	}
+
+	if code := Run(context.Background(), []string{"host", "visibility", "app_org", "--withdraw", "--mode", "private"}, Runtime{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, ConfigPath: cfgPath}); code != 2 {
+		t.Fatalf("expected withdraw+mode exit 2, got %d", code)
+	}
+}
+
+func TestHostDeployOrganizationPendingApprovalNotice(t *testing.T) {
+	now := time.Date(2026, 11, 21, 4, 30, 0, 0, time.UTC)
+	bundleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundleDir, "index.html"), []byte("<!doctype html><title>Board</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pending := &sohaapi.HostedAppVisibilityApproval{
+		ID:                  "appr_deploy_1",
+		AppID:               "app_pending_org",
+		AppName:             "Company Board",
+		AppDNSLabel:         "company-board-1a2b3c",
+		RequesterUserID:     "usr_alice",
+		CurrentVisibility:   sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate},
+		RequestedVisibility: sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModeOrganization},
+		BaseRouteGeneration: 1,
+		PolicyVersion:       2,
+		Status:              sohaapi.HostedAppVisibilityApprovalStatusPending,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	appRecord := sohaapi.HostedApp{
+		ID:                        "app_pending_org",
+		Name:                      "Company Board",
+		Kind:                      sohaapi.HostedAppKindStatic,
+		DNSLabel:                  "company-board-1a2b3c",
+		Host:                      "company-board-1a2b3c.apps.soha.internal",
+		URL:                       "https://company-board-1a2b3c.apps.soha.internal",
+		OwnerUserID:               "usr_alice",
+		MaintainerUserIDs:         []string{},
+		Visibility:                sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate},
+		PendingVisibilityApproval: pending,
+		Status:                    sohaapi.HostedAppStatusOnline,
+		ActiveRevisionID:          "rev_1",
+		RouteGeneration:           1,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/app-hosting/apps":
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: appRecord})
+		case "POST /api/v1/app-hosting/apps/app_pending_org/deployments/preflight":
+			writeJSON(t, w, sohaapi.HostedAppPreflightResponse{
+				Data: sohaapi.HostedAppPreflightResult{Allowed: true, AppID: appRecord.ID, URL: appRecord.URL, MaxCompressedBytes: 1 << 20, MaxUncompressedBytes: 4 << 20, MaxFileCount: 100},
+			})
+		case "POST /api/v1/app-hosting/apps/app_pending_org/revisions":
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(t, w, sohaapi.HostedAppDeploymentResponse{
+				Data: sohaapi.HostedAppDeploymentReceipt{
+					App: appRecord,
+					Revision: sohaapi.HostedAppRevision{
+						ID:             "rev_1",
+						AppID:          appRecord.ID,
+						RevisionNumber: 1,
+						Kind:           sohaapi.HostedAppKindStatic,
+						Status:         sohaapi.HostedAppRevisionStatusReady,
+						BundleSha256:   strings.Repeat("d", 64),
+						FileCount:      1,
+						TotalBytes:     36,
+						CreatedBy:      "usr_alice",
+						CreatedAt:      now,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	cfgPath := writeTestConfig(t, server.URL)
+
+	var out, errBuf bytes.Buffer
+	code := Run(context.Background(), []string{"host", "deploy", bundleDir, "--name", "Company Board", "--visibility", "organization", "--yes"}, Runtime{
+		Out:        &out,
+		Err:        &errBuf,
+		ConfigPath: cfgPath,
+	})
+	if code != 0 {
+		t.Fatalf("deploy failed (%d): %s", code, errBuf.String())
+	}
+	if strings.Contains(out.String(), "Visibility: organization") {
+		t.Fatalf("deploy output must not claim organization visibility while pending:\n%s", out.String())
+	}
+	for _, want := range []string{
+		"Visibility: private",
+		"Pending Visibility Approval: appr_deploy_1",
+		"已提交全公司公开审批申请（单号 appr_deploy_1），审批通过前继续维持当前可见范围 private",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("deploy output missing %q:\n%s", want, out.String())
 		}
 	}
 }

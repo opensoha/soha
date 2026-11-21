@@ -50,7 +50,7 @@
       "name": "App Hosting Publisher",
       "version": "0.1.0",
       "category": "delivery",
-      "description": "Publish static web applications to workspace App Hosting with audience confirmation, preflight checks, and rollback controls.",
+      "description": "Publish static web applications to workspace App Hosting with audience approval awareness, collaborator controls, workspace publishing, preflight checks, and rollback.",
       "path": "skills/ai-gateway/app-hosting-publisher/SKILL.md",
       "capabilityRefs": [
         "gateway.manifest.read"

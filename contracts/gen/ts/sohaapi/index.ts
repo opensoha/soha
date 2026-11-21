@@ -15750,6 +15750,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/app-hosting/portal/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List online non-private hosted applications visible to the current portal visitor */
+        get: operations["listPortalHostedApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/app-hosting/apps": {
         parameters: {
             query?: never;
@@ -15865,6 +15882,142 @@ export interface paths {
         put?: never;
         /** Lift administrative suspension on a hosted application */
         post: operations["unsuspendHostedApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/maintainers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace collaborator maintainers for a hosted application */
+        put: operations["updateHostedAppMaintainers"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer ownership of a hosted application to another user and advance route generation */
+        post: operations["transferHostedAppOwnership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Permanently delete a hosted application and purge its stored revision objects after name confirmation */
+        post: operations["deleteHostedApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/apps/{appId}/visibility-approval/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw the pending organization visibility approval request for a hosted application */
+        post: operations["withdrawHostedAppVisibilityApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List organization visibility approval requests in requester or administrator scope */
+        get: operations["listHostedAppVisibilityApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/approvals/{approvalId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a pending organization visibility request and switch the hosted application to organization visibility */
+        post: operations["approveHostedAppVisibility"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/approvals/{approvalId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a pending organization visibility request while keeping the hosted application's current visibility */
+        post: operations["rejectHostedAppVisibility"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app-hosting/workspace-deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Package and publish a hosted application directly from the caller's personal assistant workspace or conversation artifact */
+        post: operations["deployHostedAppFromWorkspace"];
         delete?: never;
         options?: never;
         head?: never;
@@ -36002,6 +36155,8 @@ export interface components {
             groups: components["schemas"]["NetworkProxyGroup"][];
             rules: components["schemas"]["NetworkProxyRule"][];
         };
+        /** @enum {string} */
+        AppHostingOrganizationVisibilityPolicy: "allow_direct" | "require_approval" | "disabled";
         AppHostingSettings: {
             enabled: boolean;
             appsDomain: string;
@@ -36010,6 +36165,9 @@ export interface components {
             storagePrefix: string;
             gatewayTokenConfigured: boolean;
             allowOrganizationVisibility: boolean;
+            organizationVisibilityPolicy?: components["schemas"]["AppHostingOrganizationVisibilityPolicy"];
+            /** Format: int64 */
+            policyVersion?: number;
             /** Format: int64 */
             maxBundleCompressedBytes: number;
             /** Format: int64 */
@@ -36034,6 +36192,7 @@ export interface components {
             storageIntegrationId?: string;
             storagePrefix?: string;
             allowOrganizationVisibility?: boolean;
+            organizationVisibilityPolicy?: components["schemas"]["AppHostingOrganizationVisibilityPolicy"];
             /** Format: int64 */
             maxBundleCompressedBytes?: number;
             /** Format: int64 */
@@ -36045,6 +36204,7 @@ export interface components {
             /** Format: int32 */
             retainedRevisionsPerApp?: number;
         };
+        UpdateAppHostingSettingsRequest: components["schemas"]["AppHostingSettingsUpdateRequest"];
         AppHostingGatewayTokenRotateRequest: {
             reason?: string;
         };
@@ -36093,6 +36253,48 @@ export interface components {
             userIds?: string[];
             teamIds?: string[];
         };
+        HostedAppUserSummary: {
+            userId: string;
+            displayName: string;
+            avatarUrl?: string;
+            teamNames: string[];
+        };
+        /** @enum {string} */
+        HostedAppVisibilityApprovalStatus: "pending" | "approved" | "rejected" | "withdrawn" | "invalidated";
+        HostedAppVisibilityApproval: {
+            id: string;
+            appId: string;
+            appName: string;
+            appDnsLabel: string;
+            requesterUserId: string;
+            requesterProfile?: components["schemas"]["HostedAppUserSummary"];
+            currentVisibility: components["schemas"]["HostedAppVisibilityScope"];
+            requestedVisibility: components["schemas"]["HostedAppVisibilityScope"];
+            /** Format: int64 */
+            baseRouteGeneration: number;
+            /** Format: int64 */
+            policyVersion: number;
+            status: components["schemas"]["HostedAppVisibilityApprovalStatus"];
+            reason?: string;
+            reviewerUserId?: string;
+            reviewComment?: string;
+            invalidationReason?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            decidedAt?: string;
+        };
+        HostedAppVisibilityApprovalList: {
+            items: components["schemas"]["HostedAppVisibilityApproval"][];
+            total: number;
+        };
+        HostedAppVisibilityApprovalListResponse: {
+            data: components["schemas"]["HostedAppVisibilityApprovalList"];
+        };
+        /** @enum {string} */
+        HostedAppApprovalListScope: "mine" | "all";
         HostedApp: {
             id: string;
             name: string;
@@ -36104,11 +36306,18 @@ export interface components {
             url: string;
             spaFallback: boolean;
             ownerUserId: string;
+            ownerProfile?: components["schemas"]["HostedAppUserSummary"];
             maintainerUserIds: string[];
+            maintainers?: components["schemas"]["HostedAppUserSummary"][];
             visibility: components["schemas"]["HostedAppVisibilityScope"];
+            pendingVisibilityApproval?: components["schemas"]["HostedAppVisibilityApproval"];
             status: components["schemas"]["HostedAppStatus"];
             suspendedReason?: string;
             activeRevisionId?: string;
+            /** Format: int64 */
+            activeRevisionNumber?: number;
+            /** Format: int64 */
+            totalBytes?: number;
             /** Format: int64 */
             routeGeneration: number;
             /** Format: date-time */
@@ -36142,6 +36351,99 @@ export interface components {
         };
         UpdateHostedAppVisibilityRequest: {
             visibility: components["schemas"]["HostedAppVisibilityInput"];
+            reason?: string;
+        };
+        UpdateHostedAppMaintainersRequest: {
+            maintainerUserIds: string[];
+        };
+        TransferHostedAppOwnershipRequest: {
+            newOwnerUserId: string;
+            reason?: string;
+        };
+        DeleteHostedAppRequest: {
+            confirmationName: string;
+            reason?: string;
+        };
+        DeleteHostedAppResult: {
+            appId: string;
+            deleted: boolean;
+        };
+        DeleteHostedAppResponse: {
+            data: components["schemas"]["DeleteHostedAppResult"];
+        };
+        ApproveHostedAppVisibilityRequest: {
+            comment?: string;
+        };
+        RejectHostedAppVisibilityRequest: {
+            comment: string;
+        };
+        HostedAppVisibilityApprovalDecisionResult: {
+            approval: components["schemas"]["HostedAppVisibilityApproval"];
+            app: components["schemas"]["HostedApp"];
+        };
+        HostedAppVisibilityApprovalDecisionResponse: {
+            data: components["schemas"]["HostedAppVisibilityApprovalDecisionResult"];
+        };
+        PortalHostedAppItem: {
+            id: string;
+            name: string;
+            description: string;
+            kind: components["schemas"]["HostedAppKind"];
+            dnsLabel: string;
+            host: string;
+            /** Format: uri */
+            url: string;
+            author: components["schemas"]["HostedAppUserSummary"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PortalHostedAppAuthorSummary: {
+            userId: string;
+            displayName: string;
+            avatarUrl?: string;
+            teamNames: string[];
+            visibleAppCount: number;
+        };
+        PortalHostedAppCatalog: {
+            items: components["schemas"]["PortalHostedAppItem"][];
+            authors: components["schemas"]["PortalHostedAppAuthorSummary"][];
+            selectedAuthor?: components["schemas"]["PortalHostedAppAuthorSummary"];
+            myAppsCount: number;
+            total: number;
+        };
+        PortalHostedAppCatalogResponse: {
+            data: components["schemas"]["PortalHostedAppCatalog"];
+        };
+        /** @enum {string} */
+        WorkspaceHostedAppSourceKind: "personal_environment" | "conversation_artifact";
+        WorkspaceHostedAppSource: {
+            kind: components["schemas"]["WorkspaceHostedAppSourceKind"];
+            sourcePath?: string;
+            assistantId?: string;
+            /** Format: int64 */
+            environmentVersion?: number;
+            sessionId?: string;
+            artifactId?: string;
+            entryFileName?: string;
+        };
+        WorkspaceHostedAppDeploymentRequest: {
+            appId?: string;
+            name?: string;
+            slug?: string;
+            description?: string;
+            spaFallback?: boolean;
+            visibility?: components["schemas"]["HostedAppVisibilityInput"];
+            visibilityReason?: string;
+            source: components["schemas"]["WorkspaceHostedAppSource"];
+            idempotencyKey: string;
+        };
+        WorkspaceHostedAppDeploymentResult: {
+            app: components["schemas"]["HostedApp"];
+            revision: components["schemas"]["HostedAppRevision"];
+            created: boolean;
+        };
+        WorkspaceHostedAppDeploymentResponse: {
+            data: components["schemas"]["WorkspaceHostedAppDeploymentResult"];
         };
         HostedAppLifecycleActionRequest: {
             reason?: string;
@@ -36327,6 +36629,7 @@ export interface components {
     parameters: {
         HostedAppID: string;
         HostedAppRevisionID: string;
+        HostedAppApprovalID: string;
         MenuID: string;
         AccessRoleID: string;
         UserID: string;
@@ -38844,9 +39147,11 @@ export type NetworkProxyBundleReadback = components['schemas']['NetworkProxyBund
 export type NetworkProxyIngressCheckInput = components['schemas']['NetworkProxyIngressCheckInput'];
 export type NetworkProxyIngressCheckResult = components['schemas']['NetworkProxyIngressCheckResult'];
 export type NetworkProxyDirectProjection = components['schemas']['NetworkProxyDirectProjection'];
+export type AppHostingOrganizationVisibilityPolicy = components['schemas']['AppHostingOrganizationVisibilityPolicy'];
 export type AppHostingSettings = components['schemas']['AppHostingSettings'];
 export type AppHostingSettingsResponse = components['schemas']['AppHostingSettingsResponse'];
 export type AppHostingSettingsUpdateRequest = components['schemas']['AppHostingSettingsUpdateRequest'];
+export type UpdateAppHostingSettingsRequest = components['schemas']['UpdateAppHostingSettingsRequest'];
 export type AppHostingGatewayTokenRotateRequest = components['schemas']['AppHostingGatewayTokenRotateRequest'];
 export type AppHostingGatewayTokenSecret = components['schemas']['AppHostingGatewayTokenSecret'];
 export type AppHostingGatewayTokenRotateResponse = components['schemas']['AppHostingGatewayTokenRotateResponse'];
@@ -38860,6 +39165,12 @@ export type HostedAppStatus = components['schemas']['HostedAppStatus'];
 export type HostedAppVisibilityMode = components['schemas']['HostedAppVisibilityMode'];
 export type HostedAppVisibilityScope = components['schemas']['HostedAppVisibilityScope'];
 export type HostedAppVisibilityInput = components['schemas']['HostedAppVisibilityInput'];
+export type HostedAppUserSummary = components['schemas']['HostedAppUserSummary'];
+export type HostedAppVisibilityApprovalStatus = components['schemas']['HostedAppVisibilityApprovalStatus'];
+export type HostedAppVisibilityApproval = components['schemas']['HostedAppVisibilityApproval'];
+export type HostedAppVisibilityApprovalList = components['schemas']['HostedAppVisibilityApprovalList'];
+export type HostedAppVisibilityApprovalListResponse = components['schemas']['HostedAppVisibilityApprovalListResponse'];
+export type HostedAppApprovalListScope = components['schemas']['HostedAppApprovalListScope'];
 export type HostedApp = components['schemas']['HostedApp'];
 export type HostedAppResponse = components['schemas']['HostedAppResponse'];
 export type HostedAppList = components['schemas']['HostedAppList'];
@@ -38867,6 +39178,24 @@ export type HostedAppListResponse = components['schemas']['HostedAppListResponse
 export type CreateHostedAppRequest = components['schemas']['CreateHostedAppRequest'];
 export type UpdateHostedAppRequest = components['schemas']['UpdateHostedAppRequest'];
 export type UpdateHostedAppVisibilityRequest = components['schemas']['UpdateHostedAppVisibilityRequest'];
+export type UpdateHostedAppMaintainersRequest = components['schemas']['UpdateHostedAppMaintainersRequest'];
+export type TransferHostedAppOwnershipRequest = components['schemas']['TransferHostedAppOwnershipRequest'];
+export type DeleteHostedAppRequest = components['schemas']['DeleteHostedAppRequest'];
+export type DeleteHostedAppResult = components['schemas']['DeleteHostedAppResult'];
+export type DeleteHostedAppResponse = components['schemas']['DeleteHostedAppResponse'];
+export type ApproveHostedAppVisibilityRequest = components['schemas']['ApproveHostedAppVisibilityRequest'];
+export type RejectHostedAppVisibilityRequest = components['schemas']['RejectHostedAppVisibilityRequest'];
+export type HostedAppVisibilityApprovalDecisionResult = components['schemas']['HostedAppVisibilityApprovalDecisionResult'];
+export type HostedAppVisibilityApprovalDecisionResponse = components['schemas']['HostedAppVisibilityApprovalDecisionResponse'];
+export type PortalHostedAppItem = components['schemas']['PortalHostedAppItem'];
+export type PortalHostedAppAuthorSummary = components['schemas']['PortalHostedAppAuthorSummary'];
+export type PortalHostedAppCatalog = components['schemas']['PortalHostedAppCatalog'];
+export type PortalHostedAppCatalogResponse = components['schemas']['PortalHostedAppCatalogResponse'];
+export type WorkspaceHostedAppSourceKind = components['schemas']['WorkspaceHostedAppSourceKind'];
+export type WorkspaceHostedAppSource = components['schemas']['WorkspaceHostedAppSource'];
+export type WorkspaceHostedAppDeploymentRequest = components['schemas']['WorkspaceHostedAppDeploymentRequest'];
+export type WorkspaceHostedAppDeploymentResult = components['schemas']['WorkspaceHostedAppDeploymentResult'];
+export type WorkspaceHostedAppDeploymentResponse = components['schemas']['WorkspaceHostedAppDeploymentResponse'];
 export type HostedAppLifecycleActionRequest = components['schemas']['HostedAppLifecycleActionRequest'];
 export type HostedAppSuspendRequest = components['schemas']['HostedAppSuspendRequest'];
 export type HostedAppPreflightRequest = components['schemas']['HostedAppPreflightRequest'];
@@ -38895,6 +39224,7 @@ export type ResponseError = components['responses']['Error'];
 export type ResponseComputeError = components['responses']['ComputeError'];
 export type ParameterHostedAppId = components['parameters']['HostedAppID'];
 export type ParameterHostedAppRevisionId = components['parameters']['HostedAppRevisionID'];
+export type ParameterHostedAppApprovalId = components['parameters']['HostedAppApprovalID'];
 export type ParameterMenuId = components['parameters']['MenuID'];
 export type ParameterAccessRoleId = components['parameters']['AccessRoleID'];
 export type ParameterUserId = components['parameters']['UserID'];
@@ -72340,12 +72670,44 @@ export interface operations {
             503: components["responses"]["Error"];
         };
     };
+    listPortalHostedApps: {
+        parameters: {
+            query?: {
+                query?: string;
+                kind?: components["schemas"]["HostedAppKind"];
+                authorUserId?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audience-filtered colleague hosted applications catalog and sanitized author summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalHostedAppCatalogResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
     listHostedApps: {
         parameters: {
             query?: {
                 scope?: components["schemas"]["HostedAppListScope"];
                 query?: string;
                 status?: components["schemas"]["HostedAppStatus"];
+                ownerUserId?: string;
+                teamId?: string;
                 limit?: number;
                 offset?: number;
             };
@@ -72625,6 +72987,270 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    updateHostedAppMaintainers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateHostedAppMaintainersRequest"];
+            };
+        };
+        responses: {
+            /** @description Hosted application with updated collaborator maintainers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    transferHostedAppOwnership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferHostedAppOwnershipRequest"];
+            };
+        };
+        responses: {
+            /** @description Hosted application transferred to the new owner. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    deleteHostedApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteHostedAppRequest"];
+            };
+        };
+        responses: {
+            /** @description Hosted application permanently deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteHostedAppResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    withdrawHostedAppVisibilityApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appId: components["parameters"]["HostedAppID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["HostedAppLifecycleActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Pending organization visibility approval withdrawn; effective visibility unchanged. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listHostedAppVisibilityApprovals: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["HostedAppApprovalListScope"];
+                status?: components["schemas"]["HostedAppVisibilityApprovalStatus"];
+                appId?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated organization visibility approval requests. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisibilityApprovalListResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    approveHostedAppVisibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approvalId: components["parameters"]["HostedAppApprovalID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveHostedAppVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Organization visibility approval granted and hosted application updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisibilityApprovalDecisionResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    rejectHostedAppVisibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approvalId: components["parameters"]["HostedAppApprovalID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectHostedAppVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Organization visibility request rejected. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostedAppVisibilityApprovalDecisionResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    deployHostedAppFromWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceHostedAppDeploymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated existing hosted application or returned existing deployment for a matching idempotencyKey. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceHostedAppDeploymentResponse"];
+                };
+            };
+            /** @description Newly created hosted application and activated revision from workspace or artifact source. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceHostedAppDeploymentResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            429: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };
     };

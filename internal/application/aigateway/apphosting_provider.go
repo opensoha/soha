@@ -18,16 +18,21 @@ type AppHostingCapabilityService interface {
 	CreateApp(ctx context.Context, principal domainidentity.Principal, req sohaapi.CreateHostedAppRequest) (sohaapi.HostedApp, bool, error)
 	GetApp(ctx context.Context, principal domainidentity.Principal, appID string) (sohaapi.HostedApp, error)
 	UpdateVisibility(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.UpdateHostedAppVisibilityRequest) (sohaapi.HostedApp, error)
+	UpdateMaintainers(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.UpdateHostedAppMaintainersRequest) (sohaapi.HostedApp, error)
 	TakeOffline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
 	BringOnline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
 	Preflight(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.HostedAppPreflightRequest) (sohaapi.HostedAppPreflightResult, error)
 	ListRevisions(ctx context.Context, principal domainidentity.Principal, appID string, limit, offset int) (sohaapi.HostedAppRevisionList, error)
 	Rollback(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.HostedAppRollbackRequest) (sohaapi.HostedAppDeploymentReceipt, error)
+	DeployFromWorkspace(ctx context.Context, principal domainidentity.Principal, req sohaapi.WorkspaceHostedAppDeploymentRequest) (sohaapi.WorkspaceHostedAppDeploymentResult, error)
 }
 
+type appHostingToolHandler func(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error)
+
 type appHostingCapabilityProvider struct {
-	service AppHostingCapabilityService
-	tools   []domainaigateway.ToolCapability
+	service  AppHostingCapabilityService
+	tools    []domainaigateway.ToolCapability
+	invokers map[string]appHostingToolHandler
 }
 
 func NewAppHostingCapabilityProvider(service AppHostingCapabilityService) (CapabilityProvider, error) {
@@ -46,12 +51,15 @@ func NewAppHostingCapabilityProvider(service AppHostingCapabilityService) (Capab
 			return nil, fmt.Errorf("%s: %w", tools[i].Name, err)
 		}
 	}
-	return &appHostingCapabilityProvider{service: service, tools: tools}, nil
+	p := &appHostingCapabilityProvider{service: service, tools: tools}
+	p.invokers = p.buildInvokerTable()
+	return p, nil
 }
 
 func appHostingToolSpecs(schemas appHostingSchemas) []domainaigateway.ToolCapability {
 	viewPerms := []string{appaccess.PermAIGatewayInvoke, appaccess.PermAppHostingAppsView}
 	publishPerms := []string{appaccess.PermAIGatewayInvoke, appaccess.PermAppHostingAppsPublish}
+	workspacePerms := []string{appaccess.PermAIGatewayInvoke, appaccess.PermAppHostingAppsPublish, appaccess.PermObserveAIChatUse}
 	syncIdempotent := &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true}
 	syncCreate := &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: false}
 
@@ -61,11 +69,13 @@ func appHostingToolSpecs(schemas appHostingSchemas) []domainaigateway.ToolCapabi
 		{Name: "apphosting.apps.create", Title: "Create Hosted Application", Description: "Create a hosted application and allocate its immutable subdomain label.", Action: "create", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.createApp, Effects: []string{"apphosting.app.created"}, Execution: syncCreate},
 		{Name: "apphosting.apps.get", Title: "Get Hosted Application", Description: "Get hosted application metadata, visibility scope, and current active revision binding.", Action: "get", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: viewPerms, InputSchema: schemas.getApp, Execution: syncIdempotent},
 		{Name: "apphosting.apps.visibility.set", Title: "Set Hosted Application Visibility", Description: "Replace a hosted application's audience visibility scope and bump routeGeneration for immediate revocation.", Action: "update", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.setVisibility, Effects: []string{"apphosting.app.visibility_updated"}, Execution: syncIdempotent},
+		{Name: "apphosting.apps.maintainers", Title: "Update Hosted Application Maintainers", Description: "Replace collaborator maintainers authorized to upload and roll back revisions of a hosted application.", Action: "update", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.maintainers, Effects: []string{"apphosting.app.maintainers_updated"}, Execution: syncIdempotent},
 		{Name: "apphosting.apps.offline", Title: "Take Hosted Application Offline", Description: "Take an online hosted application offline and immediately revoke visitor routing.", Action: "offline", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.lifecycleAction, Effects: []string{"apphosting.app.offline"}, Execution: syncIdempotent},
 		{Name: "apphosting.apps.online", Title: "Bring Hosted Application Online", Description: "Bring an offline hosted application with a ready active revision back online.", Action: "online", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.lifecycleAction, Effects: []string{"apphosting.app.online"}, Execution: syncIdempotent},
 		{Name: "apphosting.apps.preflight", Title: "Preflight Hosted Application Bundle", Description: "Validate bundle size limits, entrypoint presence, and flagged file paths before uploading a revision.", Action: "preflight", RiskLevel: domainaigateway.RiskLevelAnalyze, PermissionKeys: publishPerms, InputSchema: schemas.preflight, Execution: syncIdempotent},
 		{Name: "apphosting.apps.revisions.list", Title: "List Hosted Application Revisions", Description: "List immutable revisions of an authorized hosted application.", Action: "list", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: viewPerms, InputSchema: schemas.listRevisions, Execution: syncIdempotent},
 		{Name: "apphosting.apps.rollback", Title: "Rollback Hosted Application Revision", Description: "Atomically switch the active revision of a hosted application to an earlier ready revision without altering visibility.", Action: "rollback", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: publishPerms, InputSchema: schemas.rollback, Effects: []string{"apphosting.app.rolled_back"}, Execution: syncIdempotent},
+		{Name: "apphosting.workspace.publish", Title: "Publish Hosted Application From Assistant Workspace", Description: "Package and publish a static hosted application directly from the caller's personal assistant workspace or conversation artifact.", Action: "publish", RiskLevel: domainaigateway.RiskLevelMutate, PermissionKeys: workspacePerms, InputSchema: schemas.workspaceDeploy, Effects: []string{"apphosting.app.deployed"}, Execution: syncIdempotent},
 	}
 }
 
@@ -75,10 +85,12 @@ type appHostingSchemas struct {
 	createApp       map[string]any
 	getApp          map[string]any
 	setVisibility   map[string]any
+	maintainers     map[string]any
 	lifecycleAction map[string]any
 	preflight       map[string]any
 	listRevisions   map[string]any
 	rollback        map[string]any
+	workspaceDeploy map[string]any
 }
 
 func buildAppHostingToolSchemas() (appHostingSchemas, error) {
@@ -87,26 +99,26 @@ func buildAppHostingToolSchemas() (appHostingSchemas, error) {
 	if err != nil {
 		return appHostingSchemas{}, err
 	}
-	setVisibility, visProps, err := capabilityOpenAPIObject("UpdateHostedAppVisibilityRequest")
+	setVisibility, err := schemaWithAppID("UpdateHostedAppVisibilityRequest", appIDProp, []string{"appId", "visibility"})
 	if err != nil {
 		return appHostingSchemas{}, err
 	}
-	visProps["appId"] = appIDProp
-	setVisibility["required"] = []string{"appId", "visibility"}
-
-	preflight, preflightProps, err := capabilityOpenAPIObject("HostedAppPreflightRequest")
+	maintainers, err := schemaWithAppID("UpdateHostedAppMaintainersRequest", appIDProp, []string{"appId", "maintainerUserIds"})
 	if err != nil {
 		return appHostingSchemas{}, err
 	}
-	preflightProps["appId"] = appIDProp
-	preflight["required"] = []string{"appId", "kind", "uncompressedBytes", "fileCount", "hasIndexHtml"}
-
-	rollback, rollbackProps, err := capabilityOpenAPIObject("HostedAppRollbackRequest")
+	preflight, err := schemaWithAppID("HostedAppPreflightRequest", appIDProp, []string{"appId", "kind", "uncompressedBytes", "fileCount", "hasIndexHtml"})
 	if err != nil {
 		return appHostingSchemas{}, err
 	}
-	rollbackProps["appId"] = appIDProp
-	rollback["required"] = []string{"appId", "targetRevisionId"}
+	rollback, err := schemaWithAppID("HostedAppRollbackRequest", appIDProp, []string{"appId", "targetRevisionId"})
+	if err != nil {
+		return appHostingSchemas{}, err
+	}
+	workspaceDeploy, err := capabilityOpenAPISchema("WorkspaceHostedAppDeploymentRequest")
+	if err != nil {
+		return appHostingSchemas{}, err
+	}
 
 	return appHostingSchemas{
 		audienceSearch: gatewayObjectSchema(nil, map[string]any{
@@ -114,15 +126,18 @@ func buildAppHostingToolSchemas() (appHostingSchemas, error) {
 			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100},
 		}),
 		listApps: gatewayObjectSchema(nil, map[string]any{
-			"scope":  map[string]any{"type": "string", "enum": []string{"mine", "all"}},
-			"query":  map[string]any{"type": "string", "maxLength": 200},
-			"status": map[string]any{"type": "string", "enum": []string{"draft", "online", "offline", "suspended_by_admin"}},
-			"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 200},
-			"offset": map[string]any{"type": "integer", "minimum": 0},
+			"scope":       map[string]any{"type": "string", "enum": []string{"mine", "all"}},
+			"query":       map[string]any{"type": "string", "maxLength": 200},
+			"status":      map[string]any{"type": "string", "enum": []string{"draft", "online", "offline", "suspended_by_admin"}},
+			"ownerUserId": map[string]any{"type": "string", "maxLength": 128},
+			"teamId":      map[string]any{"type": "string", "maxLength": 128},
+			"limit":       map[string]any{"type": "integer", "minimum": 1, "maximum": 200},
+			"offset":      map[string]any{"type": "integer", "minimum": 0},
 		}),
 		createApp:     createApp,
 		getApp:        gatewayObjectSchema([]string{"appId"}, map[string]any{"appId": appIDProp}),
 		setVisibility: setVisibility,
+		maintainers:   maintainers,
 		lifecycleAction: gatewayObjectSchema([]string{"appId"}, map[string]any{
 			"appId":  appIDProp,
 			"reason": map[string]any{"type": "string", "maxLength": 512},
@@ -133,8 +148,19 @@ func buildAppHostingToolSchemas() (appHostingSchemas, error) {
 			"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 200},
 			"offset": map[string]any{"type": "integer", "minimum": 0},
 		}),
-		rollback: rollback,
+		rollback:        rollback,
+		workspaceDeploy: workspaceDeploy,
 	}, nil
+}
+
+func schemaWithAppID(componentName string, appIDProp map[string]any, required []string) (map[string]any, error) {
+	schema, props, err := capabilityOpenAPIObject(componentName)
+	if err != nil {
+		return nil, err
+	}
+	props["appId"] = appIDProp
+	schema["required"] = required
+	return schema, nil
 }
 
 func (p *appHostingCapabilityProvider) Tools() []domainaigateway.ToolCapability       { return p.tools }
@@ -146,33 +172,43 @@ func (p *appHostingCapabilityProvider) InvokeTool(ctx context.Context, principal
 	if p == nil || p.service == nil {
 		return nil, nil, fmt.Errorf("%w: app hosting capability provider is unavailable", apperrors.ErrServiceUnavailable)
 	}
-	switch tool.Name {
-	case "apphosting.audience.search":
-		return p.invokeAudienceSearch(ctx, principal, input)
-	case "apphosting.apps.list":
-		return p.invokeListApps(ctx, principal, input)
-	case "apphosting.apps.create":
-		return p.invokeCreateApp(ctx, principal, input)
-	case "apphosting.apps.get":
-		out, err := p.service.GetApp(ctx, principal, firstMapString(input, "appId"))
-		return out, appIDMeta(out.ID), err
-	case "apphosting.apps.visibility.set":
-		return p.invokeSetVisibility(ctx, principal, input)
-	case "apphosting.apps.offline":
-		out, err := p.service.TakeOffline(ctx, principal, firstMapString(input, "appId"), firstMapString(input, "reason"))
-		return out, appIDMeta(out.ID), err
-	case "apphosting.apps.online":
-		out, err := p.service.BringOnline(ctx, principal, firstMapString(input, "appId"), firstMapString(input, "reason"))
-		return out, appIDMeta(out.ID), err
-	case "apphosting.apps.preflight":
-		return p.invokePreflight(ctx, principal, input)
-	case "apphosting.apps.revisions.list":
-		return p.invokeListRevisions(ctx, principal, input)
-	case "apphosting.apps.rollback":
-		return p.invokeRollback(ctx, principal, input)
-	default:
+	handler, ok := p.invokers[tool.Name]
+	if !ok {
 		return nil, nil, apperrors.ErrUnsupportedOperation
 	}
+	return handler(ctx, principal, input)
+}
+
+func (p *appHostingCapabilityProvider) buildInvokerTable() map[string]appHostingToolHandler {
+	return map[string]appHostingToolHandler{
+		"apphosting.audience.search":     p.invokeAudienceSearch,
+		"apphosting.apps.list":           p.invokeListApps,
+		"apphosting.apps.create":         p.invokeCreateApp,
+		"apphosting.apps.get":            p.invokeGetApp,
+		"apphosting.apps.visibility.set": p.invokeSetVisibility,
+		"apphosting.apps.maintainers":    p.invokeUpdateMaintainers,
+		"apphosting.apps.offline":        p.invokeOffline,
+		"apphosting.apps.online":         p.invokeOnline,
+		"apphosting.apps.preflight":      p.invokePreflight,
+		"apphosting.apps.revisions.list": p.invokeListRevisions,
+		"apphosting.apps.rollback":       p.invokeRollback,
+		"apphosting.workspace.publish":   p.invokeWorkspacePublish,
+	}
+}
+
+func (p *appHostingCapabilityProvider) invokeGetApp(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	out, err := p.service.GetApp(ctx, principal, firstMapString(input, "appId"))
+	return out, appIDMeta(out.ID), err
+}
+
+func (p *appHostingCapabilityProvider) invokeOffline(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	out, err := p.service.TakeOffline(ctx, principal, firstMapString(input, "appId"), firstMapString(input, "reason"))
+	return out, appIDMeta(out.ID), err
+}
+
+func (p *appHostingCapabilityProvider) invokeOnline(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	out, err := p.service.BringOnline(ctx, principal, firstMapString(input, "appId"), firstMapString(input, "reason"))
+	return out, appIDMeta(out.ID), err
 }
 
 func (p *appHostingCapabilityProvider) invokeAudienceSearch(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
@@ -189,21 +225,25 @@ func (p *appHostingCapabilityProvider) invokeAudienceSearch(ctx context.Context,
 
 func (p *appHostingCapabilityProvider) invokeListApps(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
 	var params struct {
-		Scope  sohaapi.HostedAppListScope `json:"scope"`
-		Query  string                     `json:"query"`
-		Status sohaapi.HostedAppStatus    `json:"status"`
-		Limit  int                        `json:"limit"`
-		Offset int                        `json:"offset"`
+		Scope       sohaapi.HostedAppListScope `json:"scope"`
+		Query       string                     `json:"query"`
+		Status      sohaapi.HostedAppStatus    `json:"status"`
+		OwnerUserID string                     `json:"ownerUserId"`
+		TeamID      string                     `json:"teamId"`
+		Limit       int                        `json:"limit"`
+		Offset      int                        `json:"offset"`
 	}
 	if err := mapInput(input, &params); err != nil {
 		return nil, nil, err
 	}
 	out, err := p.service.ListApps(ctx, principal, domainapphosting.AppListFilter{
-		Scope:  params.Scope,
-		Query:  params.Query,
-		Status: params.Status,
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Scope:       params.Scope,
+		Query:       params.Query,
+		Status:      params.Status,
+		OwnerUserID: params.OwnerUserID,
+		TeamID:      params.TeamID,
+		Limit:       params.Limit,
+		Offset:      params.Offset,
 	})
 	return out, nil, err
 }
@@ -221,24 +261,36 @@ func (p *appHostingCapabilityProvider) invokeSetVisibility(ctx context.Context, 
 	var payload struct {
 		AppID      string                           `json:"appId"`
 		Visibility sohaapi.HostedAppVisibilityInput `json:"visibility"`
+		Reason     string                           `json:"reason"`
 	}
 	if err := mapInput(input, &payload); err != nil {
 		return nil, nil, err
 	}
-	out, err := p.service.UpdateVisibility(ctx, principal, payload.AppID, sohaapi.UpdateHostedAppVisibilityRequest{Visibility: payload.Visibility})
+	out, err := p.service.UpdateVisibility(ctx, principal, payload.AppID, sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: payload.Visibility,
+		Reason:     payload.Reason,
+	})
+	return out, appIDMeta(out.ID), err
+}
+
+func (p *appHostingCapabilityProvider) invokeUpdateMaintainers(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	var payload struct {
+		AppID             string   `json:"appId"`
+		MaintainerUserIDs []string `json:"maintainerUserIds"`
+	}
+	if err := mapInput(input, &payload); err != nil {
+		return nil, nil, err
+	}
+	out, err := p.service.UpdateMaintainers(ctx, principal, payload.AppID, sohaapi.UpdateHostedAppMaintainersRequest{
+		MaintainerUserIDs: payload.MaintainerUserIDs,
+	})
 	return out, appIDMeta(out.ID), err
 }
 
 func (p *appHostingCapabilityProvider) invokePreflight(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
-	appID := firstMapString(input, "appId")
-	cloned := make(map[string]any, len(input))
-	for k, v := range input {
-		if k != "appId" {
-			cloned[k] = v
-		}
-	}
+	appID, body := stripAppIDField(input)
 	var req sohaapi.HostedAppPreflightRequest
-	if err := mapInput(cloned, &req); err != nil {
+	if err := mapInput(body, &req); err != nil {
 		return nil, nil, err
 	}
 	out, err := p.service.Preflight(ctx, principal, appID, req)
@@ -259,6 +311,25 @@ func (p *appHostingCapabilityProvider) invokeListRevisions(ctx context.Context, 
 }
 
 func (p *appHostingCapabilityProvider) invokeRollback(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	appID, body := stripAppIDField(input)
+	var req sohaapi.HostedAppRollbackRequest
+	if err := mapInput(body, &req); err != nil {
+		return nil, nil, err
+	}
+	out, err := p.service.Rollback(ctx, principal, appID, req)
+	return out, appIDMeta(appID), err
+}
+
+func (p *appHostingCapabilityProvider) invokeWorkspacePublish(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	var req sohaapi.WorkspaceHostedAppDeploymentRequest
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	out, err := p.service.DeployFromWorkspace(ctx, principal, req)
+	return out, appIDMeta(out.App.ID), err
+}
+
+func stripAppIDField(input map[string]any) (string, map[string]any) {
 	appID := firstMapString(input, "appId")
 	cloned := make(map[string]any, len(input))
 	for k, v := range input {
@@ -266,12 +337,7 @@ func (p *appHostingCapabilityProvider) invokeRollback(ctx context.Context, princ
 			cloned[k] = v
 		}
 	}
-	var req sohaapi.HostedAppRollbackRequest
-	if err := mapInput(cloned, &req); err != nil {
-		return nil, nil, err
-	}
-	out, err := p.service.Rollback(ctx, principal, appID, req)
-	return out, appIDMeta(appID), err
+	return appID, cloned
 }
 
 func appIDMeta(appID string) map[string]any {

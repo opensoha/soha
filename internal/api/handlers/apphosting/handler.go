@@ -33,6 +33,7 @@ type SettingsService interface {
 
 type AppService interface {
 	ListAudienceCandidates(ctx context.Context, principal domainidentity.Principal, query string, limit int) (sohaapi.AppHostingAudienceCandidates, error)
+	ListPortalApps(ctx context.Context, principal domainidentity.Principal, params sohaapi.ListPortalHostedAppsParams) (sohaapi.PortalHostedAppCatalog, error)
 	ListApps(ctx context.Context, principal domainidentity.Principal, filter domainapphosting.AppListFilter) (sohaapi.HostedAppList, error)
 	CreateApp(ctx context.Context, principal domainidentity.Principal, req sohaapi.CreateHostedAppRequest) (sohaapi.HostedApp, bool, error)
 	GetApp(ctx context.Context, principal domainidentity.Principal, appID string) (sohaapi.HostedApp, error)
@@ -45,6 +46,16 @@ type LifecycleService interface {
 	BringOnline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
 	SuspendApp(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
 	UnsuspendApp(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
+	UpdateMaintainers(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.UpdateHostedAppMaintainersRequest) (sohaapi.HostedApp, error)
+	TransferOwnership(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.TransferHostedAppOwnershipRequest) (sohaapi.HostedApp, error)
+	DeleteApp(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.DeleteHostedAppRequest) (sohaapi.DeleteHostedAppResult, error)
+}
+
+type ApprovalService interface {
+	ListVisibilityApprovals(ctx context.Context, principal domainidentity.Principal, params sohaapi.ListHostedAppVisibilityApprovalsParams) (sohaapi.HostedAppVisibilityApprovalList, error)
+	WithdrawVisibilityApproval(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error)
+	ApproveVisibilityApproval(ctx context.Context, principal domainidentity.Principal, approvalID, comment string) (sohaapi.HostedAppVisibilityApprovalDecisionResult, error)
+	RejectVisibilityApproval(ctx context.Context, principal domainidentity.Principal, approvalID, comment string) (sohaapi.HostedAppVisibilityApprovalDecisionResult, error)
 }
 
 type DeploymentService interface {
@@ -53,6 +64,7 @@ type DeploymentService interface {
 	ListRevisions(ctx context.Context, principal domainidentity.Principal, appID string, limit, offset int) (sohaapi.HostedAppRevisionList, error)
 	GetRevision(ctx context.Context, principal domainidentity.Principal, appID, revisionID string) (sohaapi.HostedAppRevision, error)
 	Rollback(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.HostedAppRollbackRequest) (sohaapi.HostedAppDeploymentReceipt, error)
+	DeployFromWorkspace(ctx context.Context, principal domainidentity.Principal, req sohaapi.WorkspaceHostedAppDeploymentRequest) (sohaapi.WorkspaceHostedAppDeploymentResult, error)
 }
 
 type GatewayAuthService interface {
@@ -69,6 +81,7 @@ type Capabilities struct {
 	Settings    SettingsService
 	Apps        AppService
 	Lifecycle   LifecycleService
+	Approvals   ApprovalService
 	Deployments DeploymentService
 	GatewayAuth GatewayAuthService
 }
@@ -87,6 +100,7 @@ type Handler struct {
 	settings    SettingsService
 	apps        AppService
 	lifecycle   LifecycleService
+	approvals   ApprovalService
 	deployments DeploymentService
 	gatewayAuth GatewayAuthService
 	tokenParser AccessTokenParser
@@ -96,6 +110,7 @@ func New[T interface {
 	SettingsService
 	AppService
 	LifecycleService
+	ApprovalService
 	DeploymentService
 	GatewayAuthService
 }](service T, opts ...Option) *Handler {
@@ -106,6 +121,7 @@ func New[T interface {
 		Settings:    service,
 		Apps:        service,
 		Lifecycle:   service,
+		Approvals:   service,
 		Deployments: service,
 		GatewayAuth: service,
 	}, opts...)
@@ -116,6 +132,7 @@ func NewFromCapabilities(caps Capabilities, opts ...Option) *Handler {
 		settings:    cleanNil(caps.Settings),
 		apps:        cleanNil(caps.Apps),
 		lifecycle:   cleanNil(caps.Lifecycle),
+		approvals:   cleanNil(caps.Approvals),
 		deployments: cleanNil(caps.Deployments),
 		gatewayAuth: cleanNil(caps.GatewayAuth),
 	}
@@ -190,11 +207,13 @@ func (h *Handler) ListApps(c *gin.Context) {
 		return
 	}
 	filter := domainapphosting.AppListFilter{
-		Scope:  sohaapi.HostedAppListScope(strings.TrimSpace(c.Query("scope"))),
-		Query:  c.Query("query"),
-		Status: sohaapi.HostedAppStatus(strings.TrimSpace(c.Query("status"))),
-		Limit:  limit,
-		Offset: offset,
+		Scope:       sohaapi.HostedAppListScope(strings.TrimSpace(c.Query("scope"))),
+		Query:       c.Query("query"),
+		Status:      sohaapi.HostedAppStatus(strings.TrimSpace(c.Query("status"))),
+		OwnerUserID: c.Query("ownerUserId"),
+		TeamID:      c.Query("teamId"),
+		Limit:       limit,
+		Offset:      offset,
 	}
 	out, err := h.apps.ListApps(c.Request.Context(), middleware.PrincipalFromContext(c), filter)
 	respondItem(c, http.StatusOK, out, err)

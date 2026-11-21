@@ -29,8 +29,8 @@ func TestAppHostingProviderMatchesOpenAPICapabilitiesAndToolSchema(t *testing.T)
 		t.Fatalf("NewAppHostingCapabilityProvider(nil): %v", err)
 	}
 	tools := provider.Tools()
-	if len(tools) != 10 {
-		t.Fatalf("len(tools) = %d, want 10", len(tools))
+	if len(tools) != 12 {
+		t.Fatalf("len(tools) = %d, want 12", len(tools))
 	}
 
 	toolSchema, err := capabilityOpenAPISchema("ToolCapability")
@@ -90,8 +90,8 @@ func TestAppHostingProviderMatchesOpenAPICapabilitiesAndToolSchema(t *testing.T)
 			}
 		}
 	}
-	if matched != 10 {
-		t.Fatalf("matched %d OpenAPI apphosting.* capabilities, want 10", matched)
+	if matched != 12 {
+		t.Fatalf("matched %d OpenAPI apphosting.* capabilities, want 12", matched)
 	}
 }
 
@@ -127,6 +127,11 @@ func (s *stubAppHostingCapabilityService) UpdateVisibility(_ context.Context, _ 
 	return sohaapi.HostedApp{ID: appID}, nil
 }
 
+func (s *stubAppHostingCapabilityService) UpdateMaintainers(_ context.Context, _ domainidentity.Principal, appID string, req sohaapi.UpdateHostedAppMaintainersRequest) (sohaapi.HostedApp, error) {
+	s.lastTool = "maintainers:" + appID + ":" + strings.Join(req.MaintainerUserIDs, ",")
+	return sohaapi.HostedApp{ID: appID, MaintainerUserIDs: req.MaintainerUserIDs}, nil
+}
+
 func (s *stubAppHostingCapabilityService) TakeOffline(_ context.Context, _ domainidentity.Principal, appID, _ string) (sohaapi.HostedApp, error) {
 	s.lastTool = "offline:" + appID
 	return sohaapi.HostedApp{ID: appID}, nil
@@ -150,6 +155,14 @@ func (s *stubAppHostingCapabilityService) ListRevisions(_ context.Context, _ dom
 func (s *stubAppHostingCapabilityService) Rollback(_ context.Context, _ domainidentity.Principal, appID string, req sohaapi.HostedAppRollbackRequest) (sohaapi.HostedAppDeploymentReceipt, error) {
 	s.lastTool = "rollback:" + appID + ":" + req.TargetRevisionID
 	return sohaapi.HostedAppDeploymentReceipt{App: sohaapi.HostedApp{ID: appID}}, nil
+}
+
+func (s *stubAppHostingCapabilityService) DeployFromWorkspace(_ context.Context, _ domainidentity.Principal, req sohaapi.WorkspaceHostedAppDeploymentRequest) (sohaapi.WorkspaceHostedAppDeploymentResult, error) {
+	s.lastTool = "workspace:" + string(req.Source.Kind) + ":" + req.Name
+	return sohaapi.WorkspaceHostedAppDeploymentResult{
+		Created: req.AppID == "",
+		App:     sohaapi.HostedApp{ID: "app_ws", Name: req.Name},
+	}, nil
 }
 
 func TestAppHostingProviderInvokeAllTools(t *testing.T) {
@@ -177,8 +190,13 @@ func TestAppHostingProviderInvokeAllTools(t *testing.T) {
 		t.Fatal("expected ToolCapabilityInvoker")
 	}
 	principal := domainidentity.Principal{
-		UserID:         "usr_alice",
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAppHostingAppsPublish, appaccess.PermAppHostingAppsView},
+		UserID: "usr_alice",
+		PermissionKeys: []string{
+			appaccess.PermAIGatewayInvoke,
+			appaccess.PermAppHostingAppsPublish,
+			appaccess.PermAppHostingAppsView,
+			appaccess.PermObserveAIChatUse,
+		},
 	}
 
 	calls := []struct {
@@ -191,11 +209,17 @@ func TestAppHostingProviderInvokeAllTools(t *testing.T) {
 		{"apphosting.apps.create", map[string]any{"name": "Board"}, "create:Board"},
 		{"apphosting.apps.get", map[string]any{"appId": "app_1"}, "get:app_1"},
 		{"apphosting.apps.visibility.set", map[string]any{"appId": "app_1", "visibility": map[string]any{"mode": "private"}}, "vis:app_1:private"},
+		{"apphosting.apps.maintainers", map[string]any{"appId": "app_1", "maintainerUserIds": []any{"usr_bob"}}, "maintainers:app_1:usr_bob"},
 		{"apphosting.apps.offline", map[string]any{"appId": "app_1", "reason": "maint"}, "offline:app_1"},
 		{"apphosting.apps.online", map[string]any{"appId": "app_1"}, "online:app_1"},
 		{"apphosting.apps.preflight", map[string]any{"appId": "app_1", "kind": "static", "uncompressedBytes": 128, "fileCount": 1, "hasIndexHtml": true}, "preflight:app_1"},
 		{"apphosting.apps.revisions.list", map[string]any{"appId": "app_1", "limit": 5}, "revisions:app_1"},
 		{"apphosting.apps.rollback", map[string]any{"appId": "app_1", "targetRevisionId": "rev_1"}, "rollback:app_1:rev_1"},
+		{"apphosting.workspace.publish", map[string]any{
+			"idempotencyKey": "ws-mcp-1",
+			"name":           "Ops Calc",
+			"source":         map[string]any{"kind": "personal_environment", "sourcePath": "projects/calc"},
+		}, "workspace:personal_environment:Ops Calc"},
 	}
 	for _, tc := range calls {
 		var tool domainaigateway.ToolCapability

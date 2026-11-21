@@ -425,6 +425,8 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 	case "identity", "identity-overview":
 		return visibilityRule{permissions: []string{
 			appaccess.PermSoftwarePackageView,
+			appaccess.PermAppHostingAdminView,
+			appaccess.PermAppHostingAdminManage,
 			appaccess.PermIdentityApplicationsView,
 			appaccess.PermIdentityProvidersView,
 			appaccess.PermIdentityOutpostsView,
@@ -445,6 +447,8 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		}}, true
 	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true
+	case "identity-app-hosting":
+		return visibilityRule{permissions: []string{appaccess.PermAppHostingAdminView, appaccess.PermAppHostingAdminManage}}, true
 	case "identity-applications", "identity-providers", "identity-outposts", "identity-policies":
 		return visibilityRule{permissions: []string{"identity." + strings.TrimPrefix(id, "identity-") + ".view"}}, true
 	case "identity-login-records":

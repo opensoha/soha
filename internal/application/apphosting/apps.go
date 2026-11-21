@@ -55,6 +55,14 @@ func (s *Service) ListApps(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return sohaapi.HostedAppList{}, err
 	}
+	if normalized.TeamID != "" && s.audience != nil {
+		members, teamErr := s.audience.ListTeamMemberIDs(ctx, normalized.TeamID)
+		if teamErr != nil {
+			return sohaapi.HostedAppList{}, teamErr
+		}
+		normalized.TeamMemberUserIDs = members
+		normalized.TeamFilterActive = true
+	}
 	settings, err := s.repo.GetSettings(ctx)
 	if err != nil {
 		return sohaapi.HostedAppList{}, err
@@ -63,9 +71,9 @@ func (s *Service) ListApps(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return sohaapi.HostedAppList{}, err
 	}
-	items := make([]sohaapi.HostedApp, 0, len(apps))
-	for _, item := range apps {
-		items = append(items, item.ToAPI(settings))
+	items, err := s.enrichHostedApps(ctx, settings, apps)
+	if err != nil {
+		return sohaapi.HostedAppList{}, err
 	}
 	return sohaapi.HostedAppList{Items: items, Total: total}, nil
 }
@@ -79,7 +87,7 @@ func (s *Service) authorizeAndNormalizeListFilter(ctx context.Context, principal
 		return domainapphosting.AppListFilter{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_scope", "scope must be mine or all", "查询范围必须为 mine 或 all")
 	}
 	if out.Scope == sohaapi.HostedAppListScopeAll {
-		if err := s.authorize(ctx, principal, appaccess.PermAppHostingAdminManage); err != nil {
+		if err := s.authorizeAny(ctx, principal, appaccess.PermAppHostingAdminView, appaccess.PermAppHostingAdminManage); err != nil {
 			return domainapphosting.AppListFilter{}, err
 		}
 		out.MemberUserID = ""
@@ -94,8 +102,17 @@ func (s *Service) authorizeAndNormalizeListFilter(ctx context.Context, principal
 		}
 		out.MemberUserID = strings.TrimSpace(principal.UserID)
 	}
+	return normalizeListFilterFields(out)
+}
+
+func normalizeListFilterFields(out domainapphosting.AppListFilter) (domainapphosting.AppListFilter, error) {
 	if out.Status != "" && !out.Status.Valid() {
 		return domainapphosting.AppListFilter{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_status", "status filter is invalid", "应用状态过滤参数无效")
+	}
+	out.OwnerUserID = strings.TrimSpace(out.OwnerUserID)
+	out.TeamID = strings.TrimSpace(out.TeamID)
+	if len(out.OwnerUserID) > 128 || len(out.TeamID) > 128 {
+		return domainapphosting.AppListFilter{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_filter", "ownerUserId and teamId must not exceed 128 characters", "作者与部门筛选标识过长")
 	}
 	out.Query = strings.TrimSpace(out.Query)
 	if utf8.RuneCountInString(out.Query) > 200 {
@@ -111,6 +128,10 @@ func (s *Service) authorizeAndNormalizeListFilter(ctx context.Context, principal
 }
 
 func (s *Service) CreateApp(ctx context.Context, principal domainidentity.Principal, req sohaapi.CreateHostedAppRequest) (sohaapi.HostedApp, bool, error) {
+	return s.createAppWithReason(ctx, principal, req, "")
+}
+
+func (s *Service) createAppWithReason(ctx context.Context, principal domainidentity.Principal, req sohaapi.CreateHostedAppRequest, visibilityReason string) (sohaapi.HostedApp, bool, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermAppHostingAppsPublish); err != nil {
 		return sohaapi.HostedApp{}, false, err
 	}
@@ -124,7 +145,7 @@ func (s *Service) CreateApp(ctx context.Context, principal domainidentity.Princi
 	}
 	settings = settings.WithDefaults()
 
-	candidate, err := s.buildAppCandidate(ownerID, req, settings)
+	candidate, initialApproval, err := s.buildAppCandidateWithApproval(ownerID, req, visibilityReason, settings)
 	if err != nil {
 		return sohaapi.HostedApp{}, false, err
 	}
@@ -135,7 +156,10 @@ func (s *Service) CreateApp(ctx context.Context, principal domainidentity.Princi
 			return sohaapi.HostedApp{}, false, err
 		}
 		candidate.DNSLabel = dnsLabel
-		created, reused, err := s.repo.CreateApp(ctx, candidate, settings.MaxAppsPerOwner)
+		if initialApproval != nil {
+			initialApproval.AppDNSLabel = dnsLabel
+		}
+		created, savedApproval, reused, err := s.repo.CreateAppWithApproval(ctx, candidate, settings.MaxAppsPerOwner, initialApproval)
 		if errors.Is(err, ErrDNSLabelConflict) {
 			continue
 		}
@@ -143,50 +167,75 @@ func (s *Service) CreateApp(ctx context.Context, principal domainidentity.Princi
 			return sohaapi.HostedApp{}, false, wrapAppQuotaError(err, settings.MaxAppsPerOwner)
 		}
 		if !reused {
-			s.recordAudit(ctx, principal, "app.create", "success", created.ID, "Created hosted application", map[string]any{
-				"appId":          created.ID,
-				"dnsLabel":       created.DNSLabel,
-				"kind":           created.Kind,
-				"visibilityMode": created.Visibility.Mode,
-			})
+			s.recordCreateAppAudits(ctx, principal, created, savedApproval)
 		}
-		return created.ToAPI(settings), reused, nil
+		dto, err := s.enrichHostedApp(ctx, settings, created)
+		if err != nil {
+			return sohaapi.HostedApp{}, false, err
+		}
+		return dto, reused, nil
 	}
 	return sohaapi.HostedApp{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "dns_label_exhausted", "unable to allocate a unique subdomain label", "无法分配唯一子域标识，请稍后重试")
 }
 
-func (s *Service) buildAppCandidate(ownerID string, req sohaapi.CreateHostedAppRequest, settings domainapphosting.Settings) (domainapphosting.App, error) {
-	name := strings.TrimSpace(req.Name)
-	if name == "" || utf8.RuneCountInString(name) > 128 {
-		return domainapphosting.App{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_app_name", "name must be 1..128 characters", "应用名称长度必须在 1 到 128 个字符之间")
+func (s *Service) recordCreateAppAudits(ctx context.Context, principal domainidentity.Principal, created domainapphosting.App, pendingApproval *domainapphosting.VisibilityApproval) {
+	s.recordAudit(ctx, principal, "app.create", "success", created.ID, "Created hosted application", map[string]any{
+		"appId":          created.ID,
+		"dnsLabel":       created.DNSLabel,
+		"kind":           created.Kind,
+		"visibilityMode": created.Visibility.Mode,
+	})
+	if pendingApproval != nil {
+		s.recordAudit(ctx, principal, "app.visibility.request_approval", "success", created.ID, "Requested organization-wide visibility approval on application creation", map[string]any{
+			"appId":               created.ID,
+			"approvalId":          pendingApproval.ID,
+			"baseRouteGeneration": pendingApproval.BaseRouteGeneration,
+			"policyVersion":       pendingApproval.PolicyVersion,
+		})
 	}
-	desc := strings.TrimSpace(req.Description)
-	if utf8.RuneCountInString(desc) > 1024 {
-		return domainapphosting.App{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_description", "description must not exceed 1024 characters", "应用简介不能超过 1024 个字符")
-	}
-	kind := req.Kind
-	if kind == "" {
-		kind = sohaapi.HostedAppKindStatic
-	}
-	if !kind.Valid() {
-		return domainapphosting.App{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_app_kind", "kind must be static or dynamic", "应用类型必须为 static 或 dynamic")
-	}
-	idemKey := strings.TrimSpace(req.IdempotencyKey)
-	if len(idemKey) > 128 {
-		return domainapphosting.App{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_idempotency_key", "idempotencyKey must not exceed 128 characters", "幂等键长度不能超过 128 个字符")
-	}
-	visibility, err := domainapphosting.NormalizeVisibilityInput(req.Visibility, settings)
+}
+
+func (s *Service) buildAppCandidateWithApproval(
+	ownerID string,
+	req sohaapi.CreateHostedAppRequest,
+	visibilityReason string,
+	settings domainapphosting.Settings,
+) (domainapphosting.App, *domainapphosting.VisibilityApproval, error) {
+	name, desc, kind, idemKey, err := validateCreateAppFields(req)
 	if err != nil {
-		return domainapphosting.App{}, err
+		return domainapphosting.App{}, nil, err
+	}
+	requestedVis, err := domainapphosting.NormalizeVisibilityInput(req.Visibility, settings)
+	if err != nil {
+		return domainapphosting.App{}, nil, err
 	}
 	explicitSlug, err := domainapphosting.ValidateExplicitSlug(req.Slug)
 	if err != nil {
-		return domainapphosting.App{}, err
+		return domainapphosting.App{}, nil, err
 	}
 	spaFallback := req.SpaFallback != nil && *req.SpaFallback
-	fingerprint := computeCreateFingerprint(name, explicitSlug, desc, kind, spaFallback, visibility)
+	fingerprint := computeCreateFingerprint(name, explicitSlug, desc, kind, spaFallback, requestedVis)
 	now := s.now()
-	return domainapphosting.App{
+	effectiveVis := requestedVis
+	var approval *domainapphosting.VisibilityApproval
+	if requestedVis.Mode == sohaapi.HostedAppVisibilityModeOrganization &&
+		settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval {
+		effectiveVis = sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}
+		approval = &domainapphosting.VisibilityApproval{
+			ID:                  "apv_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			AppName:             name,
+			RequesterUserID:     ownerID,
+			CurrentVisibility:   effectiveVis,
+			RequestedVisibility: requestedVis,
+			BaseRouteGeneration: 1,
+			PolicyVersion:       settings.PolicyVersion,
+			Status:              sohaapi.HostedAppVisibilityApprovalStatusPending,
+			Reason:              strings.TrimSpace(visibilityReason),
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		}
+	}
+	app := domainapphosting.App{
 		ID:                 "app_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 		Name:               name,
 		Description:        desc,
@@ -194,14 +243,41 @@ func (s *Service) buildAppCandidate(ownerID string, req sohaapi.CreateHostedAppR
 		SpaFallback:        spaFallback,
 		OwnerUserID:        ownerID,
 		MaintainerUserIDs:  []string{},
-		Visibility:         visibility,
+		Visibility:         effectiveVis,
 		Status:             sohaapi.HostedAppStatusDraft,
 		RouteGeneration:    1,
 		IdempotencyKey:     idemKey,
 		RequestFingerprint: fingerprint,
 		CreatedAt:          now,
 		UpdatedAt:          now,
-	}, nil
+	}
+	if approval != nil {
+		approval.AppID = app.ID
+	}
+	return app, approval, nil
+}
+
+func validateCreateAppFields(req sohaapi.CreateHostedAppRequest) (string, string, sohaapi.HostedAppKind, string, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" || utf8.RuneCountInString(name) > 128 {
+		return "", "", "", "", apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_app_name", "name must be 1..128 characters", "应用名称长度必须在 1 到 128 个字符之间")
+	}
+	desc := strings.TrimSpace(req.Description)
+	if utf8.RuneCountInString(desc) > 1024 {
+		return "", "", "", "", apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_description", "description must not exceed 1024 characters", "应用简介不能超过 1024 个字符")
+	}
+	kind := req.Kind
+	if kind == "" {
+		kind = sohaapi.HostedAppKindStatic
+	}
+	if !kind.Valid() {
+		return "", "", "", "", apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_app_kind", "kind must be static or dynamic", "应用类型必须为 static 或 dynamic")
+	}
+	idemKey := strings.TrimSpace(req.IdempotencyKey)
+	if len(idemKey) > 128 {
+		return "", "", "", "", apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_idempotency_key", "idempotencyKey must not exceed 128 characters", "幂等键长度不能超过 128 个字符")
+	}
+	return name, desc, kind, idemKey, nil
 }
 
 func computeCreateFingerprint(name, slug, desc string, kind sohaapi.HostedAppKind, spaFallback bool, visibility sohaapi.HostedAppVisibilityScope) string {
@@ -226,7 +302,7 @@ func (s *Service) GetApp(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return sohaapi.HostedApp{}, err
 	}
-	return app.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, app)
 }
 
 func (s *Service) UpdateApp(ctx context.Context, principal domainidentity.Principal, appID string, req sohaapi.UpdateHostedAppRequest) (sohaapi.HostedApp, error) {
@@ -259,7 +335,7 @@ func (s *Service) UpdateApp(ctx context.Context, principal domainidentity.Princi
 		"spaFallback":     updated.SpaFallback,
 		"routeGeneration": updated.RouteGeneration,
 	})
-	return updated.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, updated)
 }
 
 func applyMetadataPatch(current domainapphosting.App, req sohaapi.UpdateHostedAppRequest, now time.Time) (domainapphosting.App, error) {
@@ -294,6 +370,10 @@ func (s *Service) UpdateVisibility(ctx context.Context, principal domainidentity
 	if err != nil {
 		return sohaapi.HostedApp{}, err
 	}
+	trimmedReason := strings.TrimSpace(req.Reason)
+	if utf8.RuneCountInString(trimmedReason) > 500 {
+		return sohaapi.HostedApp{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_reason", "reason must not exceed 500 characters", "申请原因长度不能超过 500 个字符")
+	}
 	settings, err := s.repo.GetSettings(ctx)
 	if err != nil {
 		return sohaapi.HostedApp{}, err
@@ -303,26 +383,33 @@ func (s *Service) UpdateVisibility(ctx context.Context, principal domainidentity
 	if err != nil {
 		return sohaapi.HostedApp{}, err
 	}
-	now := s.now()
-	updated, err := s.repo.MutateApp(ctx, trimmedID, func(current domainapphosting.App) (domainapphosting.App, error) {
-		if !current.IsOwner(principal.UserID) {
-			return domainapphosting.App{}, apperrors.ErrAccessDenied
-		}
-		next := current
-		next.Visibility = scope
-		next.RouteGeneration++
-		next.UpdatedAt = now
-		return next, nil
+	out, err := s.repo.UpdateAppVisibility(ctx, UpdateVisibilityTxInput{
+		AppID:          trimmedID,
+		ActorUserID:    strings.TrimSpace(principal.UserID),
+		RequestedScope: scope,
+		Reason:         trimmedReason,
+		NewApprovalID:  "apv_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		Now:            s.now(),
 	})
 	if err != nil {
 		return sohaapi.HostedApp{}, err
 	}
-	s.recordAudit(ctx, principal, "app.visibility.update", "success", updated.ID, "Updated hosted application visibility scope", map[string]any{
-		"appId":           updated.ID,
-		"visibilityMode":  updated.Visibility.Mode,
-		"routeGeneration": updated.RouteGeneration,
-	})
-	return updated.ToAPI(settings), nil
+	if out.RequestedApproval && out.PendingApproval != nil {
+		s.recordAudit(ctx, principal, "app.visibility.request_approval", "success", out.App.ID, "Submitted organization-wide visibility approval request", map[string]any{
+			"appId":               out.App.ID,
+			"approvalId":          out.PendingApproval.ID,
+			"currentVisibility":   out.App.Visibility.Mode,
+			"baseRouteGeneration": out.PendingApproval.BaseRouteGeneration,
+			"policyVersion":       out.PendingApproval.PolicyVersion,
+		})
+	} else {
+		s.recordAudit(ctx, principal, "app.visibility.update", "success", out.App.ID, "Updated hosted application visibility scope", map[string]any{
+			"appId":           out.App.ID,
+			"visibilityMode":  out.App.Visibility.Mode,
+			"routeGeneration": out.App.RouteGeneration,
+		})
+	}
+	return s.enrichHostedApp(ctx, out.Settings, out.App)
 }
 
 func (s *Service) TakeOffline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error) {
@@ -362,7 +449,7 @@ func (s *Service) TakeOffline(ctx context.Context, principal domainidentity.Prin
 		"reason":          trimmedReason,
 		"routeGeneration": updated.RouteGeneration,
 	})
-	return updated.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, updated)
 }
 
 func (s *Service) BringOnline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error) {
@@ -402,7 +489,7 @@ func (s *Service) BringOnline(ctx context.Context, principal domainidentity.Prin
 		"reason":          trimmedReason,
 		"routeGeneration": updated.RouteGeneration,
 	})
-	return updated.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, updated)
 }
 
 func (s *Service) SuspendApp(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error) {
@@ -434,7 +521,7 @@ func (s *Service) SuspendApp(ctx context.Context, principal domainidentity.Princ
 		"reason":          trimmedReason,
 		"routeGeneration": updated.RouteGeneration,
 	})
-	return updated.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, updated)
 }
 
 func (s *Service) UnsuspendApp(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error) {
@@ -474,7 +561,7 @@ func (s *Service) UnsuspendApp(ctx context.Context, principal domainidentity.Pri
 		"status":          updated.Status,
 		"routeGeneration": updated.RouteGeneration,
 	})
-	return updated.ToAPI(settings), nil
+	return s.enrichHostedApp(ctx, settings, updated)
 }
 
 func (s *Service) loadAuthorizedAppRead(ctx context.Context, principal domainidentity.Principal, appID string) (domainapphosting.App, domainapphosting.Settings, error) {

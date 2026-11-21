@@ -34,36 +34,40 @@ var (
 )
 
 type Settings struct {
-	Enabled                     bool
-	AppsDomain                  string
-	PublicScheme                string
-	StorageIntegrationID        string
-	StoragePrefix               string
-	AllowOrganizationVisibility bool
-	MaxBundleCompressedBytes    int64
-	MaxBundleUncompressedBytes  int64
-	MaxBundleFileCount          int32
-	MaxAppsPerOwner             int32
-	RetainedRevisionsPerApp     int32
-	GatewayTokenSHA256          string
-	GatewayTokenRotatedAt       *time.Time
-	UpdatedBy                   string
-	UpdatedAt                   *time.Time
+	Enabled                      bool
+	AppsDomain                   string
+	PublicScheme                 string
+	StorageIntegrationID         string
+	StoragePrefix                string
+	AllowOrganizationVisibility  bool
+	OrganizationVisibilityPolicy sohaapi.AppHostingOrganizationVisibilityPolicy
+	PolicyVersion                int64
+	MaxBundleCompressedBytes     int64
+	MaxBundleUncompressedBytes   int64
+	MaxBundleFileCount           int32
+	MaxAppsPerOwner              int32
+	RetainedRevisionsPerApp      int32
+	GatewayTokenSHA256           string
+	GatewayTokenRotatedAt        *time.Time
+	UpdatedBy                    string
+	UpdatedAt                    *time.Time
 }
 
 func DefaultSettings() Settings {
 	return Settings{
-		Enabled:                     false,
-		AppsDomain:                  "",
-		PublicScheme:                DefaultPublicScheme,
-		StorageIntegrationID:        "",
-		StoragePrefix:               DefaultStoragePrefix,
-		AllowOrganizationVisibility: DefaultAllowOrganizationVisibility,
-		MaxBundleCompressedBytes:    DefaultMaxBundleCompressedBytes,
-		MaxBundleUncompressedBytes:  DefaultMaxBundleUncompressedBytes,
-		MaxBundleFileCount:          DefaultMaxBundleFileCount,
-		MaxAppsPerOwner:             DefaultMaxAppsPerOwner,
-		RetainedRevisionsPerApp:     DefaultRetainedRevisionsPerApp,
+		Enabled:                      false,
+		AppsDomain:                   "",
+		PublicScheme:                 DefaultPublicScheme,
+		StorageIntegrationID:         "",
+		StoragePrefix:                DefaultStoragePrefix,
+		AllowOrganizationVisibility:  DefaultAllowOrganizationVisibility,
+		OrganizationVisibilityPolicy: sohaapi.AppHostingOrganizationVisibilityPolicyAllowDirect,
+		PolicyVersion:                1,
+		MaxBundleCompressedBytes:     DefaultMaxBundleCompressedBytes,
+		MaxBundleUncompressedBytes:   DefaultMaxBundleUncompressedBytes,
+		MaxBundleFileCount:           DefaultMaxBundleFileCount,
+		MaxAppsPerOwner:              DefaultMaxAppsPerOwner,
+		RetainedRevisionsPerApp:      DefaultRetainedRevisionsPerApp,
 	}
 }
 
@@ -73,6 +77,10 @@ func (s Settings) WithDefaults() Settings {
 		out.PublicScheme = DefaultPublicScheme
 	}
 	out.StoragePrefix = normalizeStoragePrefix(out.StoragePrefix)
+	out.OrganizationVisibilityPolicy, out.AllowOrganizationVisibility = normalizeOrganizationPolicy(out.OrganizationVisibilityPolicy, out.AllowOrganizationVisibility)
+	if out.PolicyVersion < 1 {
+		out.PolicyVersion = 1
+	}
 	if out.MaxBundleCompressedBytes <= 0 {
 		out.MaxBundleCompressedBytes = DefaultMaxBundleCompressedBytes
 	}
@@ -93,10 +101,36 @@ func (s Settings) WithDefaults() Settings {
 	return out
 }
 
+func normalizeOrganizationPolicy(policy sohaapi.AppHostingOrganizationVisibilityPolicy, allowBool bool) (sohaapi.AppHostingOrganizationVisibilityPolicy, bool) {
+	if policy == "" {
+		if allowBool {
+			return sohaapi.AppHostingOrganizationVisibilityPolicyAllowDirect, true
+		}
+		return sohaapi.AppHostingOrganizationVisibilityPolicyDisabled, false
+	}
+	return policy, policy != sohaapi.AppHostingOrganizationVisibilityPolicyDisabled
+}
+
+func (s Settings) EffectiveOrganizationPolicy() sohaapi.AppHostingOrganizationVisibilityPolicy {
+	if !s.AllowOrganizationVisibility || s.OrganizationVisibilityPolicy == sohaapi.AppHostingOrganizationVisibilityPolicyDisabled {
+		return sohaapi.AppHostingOrganizationVisibilityPolicyDisabled
+	}
+	if s.OrganizationVisibilityPolicy == sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval {
+		return sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval
+	}
+	return sohaapi.AppHostingOrganizationVisibilityPolicyAllowDirect
+}
+
 func (s Settings) Validate() error {
 	scheme := strings.ToLower(strings.TrimSpace(s.PublicScheme))
 	if scheme != "https" && scheme != "http" {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_public_scheme", "publicScheme must be https or http", "公开协议必须为 https 或 http")
+	}
+	if s.OrganizationVisibilityPolicy != "" && !s.OrganizationVisibilityPolicy.Valid() {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_organization_visibility_policy", "organizationVisibilityPolicy must be allow_direct, require_approval, or disabled", "全公司公开策略必须为 allow_direct、require_approval 或 disabled")
+	}
+	if s.PolicyVersion != 0 && s.PolicyVersion < 1 {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_policy_version", "policyVersion must be at least 1", "策略版本号必须大于等于 1")
 	}
 	if s.AppsDomain != "" {
 		if err := ValidateAppsDomain(s.AppsDomain); err != nil {
@@ -109,6 +143,10 @@ func (s Settings) Validate() error {
 	if len(s.StorageIntegrationID) > 128 {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_storage_integration", "storageIntegrationId exceeds maximum length", "对象存储集成标识过长")
 	}
+	return s.validateGovernanceQuotas()
+}
+
+func (s Settings) validateGovernanceQuotas() error {
 	if s.MaxBundleCompressedBytes <= 0 || s.MaxBundleUncompressedBytes <= 0 || s.MaxBundleFileCount <= 0 || s.MaxAppsPerOwner <= 0 || s.RetainedRevisionsPerApp <= 0 {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_governance_limits", "governance limits must be positive integers", "平台配额与包大小限制必须为正整数")
 	}
@@ -129,20 +167,22 @@ func (s Settings) ToAPI(hasFallbackGatewayToken bool) sohaapi.AppHostingSettings
 		updatedAt = &copied
 	}
 	return sohaapi.AppHostingSettings{
-		Enabled:                     normalized.Enabled,
-		AppsDomain:                  normalized.AppsDomain,
-		PublicScheme:                normalized.PublicScheme,
-		StorageIntegrationID:        normalized.StorageIntegrationID,
-		StoragePrefix:               normalized.StoragePrefix,
-		GatewayTokenConfigured:      normalized.GatewayTokenSHA256 != "" || hasFallbackGatewayToken,
-		AllowOrganizationVisibility: normalized.AllowOrganizationVisibility,
-		MaxBundleCompressedBytes:    normalized.MaxBundleCompressedBytes,
-		MaxBundleUncompressedBytes:  normalized.MaxBundleUncompressedBytes,
-		MaxBundleFileCount:          normalized.MaxBundleFileCount,
-		MaxAppsPerOwner:             normalized.MaxAppsPerOwner,
-		RetainedRevisionsPerApp:     normalized.RetainedRevisionsPerApp,
-		UpdatedBy:                   normalized.UpdatedBy,
-		UpdatedAt:                   updatedAt,
+		Enabled:                      normalized.Enabled,
+		AppsDomain:                   normalized.AppsDomain,
+		PublicScheme:                 normalized.PublicScheme,
+		StorageIntegrationID:         normalized.StorageIntegrationID,
+		StoragePrefix:                normalized.StoragePrefix,
+		GatewayTokenConfigured:       normalized.GatewayTokenSHA256 != "" || hasFallbackGatewayToken,
+		AllowOrganizationVisibility:  normalized.AllowOrganizationVisibility,
+		OrganizationVisibilityPolicy: normalized.OrganizationVisibilityPolicy,
+		PolicyVersion:                normalized.PolicyVersion,
+		MaxBundleCompressedBytes:     normalized.MaxBundleCompressedBytes,
+		MaxBundleUncompressedBytes:   normalized.MaxBundleUncompressedBytes,
+		MaxBundleFileCount:           normalized.MaxBundleFileCount,
+		MaxAppsPerOwner:              normalized.MaxAppsPerOwner,
+		RetainedRevisionsPerApp:      normalized.RetainedRevisionsPerApp,
+		UpdatedBy:                    normalized.UpdatedBy,
+		UpdatedAt:                    updatedAt,
 	}
 }
 
@@ -349,13 +389,103 @@ func (v VisitorProfile) ToPairwiseVisitorIdentity(secret []byte, appID string) s
 	}
 }
 
+type VisibilityApproval struct {
+	ID                  string
+	AppID               string
+	AppName             string
+	AppDNSLabel         string
+	RequesterUserID     string
+	CurrentVisibility   sohaapi.HostedAppVisibilityScope
+	RequestedVisibility sohaapi.HostedAppVisibilityScope
+	BaseRouteGeneration int64
+	PolicyVersion       int64
+	Status              sohaapi.HostedAppVisibilityApprovalStatus
+	Reason              string
+	ReviewerUserID      string
+	ReviewComment       string
+	InvalidationReason  string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DecidedAt           *time.Time
+}
+
+func (v VisibilityApproval) ToAPI(requesterProfile *sohaapi.HostedAppUserSummary) sohaapi.HostedAppVisibilityApproval {
+	var decidedAt *time.Time
+	if v.DecidedAt != nil {
+		copied := v.DecidedAt.UTC()
+		decidedAt = &copied
+	}
+	var profileCopy *sohaapi.HostedAppUserSummary
+	if requesterProfile != nil {
+		cloned := CloneUserSummary(*requesterProfile)
+		profileCopy = &cloned
+	}
+	return sohaapi.HostedAppVisibilityApproval{
+		ID:                  v.ID,
+		AppID:               v.AppID,
+		AppName:             v.AppName,
+		AppDNSLabel:         v.AppDNSLabel,
+		RequesterUserID:     v.RequesterUserID,
+		RequesterProfile:    profileCopy,
+		CurrentVisibility:   CloneVisibilityScope(v.CurrentVisibility),
+		RequestedVisibility: CloneVisibilityScope(v.RequestedVisibility),
+		BaseRouteGeneration: v.BaseRouteGeneration,
+		PolicyVersion:       v.PolicyVersion,
+		Status:              v.Status,
+		Reason:              v.Reason,
+		ReviewerUserID:      v.ReviewerUserID,
+		ReviewComment:       v.ReviewComment,
+		InvalidationReason:  v.InvalidationReason,
+		CreatedAt:           v.CreatedAt.UTC(),
+		UpdatedAt:           v.UpdatedAt.UTC(),
+		DecidedAt:           decidedAt,
+	}
+}
+
+func CloneUserSummary(summary sohaapi.HostedAppUserSummary) sohaapi.HostedAppUserSummary {
+	teamNames := make([]string, 0, len(summary.TeamNames))
+	for _, name := range summary.TeamNames {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			teamNames = append(teamNames, trimmed)
+		}
+	}
+	return sohaapi.HostedAppUserSummary{
+		UserID:      strings.TrimSpace(summary.UserID),
+		DisplayName: firstDisplayString(summary.DisplayName, summary.UserID),
+		AvatarURL:   strings.TrimSpace(summary.AvatarURL),
+		TeamNames:   teamNames,
+	}
+}
+
+func firstDisplayString(values ...string) string {
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "Unknown"
+}
+
 type AppListFilter struct {
-	Scope        sohaapi.HostedAppListScope
-	MemberUserID string
-	Query        string
-	Status       sohaapi.HostedAppStatus
-	Limit        int
-	Offset       int
+	Scope             sohaapi.HostedAppListScope
+	MemberUserID      string
+	OwnerUserID       string
+	TeamID            string
+	TeamMemberUserIDs []string
+	TeamFilterActive  bool
+	Query             string
+	Status            sohaapi.HostedAppStatus
+	Limit             int
+	Offset            int
+}
+
+type VisibilityApprovalFilter struct {
+	Scope           sohaapi.HostedAppApprovalListScope
+	RequesterUserID string
+	Status          sohaapi.HostedAppVisibilityApprovalStatus
+	AppID           string
+	Limit           int
+	Offset          int
 }
 
 type UploadRevisionInput struct {

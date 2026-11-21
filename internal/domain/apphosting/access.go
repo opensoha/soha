@@ -23,7 +23,7 @@ func NormalizeVisibilityInput(input *sohaapi.HostedAppVisibilityInput, settings 
 		}
 		return sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}, nil
 	case sohaapi.HostedAppVisibilityModeOrganization:
-		if !settings.AllowOrganizationVisibility {
+		if settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyDisabled {
 			return sohaapi.HostedAppVisibilityScope{}, apperrors.NewBusiness(apperrors.ErrAccessDenied, "organization_visibility_disabled", "organization-wide visibility is disabled by platform policy", "平台管理员当前已禁用全公司公开可见范围")
 		}
 		if len(input.UserIDs) > 0 || len(input.TeamIDs) > 0 {
@@ -74,14 +74,17 @@ func CloneVisibilityScope(scope sohaapi.HostedAppVisibilityScope) sohaapi.Hosted
 	}
 }
 
-// CanAccess evaluates whether an authenticated visitor principal is permitted to
-// access a currently online hosted application under active platform settings.
-func CanAccess(principal domainidentity.Principal, app App, settings Settings) bool {
+func ScopesEqual(a, b sohaapi.HostedAppVisibilityScope) bool {
+	ca := CloneVisibilityScope(a)
+	cb := CloneVisibilityScope(b)
+	return ca.Mode == cb.Mode && slices.Equal(ca.UserIDs, cb.UserIDs) && slices.Equal(ca.TeamIDs, cb.TeamIDs)
+}
+
+// AccessAllowed evaluates whether an authenticated principal satisfies the
+// hosted application's visibility audience rule (independent of online/platform state).
+func AccessAllowed(app App, principal domainidentity.Principal) bool {
 	userID := strings.TrimSpace(principal.UserID)
 	if userID == "" {
-		return false
-	}
-	if !settings.Enabled || app.Status != sohaapi.HostedAppStatusOnline || strings.TrimSpace(app.ActiveRevisionID) == "" {
 		return false
 	}
 	if app.OwnerUserID != "" && userID == app.OwnerUserID {
@@ -106,6 +109,28 @@ func CanAccess(principal domainidentity.Principal, app App, settings Settings) b
 	default:
 		return false
 	}
+}
+
+// VisibleInPortal reports whether a hosted application appears in the Colleague Works
+// portal catalog for the given principal: must be online with an active revision,
+// non-private (even for the owner), and permitted by AccessAllowed.
+func VisibleInPortal(app App, principal domainidentity.Principal, settings Settings) bool {
+	if !settings.Enabled || app.Status != sohaapi.HostedAppStatusOnline || strings.TrimSpace(app.ActiveRevisionID) == "" {
+		return false
+	}
+	if app.Visibility.Mode == sohaapi.HostedAppVisibilityModePrivate {
+		return false
+	}
+	return AccessAllowed(app, principal)
+}
+
+// CanAccess evaluates whether an authenticated visitor principal is permitted to
+// access a currently online hosted application under active platform settings.
+func CanAccess(principal domainidentity.Principal, app App, settings Settings) bool {
+	if !settings.Enabled || app.Status != sohaapi.HostedAppStatusOnline || strings.TrimSpace(app.ActiveRevisionID) == "" {
+		return false
+	}
+	return AccessAllowed(app, principal)
 }
 
 func sanitizeIdentifierSlice(values []string, field string) ([]string, error) {

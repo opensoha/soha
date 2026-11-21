@@ -78,6 +78,7 @@ import {
   artifactTitle,
   graphNodeLabel,
   isStaticArtifact,
+  resolveArtifactPublishIds,
   staticArtifactLabel,
   type ArtifactContextLink,
   type WorkbenchArtifactEntry,
@@ -1574,6 +1575,11 @@ export function AIWorkbenchController() {
     artifactEntries.find((item) => item.key === selectedArtifactKey) ??
     artifactEntries[0]
   const activeArtifact = activeArtifactEntry?.artifact
+  const activeArtifactPublishIds = resolveArtifactPublishIds(
+    activeArtifactEntry,
+    personalArtifactEntry,
+    currentSession,
+  )
   const activeArtifactLinks = activeArtifactEntry
     ? artifactContextLinks(
         activeArtifactEntry,
@@ -3377,6 +3383,8 @@ export function AIWorkbenchController() {
           {activeArtifact && isStaticArtifact(activeArtifact) ? (
             <StaticArtifactView
               artifact={activeArtifact}
+              sessionId={activeArtifactPublishIds.sessionId}
+              artifactId={activeArtifactPublishIds.artifactId}
               sources={metadataSources(activeArtifactEntry?.message.metadata)}
               onSource={openSource}
             />

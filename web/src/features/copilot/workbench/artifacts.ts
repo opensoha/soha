@@ -158,6 +158,52 @@ export function artifactContextLinks(
   return links
 }
 
+export function resolveArtifactPublishIds(
+  entry: WorkbenchArtifactEntry | undefined,
+  personalEntry: WorkbenchArtifactEntry | undefined,
+  session?: WorkbenchSession,
+): { sessionId: string; artifactId: string } {
+  if (!entry) return { sessionId: '', artifactId: '' }
+  const snapshot = entry.artifact.dataSourceSnapshot
+  const explicitArtifactId = artifactSnapshotText(snapshot, 'artifactId')
+  if (personalEntry) {
+    return {
+      sessionId: artifactSnapshotText(snapshot, 'sessionId') || personalEntry.message.sessionId.trim(),
+      artifactId: explicitArtifactId || personalEntry.key.trim() || personalEntry.artifact.runId.trim(),
+    }
+  }
+  const sessionId =
+    artifactSnapshotText(snapshot, 'sessionId') ||
+    entry.message.sessionId.trim() ||
+    session?.id?.trim() ||
+    ''
+  if (explicitArtifactId) {
+    return { sessionId, artifactId: explicitArtifactId }
+  }
+  const rawList = Array.isArray(entry.message.metadata?.analysisArtifacts)
+    ? entry.message.metadata.analysisArtifacts
+    : []
+  const foundRawIdx = rawList.findIndex(
+    (candidate) =>
+      candidate === entry.artifact ||
+      (typeof candidate === 'object' &&
+        candidate !== null &&
+        (candidate as WorkbenchArtifact).kind === entry.artifact.kind &&
+        (candidate as WorkbenchArtifact).title === entry.artifact.title &&
+        (candidate as WorkbenchArtifact).runId === entry.artifact.runId),
+  )
+  const rawIndex = foundRawIdx >= 0 ? foundRawIdx : entry.index
+  const agentRunId = artifactSnapshotText(entry.message.metadata, 'agentRunId')
+  if (entry.message.metadata?.source === 'external-agent-run' && agentRunId) {
+    return { sessionId, artifactId: `task:${agentRunId}:${rawIndex}` }
+  }
+  const msgId = entry.message.id.trim()
+  if (msgId && !msgId.startsWith('pending:')) {
+    return { sessionId, artifactId: `message:${msgId}:${rawIndex}` }
+  }
+  return { sessionId, artifactId: entry.artifact.runId.trim() }
+}
+
 export function graphNodeLabel(kind: string) {
   switch (kind) {
     case 'scope':

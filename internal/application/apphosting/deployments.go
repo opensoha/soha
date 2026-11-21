@@ -221,8 +221,12 @@ func (s *Service) checkUploadIdempotency(ctx context.Context, app domainapphosti
 	if existing.Status != sohaapi.HostedAppRevisionStatusReady {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_revision_not_ready", "previous deployment with this idempotencyKey is not in ready state", "该幂等键关联的上传记录未处于可用状态")
 	}
+	dto, err := s.enrichHostedApp(ctx, settings, app)
+	if err != nil {
+		return sohaapi.HostedAppDeploymentReceipt{}, false, err
+	}
 	return sohaapi.HostedAppDeploymentReceipt{
-		App:                  app.ToAPI(settings),
+		App:                  dto,
 		Revision:             existing.ToAPI(),
 		ReusedIdempotencyKey: true,
 	}, true, nil
@@ -242,8 +246,9 @@ func (s *Service) persistAndActivateBundle(
 		spaFallback = *input.SpaFallback
 	}
 	now := s.now()
+	revisionID := "rev_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	draft := domainapphosting.Revision{
-		ID:                   "rev_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		ID:                   revisionID,
 		AppID:                app.ID,
 		Description:          input.Description,
 		Kind:                 app.Kind,
@@ -254,6 +259,7 @@ func (s *Service) persistAndActivateBundle(
 		SpaFallback:          spaFallback,
 		StorageIntegrationID: settings.StorageIntegrationID,
 		StoragePrefix:        settings.StoragePrefix,
+		Files:                plannedManifestFiles(app.ID, revisionID, validated.Files),
 		IdempotencyKey:       input.IdempotencyKey,
 		CreatedBy:            firstNonEmpty(principal.UserID, principal.UserName),
 		CreatedAt:            now,
@@ -273,6 +279,7 @@ func (s *Service) persistAndActivateBundle(
 	activated, err := s.repo.ActivateRevision(ctx, ActivateRevisionInput{
 		AppID:                app.ID,
 		RevisionID:           createdRev.ID,
+		ActorUserID:          strings.TrimSpace(principal.UserID),
 		SpaFallback:          spaFallback,
 		Files:                manifestFiles,
 		RetainedRevisionsMax: settings.RetainedRevisionsPerApp,
@@ -295,8 +302,12 @@ func (s *Service) persistAndActivateBundle(
 		"totalBytes":      activated.Revision.TotalBytes,
 		"routeGeneration": activated.App.RouteGeneration,
 	})
+	appDTO, err := s.enrichHostedApp(ctx, settings, activated.App)
+	if err != nil {
+		return sohaapi.HostedAppDeploymentReceipt{}, err
+	}
 	return sohaapi.HostedAppDeploymentReceipt{
-		App:                  activated.App.ToAPI(settings),
+		App:                  appDTO,
 		Revision:             activated.Revision.ToAPI(),
 		ReusedIdempotencyKey: false,
 	}, nil
@@ -332,6 +343,20 @@ func (s *Service) bestEffortDeleteKeys(ctx context.Context, integrationID string
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	_ = s.objectStore.DeleteKeys(cleanupCtx, integrationID, keys)
+}
+
+func plannedManifestFiles(appID, revisionID string, files []extractedBundleFile) []sohaapi.HostedAppManifestFile {
+	out := make([]sohaapi.HostedAppManifestFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, sohaapi.HostedAppManifestFile{
+			Path:        file.Path,
+			SizeBytes:   int64(len(file.Data)),
+			Sha256:      sha256HexBytes(file.Data),
+			ContentType: file.ContentType,
+			ObjectKey:   appID + "/" + revisionID + "/" + file.Path,
+		})
+	}
+	return out
 }
 
 func buildRevisionStoreKeys(rev domainapphosting.Revision) []string {
@@ -429,8 +454,12 @@ func (s *Service) Rollback(ctx context.Context, principal domainidentity.Princip
 			"routeGeneration":  updatedApp.RouteGeneration,
 		})
 	}
+	appDTO, err := s.enrichHostedApp(ctx, settings, updatedApp)
+	if err != nil {
+		return sohaapi.HostedAppDeploymentReceipt{}, err
+	}
 	return sohaapi.HostedAppDeploymentReceipt{
-		App:                  updatedApp.ToAPI(settings),
+		App:                  appDTO,
 		Revision:             targetRev.ToAPI(),
 		ReusedIdempotencyKey: reused,
 	}, nil

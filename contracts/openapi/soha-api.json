@@ -448,6 +448,16 @@
           "type": "string"
         }
       },
+      "HostedAppApprovalID": {
+        "in": "path",
+        "name": "approvalId",
+        "required": true,
+        "schema": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
       "HostedAppID": {
         "in": "path",
         "name": "appId",
@@ -5702,6 +5712,19 @@
         ],
         "type": "object"
       },
+      "AppHostingOrganizationVisibilityPolicy": {
+        "enum": [
+          "allow_direct",
+          "require_approval",
+          "disabled"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "AppHostingOrganizationVisibilityPolicyAllowDirect",
+          "AppHostingOrganizationVisibilityPolicyRequireApproval",
+          "AppHostingOrganizationVisibilityPolicyDisabled"
+        ]
+      },
       "AppHostingSettings": {
         "additionalProperties": false,
         "properties": {
@@ -5736,6 +5759,14 @@
           "maxBundleUncompressedBytes": {
             "format": "int64",
             "minimum": 0,
+            "type": "integer"
+          },
+          "organizationVisibilityPolicy": {
+            "$ref": "#/components/schemas/AppHostingOrganizationVisibilityPolicy"
+          },
+          "policyVersion": {
+            "format": "int64",
+            "minimum": 1,
             "type": "integer"
           },
           "publicScheme": {
@@ -5825,6 +5856,9 @@
             "format": "int64",
             "minimum": 1,
             "type": "integer"
+          },
+          "organizationVisibilityPolicy": {
+            "$ref": "#/components/schemas/AppHostingOrganizationVisibilityPolicy"
           },
           "publicScheme": {
             "maxLength": 16,
@@ -7524,6 +7558,16 @@
             "type": "object"
           },
           "workflowRunId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApproveHostedAppVisibilityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "maxLength": 500,
             "type": "string"
           }
         },
@@ -12873,6 +12917,54 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "DeleteHostedAppRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmationName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmationName"
+        ],
+        "type": "object"
+      },
+      "DeleteHostedAppResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeleteHostedAppResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "DeleteHostedAppResult": {
+        "additionalProperties": false,
+        "properties": {
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "appId",
+          "deleted"
         ],
         "type": "object"
       },
@@ -26458,6 +26550,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "activeRevisionNumber": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -26485,6 +26582,13 @@
           "kind": {
             "$ref": "#/components/schemas/HostedAppKind"
           },
+          "maintainers": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppUserSummary"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
           "maintainerUserIds": {
             "items": {
               "maxLength": 128,
@@ -26498,10 +26602,16 @@
             "minLength": 1,
             "type": "string"
           },
+          "ownerProfile": {
+            "$ref": "#/components/schemas/HostedAppUserSummary"
+          },
           "ownerUserId": {
             "maxLength": 128,
             "minLength": 1,
             "type": "string"
+          },
+          "pendingVisibilityApproval": {
+            "$ref": "#/components/schemas/HostedAppVisibilityApproval"
           },
           "routeGeneration": {
             "format": "int64",
@@ -26517,6 +26627,11 @@
           "suspendedReason": {
             "maxLength": 512,
             "type": "string"
+          },
+          "totalBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
           },
           "updatedAt": {
             "format": "date-time",
@@ -26564,6 +26679,17 @@
           "HostedAppAccessDecisionKindForbidden",
           "HostedAppAccessDecisionKindOffline",
           "HostedAppAccessDecisionKindNotFound"
+        ]
+      },
+      "HostedAppApprovalListScope": {
+        "enum": [
+          "mine",
+          "all"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppApprovalListScopeMine",
+          "HostedAppApprovalListScopeAll"
         ]
       },
       "HostedAppDeploymentReceipt": {
@@ -27240,6 +27366,213 @@
           "user"
         ],
         "type": "object"
+      },
+      "HostedAppUserSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "teamNames": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "userId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "teamNames"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApproval": {
+        "additionalProperties": false,
+        "properties": {
+          "appDnsLabel": {
+            "maxLength": 63,
+            "minLength": 1,
+            "type": "string"
+          },
+          "appId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "appName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "baseRouteGeneration": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentVisibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityScope"
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "invalidationReason": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "requestedVisibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityScope"
+          },
+          "requesterProfile": {
+            "$ref": "#/components/schemas/HostedAppUserSummary"
+          },
+          "requesterUserId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reviewComment": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "reviewerUserId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HostedAppVisibilityApprovalStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "appId",
+          "appName",
+          "appDnsLabel",
+          "requesterUserId",
+          "currentVisibility",
+          "requestedVisibility",
+          "baseRouteGeneration",
+          "policyVersion",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApprovalDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppVisibilityApprovalDecisionResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApprovalDecisionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "$ref": "#/components/schemas/HostedApp"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/HostedAppVisibilityApproval"
+          }
+        },
+        "required": [
+          "approval",
+          "app"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApprovalList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HostedAppVisibilityApproval"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApprovalListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HostedAppVisibilityApprovalList"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "HostedAppVisibilityApprovalStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "withdrawn",
+          "invalidated"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "HostedAppVisibilityApprovalStatusPending",
+          "HostedAppVisibilityApprovalStatusApproved",
+          "HostedAppVisibilityApprovalStatusRejected",
+          "HostedAppVisibilityApprovalStatusWithdrawn",
+          "HostedAppVisibilityApprovalStatusInvalidated"
+        ]
       },
       "HostedAppVisibilityInput": {
         "additionalProperties": false,
@@ -68068,6 +68401,152 @@
         ],
         "type": "object"
       },
+      "PortalHostedAppAuthorSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "teamNames": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "userId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "visibleAppCount": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "teamNames",
+          "visibleAppCount"
+        ],
+        "type": "object"
+      },
+      "PortalHostedAppCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "authors": {
+            "items": {
+              "$ref": "#/components/schemas/PortalHostedAppAuthorSummary"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PortalHostedAppItem"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "myAppsCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedAuthor": {
+            "$ref": "#/components/schemas/PortalHostedAppAuthorSummary"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "authors",
+          "myAppsCount",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PortalHostedAppCatalogResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PortalHostedAppCatalog"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PortalHostedAppItem": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/HostedAppUserSummary"
+          },
+          "description": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "dnsLabel": {
+            "maxLength": 63,
+            "minLength": 1,
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HostedAppKind"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "kind",
+          "dnsLabel",
+          "host",
+          "url",
+          "author",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "PortalLaunchDecision": {
         "additionalProperties": false,
         "properties": {
@@ -68756,6 +69235,20 @@
         "required": [
           "secretConfigured",
           "secretStorage"
+        ],
+        "type": "object"
+      },
+      "RejectHostedAppVisibilityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
         ],
         "type": "object"
       },
@@ -75652,6 +76145,24 @@
         ],
         "type": "object"
       },
+      "TransferHostedAppOwnershipRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "newOwnerUserId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "newOwnerUserId"
+        ],
+        "type": "object"
+      },
       "UpdateAISkillsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -75678,6 +76189,9 @@
           "workbenchModel"
         ],
         "type": "object"
+      },
+      "UpdateAppHostingSettingsRequest": {
+        "$ref": "#/components/schemas/AppHostingSettingsUpdateRequest"
       },
       "UpdateBrandingSettingsRequest": {
         "additionalProperties": false,
@@ -75722,6 +76236,24 @@
         ],
         "type": "object"
       },
+      "UpdateHostedAppMaintainersRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "maintainerUserIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "maintainerUserIds"
+        ],
+        "type": "object"
+      },
       "UpdateHostedAppRequest": {
         "additionalProperties": false,
         "properties": {
@@ -75746,6 +76278,10 @@
       "UpdateHostedAppVisibilityRequest": {
         "additionalProperties": false,
         "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
           "visibility": {
             "$ref": "#/components/schemas/HostedAppVisibilityInput"
           }
@@ -83411,6 +83947,132 @@
           "applicationId"
         ],
         "type": "object"
+      },
+      "WorkspaceHostedAppDeploymentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "appId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 63,
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WorkspaceHostedAppSource"
+          },
+          "spaFallback": {
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/HostedAppVisibilityInput"
+          },
+          "visibilityReason": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "WorkspaceHostedAppDeploymentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceHostedAppDeploymentResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "WorkspaceHostedAppDeploymentResult": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "$ref": "#/components/schemas/HostedApp"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/HostedAppRevision"
+          }
+        },
+        "required": [
+          "app",
+          "revision",
+          "created"
+        ],
+        "type": "object"
+      },
+      "WorkspaceHostedAppSource": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "assistantId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "entryFileName": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "environmentVersion": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkspaceHostedAppSourceKind"
+          },
+          "sessionId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "sourcePath": {
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "WorkspaceHostedAppSourceKind": {
+        "enum": [
+          "personal_environment",
+          "conversation_artifact"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "WorkspaceHostedAppSourceKindPersonalEnvironment",
+          "WorkspaceHostedAppSourceKindConversationArtifact"
+        ]
       }
     },
     "securitySchemes": {
@@ -92589,6 +93251,195 @@
         }
       }
     },
+    "/app-hosting/approvals": {
+      "get": {
+        "operationId": "listHostedAppVisibilityApprovals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostedAppApprovalListScope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostedAppVisibilityApprovalStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "appId",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisibilityApprovalListResponse"
+                }
+              }
+            },
+            "description": "Paginated organization visibility approval requests."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List organization visibility approval requests in requester or administrator scope",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/approvals/{approvalId}/approve": {
+      "post": {
+        "operationId": "approveHostedAppVisibility",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppApprovalID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveHostedAppVisibilityRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisibilityApprovalDecisionResponse"
+                }
+              }
+            },
+            "description": "Organization visibility approval granted and hosted application updated."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Approve a pending organization visibility request and switch the hosted application to organization visibility",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
+    "/app-hosting/approvals/{approvalId}/reject": {
+      "post": {
+        "operationId": "rejectHostedAppVisibility",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppApprovalID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectHostedAppVisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppVisibilityApprovalDecisionResponse"
+                }
+              }
+            },
+            "description": "Organization visibility request rejected."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Reject a pending organization visibility request while keeping the hosted application's current visibility",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
     "/app-hosting/apps": {
       "get": {
         "operationId": "listHostedApps",
@@ -92616,6 +93467,24 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/HostedAppStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ownerUserId",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "teamId",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
             }
           },
           {
@@ -92847,6 +93716,60 @@
         ]
       }
     },
+    "/app-hosting/apps/{appId}/delete": {
+      "post": {
+        "operationId": "deleteHostedApp",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteHostedAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteHostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application permanently deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Permanently delete a hosted application and purge its stored revision objects after name confirmation",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
     "/app-hosting/apps/{appId}/deployments/preflight": {
       "post": {
         "operationId": "preflightHostedAppDeployment",
@@ -92904,6 +93827,69 @@
           ],
           "requiresApproval": false,
           "riskLevel": "analyze"
+        }
+      }
+    },
+    "/app-hosting/apps/{appId}/maintainers": {
+      "put": {
+        "operationId": "updateHostedAppMaintainers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHostedAppMaintainersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application with updated collaborator maintainers."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Replace collaborator maintainers for a hosted application",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.apps.maintainers",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
         }
       }
     },
@@ -93362,6 +94348,60 @@
         ]
       }
     },
+    "/app-hosting/apps/{appId}/transfer": {
+      "post": {
+        "operationId": "transferHostedAppOwnership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferHostedAppOwnershipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Hosted application transferred to the new owner."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Transfer ownership of a hosted application to another user and advance route generation",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
     "/app-hosting/apps/{appId}/unsuspend": {
       "post": {
         "operationId": "unsuspendHostedApp",
@@ -93477,6 +94517,60 @@
           "requiresApproval": false,
           "riskLevel": "mutate"
         }
+      }
+    },
+    "/app-hosting/apps/{appId}/visibility-approval/withdraw": {
+      "post": {
+        "operationId": "withdrawHostedAppVisibilityApproval",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/HostedAppID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostedAppLifecycleActionRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostedAppResponse"
+                }
+              }
+            },
+            "description": "Pending organization visibility approval withdrawn; effective visibility unchanged."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Withdraw the pending organization visibility approval request for a hosted application",
+        "tags": [
+          "AppHosting"
+        ]
       }
     },
     "/app-hosting/audience-candidates": {
@@ -93723,6 +94817,88 @@
         ]
       }
     },
+    "/app-hosting/portal/apps": {
+      "get": {
+        "operationId": "listPortalHostedApps",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostedAppKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "authorUserId",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalHostedAppCatalogResponse"
+                }
+              }
+            },
+            "description": "Audience-filtered colleague hosted applications catalog and sanitized author summaries."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List online non-private hosted applications visible to the current portal visitor",
+        "tags": [
+          "AppHosting"
+        ]
+      }
+    },
     "/app-hosting/settings": {
       "get": {
         "operationId": "getAppHostingSettings",
@@ -93846,6 +95022,84 @@
         "tags": [
           "AppHosting"
         ]
+      }
+    },
+    "/app-hosting/workspace-deployments": {
+      "post": {
+        "operationId": "deployHostedAppFromWorkspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceHostedAppDeploymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceHostedAppDeploymentResponse"
+                }
+              }
+            },
+            "description": "Updated existing hosted application or returned existing deployment for a matching idempotencyKey."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceHostedAppDeploymentResponse"
+                }
+              }
+            },
+            "description": "Newly created hosted application and activated revision from workspace or artifact source."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Package and publish a hosted application directly from the caller's personal assistant workspace or conversation artifact",
+        "tags": [
+          "AppHosting"
+        ],
+        "x-soha-capability": {
+          "name": "apphosting.workspace.publish",
+          "permissionKeys": [
+            "ai.gateway.invoke",
+            "apphosting.apps.publish",
+            "observe.ai.chat"
+          ],
+          "requiresApproval": false,
+          "riskLevel": "mutate"
+        }
       }
     },
     "/application-environments": {

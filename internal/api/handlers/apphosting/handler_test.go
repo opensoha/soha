@@ -32,6 +32,7 @@ func TestHandlerCapabilitiesStayNarrow(t *testing.T) {
 		"SettingsService":    reflect.TypeOf((*apphosting.SettingsService)(nil)).Elem(),
 		"AppService":         reflect.TypeOf((*apphosting.AppService)(nil)).Elem(),
 		"LifecycleService":   reflect.TypeOf((*apphosting.LifecycleService)(nil)).Elem(),
+		"ApprovalService":    reflect.TypeOf((*apphosting.ApprovalService)(nil)).Elem(),
 		"DeploymentService":  reflect.TypeOf((*apphosting.DeploymentService)(nil)).Elem(),
 		"GatewayAuthService": reflect.TypeOf((*apphosting.GatewayAuthService)(nil)).Elem(),
 		"AccessTokenParser":  reflect.TypeOf((*apphosting.AccessTokenParser)(nil)).Elem(),
@@ -150,6 +151,18 @@ func TestAppHostingHTTPHandlerFullRoundTrip(t *testing.T) {
 	verifyHandlerGatewayAuthFlow(t, ctx, srv.URL, adminClient, app.DNSLabel, gwSecret.Token)
 }
 
+type fakeWorkspaceBundleSource struct {
+	bundle []byte
+}
+
+func (f *fakeWorkspaceBundleSource) BundlePersonalWorkspace(_ context.Context, _ domainidentity.Principal, _, _ string, _ int64) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(f.bundle)), nil
+}
+
+func (f *fakeWorkspaceBundleSource) BundleConversationArtifact(_ context.Context, _ domainidentity.Principal, _, _, _ string) (io.ReadCloser, string, error) {
+	return io.NopCloser(bytes.NewReader(f.bundle)), "Artifact Board", nil
+}
+
 func setupHandlerRoundTripServer(t *testing.T) (*httptest.Server, *sohaapi.Client, *sohaapi.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -157,15 +170,23 @@ func setupHandlerRoundTripServer(t *testing.T) (*httptest.Server, *sohaapi.Clien
 	repo := apphostingrepo.NewMemoryRepository()
 	audience := apphostingrepo.NewMemoryAudienceDirectory()
 	audience.UpsertTeam(sohaapi.AppHostingAudienceTeam{ID: "team_ops", Name: "Operations", Slug: "ops"})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_admin", Username: "admin", DisplayName: "Admin", Status: "active", TeamIDs: []string{"team_ops"}})
 	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_alice", Username: "alice", DisplayName: "Alice", Department: "Operations", Status: "active", TeamIDs: []string{"team_ops"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_bob", Username: "bob", DisplayName: "Bob", Department: "Operations", Status: "active", TeamIDs: []string{"team_ops"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "usr_emp", Username: "emp", DisplayName: "Employee", Department: "Operations", Status: "active", TeamIDs: []string{"team_ops"}})
 
 	perms := &staticGrantChecker{
 		grants: map[string][]string{
-			"usr_admin": {appaccess.PermAppHostingAdminManage, appaccess.PermAppHostingAdminView},
-			"usr_alice": {appaccess.PermAppHostingAppsPublish, appaccess.PermAppHostingAppsView},
+			"usr_admin": {appaccess.PermAppHostingAdminManage, appaccess.PermAppHostingAdminView, appaccess.PermIdentityPortalView},
+			"usr_alice": {appaccess.PermAppHostingAppsPublish, appaccess.PermAppHostingAppsView, appaccess.PermObserveAIChatUse, appaccess.PermIdentityPortalView},
+			"usr_bob":   {appaccess.PermAppHostingAppsPublish, appaccess.PermAppHostingAppsView, appaccess.PermIdentityPortalView},
+			"usr_emp":   {appaccess.PermIdentityPortalView},
 		},
 	}
-	svc, err := appapphosting.New(repo, &memObjStore{data: map[string][]byte{}}, audience, perms, nil)
+	wsSrc := &fakeWorkspaceBundleSource{
+		bundle: buildSimpleTarGz(t, map[string]string{"index.html": "<!doctype html><h1>workspace ok</h1>"}),
+	}
+	svc, err := appapphosting.New(repo, &memObjStore{data: map[string][]byte{}}, audience, perms, nil, appapphosting.WithWorkspaceBundleSource(wsSrc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +195,8 @@ func setupHandlerRoundTripServer(t *testing.T) (*httptest.Server, *sohaapi.Clien
 		tokens: map[string]domainidentity.Principal{
 			"admin-tok":     {UserID: "usr_admin", UserName: "admin"},
 			"alice-tok":     {UserID: "usr_alice", UserName: "alice", Teams: []string{"team_ops"}},
+			"bob-tok":       {UserID: "usr_bob", UserName: "bob", Teams: []string{"team_ops"}},
+			"emp-tok":       {UserID: "usr_emp", UserName: "emp", Teams: []string{"team_ops"}},
 			"pat-alice-tok": {UserID: "usr_alice", UserName: "alice", Teams: []string{"team_ops"}},
 		},
 	}
@@ -199,15 +222,24 @@ func setupHandlerRoundTripServer(t *testing.T) (*httptest.Server, *sohaapi.Clien
 	authed.PUT("/app-hosting/settings", handler.UpdateSettings)
 	authed.POST("/app-hosting/settings/gateway-token/rotate", handler.RotateGatewayToken)
 	authed.GET("/app-hosting/audience-candidates", handler.ListAudienceCandidates)
+	authed.GET("/app-hosting/portal/apps", handler.ListPortalApps)
 	authed.GET("/app-hosting/apps", handler.ListApps)
 	authed.POST("/app-hosting/apps", handler.CreateApp)
 	authed.GET("/app-hosting/apps/:appId", handler.GetApp)
 	authed.PATCH("/app-hosting/apps/:appId", handler.UpdateApp)
 	authed.PUT("/app-hosting/apps/:appId/visibility", handler.UpdateVisibility)
+	authed.PUT("/app-hosting/apps/:appId/maintainers", handler.UpdateMaintainers)
+	authed.POST("/app-hosting/apps/:appId/transfer", handler.TransferOwnership)
+	authed.POST("/app-hosting/apps/:appId/delete", handler.DeleteApp)
 	authed.POST("/app-hosting/apps/:appId/offline", handler.TakeOffline)
 	authed.POST("/app-hosting/apps/:appId/online", handler.BringOnline)
 	authed.POST("/app-hosting/apps/:appId/suspend", handler.SuspendApp)
 	authed.POST("/app-hosting/apps/:appId/unsuspend", handler.UnsuspendApp)
+	authed.POST("/app-hosting/apps/:appId/visibility-approval/withdraw", handler.WithdrawVisibilityApproval)
+	authed.GET("/app-hosting/approvals", handler.ListVisibilityApprovals)
+	authed.POST("/app-hosting/approvals/:approvalId/approve", handler.ApproveVisibilityApproval)
+	authed.POST("/app-hosting/approvals/:approvalId/reject", handler.RejectVisibilityApproval)
+	authed.POST("/app-hosting/workspace-deployments", handler.DeployFromWorkspace)
 	authed.POST("/app-hosting/apps/:appId/deployments/preflight", handler.PreflightDeployment)
 	authed.GET("/app-hosting/apps/:appId/revisions", handler.ListRevisions)
 	authed.POST("/app-hosting/apps/:appId/revisions", handler.UploadRevision)
@@ -320,5 +352,99 @@ func verifyHandlerGatewayAuthFlow(t *testing.T, ctx context.Context, baseURL str
 	}, gwToken)
 	if err != nil || decision.Decision != sohaapi.HostedAppAccessDecisionKindAllow {
 		t.Fatalf("CheckHostedAppGatewayAccess = %#v, %v", decision, err)
+	}
+}
+
+func TestAppHostingHTTPHandlerB2RoundTrip(t *testing.T) {
+	srv, adminClient, aliceClient := setupHandlerRoundTripServer(t)
+	defer srv.Close()
+	ctx := t.Context()
+	bobClient := sohaapi.NewClient(srv.URL, sohaapi.WithBearerToken("bob-tok"))
+	empClient := sohaapi.NewClient(srv.URL, sohaapi.WithBearerToken("emp-tok"))
+
+	if _, err := adminClient.UpdateAppHostingSettings(ctx, sohaapi.AppHostingSettingsUpdateRequest{
+		Enabled:                      true,
+		AppsDomain:                   "apps.local",
+		PublicScheme:                 "http",
+		StorageIntegrationID:         "int_s3",
+		MaxAppsPerOwner:              5,
+		MaxBundleCompressedBytes:     8192,
+		OrganizationVisibilityPolicy: sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval,
+	}); err != nil {
+		t.Fatalf("UpdateAppHostingSettings B2: %v", err)
+	}
+
+	appID := verifyHandlerB2WorkspaceAndApprovalFlow(t, ctx, srv.URL, adminClient, aliceClient)
+	verifyHandlerB2PortalTransferAndDelete(t, ctx, appID, adminClient, aliceClient, bobClient, empClient)
+}
+
+func verifyHandlerB2WorkspaceAndApprovalFlow(t *testing.T, ctx context.Context, baseURL string, adminClient, aliceClient *sohaapi.Client) string {
+	t.Helper()
+	wsPayload := []byte(`{"idempotencyKey":"ws-http-1","name":"OpsHelper","visibility":{"mode":"organization"},"visibilityReason":"company tool","source":{"kind":"personal_environment","sourcePath":"dist"}}`)
+	assertAuthedPostStatus(t, ctx, baseURL+"/api/v1/app-hosting/workspace-deployments", "alice-tok", "application/json", wsPayload, http.StatusCreated)
+	assertAuthedPostStatus(t, ctx, baseURL+"/api/v1/app-hosting/workspace-deployments", "alice-tok", "application/json", wsPayload, http.StatusOK)
+
+	apps, err := aliceClient.ListHostedApps(ctx, sohaapi.ListHostedAppsParams{Scope: sohaapi.HostedAppListScopeMine})
+	if err != nil || apps.Total != 1 || apps.Items[0].PendingVisibilityApproval == nil {
+		t.Fatalf("ListHostedApps = %#v, %v", apps, err)
+	}
+	appID := apps.Items[0].ID
+
+	if _, err := aliceClient.WithdrawHostedAppVisibilityApproval(ctx, appID, &sohaapi.HostedAppLifecycleActionRequest{Reason: "update copy"}); err != nil {
+		t.Fatalf("WithdrawHostedAppVisibilityApproval: %v", err)
+	}
+	reReq, err := aliceClient.UpdateHostedAppVisibility(ctx, appID, sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: sohaapi.HostedAppVisibilityInput{Mode: sohaapi.HostedAppVisibilityModeOrganization},
+		Reason:     "v1 ready",
+	})
+	if err != nil || reReq.PendingVisibilityApproval == nil {
+		t.Fatalf("UpdateHostedAppVisibility: %#v, %v", reReq, err)
+	}
+	if _, err := adminClient.RejectHostedAppVisibility(ctx, reReq.PendingVisibilityApproval.ID, sohaapi.RejectHostedAppVisibilityRequest{Comment: "needs owner contact"}); err != nil {
+		t.Fatalf("RejectHostedAppVisibility: %v", err)
+	}
+	reReq2, err := aliceClient.UpdateHostedAppVisibility(ctx, appID, sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: sohaapi.HostedAppVisibilityInput{Mode: sohaapi.HostedAppVisibilityModeOrganization},
+		Reason:     "added contact",
+	})
+	if err != nil || reReq2.PendingVisibilityApproval == nil {
+		t.Fatalf("second UpdateHostedAppVisibility: %#v, %v", reReq2, err)
+	}
+	approvals, err := adminClient.ListHostedAppVisibilityApprovals(ctx, sohaapi.ListHostedAppVisibilityApprovalsParams{
+		Scope:  sohaapi.HostedAppApprovalListScopeAll,
+		Status: sohaapi.HostedAppVisibilityApprovalStatusPending,
+	})
+	if err != nil || approvals.Total != 1 {
+		t.Fatalf("ListHostedAppVisibilityApprovals = %#v, %v", approvals, err)
+	}
+	approved, err := adminClient.ApproveHostedAppVisibility(ctx, reReq2.PendingVisibilityApproval.ID, &sohaapi.ApproveHostedAppVisibilityRequest{Comment: "approved"})
+	if err != nil || approved.App.Visibility.Mode != sohaapi.HostedAppVisibilityModeOrganization {
+		t.Fatalf("ApproveHostedAppVisibility = %#v, %v", approved, err)
+	}
+	return appID
+}
+
+func verifyHandlerB2PortalTransferAndDelete(t *testing.T, ctx context.Context, appID string, adminClient, aliceClient, bobClient, empClient *sohaapi.Client) {
+	t.Helper()
+	portal, err := empClient.ListPortalHostedApps(ctx, sohaapi.ListPortalHostedAppsParams{Query: "opshelper"})
+	if err != nil || portal.Total != 1 || portal.Items[0].ID != appID {
+		t.Fatalf("ListPortalHostedApps = %#v, %v", portal, err)
+	}
+	if _, err := aliceClient.UpdateHostedAppMaintainers(ctx, appID, sohaapi.UpdateHostedAppMaintainersRequest{MaintainerUserIDs: []string{"usr_bob"}}); err != nil {
+		t.Fatalf("UpdateHostedAppMaintainers: %v", err)
+	}
+	transferred, err := adminClient.TransferHostedAppOwnership(ctx, appID, sohaapi.TransferHostedAppOwnershipRequest{
+		NewOwnerUserID: "usr_bob",
+		Reason:         "handoff",
+	})
+	if err != nil || transferred.OwnerUserID != "usr_bob" {
+		t.Fatalf("TransferHostedAppOwnership = %#v, %v", transferred, err)
+	}
+	delRes, err := bobClient.DeleteHostedApp(ctx, appID, sohaapi.DeleteHostedAppRequest{
+		ConfirmationName: "OpsHelper",
+		Reason:           "cleanup",
+	})
+	if err != nil || !delRes.Deleted {
+		t.Fatalf("DeleteHostedApp = %#v, %v", delRes, err)
 	}
 }

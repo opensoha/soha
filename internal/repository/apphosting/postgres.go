@@ -57,10 +57,12 @@ func (r *PostgresRepository) GetSettings(ctx context.Context) (domainapphosting.
 
 func loadSettingsRow(ctx context.Context, db *gorm.DB) (domainapphosting.Settings, error) {
 	settings := domainapphosting.DefaultSettings()
+	var orgPolicyStr string
 	var rotatedAt, updatedAt sql.NullTime
 	err := db.WithContext(ctx).Raw(`
 		SELECT enabled, apps_domain, public_scheme, storage_integration_id, storage_prefix,
-		       allow_organization_visibility, max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
+		       allow_organization_visibility, organization_visibility_policy, policy_version,
+		       max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
 		       max_bundle_file_count, max_apps_per_owner, retained_revisions_per_app,
 		       gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at
 		FROM public.app_hosting_settings
@@ -73,6 +75,8 @@ func loadSettingsRow(ctx context.Context, db *gorm.DB) (domainapphosting.Setting
 		&settings.StorageIntegrationID,
 		&settings.StoragePrefix,
 		&settings.AllowOrganizationVisibility,
+		&orgPolicyStr,
+		&settings.PolicyVersion,
 		&settings.MaxBundleCompressedBytes,
 		&settings.MaxBundleUncompressedBytes,
 		&settings.MaxBundleFileCount,
@@ -89,6 +93,7 @@ func loadSettingsRow(ctx context.Context, db *gorm.DB) (domainapphosting.Setting
 	if err != nil {
 		return domainapphosting.Settings{}, fmt.Errorf("load app hosting settings: %w", err)
 	}
+	settings.OrganizationVisibilityPolicy = sohaapi.AppHostingOrganizationVisibilityPolicy(orgPolicyStr)
 	if rotatedAt.Valid {
 		t := rotatedAt.Time.UTC()
 		settings.GatewayTokenRotatedAt = &t
@@ -110,41 +115,27 @@ func (r *PostgresRepository) SaveSettings(ctx context.Context, mutate func(curre
 		if err != nil {
 			return err
 		}
-		next, err := mutate(current)
+		prev := current.WithDefaults()
+		next, err := mutate(prev)
 		if err != nil {
 			return err
 		}
 		next = next.WithDefaults()
-		if err := tx.Exec(`
-			INSERT INTO public.app_hosting_settings (
-				scope_key, enabled, apps_domain, public_scheme, storage_integration_id, storage_prefix,
-				allow_organization_visibility, max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
-				max_bundle_file_count, max_apps_per_owner, retained_revisions_per_app,
-				gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at
-			) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (scope_key) DO UPDATE SET
-				enabled = EXCLUDED.enabled,
-				apps_domain = EXCLUDED.apps_domain,
-				public_scheme = EXCLUDED.public_scheme,
-				storage_integration_id = EXCLUDED.storage_integration_id,
-				storage_prefix = EXCLUDED.storage_prefix,
-				allow_organization_visibility = EXCLUDED.allow_organization_visibility,
-				max_bundle_compressed_bytes = EXCLUDED.max_bundle_compressed_bytes,
-				max_bundle_uncompressed_bytes = EXCLUDED.max_bundle_uncompressed_bytes,
-				max_bundle_file_count = EXCLUDED.max_bundle_file_count,
-				max_apps_per_owner = EXCLUDED.max_apps_per_owner,
-				retained_revisions_per_app = EXCLUDED.retained_revisions_per_app,
-				gateway_token_sha256 = EXCLUDED.gateway_token_sha256,
-				gateway_token_rotated_at = EXCLUDED.gateway_token_rotated_at,
-				updated_by = EXCLUDED.updated_by,
-				updated_at = EXCLUDED.updated_at
-		`,
-			next.Enabled, next.AppsDomain, next.PublicScheme, next.StorageIntegrationID, next.StoragePrefix,
-			next.AllowOrganizationVisibility, next.MaxBundleCompressedBytes, next.MaxBundleUncompressedBytes,
-			next.MaxBundleFileCount, next.MaxAppsPerOwner, next.RetainedRevisionsPerApp,
-			next.GatewayTokenSHA256, nullableTime(next.GatewayTokenRotatedAt), next.UpdatedBy, nullableTime(next.UpdatedAt),
-		).Error; err != nil {
-			return fmt.Errorf("upsert app hosting settings: %w", err)
+		if err := upsertPostgresSettingsRow(tx, next); err != nil {
+			return err
+		}
+		if next.OrganizationVisibilityPolicy != prev.OrganizationVisibilityPolicy || next.PolicyVersion != prev.PolicyVersion {
+			decidedAt := time.Now().UTC()
+			if next.UpdatedAt != nil {
+				decidedAt = next.UpdatedAt.UTC()
+			}
+			if err := tx.Exec(`
+				UPDATE public.hosted_app_visibility_approvals
+				SET status = 'invalidated', invalidation_reason = 'policy_changed', updated_at = ?, decided_at = ?
+				WHERE status = 'pending'
+			`, decidedAt, decidedAt).Error; err != nil {
+				return fmt.Errorf("invalidate pending approvals on policy change: %w", err)
+			}
 		}
 		saved = next
 		return nil
@@ -155,8 +146,59 @@ func (r *PostgresRepository) SaveSettings(ctx context.Context, mutate func(curre
 	return saved, nil
 }
 
+func upsertPostgresSettingsRow(tx *gorm.DB, next domainapphosting.Settings) error {
+	err := tx.Exec(`
+		INSERT INTO public.app_hosting_settings (
+			scope_key, enabled, apps_domain, public_scheme, storage_integration_id, storage_prefix,
+			allow_organization_visibility, organization_visibility_policy, policy_version,
+			max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
+			max_bundle_file_count, max_apps_per_owner, retained_revisions_per_app,
+			gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at
+		) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (scope_key) DO UPDATE SET
+			enabled = EXCLUDED.enabled,
+			apps_domain = EXCLUDED.apps_domain,
+			public_scheme = EXCLUDED.public_scheme,
+			storage_integration_id = EXCLUDED.storage_integration_id,
+			storage_prefix = EXCLUDED.storage_prefix,
+			allow_organization_visibility = EXCLUDED.allow_organization_visibility,
+			organization_visibility_policy = EXCLUDED.organization_visibility_policy,
+			policy_version = EXCLUDED.policy_version,
+			max_bundle_compressed_bytes = EXCLUDED.max_bundle_compressed_bytes,
+			max_bundle_uncompressed_bytes = EXCLUDED.max_bundle_uncompressed_bytes,
+			max_bundle_file_count = EXCLUDED.max_bundle_file_count,
+			max_apps_per_owner = EXCLUDED.max_apps_per_owner,
+			retained_revisions_per_app = EXCLUDED.retained_revisions_per_app,
+			gateway_token_sha256 = EXCLUDED.gateway_token_sha256,
+			gateway_token_rotated_at = EXCLUDED.gateway_token_rotated_at,
+			updated_by = EXCLUDED.updated_by,
+			updated_at = EXCLUDED.updated_at
+	`,
+		next.Enabled, next.AppsDomain, next.PublicScheme, next.StorageIntegrationID, next.StoragePrefix,
+		next.AllowOrganizationVisibility, string(next.OrganizationVisibilityPolicy), next.PolicyVersion,
+		next.MaxBundleCompressedBytes, next.MaxBundleUncompressedBytes,
+		next.MaxBundleFileCount, next.MaxAppsPerOwner, next.RetainedRevisionsPerApp,
+		next.GatewayTokenSHA256, nullableTime(next.GatewayTokenRotatedAt), next.UpdatedBy, nullableTime(next.UpdatedAt),
+	).Error
+	if err != nil {
+		return fmt.Errorf("upsert app hosting settings: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) CreateApp(ctx context.Context, candidate domainapphosting.App, maxAppsPerOwner int32) (domainapphosting.App, bool, error) {
+	created, _, reused, err := r.CreateAppWithApproval(ctx, candidate, maxAppsPerOwner, nil)
+	return created, reused, err
+}
+
+func (r *PostgresRepository) CreateAppWithApproval(
+	ctx context.Context,
+	candidate domainapphosting.App,
+	maxAppsPerOwner int32,
+	initialApproval *domainapphosting.VisibilityApproval,
+) (domainapphosting.App, *domainapphosting.VisibilityApproval, bool, error) {
 	var created domainapphosting.App
+	var savedApproval *domainapphosting.VisibilityApproval
 	var reused bool
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "hosted_apps/owner/"+candidate.OwnerUserID).Error; err != nil {
@@ -173,6 +215,10 @@ func (r *PostgresRepository) CreateApp(ctx context.Context, candidate domainapph
 				}
 				created = existing
 				reused = true
+				if initialApproval != nil {
+					savedApproval, err = loadPendingApprovalForAppTx(ctx, tx, existing.ID, false)
+					return err
+				}
 				return nil
 			}
 		}
@@ -185,12 +231,25 @@ func (r *PostgresRepository) CreateApp(ctx context.Context, candidate domainapph
 				return domainapphosting.ErrQuotaExceeded
 			}
 		}
-		return insertHostedAppRow(tx, candidate, &created)
+		if err := insertHostedAppRow(tx, candidate, &created); err != nil {
+			return err
+		}
+		if initialApproval != nil {
+			apv := *initialApproval
+			apv.AppID = created.ID
+			apv.AppName = created.Name
+			apv.AppDNSLabel = created.DNSLabel
+			if err := insertVisibilityApprovalRowTx(tx, apv); err != nil {
+				return err
+			}
+			savedApproval = &apv
+		}
+		return nil
 	})
 	if err != nil {
-		return domainapphosting.App{}, false, err
+		return domainapphosting.App{}, nil, false, err
 	}
-	return created, reused, nil
+	return created, savedApproval, reused, nil
 }
 
 func findAppByOwnerIdempotency(ctx context.Context, tx *gorm.DB, ownerUserID, idemKey string) (domainapphosting.App, bool, error) {
@@ -266,28 +325,52 @@ func getAppWhere(ctx context.Context, db *gorm.DB, predicate string, arg any, fo
 
 func (r *PostgresRepository) ListApps(ctx context.Context, filter domainapphosting.AppListFilter) ([]domainapphosting.App, int, error) {
 	whereSQL, args := buildListAppsWhere(filter)
+	return queryPaginatedRows(
+		ctx,
+		r.db,
+		"public.hosted_apps",
+		hostedAppColumns,
+		whereSQL,
+		"updated_at DESC, id ASC",
+		args,
+		filter.Limit,
+		filter.Offset,
+		"hosted apps",
+		scanHostedApp,
+	)
+}
+
+func queryPaginatedRows[T any](
+	ctx context.Context,
+	db *gorm.DB,
+	tableExpr, columnsExpr, whereSQL, orderSQL string,
+	args []any,
+	limit, offset int,
+	label string,
+	scanFn func(rowScanner) (T, error),
+) ([]T, int, error) {
 	var total int
-	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(1) FROM public.hosted_apps `+whereSQL, args...).Row().Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count hosted apps: %w", err)
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(1) FROM `+tableExpr+` `+whereSQL, args...).Row().Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count %s: %w", label, err)
 	}
-	queryArgs := append(append([]any{}, args...), filter.Limit, filter.Offset)
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT `+hostedAppColumns+`
-		FROM public.hosted_apps
+	queryArgs := append(append([]any{}, args...), limit, offset)
+	rows, err := db.WithContext(ctx).Raw(`
+		SELECT `+columnsExpr+`
+		FROM `+tableExpr+`
 		`+whereSQL+`
-		ORDER BY updated_at DESC, id ASC
+		ORDER BY `+orderSQL+`
 		LIMIT ? OFFSET ?
 	`, queryArgs...).Rows()
 	if err != nil {
-		return nil, 0, fmt.Errorf("list hosted apps: %w", err)
+		return nil, 0, fmt.Errorf("list %s: %w", label, err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]domainapphosting.App, 0, filter.Limit)
+	items := make([]T, 0, limit)
 	for rows.Next() {
-		item, err := scanHostedApp(rows)
-		if err != nil {
-			return nil, 0, err
+		item, scanErr := scanFn(rows)
+		if scanErr != nil {
+			return nil, 0, scanErr
 		}
 		items = append(items, item)
 	}
@@ -302,6 +385,11 @@ func buildListAppsWhere(filter domainapphosting.AppListFilter) (string, []any) {
 		clauses = append(clauses, "(owner_user_id = ? OR maintainer_user_ids @> ?::jsonb)")
 		args = append(args, filter.MemberUserID, string(memberJSON))
 	}
+	if filter.OwnerUserID != "" {
+		clauses = append(clauses, "owner_user_id = ?")
+		args = append(args, filter.OwnerUserID)
+	}
+	clauses, args = appendListAppsTeamFilter(clauses, args, filter)
 	if filter.Status != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, string(filter.Status))
@@ -312,6 +400,20 @@ func buildListAppsWhere(filter domainapphosting.AppListFilter) (string, []any) {
 		args = append(args, pattern, pattern, pattern)
 	}
 	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func appendListAppsTeamFilter(clauses []string, args []any, filter domainapphosting.AppListFilter) ([]string, []any) {
+	if filter.TeamFilterActive {
+		if len(filter.TeamMemberUserIDs) == 0 {
+			return append(clauses, "1 = 0"), args
+		}
+		return append(clauses, "owner_user_id IN ?"), append(args, filter.TeamMemberUserIDs)
+	}
+	if filter.TeamID != "" {
+		clauses = append(clauses, "EXISTS (SELECT 1 FROM public.user_team_bindings utb WHERE utb.user_id::text = public.hosted_apps.owner_user_id AND utb.team_id = ?)")
+		args = append(args, filter.TeamID)
+	}
+	return clauses, args
 }
 
 func escapeILIKEPattern(raw string) string {
@@ -336,6 +438,9 @@ func (r *PostgresRepository) MutateApp(ctx context.Context, appID string, mutate
 		if err := persistHostedAppUpdate(tx, next); err != nil {
 			return err
 		}
+		if err := syncOrInvalidateApprovalOnMutateTx(tx, current, next); err != nil {
+			return err
+		}
 		updated = next
 		return nil
 	})
@@ -343,6 +448,23 @@ func (r *PostgresRepository) MutateApp(ctx context.Context, appID string, mutate
 		return domainapphosting.App{}, err
 	}
 	return updated, nil
+}
+
+func syncOrInvalidateApprovalOnMutateTx(tx *gorm.DB, current, next domainapphosting.App) error {
+	decidedAt := next.UpdatedAt.UTC()
+	if decidedAt.IsZero() {
+		decidedAt = time.Now().UTC()
+	}
+	if next.Status == sohaapi.HostedAppStatusSuspendedByAdmin {
+		return invalidateAppPendingApprovalsTx(tx, next.ID, "app_suspended", decidedAt)
+	}
+	if next.RouteGeneration != current.RouteGeneration {
+		return invalidateAppPendingApprovalsTx(tx, next.ID, "route_generation_changed", decidedAt)
+	}
+	if next.Name != current.Name {
+		return tx.Exec(`UPDATE public.hosted_app_visibility_approvals SET app_name = ? WHERE app_id = ? AND status = 'pending'`, next.Name, next.ID).Error
+	}
+	return nil
 }
 
 func persistHostedAppUpdate(tx *gorm.DB, app domainapphosting.App) error {
@@ -400,17 +522,22 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 		stored := draft
 		stored.RevisionNumber = nextNum
 		stored.Status = sohaapi.HostedAppRevisionStatusUploading
+		stored.Files = nonNilManifest(draft.Files)
+		manifestBytes, err := json.Marshal(stored.Files)
+		if err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO public.hosted_app_revisions (
 				id, app_id, revision_number, description, kind, status, bundle_sha256,
 				file_count, total_bytes, spa_fallback, storage_integration_id, storage_prefix,
 				manifest_json, failure_stage, failure_reason, idempotency_key, created_by, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]'::jsonb, '', '', ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, '', '', ?, ?, ?)
 		`,
 			stored.ID, stored.AppID, stored.RevisionNumber, stored.Description,
 			string(stored.Kind), string(stored.Status), stored.BundleSha256,
 			stored.FileCount, stored.TotalBytes, stored.SpaFallback,
-			stored.StorageIntegrationID, stored.StoragePrefix,
+			stored.StorageIntegrationID, stored.StoragePrefix, string(manifestBytes),
 			stored.IdempotencyKey, stored.CreatedBy, stored.CreatedAt.UTC(),
 		).Error; err != nil {
 			return mapPostgresRevisionWriteError(err)
@@ -452,16 +579,13 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		if err != nil {
 			return err
 		}
-		if app.Status == sohaapi.HostedAppStatusOffline || app.Status == sohaapi.HostedAppStatusSuspendedByAdmin {
-			_ = tx.Exec(`
-				UPDATE public.hosted_app_revisions
-				SET status = 'failed', failure_stage = 'activate', failure_reason = 'application became offline or suspended before activation'
-				WHERE app_id = ? AND id = ?
-			`, input.AppID, input.RevisionID).Error
-			rejectedConflict = apperrors.NewBusiness(apperrors.ErrConflict, "app_not_deployable", "application became offline or suspended before activation", "激活前应用已下线或被管理员封停")
+		if rejectedErr := rejectUnactivatableRevisionTx(tx, app, input); rejectedErr != nil {
+			rejectedConflict = rejectedErr
 			return nil
 		}
 
+		wasDraft := app.Status == sohaapi.HostedAppStatusDraft
+		prevGen := app.RouteGeneration
 		manifestBytes, err := json.Marshal(nonNilManifest(input.Files))
 		if err != nil {
 			return err
@@ -479,7 +603,7 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		rev.Files = nonNilManifest(input.Files)
 		rev.ActivatedAt = &nowUTC
 
-		if app.Status == sohaapi.HostedAppStatusDraft {
+		if wasDraft {
 			app.Status = sohaapi.HostedAppStatusOnline
 		}
 		app.ActiveRevisionID = rev.ID
@@ -488,6 +612,19 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		app.UpdatedAt = nowUTC
 		if err := persistHostedAppUpdate(tx, app); err != nil {
 			return err
+		}
+		if wasDraft {
+			if err := tx.Exec(`
+				UPDATE public.hosted_app_visibility_approvals
+				SET base_route_generation = ?
+				WHERE app_id = ? AND status = 'pending' AND requester_user_id = ? AND base_route_generation = ?
+			`, app.RouteGeneration, app.ID, app.OwnerUserID, prevGen).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := invalidateAppPendingApprovalsTx(tx, app.ID, "route_generation_changed", nowUTC); err != nil {
+				return err
+			}
 		}
 
 		evicted, err := evictExcessPostgresRevisions(ctx, tx, app.ID, app.ActiveRevisionID, input.RetainedRevisionsMax)
@@ -657,6 +794,9 @@ func applyRollbackUpdatesTx(tx *gorm.DB, app *domainapphosting.App, rev *domaina
 	app.RouteGeneration++
 	app.UpdatedAt = nowUTC
 	if err := persistHostedAppUpdate(tx, *app); err != nil {
+		return err
+	}
+	if err := invalidateAppPendingApprovalsTx(tx, app.ID, "route_generation_changed", nowUTC); err != nil {
 		return err
 	}
 	if idempotencyKey == "" {

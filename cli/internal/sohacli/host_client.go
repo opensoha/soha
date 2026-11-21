@@ -197,3 +197,18 @@ func (c *hostClient) Rollback(ctx context.Context, appID string, req sohaapi.Hos
 	res, err := c.sdk.RollbackHostedApp(ctx, appID, req)
 	return res, c.wrapErr(err)
 }
+
+func (c *hostClient) UpdateMaintainers(ctx context.Context, appID string, req sohaapi.UpdateHostedAppMaintainersRequest) (sohaapi.HostedApp, error) {
+	res, err := c.sdk.UpdateHostedAppMaintainers(ctx, appID, req)
+	return res, c.wrapErr(err)
+}
+
+func (c *hostClient) DeleteApp(ctx context.Context, appID string, req sohaapi.DeleteHostedAppRequest) (sohaapi.DeleteHostedAppResult, error) {
+	res, err := c.sdk.DeleteHostedApp(ctx, appID, req)
+	return res, c.wrapErr(err)
+}
+
+func (c *hostClient) WithdrawVisibilityApproval(ctx context.Context, appID string, req *sohaapi.HostedAppLifecycleActionRequest) (sohaapi.HostedApp, error) {
+	res, err := c.sdk.WithdrawHostedAppVisibilityApproval(ctx, appID, req)
+	return res, c.wrapErr(err)
+}

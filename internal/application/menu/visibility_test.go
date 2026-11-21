@@ -480,6 +480,23 @@ func TestSoftwareMenusRequirePackageViewPermission(t *testing.T) {
 	}
 }
 
+func TestAppHostingGovernanceMenuRequiresAdminPermissionAndExcludesOrdinaryPublisher(t *testing.T) {
+	item := domainmenu.Record{ID: "identity-app-hosting", Path: "/internal-workbench/app-hosting"}
+	parent := domainmenu.Record{ID: "identity", Path: "/internal-workbench"}
+	publisherPerms := []string{
+		appaccess.PermWorkbenchHomeView,
+		appaccess.PermIdentityPortalView,
+		appaccess.PermAppHostingAppsView,
+		appaccess.PermAppHostingAppsPublish,
+	}
+	if isVisibleByPermissions(item, publisherPerms) || isVisibleByPermissions(parent, publisherPerms) {
+		t.Fatal("ordinary app publisher must not see internal-workbench or identity-app-hosting governance menu")
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, appaccess.PermAppHostingAdminView}) {
+		t.Fatal("identity-app-hosting should be visible with security workbench and admin view permission")
+	}
+}
+
 func TestNetworkAccessMenuRequiresWorkbenchAndAnyNetworkViewPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "network-access", Path: "/network-access"}
 	if isVisibleByPermissions(item, []string{appaccess.PermNetworkAccessMihomoProfilesView}) {

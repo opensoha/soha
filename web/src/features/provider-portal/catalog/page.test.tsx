@@ -680,4 +680,20 @@ describe('Provider Portal catalog page', () => {
     expect(container.textContent).not.toContain('全部标签')
     expect(container.querySelector('button[aria-label="切换应用卡片尺寸"]')).not.toBeNull()
   })
+
+  it('shows Colleague Works tab by default and gates My Apps tab on apphosting permissions', async () => {
+    usePreferencesStore.setState({ localeCode: 'zh_CN' })
+    const defaultContainer = await renderPage()
+    const defaultNav = defaultContainer.querySelector('.soha-portal-view-nav')
+    expect(defaultNav?.textContent).toContain('企业应用')
+    expect(defaultNav?.textContent).toContain('同事作品')
+    expect(defaultNav?.textContent).not.toContain('我的作品')
+
+    permissionMocks.snapshot.permissionKeys = ['identity.portal.view', 'apphosting.apps.publish']
+    const publisherContainer = await renderPage()
+    const publisherNav = publisherContainer.querySelector('.soha-portal-view-nav')
+    const myAppsLink = publisherNav?.querySelector<HTMLAnchorElement>('a[href="/portal/my-apps"]')
+    expect(myAppsLink).not.toBeNull()
+    expect(myAppsLink?.textContent).toContain('我的作品')
+  })
 })

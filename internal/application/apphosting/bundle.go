@@ -511,3 +511,8 @@ func newBundleRejectedError(code, en, zh string) error {
 func newPayloadTooLargeError(en, zh string) error {
 	return wrapTypedBusinessError(domainapphosting.ErrPayloadTooLarge, "bundle_too_large", en, zh)
 }
+
+func sha256HexBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}

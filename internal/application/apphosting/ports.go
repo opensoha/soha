@@ -22,6 +22,7 @@ var ErrDNSLabelConflict = errors.New("hosted app dns label already exists")
 type ActivateRevisionInput struct {
 	AppID                string
 	RevisionID           string
+	ActorUserID          string
 	SpaFallback          bool
 	Files                []sohaapi.HostedAppManifestFile
 	RetainedRevisionsMax int32
@@ -34,14 +35,46 @@ type ActivateRevisionOutput struct {
 	EvictedRevisions []domainapphosting.Revision
 }
 
+type AppEnrichment struct {
+	ActiveRevisionNumber int64
+	TotalBytes           int64
+	PendingApproval      *domainapphosting.VisibilityApproval
+}
+
+type UpdateVisibilityTxInput struct {
+	AppID          string
+	ActorUserID    string
+	RequestedScope sohaapi.HostedAppVisibilityScope
+	Reason         string
+	NewApprovalID  string
+	Now            time.Time
+}
+
+type UpdateVisibilityTxOutput struct {
+	App               domainapphosting.App
+	Settings          domainapphosting.Settings
+	PendingApproval   *domainapphosting.VisibilityApproval
+	RequestedApproval bool
+}
+
 type Repository interface {
 	GetSettings(ctx context.Context) (domainapphosting.Settings, error)
 	SaveSettings(ctx context.Context, mutate func(current domainapphosting.Settings) (domainapphosting.Settings, error)) (domainapphosting.Settings, error)
 	CreateApp(ctx context.Context, candidate domainapphosting.App, maxAppsPerOwner int32) (domainapphosting.App, bool, error)
+	CreateAppWithApproval(ctx context.Context, candidate domainapphosting.App, maxAppsPerOwner int32, initialApproval *domainapphosting.VisibilityApproval) (domainapphosting.App, *domainapphosting.VisibilityApproval, bool, error)
 	GetAppByID(ctx context.Context, appID string) (domainapphosting.App, error)
 	GetAppByDNSLabel(ctx context.Context, dnsLabel string) (domainapphosting.App, error)
 	ListApps(ctx context.Context, filter domainapphosting.AppListFilter) ([]domainapphosting.App, int, error)
+	ListVisiblePortalApps(ctx context.Context, principal domainidentity.Principal) ([]domainapphosting.App, error)
+	LoadAppEnrichments(ctx context.Context, appIDs []string) (map[string]AppEnrichment, error)
 	MutateApp(ctx context.Context, appID string, mutate func(current domainapphosting.App) (domainapphosting.App, error)) (domainapphosting.App, error)
+	UpdateAppVisibility(ctx context.Context, input UpdateVisibilityTxInput) (UpdateVisibilityTxOutput, error)
+	WithdrawVisibilityApproval(ctx context.Context, appID, ownerUserID string, now time.Time) (domainapphosting.App, domainapphosting.VisibilityApproval, error)
+	ListVisibilityApprovals(ctx context.Context, filter domainapphosting.VisibilityApprovalFilter) ([]domainapphosting.VisibilityApproval, int, error)
+	ApproveVisibilityApproval(ctx context.Context, approvalID, reviewerUserID, comment string, now time.Time, verifyRequester func(ctx context.Context, requesterUserID string) error) (domainapphosting.App, domainapphosting.VisibilityApproval, error)
+	RejectVisibilityApproval(ctx context.Context, approvalID, reviewerUserID, comment string, now time.Time) (domainapphosting.App, domainapphosting.VisibilityApproval, error)
+	TransferAppOwnership(ctx context.Context, appID, newOwnerUserID string, now time.Time) (domainapphosting.App, string, error)
+	DeleteApp(ctx context.Context, appID string, verify func(current domainapphosting.App) error) (domainapphosting.App, []domainapphosting.Revision, error)
 	FindRevisionByIdempotencyKey(ctx context.Context, appID, idempotencyKey string) (domainapphosting.Revision, error)
 	CreateUploadingRevision(ctx context.Context, appID string, draft domainapphosting.Revision) (domainapphosting.Revision, error)
 	FailRevision(ctx context.Context, appID, revisionID, stage, reason string) error
@@ -71,6 +104,14 @@ type ObjectStore interface {
 type AudienceDirectory interface {
 	SearchCandidates(ctx context.Context, query string, limit int) (sohaapi.AppHostingAudienceCandidates, error)
 	ResolveVisitor(ctx context.Context, userID string) (domainapphosting.VisitorProfile, error)
+	ResolveUserSummaries(ctx context.Context, userIDs []string) (map[string]sohaapi.HostedAppUserSummary, error)
+	ResolveUserPrincipal(ctx context.Context, userID string) (domainidentity.Principal, bool, error)
+	ListTeamMemberIDs(ctx context.Context, teamID string) ([]string, error)
+}
+
+type WorkspaceBundleSource interface {
+	BundlePersonalWorkspace(ctx context.Context, principal domainidentity.Principal, sourcePath, assistantID string, envVersion int64) (io.ReadCloser, error)
+	BundleConversationArtifact(ctx context.Context, principal domainidentity.Principal, sessionID, artifactID, entryFileName string) (io.ReadCloser, string, error)
 }
 
 type PermissionChecker interface {
@@ -115,6 +156,12 @@ func WithVisitorIDSecret(secret string) Option {
 	}
 }
 
+func WithWorkspaceBundleSource(source WorkspaceBundleSource) Option {
+	return func(s *Service) {
+		s.workspaceSource = nilIfTypedNil(source)
+	}
+}
+
 type Service struct {
 	repo                       Repository
 	objectStore                ObjectStore
@@ -122,9 +169,16 @@ type Service struct {
 	permissions                PermissionChecker
 	audit                      AuditRecorder
 	sessions                   SessionValidator
+	workspaceSource            WorkspaceBundleSource
 	visitorIDSecret            []byte
 	fallbackGatewayTokenSHA256 string
 	now                        func() time.Time
+}
+
+func (s *Service) SetWorkspaceBundleSource(source WorkspaceBundleSource) {
+	if s != nil {
+		s.workspaceSource = nilIfTypedNil(source)
+	}
 }
 
 func New(

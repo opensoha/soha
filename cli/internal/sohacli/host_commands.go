@@ -19,101 +19,130 @@ var hostSlugPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 func hostCommandSpec() commandSpec {
 	return commandSpec{
 		Name:    "host",
-		Usage:   "soha host <deploy|list|get|revisions|rollback|visibility|offline|online|audience> [options]",
+		Usage:   "soha host <deploy|list|get|revisions|rollback|visibility|maintainers|offline|online|delete|audience> [options]",
 		Summary: "Deploy and manage workspace hosted web applications",
 		Examples: []string{
 			"soha host deploy ./dist --name \"Quarterly Report\" --dry-run --profile local",
 			"soha host deploy ./dist --name \"Quarterly Report\" --yes --profile local",
 			"soha host audience --query finance --profile local",
 		},
-		Subcommands: []commandSpec{
-			{
-				Name:    "deploy",
-				Usage:   "soha host deploy [dir] [--app-id ID] [--name NAME] [--slug SLUG] [--description TEXT] [--spa] [--visibility private|selected|organization] [--user ID]... [--team ID]... [--idempotency-key KEY] [--dry-run] [--yes] [--profile NAME] [--output text|json]",
-				Summary: "Scan, preflight, and upload a static web bundle to workspace App Hosting",
-				Examples: []string{
-					"soha host deploy ./dist --name \"Ops Dashboard\" --dry-run --profile local",
-					"soha host deploy ./dist --name \"Ops Dashboard\" --spa --yes --profile local",
-					"soha host deploy ./dist --app-id app_123 --idempotency-key deploy-r2 --yes --profile local",
-				},
-			},
-			{
-				Name:    "list",
-				Usage:   "soha host list [--scope mine|all] [--query TEXT] [--status STATUS] [--limit N] [--offset N] [--profile NAME] [--output text|json]",
-				Summary: "List hosted applications in maintainer or administrator scope",
-				Examples: []string{
-					"soha host list --profile local",
-					"soha host list --scope all --status online --output json --profile local",
-				},
-			},
-			{
-				Name:    "get",
-				Usage:   "soha host get <app-id> [--profile NAME] [--output text|json]",
-				Summary: "Get hosted application metadata, active revision, and fixed URL",
-				Examples: []string{
-					"soha host get app_123 --profile local",
-					"soha host get app_123 --output json --profile local",
-				},
-			},
-			{
-				Name:    "revisions",
-				Usage:   "soha host revisions <app-id> [--limit N] [--offset N] [--profile NAME] [--output text|json]",
-				Summary: "List immutable revisions of a hosted application",
-				Examples: []string{
-					"soha host revisions app_123 --limit 20 --profile local",
-					"soha host revisions app_123 --output json --profile local",
-				},
-			},
-			{
-				Name:    "rollback",
-				Usage:   "soha host rollback <app-id> --revision <revision-id> [--idempotency-key KEY] [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
-				Summary: "Switch the active revision to an earlier ready revision without altering visibility",
-				Examples: []string{
-					"soha host rollback app_123 --revision rev_1 --reason \"revert broken chart\" --yes --profile local",
-				},
-			},
-			{
-				Name:    "visibility",
-				Usage:   "soha host visibility <app-id> --mode <private|selected|organization> [--user ID]... [--team ID]... [--yes] [--profile NAME] [--output text|json]",
-				Summary: "Update hosted application audience visibility and immediately enforce revocation",
-				Examples: []string{
-					"soha host visibility app_123 --mode private --yes --profile local",
-					"soha host visibility app_123 --mode selected --team team_finance --user usr_1 --yes --profile local",
-				},
-			},
-			{
-				Name:    "offline",
-				Usage:   "soha host offline <app-id> [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
-				Summary: "Take a hosted application offline while retaining revisions",
-				Examples: []string{
-					"soha host offline app_123 --reason \"maintenance window\" --yes --profile local",
-				},
-			},
-			{
-				Name:    "online",
-				Usage:   "soha host online <app-id> [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
-				Summary: "Bring an offline hosted application with a ready revision back online",
-				Examples: []string{
-					"soha host online app_123 --yes --profile local",
-				},
-			},
-			{
-				Name:    "audience",
-				Usage:   "soha host audience [--query TEXT] [--limit N] [--profile NAME] [--output text|json]",
-				Summary: "Search sanitized colleague and department candidates for sharing",
-				Examples: []string{
-					"soha host audience --query finance --profile local",
-					"soha host audience --query carol --output json --profile local",
-				},
+		Subcommands: append(hostCoreSubcommandSpecs(), hostGovernanceSubcommandSpecs()...),
+		Handler:     runHost,
+	}
+}
+
+func hostCoreSubcommandSpecs() []commandSpec {
+	return []commandSpec{
+		{
+			Name:    "deploy",
+			Usage:   "soha host deploy [dir] [--app-id ID] [--name NAME] [--slug SLUG] [--description TEXT] [--spa] [--visibility private|selected|organization] [--user ID]... [--team ID]... [--reason TEXT] [--idempotency-key KEY] [--dry-run] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Scan, preflight, and upload a static web bundle to workspace App Hosting",
+			Examples: []string{
+				"soha host deploy ./dist --name \"Ops Dashboard\" --dry-run --profile local",
+				"soha host deploy ./dist --name \"Ops Dashboard\" --spa --yes --profile local",
+				"soha host deploy ./dist --app-id app_123 --idempotency-key deploy-r2 --yes --profile local",
 			},
 		},
-		Handler: runHost,
+		{
+			Name:    "list",
+			Usage:   "soha host list [--scope mine|all] [--query TEXT] [--status STATUS] [--limit N] [--offset N] [--profile NAME] [--output text|json]",
+			Summary: "List hosted applications in maintainer or administrator scope",
+			Examples: []string{
+				"soha host list --profile local",
+				"soha host list --scope all --status online --output json --profile local",
+			},
+		},
+		{
+			Name:    "get",
+			Usage:   "soha host get <app-id> [--profile NAME] [--output text|json]",
+			Summary: "Get hosted application metadata, active revision, collaborators, pending approval, and fixed URL",
+			Examples: []string{
+				"soha host get app_123 --profile local",
+				"soha host get app_123 --output json --profile local",
+			},
+		},
+		{
+			Name:    "revisions",
+			Usage:   "soha host revisions <app-id> [--limit N] [--offset N] [--profile NAME] [--output text|json]",
+			Summary: "List immutable revisions of a hosted application",
+			Examples: []string{
+				"soha host revisions app_123 --limit 20 --profile local",
+				"soha host revisions app_123 --output json --profile local",
+			},
+		},
+		{
+			Name:    "rollback",
+			Usage:   "soha host rollback <app-id> --revision <revision-id> [--idempotency-key KEY] [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Switch the active revision to an earlier ready revision without altering visibility",
+			Examples: []string{
+				"soha host rollback app_123 --revision rev_1 --reason \"revert broken chart\" --yes --profile local",
+			},
+		},
+	}
+}
+
+func hostGovernanceSubcommandSpecs() []commandSpec {
+	return []commandSpec{
+		{
+			Name:    "visibility",
+			Usage:   "soha host visibility <app-id> (--mode <private|selected|organization> [--user ID]... [--team ID]... | --withdraw) [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Update hosted application audience visibility, submit or withdraw organization visibility approval, and enforce immediate revocation",
+			Examples: []string{
+				"soha host visibility app_123 --mode private --yes --profile local",
+				"soha host visibility app_123 --mode selected --team team_finance --user usr_1 --yes --profile local",
+				"soha host visibility app_123 --mode organization --reason \"open quarterly metrics to all staff\" --yes --profile local",
+				"soha host visibility app_123 --withdraw --reason \"narrow scope before review\" --profile local",
+			},
+		},
+		{
+			Name:    "maintainers",
+			Usage:   "soha host maintainers <app-id> [--users ID[,ID...] | --clear] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Inspect or replace collaborator maintainers (revision upload and rollback only; visitor access follows visibility)",
+			Examples: []string{
+				"soha host maintainers app_123 --profile local",
+				"soha host maintainers app_123 --users usr_bob,usr_carol --profile local",
+				"soha host maintainers app_123 --clear --profile local",
+			},
+		},
+		{
+			Name:    "offline",
+			Usage:   "soha host offline <app-id> [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Take a hosted application offline while retaining revisions",
+			Examples: []string{
+				"soha host offline app_123 --reason \"maintenance window\" --yes --profile local",
+			},
+		},
+		{
+			Name:    "online",
+			Usage:   "soha host online <app-id> [--reason TEXT] [--yes] [--profile NAME] [--output text|json]",
+			Summary: "Bring an offline hosted application with a ready revision back online",
+			Examples: []string{
+				"soha host online app_123 --yes --profile local",
+			},
+		},
+		{
+			Name:    "delete",
+			Usage:   "soha host delete <app-id> --confirm <exact-app-name> [--reason TEXT] [--profile NAME] [--output text|json]",
+			Summary: "Permanently delete a hosted application and its revisions after exact application name confirmation",
+			Examples: []string{
+				"soha host delete app_123 --confirm \"Quarterly Report\" --reason \"deprecated report\" --profile local",
+			},
+		},
+		{
+			Name:    "audience",
+			Usage:   "soha host audience [--query TEXT] [--limit N] [--profile NAME] [--output text|json]",
+			Summary: "Search sanitized colleague and department candidates for sharing",
+			Examples: []string{
+				"soha host audience --query finance --profile local",
+				"soha host audience --query carol --output json --profile local",
+			},
+		},
 	}
 }
 
 func runHost(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) == 0 {
-		return usageError{message: "host requires a subcommand: deploy, list, get, revisions, rollback, visibility, offline, online, or audience"}
+		return usageError{message: "host requires a subcommand: deploy, list, get, revisions, rollback, visibility, maintainers, offline, online, delete, or audience"}
 	}
 	switch args[0] {
 	case "deploy":
@@ -128,33 +157,38 @@ func runHost(ctx context.Context, args []string, rt Runtime) error {
 		return runHostRollback(ctx, args[1:], rt)
 	case "visibility":
 		return runHostVisibility(ctx, args[1:], rt)
+	case "maintainers":
+		return runHostMaintainers(ctx, args[1:], rt)
 	case "offline":
 		return runHostLifecycle(ctx, "offline", args[1:], rt)
 	case "online":
 		return runHostLifecycle(ctx, "online", args[1:], rt)
+	case "delete":
+		return runHostDelete(ctx, args[1:], rt)
 	case "audience":
 		return runHostAudience(ctx, args[1:], rt)
 	default:
-		return usageError{message: fmt.Sprintf("unknown host command %q; expected deploy, list, get, revisions, rollback, visibility, offline, online, or audience", args[0])}
+		return usageError{message: fmt.Sprintf("unknown host command %q; expected deploy, list, get, revisions, rollback, visibility, maintainers, offline, online, delete, or audience", args[0])}
 	}
 }
 
 type hostDeployOptions struct {
-	dir             string
-	appID           string
-	name            string
-	nameExplicit    bool
-	slug            string
-	description     string
-	descExplicit    bool
-	spa             bool
-	spaExplicit     bool
-	visibilityInput *sohaapi.HostedAppVisibilityInput
-	idempotencyKey  string
-	dryRun          bool
-	yes             bool
-	profile         string
-	format          string
+	dir              string
+	appID            string
+	name             string
+	nameExplicit     bool
+	slug             string
+	description      string
+	descExplicit     bool
+	spa              bool
+	spaExplicit      bool
+	visibilityInput  *sohaapi.HostedAppVisibilityInput
+	visibilityReason string
+	idempotencyKey   string
+	dryRun           bool
+	yes              bool
+	profile          string
+	format           string
 }
 
 func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error) {
@@ -169,6 +203,7 @@ func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error
 	var teamIDs repeatableFlag
 	fs.Var(&userIDs, "user", "authorized user ID when --visibility=selected (repeatable)")
 	fs.Var(&teamIDs, "team", "authorized team/department ID when --visibility=selected (repeatable)")
+	reason := fs.String("reason", "", "optional reason when requesting visibility update (<= 500 chars)")
 	idempotencyKey := fs.String("idempotency-key", "", "idempotency key for safe retries (1..128 chars)")
 	dryRun := fs.Bool("dry-run", false, "scan local bundle and run server preflight without uploading")
 	yes := fs.Bool("yes", false, "confirm publishing without interactive prompt")
@@ -186,62 +221,70 @@ func parseHostDeployOptions(args []string, rt Runtime) (hostDeployOptions, error
 	if err != nil {
 		return hostDeployOptions{}, usageError{message: err.Error()}
 	}
-	trimmedAppID := strings.TrimSpace(*appID)
-	trimmedSlug := strings.TrimSpace(*slug)
-	if trimmedSlug != "" {
-		if trimmedAppID != "" {
-			return hostDeployOptions{}, usageError{message: "--slug can only be set when creating a new app; subdomain labels are immutable"}
-		}
-		if len(trimmedSlug) > 48 || !hostSlugPattern.MatchString(trimmedSlug) {
-			return hostDeployOptions{}, usageError{message: "--slug must be 1..48 lowercase alphanumeric or hyphen characters"}
-		}
+	opts := hostDeployOptions{
+		dir:              resolveHostDeployDir(positionals),
+		appID:            strings.TrimSpace(*appID),
+		name:             strings.TrimSpace(*name),
+		nameExplicit:     hostFlagWasSet(fs, "name"),
+		slug:             strings.TrimSpace(*slug),
+		description:      strings.TrimSpace(*description),
+		descExplicit:     hostFlagWasSet(fs, "description"),
+		spa:              *spa,
+		spaExplicit:      hostFlagWasSet(fs, "spa"),
+		visibilityReason: strings.TrimSpace(*reason),
+		idempotencyKey:   strings.TrimSpace(*idempotencyKey),
+		dryRun:           *dryRun,
+		yes:              *yes,
+		profile:          *profile,
+		format:           format,
 	}
-	trimmedKey := strings.TrimSpace(*idempotencyKey)
-	if trimmedKey != "" && len(trimmedKey) > 128 {
-		return hostDeployOptions{}, usageError{message: "--idempotency-key must be at most 128 characters"}
+	if err := validateHostDeployMetadata(&opts, hostFlagWasSet(fs, "visibility"), *visibility, userIDs, teamIDs); err != nil {
+		return hostDeployOptions{}, err
 	}
-	trimmedName := strings.TrimSpace(*name)
-	if hostFlagWasSet(fs, "name") && (trimmedName == "" || len(trimmedName) > 128) {
-		return hostDeployOptions{}, usageError{message: "--name must be 1..128 non-whitespace characters"}
-	}
-	trimmedDesc := strings.TrimSpace(*description)
-	if len(trimmedDesc) > 512 {
-		return hostDeployOptions{}, usageError{message: "--description must be at most 512 characters"}
-	}
+	return opts, nil
+}
 
-	var visInput *sohaapi.HostedAppVisibilityInput
-	if hostFlagWasSet(fs, "visibility") || len(userIDs) > 0 || len(teamIDs) > 0 {
-		if strings.TrimSpace(*visibility) == "" {
-			return hostDeployOptions{}, usageError{message: "--user and --team require --visibility selected"}
-		}
-		parsedVis, visErr := buildHostVisibilityInput(*visibility, userIDs, teamIDs)
-		if visErr != nil {
-			return hostDeployOptions{}, visErr
-		}
-		visInput = &parsedVis
-	}
-
-	dir := "."
+func resolveHostDeployDir(positionals []string) string {
 	if len(positionals) == 1 && strings.TrimSpace(positionals[0]) != "" {
-		dir = strings.TrimSpace(positionals[0])
+		return strings.TrimSpace(positionals[0])
 	}
-	return hostDeployOptions{
-		dir:             dir,
-		appID:           trimmedAppID,
-		name:            trimmedName,
-		nameExplicit:    hostFlagWasSet(fs, "name"),
-		slug:            trimmedSlug,
-		description:     trimmedDesc,
-		descExplicit:    hostFlagWasSet(fs, "description"),
-		spa:             *spa,
-		spaExplicit:     hostFlagWasSet(fs, "spa"),
-		visibilityInput: visInput,
-		idempotencyKey:  trimmedKey,
-		dryRun:          *dryRun,
-		yes:             *yes,
-		profile:         *profile,
-		format:          format,
-	}, nil
+	return "."
+}
+
+func validateHostDeployMetadata(opts *hostDeployOptions, visibilitySet bool, rawVisibility string, userIDs, teamIDs []string) error {
+	if opts.slug != "" {
+		if opts.appID != "" {
+			return usageError{message: "--slug can only be set when creating a new app; subdomain labels are immutable"}
+		}
+		if len(opts.slug) > 48 || !hostSlugPattern.MatchString(opts.slug) {
+			return usageError{message: "--slug must be 1..48 lowercase alphanumeric or hyphen characters"}
+		}
+	}
+	if len(opts.idempotencyKey) > 128 {
+		return usageError{message: "--idempotency-key must be at most 128 characters"}
+	}
+	if opts.nameExplicit && (opts.name == "" || len(opts.name) > 128) {
+		return usageError{message: "--name must be 1..128 non-whitespace characters"}
+	}
+	if len(opts.description) > 512 {
+		return usageError{message: "--description must be at most 512 characters"}
+	}
+	if len(opts.visibilityReason) > 500 {
+		return usageError{message: "--reason must be at most 500 characters"}
+	}
+	if visibilitySet || len(userIDs) > 0 || len(teamIDs) > 0 {
+		if strings.TrimSpace(rawVisibility) == "" {
+			return usageError{message: "--user and --team require --visibility selected"}
+		}
+		parsedVis, visErr := buildHostVisibilityInput(rawVisibility, userIDs, teamIDs)
+		if visErr != nil {
+			return visErr
+		}
+		opts.visibilityInput = &parsedVis
+	} else if opts.visibilityReason != "" {
+		return usageError{message: "--reason requires --visibility"}
+	}
+	return nil
 }
 
 func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
@@ -316,7 +359,11 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	if err != nil {
 		return err
 	}
-	return writeHostDeploymentReceiptOutput(rt.Out, opts.format, receipt, uploadKey)
+	note := ""
+	if opts.visibilityInput != nil && opts.visibilityInput.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+		note = firstNonEmptyString(formatPendingApprovalSubmissionNote(receipt.App), formatPendingApprovalSubmissionNote(app))
+	}
+	return writeHostDeploymentReceiptOutput(rt.Out, opts.format, receipt, uploadKey, note)
 }
 
 func resolveDeployTargetApp(ctx context.Context, client *hostClient, opts hostDeployOptions, bundle hostStaticBundle) (sohaapi.HostedApp, bool, error) {
@@ -387,6 +434,7 @@ func applyExistingAppDeployUpdates(ctx context.Context, client *hostClient, opts
 	if opts.visibilityInput != nil {
 		updated, err := client.UpdateVisibility(ctx, app.ID, sohaapi.UpdateHostedAppVisibilityRequest{
 			Visibility: *opts.visibilityInput,
+			Reason:     opts.visibilityReason,
 		})
 		if err != nil {
 			return sohaapi.HostedApp{}, err
@@ -590,7 +638,7 @@ func runHostRollback(ctx context.Context, args []string, rt Runtime) error {
 	if err != nil {
 		return err
 	}
-	return writeHostDeploymentReceiptOutput(rt.Out, format, receipt, trimmedKey)
+	return writeHostDeploymentReceiptOutput(rt.Out, format, receipt, trimmedKey, "")
 }
 
 func runHostVisibility(ctx context.Context, args []string, rt Runtime) error {
@@ -600,6 +648,8 @@ func runHostVisibility(ctx context.Context, args []string, rt Runtime) error {
 	var teamIDs repeatableFlag
 	fs.Var(&userIDs, "user", "authorized user ID when --mode=selected (repeatable)")
 	fs.Var(&teamIDs, "team", "authorized team/department ID when --mode=selected (repeatable)")
+	reason := fs.String("reason", "", "optional reason for organization approval request or withdrawal")
+	withdraw := fs.Bool("withdraw", false, "withdraw pending organization visibility approval request")
 	yes := fs.Bool("yes", false, "confirm visibility change without interactive prompt")
 	profile := fs.String("profile", "", "profile name")
 	output := fs.String("output", "text", "output format: text or json")
@@ -612,18 +662,28 @@ func runHostVisibility(ctx context.Context, args []string, rt Runtime) error {
 	if err != nil {
 		return err
 	}
+	format, err := normalizeOutputFormat(*output, "text", "json")
+	if err != nil {
+		return usageError{message: err.Error()}
+	}
+	trimmedReason := strings.TrimSpace(*reason)
+
+	if *withdraw {
+		if hostFlagWasSet(fs, "mode") || len(userIDs) > 0 || len(teamIDs) > 0 {
+			return usageError{message: "--withdraw cannot be combined with --mode, --user, or --team"}
+		}
+		return executeHostVisibilityWithdraw(ctx, rt, appID, *profile, format, trimmedReason)
+	}
 	if strings.TrimSpace(*mode) == "" {
-		return usageError{message: "host visibility requires --mode <private|selected|organization>"}
+		return usageError{message: "host visibility requires --mode <private|selected|organization> or --withdraw"}
 	}
 	visInput, err := buildHostVisibilityInput(*mode, userIDs, teamIDs)
 	if err != nil {
 		return err
 	}
-	format, err := normalizeOutputFormat(*output, "text", "json")
-	if err != nil {
-		return usageError{message: err.Error()}
+	if len(trimmedReason) > 500 {
+		return usageError{message: "--reason must be at most 500 characters"}
 	}
-
 	if !*yes {
 		prompt := fmt.Sprintf("Update visibility of hosted app %s to %s?", terminalLabel(appID), terminalLabel(string(visInput.Mode)))
 		if visInput.Mode == sohaapi.HostedAppVisibilityModePrivate || visInput.Mode == sohaapi.HostedAppVisibilityModeSelected {
@@ -642,18 +702,184 @@ func runHostVisibility(ctx context.Context, args []string, rt Runtime) error {
 	if err != nil {
 		return err
 	}
-	app, err := client.UpdateVisibility(ctx, appID, sohaapi.UpdateHostedAppVisibilityRequest{Visibility: visInput})
+	app, err := client.UpdateVisibility(ctx, appID, sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: visInput,
+		Reason:     trimmedReason,
+	})
 	if err != nil {
 		return err
 	}
-	note := ""
-	switch visInput.Mode {
-	case sohaapi.HostedAppVisibilityModePrivate:
-		note = "visibility is now private; saved links and active colleague sessions are immediately denied"
-	case sohaapi.HostedAppVisibilityModeSelected:
-		note = "route generation advanced; access is immediately restricted to the selected users and teams"
+	return writeHostedAppDetailOutput(rt.Out, format, app, resolveVisibilityUpdateNote(visInput.Mode, app))
+}
+
+func executeHostVisibilityWithdraw(ctx context.Context, rt Runtime, appID, profile, format, trimmedReason string) error {
+	if len(trimmedReason) > 512 {
+		return usageError{message: "--reason must be at most 512 characters"}
 	}
+	client, err := loadHostClient(ctx, rt, profile)
+	if err != nil {
+		return err
+	}
+	var req *sohaapi.HostedAppLifecycleActionRequest
+	if trimmedReason != "" {
+		req = &sohaapi.HostedAppLifecycleActionRequest{Reason: trimmedReason}
+	}
+	app, err := client.WithdrawVisibilityApproval(ctx, appID, req)
+	if err != nil {
+		return err
+	}
+	note := fmt.Sprintf("pending organization visibility approval withdrawn; effective visibility remains %s", safeHostField(string(app.Visibility.Mode)))
 	return writeHostedAppDetailOutput(rt.Out, format, app, note)
+}
+
+func resolveVisibilityUpdateNote(requestedMode sohaapi.HostedAppVisibilityMode, app sohaapi.HostedApp) string {
+	if pendingNote := formatPendingApprovalSubmissionNote(app); pendingNote != "" {
+		return pendingNote
+	}
+	switch requestedMode {
+	case sohaapi.HostedAppVisibilityModePrivate:
+		return "visibility is now private; saved links and active colleague sessions are immediately denied"
+	case sohaapi.HostedAppVisibilityModeSelected:
+		return "route generation advanced; access is immediately restricted to the selected users and teams"
+	case sohaapi.HostedAppVisibilityModeOrganization:
+		if app.Visibility.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+			return "visibility is now organization; all authenticated workspace members can access this app"
+		}
+	}
+	return ""
+}
+
+func runHostMaintainers(ctx context.Context, args []string, rt Runtime) error {
+	fs := newRuntimeFlagSet("host maintainers", args, rt)
+	var rawUsers repeatableFlag
+	fs.Var(&rawUsers, "users", "comma-separated collaborator user IDs to set as maintainers")
+	fs.Var(&rawUsers, "user", "collaborator user ID to include as maintainer (repeatable)")
+	clear := fs.Bool("clear", false, "remove all collaborator maintainers")
+	_ = fs.Bool("yes", false, "compatibility flag for non-interactive maintainer updates")
+	profile := fs.String("profile", "", "profile name")
+	output := fs.String("output", "text", "output format: text or json")
+
+	positionals, err := parseHostInterspersedFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	appID, err := singleHostAppID(positionals, "maintainers")
+	if err != nil {
+		return err
+	}
+	format, err := normalizeOutputFormat(*output, "text", "json")
+	if err != nil {
+		return usageError{message: err.Error()}
+	}
+	usersSet := hostFlagWasSet(fs, "users") || hostFlagWasSet(fs, "user")
+	if *clear && usersSet {
+		return usageError{message: "--clear cannot be combined with --users"}
+	}
+	if !*clear && !usersSet {
+		client, clientErr := loadHostClient(ctx, rt, *profile)
+		if clientErr != nil {
+			return clientErr
+		}
+		app, getErr := client.GetApp(ctx, appID)
+		if getErr != nil {
+			return getErr
+		}
+		return writeHostMaintainersOutput(rt.Out, format, app)
+	}
+
+	maintainerIDs := []string{}
+	if usersSet {
+		parsedIDs, parseErr := parseMaintainerUserIDs(rawUsers)
+		if parseErr != nil {
+			return parseErr
+		}
+		maintainerIDs = parsedIDs
+	}
+	client, err := loadHostClient(ctx, rt, *profile)
+	if err != nil {
+		return err
+	}
+	app, err := client.UpdateMaintainers(ctx, appID, sohaapi.UpdateHostedAppMaintainersRequest{
+		MaintainerUserIDs: maintainerIDs,
+	})
+	if err != nil {
+		return err
+	}
+	return writeHostMaintainersOutput(rt.Out, format, app)
+}
+
+func parseMaintainerUserIDs(rawValues []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(rawValues))
+	out := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		for _, part := range strings.Split(raw, ",") {
+			id := strings.TrimSpace(part)
+			if id == "" {
+				return nil, usageError{message: "--users requires non-empty user IDs; pass --clear to remove all collaborators"}
+			}
+			if len(id) > 128 || strings.ContainsAny(id, " \t\r\n/\\") {
+				return nil, usageError{message: "--users requires valid user IDs of at most 128 characters"}
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		return nil, usageError{message: "--users requires at least one user ID; pass --clear to remove all collaborators"}
+	}
+	if len(out) > 20 {
+		return nil, usageError{message: "--users supports at most 20 collaborator user IDs"}
+	}
+	return out, nil
+}
+
+func runHostDelete(ctx context.Context, args []string, rt Runtime) error {
+	fs := newRuntimeFlagSet("host delete", args, rt)
+	confirm := fs.String("confirm", "", "exact hosted application display name required to confirm permanent deletion")
+	reason := fs.String("reason", "", "optional deletion reason for audit log (<= 500 chars)")
+	_ = fs.Bool("yes", false, "compatibility flag; permanent deletion always requires --confirm <exact-app-name>")
+	profile := fs.String("profile", "", "profile name")
+	output := fs.String("output", "text", "output format: text or json")
+
+	positionals, err := parseHostInterspersedFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	appID, err := singleHostAppID(positionals, "delete")
+	if err != nil {
+		return err
+	}
+	confirmName := strings.TrimSpace(*confirm)
+	if confirmName == "" {
+		return usageError{message: fmt.Sprintf("host delete requires --confirm <exact-app-name> matching the exact application name for secondary confirmation（需传入精确应用名称二次确认，例如: soha host delete %s --confirm \"My App\"）", appID)}
+	}
+	if len(confirmName) > 128 {
+		return usageError{message: "--confirm application name must be 1..128 characters"}
+	}
+	trimmedReason := strings.TrimSpace(*reason)
+	if len(trimmedReason) > 500 {
+		return usageError{message: "--reason must be at most 500 characters"}
+	}
+	format, err := normalizeOutputFormat(*output, "text", "json")
+	if err != nil {
+		return usageError{message: err.Error()}
+	}
+
+	client, err := loadHostClient(ctx, rt, *profile)
+	if err != nil {
+		return err
+	}
+	result, err := client.DeleteApp(ctx, appID, sohaapi.DeleteHostedAppRequest{
+		ConfirmationName: confirmName,
+		Reason:           trimmedReason,
+	})
+	if err != nil {
+		return err
+	}
+	return writeHostDeleteOutput(rt.Out, format, result, appID, confirmName)
 }
 
 func runHostLifecycle(ctx context.Context, action string, args []string, rt Runtime) error {

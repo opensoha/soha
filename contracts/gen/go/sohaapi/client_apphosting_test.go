@@ -60,6 +60,42 @@ func TestAppHostingEnumsValid(t *testing.T) {
 			t.Fatalf("HostedAppAccessDecisionKind %q should be valid", decision)
 		}
 	}
+	for _, policy := range []AppHostingOrganizationVisibilityPolicy{
+		AppHostingOrganizationVisibilityPolicyAllowDirect,
+		AppHostingOrganizationVisibilityPolicyRequireApproval,
+		AppHostingOrganizationVisibilityPolicyDisabled,
+	} {
+		if !policy.Valid() {
+			t.Fatalf("AppHostingOrganizationVisibilityPolicy %q should be valid", policy)
+		}
+	}
+	for _, approvalStatus := range []HostedAppVisibilityApprovalStatus{
+		HostedAppVisibilityApprovalStatusPending,
+		HostedAppVisibilityApprovalStatusApproved,
+		HostedAppVisibilityApprovalStatusRejected,
+		HostedAppVisibilityApprovalStatusWithdrawn,
+		HostedAppVisibilityApprovalStatusInvalidated,
+	} {
+		if !approvalStatus.Valid() {
+			t.Fatalf("HostedAppVisibilityApprovalStatus %q should be valid", approvalStatus)
+		}
+	}
+	for _, approvalScope := range []HostedAppApprovalListScope{
+		HostedAppApprovalListScopeMine,
+		HostedAppApprovalListScopeAll,
+	} {
+		if !approvalScope.Valid() {
+			t.Fatalf("HostedAppApprovalListScope %q should be valid", approvalScope)
+		}
+	}
+	for _, sourceKind := range []WorkspaceHostedAppSourceKind{
+		WorkspaceHostedAppSourceKindPersonalEnvironment,
+		WorkspaceHostedAppSourceKindConversationArtifact,
+	} {
+		if !sourceKind.Valid() {
+			t.Fatalf("WorkspaceHostedAppSourceKind %q should be valid", sourceKind)
+		}
+	}
 }
 
 func TestAppHostingSettingsAndAudienceClientMethods(t *testing.T) {
@@ -557,4 +593,344 @@ func TestAppHostingGatewayClientMethodsSupportClientAndOverrideBearerTokens(t *t
 	if len(seenAuthHeaders) != 2 || seenAuthHeaders[0] != "Bearer default-gateway-token" || seenAuthHeaders[1] != "Bearer override-gateway-token" {
 		t.Fatalf("seenAuthHeaders = %v", seenAuthHeaders)
 	}
+}
+
+func TestAppHostingB2PortalCollaborationApprovalAndWorkspaceClientMethods(t *testing.T) {
+	now := time.Date(2026, 11, 21, 3, 0, 0, 0, time.UTC)
+	aliceSummary := HostedAppUserSummary{
+		UserID:      "usr_alice",
+		DisplayName: "Alice Chen",
+		AvatarURL:   "https://cdn.soha.internal/avatars/alice.png",
+		TeamNames:   []string{"Growth Analytics"},
+	}
+	bobSummary := HostedAppUserSummary{
+		UserID:      "usr_bob",
+		DisplayName: "Bob Li",
+		TeamNames:   []string{"Platform"},
+	}
+	pendingApproval := HostedAppVisibilityApproval{
+		ID:                  "appr_1",
+		AppID:               "app_123",
+		AppName:             "Ops Report",
+		AppDNSLabel:         "ops-report-a1b2c3",
+		RequesterUserID:     "usr_alice",
+		RequesterProfile:    &aliceSummary,
+		CurrentVisibility:   HostedAppVisibilityScope{Mode: HostedAppVisibilityModeSelected, TeamIDs: []string{"team_ops"}},
+		RequestedVisibility: HostedAppVisibilityScope{Mode: HostedAppVisibilityModeOrganization},
+		BaseRouteGeneration: 3,
+		PolicyVersion:       2,
+		Status:              HostedAppVisibilityApprovalStatusPending,
+		Reason:              "Open to all employees",
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	richApp := HostedApp{
+		ID:                        "app_123",
+		Name:                      "Ops Report",
+		Kind:                      HostedAppKindStatic,
+		DNSLabel:                  "ops-report-a1b2c3",
+		Host:                      "ops-report-a1b2c3.apps.soha.internal",
+		URL:                       "https://ops-report-a1b2c3.apps.soha.internal",
+		SpaFallback:               true,
+		OwnerUserID:               "usr_alice",
+		OwnerProfile:              &aliceSummary,
+		MaintainerUserIDs:         []string{"usr_bob"},
+		Maintainers:               []HostedAppUserSummary{bobSummary},
+		Visibility:                HostedAppVisibilityScope{Mode: HostedAppVisibilityModeSelected, TeamIDs: []string{"team_ops"}},
+		PendingVisibilityApproval: &pendingApproval,
+		Status:                    HostedAppStatusOnline,
+		ActiveRevisionID:          "rev_2",
+		ActiveRevisionNumber:      2,
+		TotalBytes:                16384,
+		RouteGeneration:           3,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+
+	t.Run("settings policy and list apps filters", func(t *testing.T) {
+		var aliasReq UpdateAppHostingSettingsRequest = AppHostingSettingsUpdateRequest{
+			Enabled:                      true,
+			AppsDomain:                   "apps.soha.internal",
+			StorageIntegrationID:         "int_minio_1",
+			OrganizationVisibilityPolicy: AppHostingOrganizationVisibilityPolicyRequireApproval,
+		}
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method + " " + r.URL.Path {
+			case "PUT /api/v1/app-hosting/settings":
+				req := decodeJSONRequestBody[AppHostingSettingsUpdateRequest](t, r)
+				if req.OrganizationVisibilityPolicy != AppHostingOrganizationVisibilityPolicyRequireApproval {
+					t.Fatalf("unexpected policy: %#v", req)
+				}
+				writeJSON(t, w, AppHostingSettingsResponse{
+					Data: AppHostingSettings{
+						Enabled:                      true,
+						AppsDomain:                   req.AppsDomain,
+						PublicScheme:                 "https",
+						StorageIntegrationID:         req.StorageIntegrationID,
+						StoragePrefix:                "hosted-apps",
+						GatewayTokenConfigured:       true,
+						AllowOrganizationVisibility:  true,
+						OrganizationVisibilityPolicy: AppHostingOrganizationVisibilityPolicyRequireApproval,
+						PolicyVersion:                2,
+					},
+				})
+			case "GET /api/v1/app-hosting/apps":
+				q := r.URL.Query()
+				if q.Get("scope") != "all" || q.Get("ownerUserId") != "usr_alice" || q.Get("teamId") != "team_ops" {
+					t.Fatalf("unexpected query: %s", r.URL.RawQuery)
+				}
+				writeJSON(t, w, HostedAppListResponse{Data: HostedAppList{Items: []HostedApp{richApp}, Total: 1}})
+			default:
+				t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+		})
+
+		settings, err := client.UpdateAppHostingSettings(context.Background(), aliasReq)
+		if err != nil || settings.OrganizationVisibilityPolicy != AppHostingOrganizationVisibilityPolicyRequireApproval || settings.PolicyVersion != 2 {
+			t.Fatalf("UpdateAppHostingSettings = %#v, %v", settings, err)
+		}
+		list, err := client.ListHostedApps(context.Background(), ListHostedAppsParams{
+			Scope:       HostedAppListScopeAll,
+			OwnerUserID: "usr_alice",
+			TeamID:      "team_ops",
+		})
+		if err != nil || list.Total != 1 || list.Items[0].PendingVisibilityApproval == nil || list.Items[0].ActiveRevisionNumber != 2 {
+			t.Fatalf("ListHostedApps = %#v, %v", list, err)
+		}
+	})
+
+	t.Run("portal catalog", func(t *testing.T) {
+		authorSummary := PortalHostedAppAuthorSummary{
+			UserID:          "usr_alice",
+			DisplayName:     "Alice Chen",
+			TeamNames:       []string{"Growth Analytics"},
+			VisibleAppCount: 1,
+		}
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			assertCommonRequest(t, r, http.MethodGet, "/api/v1/app-hosting/portal/apps")
+			q := r.URL.Query()
+			if q.Get("query") != "ops" || q.Get("kind") != "static" || q.Get("authorUserId") != "usr_alice" || q.Get("limit") != "24" || q.Get("offset") != "24" {
+				t.Fatalf("unexpected portal query: %s", r.URL.RawQuery)
+			}
+			writeJSON(t, w, PortalHostedAppCatalogResponse{
+				Data: PortalHostedAppCatalog{
+					Items: []PortalHostedAppItem{{
+						ID:          "app_123",
+						Name:        "Ops Report",
+						Description: "Weekly metrics",
+						Kind:        HostedAppKindStatic,
+						DNSLabel:    "ops-report-a1b2c3",
+						Host:        "ops-report-a1b2c3.apps.soha.internal",
+						URL:         "https://ops-report-a1b2c3.apps.soha.internal",
+						Author:      aliceSummary,
+						UpdatedAt:   now,
+					}},
+					Authors:        []PortalHostedAppAuthorSummary{authorSummary},
+					SelectedAuthor: &authorSummary,
+					MyAppsCount:    2,
+					Total:          1,
+				},
+			})
+		})
+		catalog, err := client.ListPortalHostedApps(context.Background(), ListPortalHostedAppsParams{
+			Query:        "ops",
+			Kind:         HostedAppKindStatic,
+			AuthorUserID: "usr_alice",
+			Limit:        24,
+			Offset:       24,
+		})
+		if err != nil || catalog.Total != 1 || catalog.MyAppsCount != 2 || catalog.SelectedAuthor == nil || catalog.Items[0].Author.UserID != "usr_alice" {
+			t.Fatalf("ListPortalHostedApps = %#v, %v", catalog, err)
+		}
+	})
+
+	t.Run("maintainers transfer and delete", func(t *testing.T) {
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method + " " + r.URL.Path {
+			case "PUT /api/v1/app-hosting/apps/app_123/maintainers":
+				req := decodeJSONRequestBody[UpdateHostedAppMaintainersRequest](t, r)
+				if len(req.MaintainerUserIDs) != 2 || req.MaintainerUserIDs[0] != "usr_bob" {
+					t.Fatalf("maintainers req = %#v", req)
+				}
+				writeJSON(t, w, HostedAppResponse{Data: richApp})
+			case "POST /api/v1/app-hosting/apps/app_123/transfer":
+				req := decodeJSONRequestBody[TransferHostedAppOwnershipRequest](t, r)
+				if req.NewOwnerUserID != "usr_bob" || req.Reason != "handover" {
+					t.Fatalf("transfer req = %#v", req)
+				}
+				transferred := richApp
+				transferred.OwnerUserID = "usr_bob"
+				transferred.RouteGeneration = 4
+				writeJSON(t, w, HostedAppResponse{Data: transferred})
+			case "POST /api/v1/app-hosting/apps/app_123/delete":
+				req := decodeJSONRequestBody[DeleteHostedAppRequest](t, r)
+				if req.ConfirmationName != "Ops Report" {
+					t.Fatalf("delete req = %#v", req)
+				}
+				writeJSON(t, w, DeleteHostedAppResponse{Data: DeleteHostedAppResult{AppID: "app_123", Deleted: true}})
+			default:
+				t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+		})
+
+		if _, err := client.UpdateHostedAppMaintainers(context.Background(), " ", UpdateHostedAppMaintainersRequest{}); err == nil {
+			t.Fatal("expected empty appID error for UpdateHostedAppMaintainers")
+		}
+		if _, err := client.TransferHostedAppOwnership(context.Background(), "", TransferHostedAppOwnershipRequest{}); err == nil {
+			t.Fatal("expected empty appID error for TransferHostedAppOwnership")
+		}
+		if _, err := client.DeleteHostedApp(context.Background(), "", DeleteHostedAppRequest{}); err == nil {
+			t.Fatal("expected empty appID error for DeleteHostedApp")
+		}
+
+		updated, err := client.UpdateHostedAppMaintainers(context.Background(), "app_123", UpdateHostedAppMaintainersRequest{
+			MaintainerUserIDs: []string{"usr_bob", "usr_carol"},
+		})
+		if err != nil || updated.ID != "app_123" {
+			t.Fatalf("UpdateHostedAppMaintainers = %#v, %v", updated, err)
+		}
+
+		transferred, err := client.TransferHostedAppOwnership(context.Background(), "app_123", TransferHostedAppOwnershipRequest{
+			NewOwnerUserID: "usr_bob",
+			Reason:         "handover",
+		})
+		if err != nil || transferred.OwnerUserID != "usr_bob" || transferred.RouteGeneration != 4 {
+			t.Fatalf("TransferHostedAppOwnership = %#v, %v", transferred, err)
+		}
+
+		deleted, err := client.DeleteHostedApp(context.Background(), "app_123", DeleteHostedAppRequest{
+			ConfirmationName: "Ops Report",
+			Reason:           "cleanup",
+		})
+		if err != nil || !deleted.Deleted || deleted.AppID != "app_123" {
+			t.Fatalf("DeleteHostedApp = %#v, %v", deleted, err)
+		}
+	})
+
+	t.Run("approvals list withdraw approve and reject", func(t *testing.T) {
+		decidedAt := now.Add(5 * time.Minute)
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method + " " + r.URL.Path {
+			case "GET /api/v1/app-hosting/approvals":
+				q := r.URL.Query()
+				if q.Get("scope") != "all" || q.Get("status") != "pending" || q.Get("appId") != "app_123" || q.Get("limit") != "50" {
+					t.Fatalf("unexpected approvals query: %s", r.URL.RawQuery)
+				}
+				writeJSON(t, w, HostedAppVisibilityApprovalListResponse{
+					Data: HostedAppVisibilityApprovalList{Items: []HostedAppVisibilityApproval{pendingApproval}, Total: 1},
+				})
+			case "POST /api/v1/app-hosting/apps/app_123/visibility-approval/withdraw":
+				withdrawnApp := richApp
+				withdrawnApp.PendingVisibilityApproval = nil
+				writeJSON(t, w, HostedAppResponse{Data: withdrawnApp})
+			case "POST /api/v1/app-hosting/approvals/appr_1/approve":
+				req := decodeJSONRequestBody[ApproveHostedAppVisibilityRequest](t, r)
+				approved := pendingApproval
+				approved.Status = HostedAppVisibilityApprovalStatusApproved
+				approved.ReviewerUserID = "usr_admin"
+				approved.ReviewComment = req.Comment
+				approved.DecidedAt = &decidedAt
+				approvedApp := richApp
+				approvedApp.Visibility = HostedAppVisibilityScope{Mode: HostedAppVisibilityModeOrganization}
+				approvedApp.PendingVisibilityApproval = nil
+				writeJSON(t, w, HostedAppVisibilityApprovalDecisionResponse{
+					Data: HostedAppVisibilityApprovalDecisionResult{Approval: approved, App: approvedApp},
+				})
+			case "POST /api/v1/app-hosting/approvals/appr_1/reject":
+				req := decodeJSONRequestBody[RejectHostedAppVisibilityRequest](t, r)
+				if req.Comment != "restricted data" {
+					t.Fatalf("reject req = %#v", req)
+				}
+				rejected := pendingApproval
+				rejected.Status = HostedAppVisibilityApprovalStatusRejected
+				rejected.ReviewerUserID = "usr_admin"
+				rejected.ReviewComment = req.Comment
+				rejected.DecidedAt = &decidedAt
+				writeJSON(t, w, HostedAppVisibilityApprovalDecisionResponse{
+					Data: HostedAppVisibilityApprovalDecisionResult{Approval: rejected, App: richApp},
+				})
+			default:
+				t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+		})
+
+		if _, err := client.ApproveHostedAppVisibility(context.Background(), " ", nil); err == nil {
+			t.Fatal("expected empty approvalID error for ApproveHostedAppVisibility")
+		}
+		if _, err := client.RejectHostedAppVisibility(context.Background(), "", RejectHostedAppVisibilityRequest{Comment: "no"}); err == nil {
+			t.Fatal("expected empty approvalID error for RejectHostedAppVisibility")
+		}
+
+		approvals, err := client.ListHostedAppVisibilityApprovals(context.Background(), ListHostedAppVisibilityApprovalsParams{
+			Scope:  HostedAppApprovalListScopeAll,
+			Status: HostedAppVisibilityApprovalStatusPending,
+			AppID:  "app_123",
+			Limit:  50,
+		})
+		if err != nil || approvals.Total != 1 || approvals.Items[0].ID != "appr_1" {
+			t.Fatalf("ListHostedAppVisibilityApprovals = %#v, %v", approvals, err)
+		}
+
+		withdrawn, err := client.WithdrawHostedAppVisibilityApproval(context.Background(), "app_123", &HostedAppLifecycleActionRequest{Reason: "update audience"})
+		if err != nil || withdrawn.PendingVisibilityApproval != nil {
+			t.Fatalf("WithdrawHostedAppVisibilityApproval = %#v, %v", withdrawn, err)
+		}
+
+		approvedRes, err := client.ApproveHostedAppVisibility(context.Background(), "appr_1", nil)
+		if err != nil || approvedRes.Approval.Status != HostedAppVisibilityApprovalStatusApproved || approvedRes.App.Visibility.Mode != HostedAppVisibilityModeOrganization {
+			t.Fatalf("ApproveHostedAppVisibility = %#v, %v", approvedRes, err)
+		}
+
+		rejectedRes, err := client.RejectHostedAppVisibility(context.Background(), "appr_1", RejectHostedAppVisibilityRequest{Comment: "restricted data"})
+		if err != nil || rejectedRes.Approval.Status != HostedAppVisibilityApprovalStatusRejected {
+			t.Fatalf("RejectHostedAppVisibility = %#v, %v", rejectedRes, err)
+		}
+	})
+
+	t.Run("deploy from workspace", func(t *testing.T) {
+		spaTrue := true
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			assertCommonRequest(t, r, http.MethodPost, "/api/v1/app-hosting/workspace-deployments")
+			req := decodeJSONRequestBody[WorkspaceHostedAppDeploymentRequest](t, r)
+			if req.Source.Kind != WorkspaceHostedAppSourceKindPersonalEnvironment || req.Source.SourcePath != "dist" || req.IdempotencyKey != "ws-idem-1" {
+				t.Fatalf("workspace deploy req = %#v", req)
+			}
+			w.WriteHeader(http.StatusCreated)
+			writeJSON(t, w, WorkspaceHostedAppDeploymentResponse{
+				Data: WorkspaceHostedAppDeploymentResult{
+					App: richApp,
+					Revision: HostedAppRevision{
+						ID:             "rev_3",
+						AppID:          "app_123",
+						RevisionNumber: 3,
+						Kind:           HostedAppKindStatic,
+						Status:         HostedAppRevisionStatusReady,
+						BundleSha256:   strings.Repeat("b", 64),
+						FileCount:      3,
+						TotalBytes:     8192,
+						SpaFallback:    true,
+						CreatedBy:      "usr_alice",
+						CreatedAt:      now,
+						ActivatedAt:    &now,
+					},
+					Created: true,
+				},
+			})
+		})
+
+		deployed, err := client.DeployHostedAppFromWorkspace(context.Background(), WorkspaceHostedAppDeploymentRequest{
+			Name:        "Ops Report",
+			SpaFallback: &spaTrue,
+			Visibility:  &HostedAppVisibilityInput{Mode: HostedAppVisibilityModePrivate},
+			Source: WorkspaceHostedAppSource{
+				Kind:               WorkspaceHostedAppSourceKindPersonalEnvironment,
+				SourcePath:         "dist",
+				EnvironmentVersion: 2,
+			},
+			IdempotencyKey: "ws-idem-1",
+		})
+		if err != nil || !deployed.Created || deployed.Revision.ID != "rev_3" {
+			t.Fatalf("DeployHostedAppFromWorkspace = %#v, %v", deployed, err)
+		}
+	})
 }

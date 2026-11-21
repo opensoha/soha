@@ -181,6 +181,8 @@ type e2eEnv struct {
 	gwURL        *url.URL
 	gwURL2       *url.URL
 	gwPort       string
+	bucket       *sharedMemoryBucket
+	svc          *appapphosting.Service
 	audience     *apphostingrepo.MemoryAudienceDirectory
 	sessions     *e2eSessionStore
 	adminClient  *sohaapi.Client
@@ -256,6 +258,8 @@ func setupE2EEnv(t *testing.T) *e2eEnv {
 		gwURL:        gwURL,
 		gwURL2:       gwURL2,
 		gwPort:       gwPort,
+		bucket:       bucket,
+		svc:          svc,
 		audience:     audience,
 		sessions:     sessions,
 		adminClient:  adminClient,
@@ -267,20 +271,28 @@ func seedE2EAudience(audience *apphostingrepo.MemoryAudienceDirectory) *apphosti
 	audience.UpsertTeam(sohaapi.AppHostingAudienceTeam{ID: "team-eng", Name: "研发工程部", Slug: "eng"})
 	audience.UpsertTeam(sohaapi.AppHostingAudienceTeam{ID: "team-data", Name: "数据组", Slug: "data"})
 	audience.UpsertTeam(sohaapi.AppHostingAudienceTeam{ID: "team-sales", Name: "销售组", Slug: "sales"})
-	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-admin", Username: "admin", DisplayName: "平台管理员", Email: "admin@example.com", Status: "active", TeamIDs: []string{"team-eng"}})
-	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-alice", Username: "alice", DisplayName: "张敏", Email: "alice@example.com", Department: "研发工程部", Status: "active", TeamIDs: []string{"team-eng"}})
-	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-bob", Username: "bob", DisplayName: "李博", Email: "bob@example.com", Department: "数据组", Status: "active", TeamIDs: []string{"team-data"}})
-	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-eve", Username: "eve", DisplayName: "王芳", Email: "eve@example.com", Department: "销售组", Status: "active", TeamIDs: []string{"team-sales"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-admin", Username: "admin", DisplayName: "平台管理员", Email: "admin@example.com", Status: "active", Roles: []string{"admin"}, TeamIDs: []string{"team-eng"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-admin2", Username: "admin2", DisplayName: "安全审批管理员", Email: "admin2@example.com", Status: "active", Roles: []string{"admin"}, TeamIDs: []string{"team-eng"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-alice", Username: "alice", DisplayName: "张敏", Email: "alice@example.com", Department: "研发工程部", Status: "active", Roles: []string{"developer"}, TeamIDs: []string{"team-eng"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-pub", Username: "lin", DisplayName: "林悦", Email: "lin@example.com", Department: "销售组", Status: "active", Roles: []string{"portal-publisher"}, TeamIDs: []string{"team-sales"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-collab", Username: "zhou", DisplayName: "周凯", Email: "zhou@example.com", Department: "研发工程部", Status: "active", Roles: []string{"portal-publisher"}, TeamIDs: []string{"team-eng"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-bob", Username: "bob", DisplayName: "李博", Email: "bob@example.com", Department: "数据组", Status: "active", Roles: []string{"readonly"}, TeamIDs: []string{"team-data"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-dave", Username: "dave", DisplayName: "陈达", Email: "dave@example.com", Department: "数据组", Status: "active", Roles: []string{"readonly"}, TeamIDs: []string{"team-data"}})
+	audience.UpsertUser(apphostingrepo.MemoryUser{ID: "user-eve", Username: "eve", DisplayName: "王芳", Email: "eve@example.com", Department: "销售组", Status: "active", Roles: []string{"readonly"}, TeamIDs: []string{"team-sales"}})
 	return audience
 }
 
 func newE2ETokenParser() *stubTokenParser {
 	return &stubTokenParser{
 		tokens: map[string]domainidentity.Principal{
-			"tok-admin": {UserID: "user-admin", UserName: "admin", Email: "admin@example.com", Roles: []string{"admin"}, Teams: []string{"team-eng"}},
-			"tok-alice": {UserID: "user-alice", UserName: "alice", Email: "alice@example.com", Roles: []string{"developer"}, Teams: []string{"team-eng"}},
-			"tok-bob":   {UserID: "user-bob", UserName: "bob", Email: "bob@example.com", Roles: []string{"readonly"}, Teams: []string{"team-data"}},
-			"tok-eve":   {UserID: "user-eve", UserName: "eve", Email: "eve@example.com", Roles: []string{"readonly"}, Teams: []string{"team-sales"}},
+			"tok-admin":  {UserID: "user-admin", UserName: "admin", Email: "admin@example.com", Roles: []string{"admin"}, Teams: []string{"team-eng"}},
+			"tok-admin2": {UserID: "user-admin2", UserName: "admin2", Email: "admin2@example.com", Roles: []string{"admin"}, Teams: []string{"team-eng"}},
+			"tok-alice":  {UserID: "user-alice", UserName: "alice", Email: "alice@example.com", Roles: []string{"developer"}, Teams: []string{"team-eng"}},
+			"tok-pub":    {UserID: "user-pub", UserName: "lin", Email: "lin@example.com", Roles: []string{"portal-publisher"}, Teams: []string{"team-sales"}},
+			"tok-collab": {UserID: "user-collab", UserName: "zhou", Email: "zhou@example.com", Roles: []string{"portal-publisher"}, Teams: []string{"team-eng"}},
+			"tok-bob":    {UserID: "user-bob", UserName: "bob", Email: "bob@example.com", Roles: []string{"readonly"}, Teams: []string{"team-data"}},
+			"tok-dave":   {UserID: "user-dave", UserName: "dave", Email: "dave@example.com", Roles: []string{"readonly"}, Teams: []string{"team-data"}},
+			"tok-eve":    {UserID: "user-eve", UserName: "eve", Email: "eve@example.com", Roles: []string{"readonly"}, Teams: []string{"team-sales"}},
 		},
 	}
 }
@@ -303,15 +315,24 @@ func buildE2ECoreRouter(svc *appapphosting.Service, parser *stubTokenParser) *gi
 	v1Protected.PUT("/app-hosting/settings", handler.UpdateSettings)
 	v1Protected.POST("/app-hosting/settings/gateway-token/rotate", handler.RotateGatewayToken)
 	v1Protected.GET("/app-hosting/audience-candidates", handler.ListAudienceCandidates)
+	v1Protected.GET("/app-hosting/portal/apps", handler.ListPortalApps)
 	v1Protected.GET("/app-hosting/apps", handler.ListApps)
 	v1Protected.POST("/app-hosting/apps", handler.CreateApp)
 	v1Protected.GET("/app-hosting/apps/:appId", handler.GetApp)
 	v1Protected.PATCH("/app-hosting/apps/:appId", handler.UpdateApp)
 	v1Protected.PUT("/app-hosting/apps/:appId/visibility", handler.UpdateVisibility)
+	v1Protected.POST("/app-hosting/apps/:appId/visibility-approval/withdraw", handler.WithdrawVisibilityApproval)
+	v1Protected.PUT("/app-hosting/apps/:appId/maintainers", handler.UpdateMaintainers)
+	v1Protected.POST("/app-hosting/apps/:appId/transfer", handler.TransferOwnership)
+	v1Protected.POST("/app-hosting/apps/:appId/delete", handler.DeleteApp)
 	v1Protected.POST("/app-hosting/apps/:appId/offline", handler.TakeOffline)
 	v1Protected.POST("/app-hosting/apps/:appId/online", handler.BringOnline)
 	v1Protected.POST("/app-hosting/apps/:appId/suspend", handler.SuspendApp)
 	v1Protected.POST("/app-hosting/apps/:appId/unsuspend", handler.UnsuspendApp)
+	v1Protected.GET("/app-hosting/approvals", handler.ListVisibilityApprovals)
+	v1Protected.POST("/app-hosting/approvals/:approvalId/approve", handler.ApproveVisibilityApproval)
+	v1Protected.POST("/app-hosting/approvals/:approvalId/reject", handler.RejectVisibilityApproval)
+	v1Protected.POST("/app-hosting/workspace-deployments", handler.DeployFromWorkspace)
 	v1Protected.POST("/app-hosting/apps/:appId/deployments/preflight", handler.PreflightDeployment)
 	v1Protected.GET("/app-hosting/apps/:appId/revisions", handler.ListRevisions)
 	v1Protected.POST("/app-hosting/apps/:appId/revisions", handler.UploadRevision)

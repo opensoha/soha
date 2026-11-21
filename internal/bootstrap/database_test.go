@@ -645,6 +645,7 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		"identity-software":              {section: "software", sortOrder: 5},
 		"settings-overview":              {section: "", sortOrder: 1},
 		"identity-applications":          {section: "provider", sortOrder: 10},
+		"identity-app-hosting":           {section: "provider", sortOrder: 15},
 		"identity-providers":             {section: "provider", sortOrder: 20},
 		"identity-outposts":              {section: "provider", sortOrder: 30},
 		"identity-login-records":         {section: "provider", sortOrder: 40},
