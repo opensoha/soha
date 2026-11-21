@@ -716,18 +716,19 @@ describe('plugin list page data boundaries', () => {
     const updatePath = '/plugins/updates?pluginId=plugin.repository'
     let confirmed = false
     updatesMock.mockImplementation(async (path: string) => ({
-      items: confirmed || path !== updatePath
-        ? []
-        : [
-            {
-              pluginId: marketInstall.id,
-              repositoryUrl: repositorySourceInfo.canonicalSource,
-              installedVersion: marketInstall.version,
-              targetVersion: '3.0.0',
-              ref: 'refs/tags/v3.0.0',
-              marketplaceSourceId: 'other',
-            },
-          ],
+      items:
+        confirmed || path !== updatePath
+          ? []
+          : [
+              {
+                pluginId: marketInstall.id,
+                repositoryUrl: repositorySourceInfo.canonicalSource,
+                installedVersion: marketInstall.version,
+                targetVersion: '3.0.0',
+                ref: 'refs/tags/v3.0.0',
+                marketplaceSourceId: 'other',
+              },
+            ],
     }))
     apiGetMock.mockImplementation(async (path: string) => {
       if (path === '/plugins/installed') {

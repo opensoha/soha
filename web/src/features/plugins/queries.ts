@@ -30,7 +30,7 @@ export const pluginQueries = {
     }),
   updates: (pluginIds: readonly string[], enabled: boolean) =>
     queryOptions({
-      queryKey: [...pluginKeys.updates(), pluginIds],
+      queryKey: pluginKeys.updates(pluginIds),
       queryFn: () => (pluginIds.length ? pluginApi.updates(pluginIds) : Promise.resolve([])),
       enabled: enabled && pluginIds.length > 0,
     }),

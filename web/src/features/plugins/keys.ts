@@ -15,7 +15,8 @@ export const pluginKeys = {
     ] as const,
   installed: () => [...pluginKeys.all, 'installed'] as const,
   installedList: () => [...pluginKeys.installed(), 'list'] as const,
-  updates: () => [...pluginKeys.installed(), 'updates'] as const,
+  updates: (pluginIds: readonly string[]) =>
+    [...pluginKeys.installed(), 'updates', pluginIds] as const,
   repositoryRefs: (input: PluginRepositoryRefsRequest) =>
     [...pluginKeys.all, 'repository-refs', input] as const,
   installedDetail: (pluginId: string) =>
