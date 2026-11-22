@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1",
+  "pluginId": "example.blob",
+  "version": "1.0.0",
+  "repository": "https://github.com/example/blob",
+  "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rawManifestSha256": "dd0bb0c98d8856cc4efa70a18e669345fb165bb06b7386087f42fbba1f058e2f",
+  "components": {
+    "web": {
+      "name": "panel.tar.gz"
+    }
+  }
+}

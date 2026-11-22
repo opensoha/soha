@@ -25,3 +25,11 @@ func MarketplaceCatalogSchema() []byte {
 func MarketplaceRepositoriesSchema() []byte {
 	return append([]byte(nil), marketplaceRepositoriesSchema...)
 }
+
+//go:embed plugin-release-attestation.schema.json
+var releaseAttestationSchema []byte
+
+// ReleaseAttestationSchema returns the schema of the detached, signed release document.
+func ReleaseAttestationSchema() []byte {
+	return append([]byte(nil), releaseAttestationSchema...)
+}

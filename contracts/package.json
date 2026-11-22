@@ -55,6 +55,7 @@
     "./mcp/gateway-manifest.schema.json": "./mcp/gateway-manifest.schema.json",
     "./mcp/gateway-capability-baseline.schema.json": "./mcp/gateway-capability-baseline.schema.json",
     "./skills/skill-manifest.schema.json": "./skills/skill-manifest.schema.json",
+    "./plugins/plugin-release-attestation.schema.json": "./plugins/plugin-release-attestation.schema.json",
     "./plugins/plugin-manifest.schema.json": "./plugins/plugin-manifest.schema.json",
     "./plugins/companion-pack.schema.json": "./plugins/companion-pack.schema.json",
     "./plugins/companion-provenance.schema.json": "./plugins/companion-provenance.schema.json",

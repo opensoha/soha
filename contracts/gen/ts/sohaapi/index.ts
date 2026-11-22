@@ -31897,7 +31897,7 @@ export interface components {
         };
         PluginRuntimeSpec: {
             /** @enum {string} */
-            mode: "manifest-only" | "external-http" | "managed-container";
+            mode: "manifest-only" | "external-http" | "managed-container" | "executable-package-v1";
             endpoint?: string;
             healthPath?: string;
             manifestPath?: string;
@@ -32086,6 +32086,35 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        PluginReleaseArtifact: {
+            /** @description Flat filename of one asset attached to the pinned GitHub Release. */
+            name: string;
+            sha256: string;
+            /** Format: int64 */
+            byteLength: number;
+        };
+        PluginStorageDriverPackage: {
+            driverId: string;
+            /** @constant */
+            protocol: "object-storage/v1";
+            platforms: {
+                [key: string]: components["schemas"]["PluginReleaseArtifact"];
+            };
+        };
+        PluginPackageComponents: {
+            backend?: components["schemas"]["PluginStorageDriverPackage"];
+            web?: components["schemas"]["PluginReleaseArtifact"];
+        };
+        PluginReleaseAttestation: {
+            /** @constant */
+            schemaVersion: "1";
+            pluginId: string;
+            version: string;
+            repository: string;
+            commitSha: string;
+            rawManifestSha256: string;
+            components: components["schemas"]["PluginPackageComponents"];
+        };
         PluginManifest: {
             id: string;
             name: string;
@@ -32104,6 +32133,7 @@ export interface components {
             };
             integrity?: components["schemas"]["PluginIntegrity"];
             runtime?: components["schemas"]["PluginRuntimeSpec"];
+            components?: components["schemas"]["PluginPackageComponents"];
             companionPack?: components["schemas"]["CompanionPackManifest"];
             configSchema?: components["schemas"]["JSONSchema"];
             extensionPoints?: components["schemas"]["PluginExtensionPoints"];
@@ -32342,7 +32372,15 @@ export interface components {
             checksumStatus: string;
             /** @description A signature declared by a repository is not verified until checked against a trusted key. */
             signatureStatus: string;
-            /** @description Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest. */
+            releaseAttestation?: components["schemas"]["PluginReleaseAttestation"];
+            /** @description SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust. */
+            publisherKeyFingerprint?: string;
+            /**
+             * @description Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.
+             * @enum {string}
+             */
+            installEligibility?: "confirmable" | "signed-release-required" | "publisher-trust-required";
+            /** @description For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest. */
             previewToken: string;
             /** Format: date-time */
             expiresAt: string;
@@ -38017,6 +38055,10 @@ export type MarketplacePublisher = components['schemas']['MarketplacePublisher']
 export type MarketplacePluginVersion = components['schemas']['MarketplacePluginVersion'];
 export type MarketplaceAdvisory = components['schemas']['MarketplaceAdvisory'];
 export type MarketplaceCatalog = components['schemas']['MarketplaceCatalog'];
+export type PluginReleaseArtifact = components['schemas']['PluginReleaseArtifact'];
+export type PluginStorageDriverPackage = components['schemas']['PluginStorageDriverPackage'];
+export type PluginPackageComponents = components['schemas']['PluginPackageComponents'];
+export type PluginReleaseAttestation = components['schemas']['PluginReleaseAttestation'];
 export type PluginManifest = components['schemas']['PluginManifest'];
 export type CloudExtensionPointKind = components['schemas']['CloudExtensionPointKind'];
 export type CloudExtensionBoundary = components['schemas']['CloudExtensionBoundary'];

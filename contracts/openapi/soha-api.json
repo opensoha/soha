@@ -66289,6 +66289,30 @@
       },
       "PluginManifest": {
         "additionalProperties": false,
+        "else": {
+          "not": {
+            "required": [
+              "components"
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "runtime": {
+              "properties": {
+                "mode": {
+                  "const": "executable-package-v1"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "required": [
+            "runtime"
+          ]
+        },
         "properties": {
           "assets": {
             "$ref": "#/components/schemas/PluginAssetSnapshot"
@@ -66301,6 +66325,10 @@
           },
           "compatibility": {
             "$ref": "#/components/schemas/PluginCompatibility"
+          },
+          "components": {
+            "$ref": "#/components/schemas/PluginPackageComponents",
+            "minProperties": 1
           },
           "configSchema": {
             "$ref": "#/components/schemas/JSONSchema"
@@ -66379,6 +66407,33 @@
           "publisher",
           "type"
         ],
+        "then": {
+          "properties": {
+            "companionPack": false,
+            "configSchema": {
+              "properties": {
+                "x-soha-test-connection-action": {
+                  "const": "storage.testConnection"
+                }
+              }
+            },
+            "id": {
+              "maxLength": 255
+            },
+            "type": {
+              "not": {
+                "const": "companion-pack"
+              }
+            },
+            "version": {
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+            }
+          },
+          "required": [
+            "components"
+          ]
+        },
         "type": "object"
       },
       "PluginManifestEnvelope": {
@@ -66496,6 +66551,18 @@
           "signals",
           "capabilities"
         ],
+        "type": "object"
+      },
+      "PluginPackageComponents": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/PluginStorageDriverPackage"
+          },
+          "web": {
+            "$ref": "#/components/schemas/PluginReleaseArtifact"
+          }
+        },
         "type": "object"
       },
       "PluginPackageDescriptor": {
@@ -66624,6 +66691,77 @@
         ],
         "type": "object"
       },
+      "PluginReleaseArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Flat filename of one asset attached to the pinned GitHub Release.",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "sha256",
+          "byteLength"
+        ],
+        "type": "object"
+      },
+      "PluginReleaseAttestation": {
+        "additionalProperties": false,
+        "properties": {
+          "commitSha": {
+            "pattern": "^[a-f0-9]{40}$",
+            "type": "string"
+          },
+          "components": {
+            "$ref": "#/components/schemas/PluginPackageComponents"
+          },
+          "pluginId": {
+            "maxLength": 255,
+            "pattern": "^[a-z0-9][a-z0-9.-]*\\.[a-z0-9][a-z0-9._-]*$",
+            "type": "string"
+          },
+          "rawManifestSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "repository": {
+            "pattern": "^https://github\\.com/[a-z0-9-]+/[a-z0-9_.-]+$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "1",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "pluginId",
+          "version",
+          "repository",
+          "commitSha",
+          "rawManifestSha256",
+          "components"
+        ],
+        "type": "object"
+      },
       "PluginRepositoryInstallRequest": {
         "additionalProperties": false,
         "properties": {
@@ -66635,6 +66773,9 @@
             "description": "An unexpired token issued to the same caller and scope by the repository preview endpoint.",
             "maxLength": 8192,
             "minLength": 1,
+            "not": {
+              "const": "preview-only"
+            },
             "type": "string"
           }
         },
@@ -66645,6 +66786,58 @@
       },
       "PluginRepositoryPreview": {
         "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "manifest": {
+                "required": [
+                  "components"
+                ]
+              }
+            }
+          },
+          "properties": {
+            "previewToken": {
+              "not": {
+                "const": "preview-only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "installEligibility": {
+                "const": "confirmable"
+              },
+              "releaseAttestation": {
+                "properties": {
+                  "components": {
+                    "minProperties": 1
+                  }
+                }
+              },
+              "signatureStatus": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "installEligibility",
+              "releaseAttestation"
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "installEligibility": {
+              "enum": [
+                "signed-release-required",
+                "publisher-trust-required"
+              ]
+            }
+          },
+          "required": [
+            "installEligibility"
+          ]
+        },
         "properties": {
           "checksumStatus": {
             "description": "A computed digest can bind confirmation to the preview; it does not authenticate the publisher.",
@@ -66654,14 +66847,31 @@
             "format": "date-time",
             "type": "string"
           },
+          "installEligibility": {
+            "description": "Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.",
+            "enum": [
+              "confirmable",
+              "signed-release-required",
+              "publisher-trust-required"
+            ],
+            "type": "string"
+          },
           "manifest": {
             "$ref": "#/components/schemas/PluginManifest"
           },
           "previewToken": {
-            "description": "Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.",
+            "description": "For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.",
             "maxLength": 8192,
             "minLength": 1,
             "type": "string"
+          },
+          "publisherKeyFingerprint": {
+            "description": "SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust.",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "releaseAttestation": {
+            "$ref": "#/components/schemas/PluginReleaseAttestation"
           },
           "signatureStatus": {
             "description": "A signature declared by a repository is not verified until checked against a trusted key.",
@@ -66679,6 +66889,43 @@
           "previewToken",
           "expiresAt"
         ],
+        "then": {
+          "if": {
+            "properties": {
+              "installEligibility": {
+                "const": "publisher-trust-required"
+              }
+            }
+          },
+          "properties": {
+            "manifest": {
+              "required": [
+                "components"
+              ]
+            },
+            "previewToken": {
+              "const": "preview-only"
+            },
+            "releaseAttestation": {
+              "properties": {
+                "components": {
+                  "minProperties": 1
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signatureStatus": {
+                "const": "untrusted"
+              }
+            },
+            "required": [
+              "publisherKeyFingerprint",
+              "releaseAttestation"
+            ]
+          }
+        },
         "type": "object"
       },
       "PluginRepositoryPreviewEnvelope": {
@@ -66865,6 +67112,9 @@
             "description": "An unexpired token issued to the same caller and scope for the selected repository version.",
             "maxLength": 8192,
             "minLength": 1,
+            "not": {
+              "const": "preview-only"
+            },
             "type": "string"
           }
         },
@@ -66929,7 +67179,8 @@
             "enum": [
               "manifest-only",
               "external-http",
-              "managed-container"
+              "managed-container",
+              "executable-package-v1"
             ],
             "type": "string"
           },
@@ -67012,6 +67263,36 @@
           "kind",
           "canonicalSource",
           "official"
+        ],
+        "type": "object"
+      },
+      "PluginStorageDriverPackage": {
+        "additionalProperties": false,
+        "properties": {
+          "driverId": {
+            "pattern": "^[a-z][a-z0-9.-]{0,126}$",
+            "type": "string"
+          },
+          "platforms": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PluginReleaseArtifact"
+            },
+            "minProperties": 1,
+            "propertyNames": {
+              "pattern": "^[a-z0-9]+/[a-z0-9]+$",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "protocol": {
+            "const": "object-storage/v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "driverId",
+          "protocol",
+          "platforms"
         ],
         "type": "object"
       },
