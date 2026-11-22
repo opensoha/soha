@@ -931,6 +931,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-integrations/storage-drivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSystemIntegrationStorageDrivers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system-integrations/{integrationID}": {
         parameters: {
             query?: never;
@@ -17392,6 +17408,14 @@ export interface components {
         };
         SystemIntegrationOAuthAuthorizationEnvelope: {
             data: components["schemas"]["SystemIntegrationOAuthAuthorization"];
+        };
+        StorageDriverDescriptor: {
+            id: string;
+            name: string;
+            configSchema: components["schemas"]["JSONSchema"];
+        };
+        StorageDriverListEnvelope: {
+            items: components["schemas"]["StorageDriverDescriptor"][];
         };
         SystemIntegrationConfigurationField: {
             key: string;
@@ -36363,6 +36387,8 @@ export type SystemIntegrationHealthStatus = components['schemas']['SystemIntegra
 export type SystemIntegrationTestStatus = components['schemas']['SystemIntegrationTestStatus'];
 export type SystemIntegrationOAuthAuthorization = components['schemas']['SystemIntegrationOAuthAuthorization'];
 export type SystemIntegrationOAuthAuthorizationEnvelope = components['schemas']['SystemIntegrationOAuthAuthorizationEnvelope'];
+export type StorageDriverDescriptor = components['schemas']['StorageDriverDescriptor'];
+export type StorageDriverListEnvelope = components['schemas']['StorageDriverListEnvelope'];
 export type SystemIntegrationConfigurationField = components['schemas']['SystemIntegrationConfigurationField'];
 export type SystemIntegrationCredentialInput = components['schemas']['SystemIntegrationCredentialInput'];
 export type SystemIntegrationCreateRequest = components['schemas']['SystemIntegrationCreateRequest'];
@@ -40536,6 +40562,28 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    listSystemIntegrationStorageDrivers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified storage drivers available to the system integration form. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageDriverListEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
         };
     };
     getSystemIntegration: {

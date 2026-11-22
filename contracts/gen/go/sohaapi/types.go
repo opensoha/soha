@@ -37029,6 +37029,18 @@ type SourceTagListEnvelope struct {
 	Items []SourceTag `json:"items"`
 }
 
+// StorageDriverDescriptor defines model for StorageDriverDescriptor.
+type StorageDriverDescriptor struct {
+	ConfigSchema JSONSchema `json:"configSchema"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+}
+
+// StorageDriverListEnvelope defines model for StorageDriverListEnvelope.
+type StorageDriverListEnvelope struct {
+	Items []StorageDriverDescriptor `json:"items"`
+}
+
 // StreamTicket defines model for StreamTicket.
 type StreamTicket struct {
 	ExpiresAt time.Time `json:"expiresAt"`

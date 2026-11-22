@@ -1922,6 +1922,21 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /system-integrations/storage-drivers:
+    get:
+      tags: [ System Integrations ]
+      operationId: listSystemIntegrationStorageDrivers
+      responses:
+        "200":
+          description: Verified storage drivers available to the system integration form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageDriverListEnvelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /system-integrations/{integrationID}:
     get:
       tags: [ System Integrations ]
@@ -33449,6 +33464,26 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SystemIntegrationOAuthAuthorization"
+      additionalProperties: false
+    StorageDriverDescriptor:
+      type: object
+      required: [ id, name, configSchema ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        configSchema:
+          $ref: "#/components/schemas/JSONSchema"
+      additionalProperties: false
+    StorageDriverListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageDriverDescriptor"
       additionalProperties: false
     SystemIntegrationConfigurationField:
       type: object

@@ -33,6 +33,17 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	storageDrivers, err := startStorageDrivers(infra.lifecycleCtx, cfg.Plugins.Storage, core.systemIntegrationService, core.secretService)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			closeStorageDrivers(storageDrivers)
+		}
+	}()
 	delivery := newDeliveryServices(infra.lifecycleCtx, cfg, infra, repos, core)
 	gateway, err := newGatewayServices(infra.lifecycleCtx, cfg, repos, core, delivery)
 	if err != nil {
@@ -44,7 +55,6 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
-	initialized := false
 	defer func() {
 		if !initialized {
 			_ = optionalRuntimes.Close(context.Background())
@@ -88,7 +98,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
 	initialized = true
-	return &App{
+	app := &App{
 		OptionalRuntimes:      optionalRuntimes,
 		CopilotService:        delivery.copilotService,
 		PodTerminals:          core.resourceService.PodTerminals(),
@@ -103,5 +113,9 @@ func New(ctx context.Context) (*App, error) {
 		HTTP:                  httpServer,
 		PersonalGuest:         guestServer,
 		cancel:                infra.cancel,
-	}, nil
+	}
+	if storageDrivers != nil {
+		app.StorageDrivers = storageDrivers
+	}
+	return app, nil
 }

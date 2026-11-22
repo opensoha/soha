@@ -234,6 +234,23 @@ type PluginsConfig struct {
 	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
 	Companion   PluginCompanionConfig   `mapstructure:"companion"`
 	Repository  PluginRepositoryConfig  `mapstructure:"repository"`
+	Storage     PluginStorageConfig     `mapstructure:"storage"`
+}
+
+type PluginStorageConfig struct {
+	PackageRoot string                      `mapstructure:"package_root"`
+	RuntimeRoot string                      `mapstructure:"runtime_root"`
+	Drivers     []PluginStorageDriverConfig `mapstructure:"drivers"`
+}
+
+type PluginStorageDriverConfig struct {
+	PluginID      string `mapstructure:"plugin_id"`
+	Version       string `mapstructure:"version"`
+	Repository    string `mapstructure:"repository"`
+	Commit        string `mapstructure:"commit"`
+	PublicKeyPath string `mapstructure:"public_key_path"`
+	UID           uint32 `mapstructure:"uid"`
+	GID           uint32 `mapstructure:"gid"`
 }
 
 type PluginRepositoryConfig struct {

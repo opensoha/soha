@@ -3,6 +3,7 @@ export type { UpsertSettingsRecordInput } from './api'
 export { sourceControlApi } from './system-integrations/api'
 export { sourceControlQueries } from './system-integrations/queries'
 export { systemIntegrationMutations, systemIntegrationQueries } from './system-integrations'
+export { PluginStorageConnections } from './system-integrations'
 export {
   createS3StorageIntegration,
   inferS3StoragePreset,

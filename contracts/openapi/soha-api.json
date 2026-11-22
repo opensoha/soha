@@ -73268,6 +73268,41 @@
         ],
         "type": "object"
       },
+      "StorageDriverDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "configSchema": {
+            "$ref": "#/components/schemas/JSONSchema"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "configSchema"
+        ],
+        "type": "object"
+      },
+      "StorageDriverListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StorageDriverDescriptor"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "StreamTicket": {
         "additionalProperties": false,
         "properties": {
@@ -136310,6 +136345,32 @@
           }
         },
         "security": [],
+        "tags": [
+          "System Integrations"
+        ]
+      }
+    },
+    "/system-integrations/storage-drivers": {
+      "get": {
+        "operationId": "listSystemIntegrationStorageDrivers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageDriverListEnvelope"
+                }
+              }
+            },
+            "description": "Verified storage drivers available to the system integration form."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
         "tags": [
           "System Integrations"
         ]

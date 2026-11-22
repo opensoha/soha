@@ -1,5 +1,6 @@
 export { systemIntegrationMutations } from './mutations'
 export { systemIntegrationQueries } from './queries'
+export { PluginStorageConnections } from './plugin-storage-connections'
 export {
   createS3StorageIntegration,
   inferS3StoragePreset,
