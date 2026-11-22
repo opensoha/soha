@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/contracts/plugins/storagedriver"
@@ -18,16 +20,20 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// StorageDriverRegistry is assembled before API startup and stays immutable
-// while serving. A hosted driver handles process replacement behind its port.
+// StorageDriverRegistry publishes a complete descriptor and invocation handle
+// together. Reads continue during a managed version's durable commit.
 type StorageDriverRegistry struct {
 	builtin storagedriver.Driver
+	writes  sync.Mutex
+	mu      sync.RWMutex
 	plugins map[string]storageDriver
 }
 
 type storageDriver struct {
 	id         string
 	name       string
+	version    string
+	owner      *ManagedStorageDrivers
 	schema     sohaapi.JSONSchema
 	fields     map[string]storageField
 	validation *jsonschema.Schema
@@ -46,19 +52,170 @@ func NewStorageDriverRegistry(builtin storagedriver.Driver) *StorageDriverRegist
 // RegisterPlugin accepts the descriptor of an already verified release. B7
 // supports flat string, boolean and integer form fields.
 func (r *StorageDriverRegistry) RegisterPlugin(id, name string, rawSchema []byte, driver storagedriver.Driver) error {
-	if !validKey(id) || id == domain.ProviderS3 || strings.TrimSpace(name) == "" || driver == nil {
-		return fmt.Errorf("invalid storage driver descriptor")
+	descriptor, err := newStorageDescriptor(id, name, rawSchema, driver)
+	if err != nil {
+		return err
 	}
-	if _, exists := r.plugins[id]; exists {
+	r.writes.Lock()
+	defer r.writes.Unlock()
+	if _, exists := r.lookup(id); exists {
 		return fmt.Errorf("duplicate storage driver %q", id)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.plugins[id] = descriptor
+	return nil
+}
+
+func newStorageDescriptor(id, name string, rawSchema []byte, driver storagedriver.Driver) (storageDriver, error) {
+	if !validKey(id) || id == domain.ProviderS3 || strings.TrimSpace(name) == "" || driver == nil {
+		return storageDriver{}, fmt.Errorf("invalid storage driver descriptor")
 	}
 	descriptor, err := parseStorageSchema(rawSchema)
 	if err != nil {
-		return fmt.Errorf("storage driver %q: %w", id, err)
+		return storageDriver{}, fmt.Errorf("storage driver %q: %w", id, err)
 	}
 	descriptor.id, descriptor.name, descriptor.driver = id, name, driver
+	return descriptor, nil
+}
+
+func (r *StorageDriverRegistry) lookup(id string) (storageDriver, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	driver, ok := r.plugins[id]
+	return driver, ok
+}
+
+func (r *StorageDriverRegistry) descriptors() []sohaapi.StorageDriverDescriptor {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]sohaapi.StorageDriverDescriptor, 0, len(r.plugins))
+	for _, plugin := range r.plugins {
+		result = append(result, sohaapi.StorageDriverDescriptor{ID: plugin.id, Name: plugin.name, ConfigSchema: plugin.schema})
+	}
+	return result
+}
+
+// ManagedStorageDrivers is an ownership token for dynamically published drivers.
+// Its mutations cannot replace or remove a static entry or another owner's entry.
+type ManagedStorageDrivers struct {
+	registry *StorageDriverRegistry
+}
+
+// ManagedDrivers creates a registry ownership token for one runtime.
+func (r *StorageDriverRegistry) ManagedDrivers() *ManagedStorageDrivers {
+	return &ManagedStorageDrivers{registry: r}
+}
+
+// CheckOwner rejects a driver ID reserved by a different runtime. Publication
+// verifies this again under the registry's write lock.
+func (m *ManagedStorageDrivers) CheckOwner(id string) error {
+	if current, exists := m.registry.lookup(id); exists && current.owner != m {
+		return fmt.Errorf("%w: storage driver %q has another runtime owner", apperrors.ErrConflict, id)
+	}
+	return nil
+}
+
+// ActiveVersion returns the selected version of an owned driver.
+func (m *ManagedStorageDrivers) ActiveVersion(id string) string {
+	if current, exists := m.registry.lookup(id); exists && current.owner == m {
+		return current.version
+	}
+	return ""
+}
+
+// Switch validates a candidate and publishes it only after commit succeeds.
+// The callback must not call a registry mutation.
+func (m *ManagedStorageDrivers) Switch(id, name, version string, rawSchema []byte, driver storagedriver.Driver, commit func() error) error {
+	descriptor, err := newStorageDescriptor(id, name, rawSchema, driver)
+	if err != nil {
+		return err
+	}
+	if version == "" {
+		return fmt.Errorf("missing managed storage driver version")
+	}
+	r := m.registry
+	descriptor.version, descriptor.owner = version, m
+	descriptor.driver = &registeredStorageDriver{registry: r, id: id, driver: driver}
+	r.writes.Lock()
+	defer r.writes.Unlock()
+	if err := m.CheckOwner(id); err != nil {
+		return err
+	}
+	if err := commit(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.plugins[id] = descriptor
 	return nil
+}
+
+// Remove withdraws an owned driver after commit succeeds.
+func (m *ManagedStorageDrivers) Remove(id string, commit func() error) error {
+	r := m.registry
+	r.writes.Lock()
+	defer r.writes.Unlock()
+	if err := m.CheckOwner(id); err != nil {
+		return err
+	}
+	if err := commit(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.plugins, id)
+	return nil
+}
+
+// registeredStorageDriver gates handles that were resolved before a version was
+// replaced or disabled. The supervisor owns the drain of accepted calls.
+type registeredStorageDriver struct {
+	registry *StorageDriverRegistry
+	id       string
+	driver   storagedriver.Driver
+}
+
+func (d *registeredStorageDriver) available() error {
+	if current, ok := d.registry.lookup(d.id); !ok || current.driver != d {
+		return storagedriver.RPCError{Code: storagedriver.CodeUnavailable}
+	}
+	return nil
+}
+
+func (d *registeredStorageDriver) TestConnection(ctx context.Context, binding storagedriver.Binding) error {
+	if err := d.available(); err != nil {
+		return err
+	}
+	return d.driver.TestConnection(ctx, binding)
+}
+
+func (d *registeredStorageDriver) PutObject(ctx context.Context, req storagedriver.PutObjectRequest, body io.Reader) (storagedriver.PutObjectResult, error) {
+	if err := d.available(); err != nil {
+		return storagedriver.PutObjectResult{}, err
+	}
+	return d.driver.PutObject(ctx, req, body)
+}
+
+func (d *registeredStorageDriver) OpenObject(ctx context.Context, req storagedriver.OpenObjectRequest) (storagedriver.OpenObjectResult, error) {
+	if err := d.available(); err != nil {
+		return storagedriver.OpenObjectResult{}, err
+	}
+	return d.driver.OpenObject(ctx, req)
+}
+
+func (d *registeredStorageDriver) DeleteKeys(ctx context.Context, req storagedriver.DeleteKeysRequest) error {
+	if err := d.available(); err != nil {
+		return err
+	}
+	return d.driver.DeleteKeys(ctx, req)
+}
+
+func (d *registeredStorageDriver) ListPrefix(ctx context.Context, req storagedriver.ListPrefixRequest) (storagedriver.ListPrefixResult, error) {
+	if err := d.available(); err != nil {
+		return storagedriver.ListPrefixResult{}, err
+	}
+	return d.driver.ListPrefix(ctx, req)
 }
 
 func parseStorageSchema(raw []byte) (storageDriver, error) {
@@ -73,26 +230,11 @@ func parseStorageSchema(raw []byte) (storageDriver, error) {
 	if !ok || len(properties) == 0 || len(properties) > 32 {
 		return storageDriver{}, invalid
 	}
-	result := storageDriver{schema: fields, fields: make(map[string]storageField)}
-	for key, property := range properties {
-		rules, ok := property.(map[string]any)
-		if !ok || !validKey(key) {
-			return storageDriver{}, invalid
-		}
-		kind, _ := rules["type"].(string)
-		widget, _ := rules["x-soha-widget"].(string)
-		if kind != "string" && kind != "boolean" && kind != "integer" ||
-			widget != "" && (widget != "secret-ref" || kind != "string" || strings.ContainsAny(key, ".-")) {
-			return storageDriver{}, invalid
-		}
-		result.fields[key] = storageField{kind: kind, secretRef: widget == "secret-ref"}
-	}
-	if result.fields["container"] != (storageField{kind: "string"}) {
+	form, ok := parseStorageFields(properties)
+	if !ok {
 		return storageDriver{}, invalid
 	}
-	if prefix, exists := result.fields["prefix"]; exists && prefix != (storageField{kind: "string"}) {
-		return storageDriver{}, invalid
-	}
+	result := storageDriver{schema: fields, fields: form}
 	const schemaURL = "https://schemas.invalid/storage-config"
 	compiler := jsonschema.NewCompiler()
 	compiler.UseLoader(jsonschema.SchemeURLLoader{})
@@ -105,6 +247,30 @@ func parseStorageSchema(raw []byte) (storageDriver, error) {
 		return storageDriver{}, invalid
 	}
 	return result, nil
+}
+
+func parseStorageFields(properties map[string]any) (map[string]storageField, bool) {
+	fields := make(map[string]storageField, len(properties))
+	for key, property := range properties {
+		rules, ok := property.(map[string]any)
+		if !ok || !validKey(key) {
+			return nil, false
+		}
+		kind, _ := rules["type"].(string)
+		widget, _ := rules["x-soha-widget"].(string)
+		if kind != "string" && kind != "boolean" && kind != "integer" ||
+			widget != "" && (widget != "secret-ref" || kind != "string" || strings.ContainsAny(key, ".-")) {
+			return nil, false
+		}
+		fields[key] = storageField{kind: kind, secretRef: widget == "secret-ref"}
+	}
+	if fields["container"] != (storageField{kind: "string"}) {
+		return nil, false
+	}
+	if prefix, exists := fields["prefix"]; exists && prefix != (storageField{kind: "string"}) {
+		return nil, false
+	}
+	return fields, true
 }
 
 type storageSecrets interface {
@@ -122,9 +288,7 @@ func (s *Service) ListStorageDrivers(ctx context.Context, principal domainidenti
 	}
 	result := make([]sohaapi.StorageDriverDescriptor, 0)
 	if s.storageDrivers != nil {
-		for _, plugin := range s.storageDrivers.plugins {
-			result = append(result, sohaapi.StorageDriverDescriptor{ID: plugin.id, Name: plugin.name, ConfigSchema: plugin.schema})
-		}
+		result = s.storageDrivers.descriptors()
 		sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	}
 	return result, nil
@@ -132,11 +296,22 @@ func (s *Service) ListStorageDrivers(ctx context.Context, principal domainidenti
 
 func (s *Service) pluginDriver(id string) (storageDriver, error) {
 	if s.storageDrivers != nil {
-		if descriptor, ok := s.storageDrivers.plugins[id]; ok {
+		if descriptor, ok := s.storageDrivers.lookup(id); ok {
 			return descriptor, nil
 		}
 	}
 	return storageDriver{}, fmt.Errorf("%w: storage driver unavailable", apperrors.ErrUnsupportedOperation)
+}
+
+// ValidateStorageDriverBinding checks a persisted connection against a
+// candidate's configuration schema without resolving any credentials.
+func ValidateStorageDriverBinding(rawSchema []byte, id string, fields []sohaapi.SystemIntegrationConfigurationField) error {
+	descriptor, err := parseStorageSchema(rawSchema)
+	if err != nil {
+		return err
+	}
+	_, _, err = descriptor.binding(id, fields)
+	return err
 }
 
 func (d storageDriver) binding(id string, fields []sohaapi.SystemIntegrationConfigurationField) (storagedriver.Binding, map[string]string, error) {

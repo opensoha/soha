@@ -52,6 +52,7 @@ type Supervisor struct {
 	mu        sync.Mutex
 	started   bool
 	closed    bool
+	retiring  bool
 	cleanup   error
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -172,9 +173,20 @@ func (s *Supervisor) startDrivers(ctx context.Context, workers *sync.WaitGroup) 
 // Close rejects new calls, drains active calls, and terminates all launched
 // processes. Its deadline can force an early end to the grace period.
 func (s *Supervisor) Close(ctx context.Context) error {
+	return s.close(ctx, false)
+}
+
+// Retire withdraws a replaced release and lets already accepted calls finish
+// within their original RPC deadline. Cancelling ctx forces termination.
+func (s *Supervisor) Retire(ctx context.Context) error {
+	return s.close(ctx, true)
+}
+
+func (s *Supervisor) close(ctx context.Context, retiring bool) error {
 	s.mu.Lock()
 	if !s.closed {
 		s.closed = true
+		s.retiring = retiring
 		if s.started {
 			s.cancel()
 		} else {
@@ -199,7 +211,7 @@ func (s *Supervisor) supervise(ctx context.Context, driver *managedDriver, runni
 		select {
 		case <-ctx.Done():
 			drained := driver.detach()
-			s.recordCleanup(running.stop(drained, s.force, s.bounds))
+			s.recordCleanup(running.stop(drained, s.force, s.drainBounds()))
 			return
 		case <-running.exited:
 			driver.detach()
@@ -224,6 +236,16 @@ func (s *Supervisor) supervise(ctx context.Context, driver *managedDriver, runni
 			}
 		}
 	}
+}
+
+func (s *Supervisor) drainBounds() deadlines {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bounds := s.bounds
+	if s.retiring {
+		bounds.drain = bounds.call
+	}
+	return bounds
 }
 
 func (s *Supervisor) recordCleanup(err error) {

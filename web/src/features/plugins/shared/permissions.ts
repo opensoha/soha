@@ -5,6 +5,10 @@ export function canInstallPlugin(snapshot?: PermissionSnapshot) {
   return hasPermission(snapshot, 'plugin.install')
 }
 
+export function canTrustPluginPublisher(snapshot?: PermissionSnapshot) {
+  return canInstallPlugin(snapshot) && hasPermission(snapshot, 'plugin.manage')
+}
+
 export function canConfigurePlugins(snapshot?: PermissionSnapshot) {
   return hasPermission(snapshot, 'plugin.configure')
 }

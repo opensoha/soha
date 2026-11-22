@@ -12,6 +12,14 @@ import (
 
 func New(Config) (*Supervisor, error) { return nil, ErrUnsupported }
 
+func LeaseManagedRuntime(string, map[uint32]uint32) (*ManagedRuntime, error) {
+	return nil, ErrUnsupported
+}
+
+func (*ManagedRuntime) PrepareSlot(uint32) (string, func() error, error) {
+	return "", nil, ErrUnsupported
+}
+
 func IsSandboxChild() bool { return false }
 
 func RunSandboxChild() int { return 1 }

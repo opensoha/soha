@@ -189,6 +189,80 @@ func dedicatedID(value uint32) bool {
 	return value >= 100 && value <= 1<<31-1 && value != 65534
 }
 
+// LeaseManagedRuntime locks an exclusive root before allocating child runtime
+// directories. The root follows the same trust rules as a static supervisor.
+func LeaseManagedRuntime(root string, slots map[uint32]uint32) (*ManagedRuntime, error) {
+	if err := checkIsolation(); err != nil {
+		return nil, err
+	}
+	// A slot adds "/s-" and up to ten decimal digits to the socket root.
+	if len(root)+13+17 > 107 {
+		return nil, errors.New("managed storage driver runtime root is too long for a Unix socket")
+	}
+	accounts, err := readLocalAccounts()
+	if err != nil {
+		return nil, err
+	}
+	for uid, gid := range slots {
+		if err := accounts.validate(uid, gid); err != nil {
+			return nil, fmt.Errorf("managed storage driver account %d:%d: %w", uid, gid, err)
+		}
+	}
+	lock, err := takeRuntimeLock(root)
+	if err != nil {
+		return nil, err
+	}
+	result := &ManagedRuntime{root: root, lock: lock}
+	for uid := range slots {
+		if err := result.clearSlot(uid); err != nil {
+			return nil, errors.Join(err, lock.Close())
+		}
+	}
+	return result, nil
+}
+
+// PrepareSlot creates a clean, root-owned runtime directory for the account.
+// The caller serializes allocations for the same account.
+func (r *ManagedRuntime) PrepareSlot(uid uint32) (string, func() error, error) {
+	root, err := openTrustedDir(r.root, true)
+	if err != nil {
+		return "", nil, err
+	}
+	defer root.Close()
+	name := managedSlotName(uid)
+	if err := unix.Mkdirat(int(root.Fd()), name, runtimeDirMode); err != nil {
+		return "", nil, fmt.Errorf("create managed storage driver runtime directory: %w", err)
+	}
+	path := filepath.Join(r.root, name)
+	cleanup := func() error { return r.clearSlot(uid) }
+	if err := os.Chmod(path, runtimeDirMode); err != nil {
+		return "", nil, errors.Join(err, cleanup())
+	}
+	return path, cleanup, nil
+}
+
+func (r *ManagedRuntime) clearSlot(uid uint32) error {
+	root, err := openTrustedDir(r.root, true)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	name := managedSlotName(uid)
+	slot, err := trustedDirectoryAt(root, name, false)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := slot.Close(); err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(r.root, name))
+}
+
+func managedSlotName(uid uint32) string { return "s-" + strconv.FormatUint(uint64(uid), 10) }
+
 func (s *Supervisor) newDriver(selection DriverConfig) (*managedDriver, error) {
 	dir, err := openPackageDir(s.config.PackageRoot, selection)
 	if err != nil {

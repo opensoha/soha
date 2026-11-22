@@ -235,6 +235,19 @@ type PluginsConfig struct {
 	Companion   PluginCompanionConfig   `mapstructure:"companion"`
 	Repository  PluginRepositoryConfig  `mapstructure:"repository"`
 	Storage     PluginStorageConfig     `mapstructure:"storage"`
+	Executable  PluginExecutableConfig  `mapstructure:"executable"`
+}
+
+type PluginExecutableConfig struct {
+	PackageRoot          string                               `mapstructure:"package_root"`
+	RuntimeRoot          string                               `mapstructure:"runtime_root"`
+	StorageAccounts      map[string][]PluginExecutableAccount `mapstructure:"storage_accounts"`
+	TrustedPublisherKeys map[string]string                    `mapstructure:"trusted_publisher_keys"`
+}
+
+type PluginExecutableAccount struct {
+	UID uint32 `mapstructure:"uid"`
+	GID uint32 `mapstructure:"gid"`
 }
 
 type PluginStorageConfig struct {

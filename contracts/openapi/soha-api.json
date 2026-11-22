@@ -28218,8 +28218,27 @@
           "publisher": {
             "type": "string"
           },
+          "referenceCount": {
+            "description": "Number of stored integrations referring to the driver supplied by the plugin.",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-type-skip-optional-pointer": false
+          },
           "requestedPermissions": {
             "$ref": "#/components/schemas/PluginPermissionRequest"
+          },
+          "rollbackRequiresPermissionConfirmation": {
+            "description": "Restoring the previous version adds a permission compared to the installed version.",
+            "type": "boolean"
+          },
+          "rollbackVersion": {
+            "description": "Previous verified version available for offline rollback.",
+            "type": "string"
+          },
+          "runtimeReady": {
+            "description": "The selected executable package is serving on this execution host.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
           },
           "signatureStatus": {
             "type": "string"
@@ -48317,6 +48336,14 @@
           "publisherInfo": {
             "$ref": "#/components/schemas/MarketplacePublisher"
           },
+          "publisherKeys": {
+            "description": "Publisher keys from this server's official repository catalog registration.",
+            "items": {
+              "pattern": "^[A-Za-z0-9+/]{43}=$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "repositoryUrl": {
             "description": "Public GitHub repository registered by the marketplace catalog. Release data is queried separately.",
             "type": "string",
@@ -66766,7 +66793,7 @@
         "additionalProperties": false,
         "properties": {
           "enable": {
-            "description": "Repository installs are disabled unless enabled explicitly.",
+            "description": "Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation.",
             "type": "boolean"
           },
           "previewToken": {
@@ -66964,6 +66991,11 @@
             "minLength": 1,
             "pattern": "^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+(/(tree|releases/tag)/[^?#\\s]+)?/?$",
             "type": "string"
+          },
+          "trustPublisherFingerprint": {
+            "description": "Administrator acknowledgement of the exact publisher key shown by a read-only preview.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
           }
         },
         "required": [
@@ -67098,6 +67130,35 @@
         "required": [
           "repositoryUrl",
           "kind"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRollbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmPermissionIncrease": {
+            "description": "Explicitly acknowledges additional permissions when restoring the retained version.",
+            "type": "boolean"
+          },
+          "expectedUpdatedAt": {
+            "description": "Revision of the installed version shown during review.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "description": "The retained verified version shown to the operator.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "expectedUpdatedAt",
+          "version"
         ],
         "type": "object"
       },
@@ -67245,9 +67306,19 @@
             "description": "Selected repository revision, including a qualified release tag when available. Use commitSha for the immutable revision.",
             "type": "string"
           },
+          "publisherKeyFingerprint": {
+            "description": "SHA-256 of the verified raw Ed25519 publisher public key.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "rawManifestChecksum": {
             "description": "Digest of the original manifest bytes, not of a reserialized JSON object.",
             "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "releaseAttestationDigest": {
+            "description": "SHA-256 of the verified release inventory.",
+            "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
           "repositoryUrl": {
@@ -132840,6 +132911,60 @@
         "tags": [
           "Plugins"
         ]
+      }
+    },
+    "/plugins/{pluginID}/repository/rollback": {
+      "post": {
+        "description": "Restores the previous verified local package without contacting its repository.",
+        "operationId": "rollbackRepositoryPlugin",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PluginID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstalledPluginEnvelope"
+                }
+              }
+            },
+            "description": "Previous verified package restored."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.upgrade"
+          ],
+          "mode": "all"
+        }
       }
     },
     "/plugins/{pluginID}/repository/upgrade": {

@@ -10222,6 +10222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/{pluginID}/repository/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restores the previous verified local package without contacting its repository. */
+        post: operations["rollbackRepositoryPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/{pluginID}/config": {
         parameters: {
             query?: never;
@@ -32198,6 +32215,8 @@ export interface components {
             sourceUrl?: string;
             /** @description Public GitHub repository registered by the marketplace catalog. Release data is queried separately. */
             repositoryUrl?: string;
+            /** @description Publisher keys from this server's official repository catalog registration. */
+            publisherKeys?: string[];
             riskLevel?: string;
             latestVersion?: string;
             categories?: string[];
@@ -32330,6 +32349,10 @@ export interface components {
             commitSha?: string;
             /** @description Digest of the original manifest bytes, not of a reserialized JSON object. */
             rawManifestChecksum?: string;
+            /** @description SHA-256 of the verified raw Ed25519 publisher public key. */
+            publisherKeyFingerprint?: string;
+            /** @description SHA-256 of the verified release inventory. */
+            releaseAttestationDigest?: string;
             /** @description True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification. */
             official: boolean;
         };
@@ -32342,6 +32365,8 @@ export interface components {
             pluginId?: string;
             /** @description Configured repository catalog source. The server verifies the plugin and repository binding. */
             marketplaceSourceId?: string;
+            /** @description Administrator acknowledgement of the exact publisher key shown by a read-only preview. */
+            trustPublisherFingerprint?: string;
         };
         PluginRepositoryRefsRequest: {
             repositoryUrl: string;
@@ -32415,13 +32440,25 @@ export interface components {
         PluginRepositoryInstallRequest: {
             /** @description An unexpired token issued to the same caller and scope by the repository preview endpoint. */
             previewToken: string;
-            /** @description Repository installs are disabled unless enabled explicitly. */
+            /** @description Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation. */
             enable?: boolean;
         };
         PluginRepositoryUpgradeRequest: {
             /** @description An unexpired token issued to the same caller and scope for the selected repository version. */
             previewToken: string;
             /** @description Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization. */
+            confirmPermissionIncrease?: boolean;
+        };
+        PluginRepositoryRollbackRequest: {
+            expectedVersion: string;
+            /**
+             * Format: date-time
+             * @description Revision of the installed version shown during review.
+             */
+            expectedUpdatedAt: string;
+            /** @description The retained verified version shown to the operator. */
+            version: string;
+            /** @description Explicitly acknowledges additional permissions when restoring the retained version. */
             confirmPermissionIncrease?: boolean;
         };
         InstalledPlugin: {
@@ -32438,6 +32475,14 @@ export interface components {
             checksumStatus: string;
             signatureStatus?: string;
             activeVersion?: string;
+            /** @description Previous verified version available for offline rollback. */
+            rollbackVersion?: string;
+            /** @description Restoring the previous version adds a permission compared to the installed version. */
+            rollbackRequiresPermissionConfirmation?: boolean;
+            /** @description The selected executable package is serving on this execution host. */
+            runtimeReady?: boolean;
+            /** @description Number of stored integrations referring to the driver supplied by the plugin. */
+            referenceCount?: number;
             artifacts?: components["schemas"]["PluginArtifactRecord"][];
             requestedPermissions?: components["schemas"]["PluginPermissionRequest"];
             configuredSecretRefs?: {
@@ -38116,6 +38161,7 @@ export type PluginRepositoryPreview = components['schemas']['PluginRepositoryPre
 export type PluginRepositoryPreviewEnvelope = components['schemas']['PluginRepositoryPreviewEnvelope'];
 export type PluginRepositoryInstallRequest = components['schemas']['PluginRepositoryInstallRequest'];
 export type PluginRepositoryUpgradeRequest = components['schemas']['PluginRepositoryUpgradeRequest'];
+export type PluginRepositoryRollbackRequest = components['schemas']['PluginRepositoryRollbackRequest'];
 export type InstalledPlugin = components['schemas']['InstalledPlugin'];
 export type PluginInstallRequest = components['schemas']['PluginInstallRequest'];
 export type CompanionActivationRequest = components['schemas']['CompanionActivationRequest'];
@@ -59268,6 +59314,36 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rollbackRepositoryPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pluginID: components["parameters"]["PluginID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Previous verified package restored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPluginEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];

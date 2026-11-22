@@ -33,17 +33,27 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
-	storageDrivers, err := startStorageDrivers(infra.lifecycleCtx, cfg.Plugins.Storage, core.systemIntegrationService, core.secretService)
+	storageRegistry := storageDriverRegistry(core.systemIntegrationService, core.secretService)
+	staticDrivers, err := startStorageDrivers(infra.lifecycleCtx, cfg.Plugins.Storage, storageRegistry)
 	if err != nil {
 		infra.cancel()
 		return nil, err
 	}
+	storageDrivers := &storageDriverRuntimes{static: staticDrivers}
 	initialized := false
 	defer func() {
 		if !initialized {
 			closeStorageDrivers(storageDrivers)
 		}
 	}()
+	storageDrivers.managed, err = startExecutablePlugins(infra.lifecycleCtx, cfg.Plugins, core, storageRegistry)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	if err := core.pluginService.RestoreExecutablePlugins(infra.lifecycleCtx); err != nil {
+		infra.logger.Named("plugins").Warn("could not restore all executable plugins", zap.Error(err))
+	}
 	delivery := newDeliveryServices(infra.lifecycleCtx, cfg, infra, repos, core)
 	gateway, err := newGatewayServices(infra.lifecycleCtx, cfg, repos, core, delivery)
 	if err != nil {

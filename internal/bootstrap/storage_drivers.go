@@ -12,9 +12,13 @@ import (
 	"github.com/opensoha/soha/internal/infrastructure/storagedriverhost"
 )
 
-func startStorageDrivers(ctx context.Context, cfg cfgpkg.PluginStorageConfig, integrations *appsystemintegration.Service, secrets *appsecret.Service) (*storagedriverhost.Supervisor, error) {
+func storageDriverRegistry(integrations *appsystemintegration.Service, secrets *appsecret.Service) *appsystemintegration.StorageDriverRegistry {
 	registry := appsystemintegration.NewStorageDriverRegistry(softwareobjectstore.NewS3Driver())
 	integrations.SetStorageDrivers(registry, secrets)
+	return registry
+}
+
+func startStorageDrivers(ctx context.Context, cfg cfgpkg.PluginStorageConfig, registry *appsystemintegration.StorageDriverRegistry) (*storagedriverhost.Supervisor, error) {
 	if len(cfg.Drivers) == 0 {
 		return nil, nil
 	}
@@ -44,7 +48,7 @@ func startStorageDrivers(ctx context.Context, cfg cfgpkg.PluginStorageConfig, in
 	return supervisor, nil
 }
 
-func closeStorageDrivers(supervisor *storagedriverhost.Supervisor) {
+func closeStorageDrivers(supervisor interface{ Close(context.Context) error }) {
 	if supervisor != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

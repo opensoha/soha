@@ -17672,6 +17672,37 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /plugins/{pluginID}/repository/rollback:
+    post:
+      tags: [ Plugins ]
+      operationId: rollbackRepositoryPlugin
+      description: Restores the previous verified local package without contacting its repository.
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.upgrade ]
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryRollbackRequest"
+      responses:
+        "200":
+          description: Previous verified package restored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /plugins/{pluginID}/config:
     put:
       tags: [ Plugins ]
@@ -59597,6 +59628,12 @@ components:
           type: string
           x-go-name: RepositoryURL
           description: Public GitHub repository registered by the marketplace catalog. Release data is queried separately.
+        publisherKeys:
+          type: array
+          description: Publisher keys from this server's official repository catalog registration.
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9+/]{43}=$"
         riskLevel:
           type: string
         latestVersion:
@@ -59959,6 +59996,14 @@ components:
           type: string
           pattern: "^sha256:[0-9a-f]{64}$"
           description: Digest of the original manifest bytes, not of a reserialized JSON object.
+        publisherKeyFingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the verified raw Ed25519 publisher public key.
+        releaseAttestationDigest:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the verified release inventory.
         official:
           type: boolean
           description: True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification.
@@ -59985,6 +60030,10 @@ components:
           type: string
           x-go-name: MarketplaceSourceID
           description: Configured repository catalog source. The server verifies the plugin and repository binding.
+        trustPublisherFingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: Administrator acknowledgement of the exact publisher key shown by a read-only preview.
       additionalProperties: false
     PluginRepositoryRefsRequest:
       type: object
@@ -60181,7 +60230,7 @@ components:
           description: An unexpired token issued to the same caller and scope by the repository preview endpoint.
         enable:
           type: boolean
-          description: Repository installs are disabled unless enabled explicitly.
+          description: Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation.
       additionalProperties: false
     PluginRepositoryUpgradeRequest:
       type: object
@@ -60196,6 +60245,25 @@ components:
         confirmPermissionIncrease:
           type: boolean
           description: Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization.
+      additionalProperties: false
+    PluginRepositoryRollbackRequest:
+      type: object
+      required: [ expectedVersion, expectedUpdatedAt, version ]
+      properties:
+        expectedVersion:
+          type: string
+          minLength: 1
+        expectedUpdatedAt:
+          type: string
+          format: date-time
+          description: Revision of the installed version shown during review.
+        version:
+          type: string
+          minLength: 1
+          description: The retained verified version shown to the operator.
+        confirmPermissionIncrease:
+          type: boolean
+          description: Explicitly acknowledges additional permissions when restoring the retained version.
       additionalProperties: false
     InstalledPlugin:
       type: object
@@ -60226,6 +60294,21 @@ components:
           type: string
         activeVersion:
           type: string
+        rollbackVersion:
+          type: string
+          description: Previous verified version available for offline rollback.
+        rollbackRequiresPermissionConfirmation:
+          type: boolean
+          description: Restoring the previous version adds a permission compared to the installed version.
+        runtimeReady:
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+          description: The selected executable package is serving on this execution host.
+        referenceCount:
+          type: integer
+          minimum: 0
+          x-go-type-skip-optional-pointer: false
+          description: Number of stored integrations referring to the driver supplied by the plugin.
         artifacts:
           type: array
           items:

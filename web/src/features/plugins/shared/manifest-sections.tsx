@@ -1,7 +1,7 @@
 import { MetadataTag } from '@/components/status-tag'
 import { Card, Collapse, Descriptions, Space, Typography } from 'antd'
 import type { PluginManifest, PluginPermissionRequest } from '../plugin-model'
-import { requiredSecretValues } from '../plugin-model'
+import { pluginPackageComponents, requiredSecretValues } from '../plugin-model'
 import { compactPluginTags, pluginJsonBlock } from './formatters'
 import { ExtensionPointList } from './extension-list'
 
@@ -99,6 +99,7 @@ export function PluginManifestSections({ manifest }: { manifest?: PluginManifest
                   label: '运行方式',
                   children: manifest.runtime?.mode || 'manifest-only',
                 },
+                { key: 'components', label: '组件', children: pluginPackageComponents(manifest) },
                 { key: 'soha', label: 'Soha', children: manifest.compatibility?.soha || '未声明' },
                 {
                   key: 'contracts',

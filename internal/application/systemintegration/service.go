@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,18 +62,19 @@ type ConnectionTesterFactory interface {
 }
 
 type Service struct {
-	repo           domain.Repository
-	permissions    *appaccess.PermissionResolver
-	audit          AuditRecorder
-	operations     OperationRecorder
-	keys           keyring.Ring
-	adapters       map[string]SourceAdapterFactory
-	testers        map[string]ConnectionTesterFactory
-	oauth          map[string]OAuthProvider
-	now            func() time.Time
-	logger         *zap.Logger
-	storageDrivers *StorageDriverRegistry
-	storageSecrets storageSecrets
+	repo            domain.Repository
+	permissions     *appaccess.PermissionResolver
+	audit           AuditRecorder
+	operations      OperationRecorder
+	keys            keyring.Ring
+	adapters        map[string]SourceAdapterFactory
+	testers         map[string]ConnectionTesterFactory
+	oauth           map[string]OAuthProvider
+	now             func() time.Time
+	logger          *zap.Logger
+	storageDrivers  *StorageDriverRegistry
+	storageSecrets  storageSecrets
+	storageMutation sync.Mutex
 }
 
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
@@ -132,6 +134,8 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "create")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
 	item, credentials, err := s.normalizeCreate(ctx, principal, request)
 	if err != nil {
 		return sohaapi.SystemIntegration{}, err
@@ -148,6 +152,8 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "update")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
 	current, err := s.repo.Get(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return sohaapi.SystemIntegration{}, err
@@ -168,6 +174,8 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "delete")); err != nil {
 		return err
 	}
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return err
