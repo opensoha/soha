@@ -122,7 +122,7 @@ func canonicalDynamicArchive(ctx context.Context, bundle *validatedBundle, limit
 	return buffer.Bytes(), nil
 }
 
-func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Principal, app domain.App, settings domain.Settings, input domain.UploadRevisionInput, spooled *spooledBundle) (sohaapi.HostedAppDeploymentReceipt, error) {
+func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Principal, app domain.App, settings domain.Settings, input domain.UploadRevisionInput, spooled *spooledBundle, publishVisibility *domain.RevisionVisibility) (sohaapi.HostedAppDeploymentReceipt, error) {
 	reader, err := spooled.OpenReader()
 	if err != nil {
 		return sohaapi.HostedAppDeploymentReceipt{}, err
@@ -148,6 +148,7 @@ func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Princip
 		FileCount: boundedFileCount(len(bundle.Files)), TotalBytes: bundle.TotalBytes,
 		StorageIntegrationID: settings.StorageIntegrationID, StoragePrefix: settings.StoragePrefix,
 		IdempotencyKey: input.IdempotencyKey, CreatedAt: s.now(), CreatedBy: actor.UserID,
+		PublishVisibility: publishVisibility,
 	}
 	revision.ID = strings.ReplaceAll(revision.ID, "-", "")
 	revision, err = s.repo.CreateUploadingRevision(ctx, app.ID, revision)
@@ -155,7 +156,7 @@ func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Princip
 		if input.IdempotencyKey == "" {
 			return sohaapi.HostedAppDeploymentReceipt{}, err
 		}
-		if receipt, handled, idemErr := s.checkUploadIdempotency(ctx, app, settings, input.IdempotencyKey, spooled.sha256Hex); handled || idemErr != nil {
+		if receipt, handled, idemErr := s.checkUploadIdempotency(ctx, app, settings, input.IdempotencyKey, spooled.sha256Hex, publishVisibility); handled || idemErr != nil {
 			return receipt, idemErr
 		}
 		existing, lookupErr := s.repo.FindRevisionByIdempotencyKey(ctx, app.ID, input.IdempotencyKey)
@@ -186,7 +187,7 @@ func (s *Service) commitDynamicSource(ctx context.Context, actor identity.Princi
 		if deleted, cleanupErr := s.discardInactiveDynamicSource(ctx, revision, key); deleted || cleanupErr != nil {
 			return sohaapi.HostedAppDeploymentReceipt{}, errors.Join(err, cleanupErr)
 		}
-		if receipt, handled, idemErr := s.checkUploadIdempotency(queueCtx, app, settings, revision.IdempotencyKey, revision.BundleSha256); handled || idemErr != nil {
+		if receipt, handled, idemErr := s.checkUploadIdempotency(queueCtx, app, settings, revision.IdempotencyKey, revision.BundleSha256, revision.PublishVisibility); handled || idemErr != nil {
 			return receipt, idemErr
 		}
 		// A lost acknowledgment can leave a valid queue entry. Keep its source for reconciliation.

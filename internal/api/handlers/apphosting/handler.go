@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -363,25 +364,112 @@ func (h *Handler) UploadRevision(c *gin.Context) {
 		fail(c, apperrors.ErrServiceUnavailable)
 		return
 	}
-	if !validGzipContentType(c.GetHeader("Content-Type")) {
-		fail(c, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_content_type", "Content-Type must be application/gzip", "请求 Content-Type 必须为 application/gzip"))
-		return
-	}
 	spaFallback, ok := parseOptionalBoolQuery(c, "spaFallback")
 	if !ok {
 		return
 	}
-	input := domainapphosting.UploadRevisionInput{
-		IdempotencyKey: c.Query("idempotencyKey"),
-		SpaFallback:    spaFallback,
-		Description:    c.Query("description"),
+	bundle, visibility, ok := parseRevisionBundle(c)
+	if !ok {
+		return
 	}
-	out, err := h.deployments.UploadRevision(c.Request.Context(), middleware.PrincipalFromContext(c), appIDParam(c), input, c.Request.Body)
+	input := domainapphosting.UploadRevisionInput{
+		PublishVisibility: visibility,
+		IdempotencyKey:    c.Query("idempotencyKey"),
+		SpaFallback:       spaFallback,
+		Description:       c.Query("description"),
+	}
+	out, err := h.deployments.UploadRevision(c.Request.Context(), middleware.PrincipalFromContext(c), appIDParam(c), input, bundle)
 	status := http.StatusCreated
 	if out.ReusedIdempotencyKey {
 		status = http.StatusOK
 	}
 	respondItem(c, status, out, err)
+}
+
+func parseRevisionBundle(c *gin.Context) (io.Reader, *sohaapi.UpdateHostedAppVisibilityRequest, bool) {
+	contentType := c.GetHeader("Content-Type")
+	if validGzipContentType(contentType) {
+		return c.Request.Body, nil, true
+	}
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "multipart/form-data" {
+		fail(c, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_content_type",
+			"Content-Type must be application/gzip or multipart/form-data", "请求 Content-Type 必须为 application/gzip 或 multipart/form-data"))
+		return nil, nil, false
+	}
+	bundle, visibility, err := parseRevisionMultipart(c.Request.Body, params["boundary"])
+	if err != nil {
+		fail(c, err)
+		return nil, nil, false
+	}
+	return bundle, visibility, true
+}
+
+const maxMultipartFramingBytes = 32 << 10
+
+func parseRevisionMultipart(body io.Reader, boundary string) (io.Reader, *sohaapi.UpdateHostedAppVisibilityRequest, error) {
+	if body == nil || boundary == "" {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	source := &revisionMultipartSource{body: body, remaining: maxControlJSONBodyBytes + maxMultipartFramingBytes}
+	reader := multipart.NewReader(source, boundary)
+	meta, err := reader.NextRawPart()
+	if err != nil || meta.FormName() != "publishVisibility" || meta.Header.Get("Content-Transfer-Encoding") != "" {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	metaType, _, err := mime.ParseMediaType(meta.Header.Get("Content-Type"))
+	if err != nil || metaType != "application/json" {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	raw, err := io.ReadAll(io.LimitReader(meta, maxControlJSONBodyBytes+1))
+	if err != nil || len(raw) > maxControlJSONBodyBytes {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	var visibility *sohaapi.UpdateHostedAppVisibilityRequest
+	if !decodeControlJSON(raw, &visibility) || visibility == nil {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	bundle, err := reader.NextRawPart()
+	if err != nil || bundle.FormName() != "bundle" || bundle.Header.Get("Content-Transfer-Encoding") != "" ||
+		!validGzipContentType(bundle.Header.Get("Content-Type")) {
+		return nil, nil, apperrors.ErrInvalidArgument
+	}
+	// The application layer enforces the compressed bundle size, separately from MIME framing.
+	source.remaining = -1
+	return &revisionMultipartBundle{part: bundle, envelope: reader, source: source}, visibility, nil
+}
+
+type revisionMultipartSource struct {
+	body      io.Reader
+	remaining int64
+}
+
+func (s *revisionMultipartSource) Read(data []byte) (int, error) {
+	if s.remaining < 0 {
+		return s.body.Read(data)
+	}
+	limited := io.LimitedReader{R: s.body, N: s.remaining}
+	n, err := limited.Read(data)
+	s.remaining = limited.N
+	return n, err
+}
+
+type revisionMultipartBundle struct {
+	part     *multipart.Part
+	envelope *multipart.Reader
+	source   *revisionMultipartSource
+}
+
+func (b *revisionMultipartBundle) Read(body []byte) (int, error) {
+	n, err := b.part.Read(body)
+	if err == io.EOF {
+		// The upload is valid only after consuming its last expected part.
+		b.source.remaining = maxMultipartFramingBytes
+		if _, nextErr := b.envelope.NextRawPart(); nextErr != io.EOF {
+			return n, apperrors.ErrInvalidArgument
+		}
+	}
+	return n, err
 }
 
 func (h *Handler) GetRevision(c *gin.Context) {
@@ -539,18 +627,21 @@ func decodeStrictJSON(c *gin.Context, dst any, optional bool) bool {
 		fail(c, apperrors.ErrInvalidArgument)
 		return false
 	}
-	dec := json.NewDecoder(bytes.NewReader(trimmed))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		fail(c, apperrors.ErrInvalidArgument)
-		return false
-	}
-	var extra any
-	if !errors.Is(dec.Decode(&extra), io.EOF) {
+	if !decodeControlJSON(trimmed, dst) {
 		fail(c, apperrors.ErrInvalidArgument)
 		return false
 	}
 	return true
+}
+
+func decodeControlJSON(raw []byte, dst any) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return false
+	}
+	var extra any
+	return errors.Is(dec.Decode(&extra), io.EOF)
 }
 
 func parseOptionalIntQuery(c *gin.Context, key string) (int, bool) {

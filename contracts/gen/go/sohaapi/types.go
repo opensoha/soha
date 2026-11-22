@@ -20320,13 +20320,15 @@ type ConnectionCheckResultEnvelope struct {
 
 // CreateHostedAppRequest defines model for CreateHostedAppRequest.
 type CreateHostedAppRequest struct {
-	Description    string                    `json:"description,omitempty"`
-	IdempotencyKey string                    `json:"idempotencyKey,omitempty"`
-	Kind           HostedAppKind             `json:"kind,omitempty"`
-	Name           string                    `json:"name"`
-	Slug           string                    `json:"slug,omitempty"`
-	SpaFallback    *bool                     `json:"spaFallback,omitempty"`
-	Visibility     *HostedAppVisibilityInput `json:"visibility,omitempty"`
+	// DeferVisibilityUntilPublication Create a private draft without applying visibility or requesting approval. Use visibility only to match the idempotent app creation request. Attach the intended audience to the subsequent revision upload.
+	DeferVisibilityUntilPublication bool                      `json:"deferVisibilityUntilPublication,omitempty"`
+	Description                     string                    `json:"description,omitempty"`
+	IdempotencyKey                  string                    `json:"idempotencyKey,omitempty"`
+	Kind                            HostedAppKind             `json:"kind,omitempty"`
+	Name                            string                    `json:"name"`
+	Slug                            string                    `json:"slug,omitempty"`
+	SpaFallback                     *bool                     `json:"spaFallback,omitempty"`
+	Visibility                      *HostedAppVisibilityInput `json:"visibility,omitempty"`
 }
 
 // CreatedPersonalAccessToken defines model for CreatedPersonalAccessToken.
@@ -41873,6 +41875,12 @@ type ListHostedAppRevisionsParams struct {
 	Offset int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// UploadHostedAppRevisionMultipartBody defines parameters for UploadHostedAppRevision.
+type UploadHostedAppRevisionMultipartBody struct {
+	Bundle            openapi_types.File               `json:"bundle"`
+	PublishVisibility UpdateHostedAppVisibilityRequest `json:"publishVisibility"`
+}
+
 // UploadHostedAppRevisionParams defines parameters for UploadHostedAppRevision.
 type UploadHostedAppRevisionParams struct {
 	IdempotencyKey string `form:"idempotencyKey,omitempty" json:"idempotencyKey,omitempty"`
@@ -44338,6 +44346,9 @@ type TakeHostedAppOfflineJSONRequestBody = HostedAppLifecycleActionRequest
 
 // BringHostedAppOnlineJSONRequestBody defines body for BringHostedAppOnline for application/json ContentType.
 type BringHostedAppOnlineJSONRequestBody = HostedAppLifecycleActionRequest
+
+// UploadHostedAppRevisionMultipartRequestBody defines body for UploadHostedAppRevision for multipart/form-data ContentType.
+type UploadHostedAppRevisionMultipartRequestBody UploadHostedAppRevisionMultipartBody
 
 // RollbackHostedAppJSONRequestBody defines body for RollbackHostedApp for application/json ContentType.
 type RollbackHostedAppJSONRequestBody = HostedAppRollbackRequest

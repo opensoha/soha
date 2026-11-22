@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	guest "github.com/opensoha/soha/contracts/agent/guest"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appapphosting "github.com/opensoha/soha/internal/application/apphosting"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
@@ -174,13 +175,13 @@ func TestBundlePersonalWorkspaceContainerSleepExtractFilterAndSecurity(t *testin
 	f := newContainerWorkspaceBundleFixture(t)
 
 	for _, unsafePath := range []string{"../secret", "/etc/passwd", "apps/../../etc", "bad\x00path"} {
-		if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, unsafePath, f.assistantID, 0); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, unsafePath, f.assistantID, 0, sohaapi.HostedAppKindStatic); !errors.Is(err, apperrors.ErrInvalidArgument) {
 			t.Fatalf("unsafe sourcePath %q = %v, want ErrInvalidArgument", unsafePath, err)
 		}
 	}
 
 	f.store.item.ActiveTaskID = "task_running_1"
-	if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, 0); !errors.Is(err, apperrors.ErrConflict) {
+	if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, 0, sohaapi.HostedAppKindStatic); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("busy workspace = %v, want ErrConflict", err)
 	}
 	f.store.item.ActiveTaskID = ""
@@ -197,7 +198,7 @@ func TestBundlePersonalWorkspaceContainerSleepExtractFilterAndSecurity(t *testin
 		{name: "./notes/summary.md", body: "# Sprint Summary\nAll green."},
 	})
 
-	rc, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, f.store.item.Version)
+	rc, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, f.store.item.Version, sohaapi.HostedAppKindStatic)
 	if err != nil {
 		t.Fatalf("BundlePersonalWorkspace directory: %v", err)
 	}
@@ -209,7 +210,7 @@ func TestBundlePersonalWorkspaceContainerSleepExtractFilterAndSecurity(t *testin
 		t.Fatalf("unexpected extracted bundle files: %#v", files)
 	}
 
-	singleRC, err := f.service.BundlePersonalWorkspace(ctx, f.user, "notes/summary.md", f.assistantID, 0)
+	singleRC, err := f.service.BundlePersonalWorkspace(ctx, f.user, "notes/summary.md", f.assistantID, 0, sohaapi.HostedAppKindStatic)
 	if err != nil {
 		t.Fatalf("BundlePersonalWorkspace single markdown file: %v", err)
 	}
@@ -222,8 +223,37 @@ func TestBundlePersonalWorkspaceContainerSleepExtractFilterAndSecurity(t *testin
 		{name: "./projects/calc/index.html", body: "<!doctype html>ok"},
 		{name: "./projects/calc/escape", typeflag: tar.TypeSymlink, linkname: "/etc/passwd"},
 	})
-	if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, 0); !errors.Is(err, apperrors.ErrInvalidArgument) {
+	if _, err := f.service.BundlePersonalWorkspace(ctx, f.user, "projects/calc", f.assistantID, 0, sohaapi.HostedAppKindStatic); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("symlink in workspace export = %v, want ErrInvalidArgument", err)
+	}
+}
+
+func TestDynamicWorkspaceBundleUsesOnlySelectedProjectIgnoreRules(t *testing.T) {
+	dir := "projects/forms"
+	archive := bytes.NewReader(buildRawExportTar(t, []rawTarItem{
+		{name: "projects/.gitignore", body: "app.py\n"},
+		{name: dir + "/app.py", body: "print('ok')"},
+		{name: dir + "/.env", body: "synthetic local credential"},
+		{name: dir + "/nested/keep.py", body: "print('kept')"},
+		{name: dir + "/nested/drop.py", body: "not deployed"},
+		{name: dir + "/nested/.gitignore", body: "!keep.py\n"},
+		{name: dir + "/cache/secret.txt", body: "not deployed"},
+		{name: dir + "/cache/.gitignore", typeflag: tar.TypeSymlink, linkname: "/outside"},
+		{name: dir + "/cache/.gitignore", body: "duplicate ignored rules"},
+		{name: dir + "/.gitignore", body: ".env\n/nested/*.py\ncache/\n"},
+		{name: "projects/other/not-in-bundle.py", body: "outside"},
+	}))
+	rules, err := readWorkspaceSourceIgnores(archive, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := repackExportedWorkspaceTar(archive, dir, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := unpackTarGzToMap(t, bundle)
+	if len(files) != 2 || files["app.py"] != "print('ok')" || files["nested/keep.py"] != "print('kept')" {
+		t.Fatalf("unexpected source files: %v", files)
 	}
 }
 
@@ -307,12 +337,12 @@ func TestBundlePersonalWorkspaceVMSingleFileAndDirectoryGuard(t *testing.T) {
 	}
 
 	// VM directory publish returns clear 400 InvalidArgument.
-	if _, err := service.BundlePersonalWorkspace(ctx, user, "projects/multi-file", assistant.ID, 0); !errors.Is(err, apperrors.ErrInvalidArgument) {
+	if _, err := service.BundlePersonalWorkspace(ctx, user, "projects/multi-file", assistant.ID, 0, sohaapi.HostedAppKindStatic); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("VM directory bundle = %v, want ErrInvalidArgument", err)
 	}
 
 	// VM single-file publish succeeds and produces index.html.
-	rc, err := service.BundlePersonalWorkspace(ctx, user, "tools/board.html", assistant.ID, 0)
+	rc, err := service.BundlePersonalWorkspace(ctx, user, "tools/board.html", assistant.ID, 0, sohaapi.HostedAppKindStatic)
 	if err != nil {
 		t.Fatalf("VM single-file BundlePersonalWorkspace: %v", err)
 	}

@@ -16051,7 +16051,7 @@ export interface paths {
         /** List immutable revisions of a hosted application */
         get: operations["listHostedAppRevisions"];
         put?: never;
-        /** Upload a tar.gz static bundle, run DLP checks, persist to object storage, and activate the revision */
+        /** Upload a tar.gz bundle for static activation or dynamic build */
         post: operations["uploadHostedAppRevision"];
         delete?: never;
         options?: never;
@@ -36413,6 +36413,8 @@ export interface components {
             kind?: components["schemas"]["HostedAppKind"];
             spaFallback?: boolean;
             visibility?: components["schemas"]["HostedAppVisibilityInput"];
+            /** @description Create a private draft without applying visibility or requesting approval. Use visibility only to match the idempotent app creation request. Attach the intended audience to the subsequent revision upload. */
+            deferVisibilityUntilPublication?: boolean;
             idempotencyKey?: string;
         };
         UpdateHostedAppRequest: {
@@ -73508,6 +73510,12 @@ export interface operations {
         requestBody: {
             content: {
                 "application/gzip": string;
+                "multipart/form-data": {
+                    /** @description Send this JSON part before the bundle. Requires idempotencyKey and application ownership. The server applies the audience, or requests required approval, only when the revision activates and the application's routing generation has not changed since upload. Idempotent replays leave the current audience untouched. */
+                    publishVisibility: components["schemas"]["UpdateHostedAppVisibilityRequest"];
+                    /** Format: binary */
+                    bundle: string;
+                };
             };
         };
         responses: {
@@ -73520,7 +73528,7 @@ export interface operations {
                     "application/json": components["schemas"]["HostedAppDeploymentResponse"];
                 };
             };
-            /** @description Uploaded and activated new hosted application revision. */
+            /** @description Uploaded a new hosted application revision. Static revisions activate immediately; dynamic revisions are queued. */
             201: {
                 headers: {
                     [name: string]: unknown;

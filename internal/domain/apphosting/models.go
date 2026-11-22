@@ -300,7 +300,10 @@ type Revision struct {
 	ClaimID              string
 	NextCheckAt          time.Time
 	ClaimExpiresAt       time.Time
-	RuntimeEnvironment   map[string]string `json:"-"`
+	RuntimeEnvironment   map[string]string   `json:"-"`
+	PublishVisibility    *RevisionVisibility `json:"-"`
+	// Older revisions have no record of the author's separate visibility request.
+	PublicationVisibilityRecorded bool `json:"-"`
 }
 
 func (r Revision) ToAPI() sohaapi.HostedAppRevision {
@@ -501,10 +504,18 @@ type VisibilityApprovalFilter struct {
 	Offset          int
 }
 
+// RevisionVisibility is the owner's audience intent at the start of an upload.
+type RevisionVisibility struct {
+	Scope               sohaapi.HostedAppVisibilityScope
+	Reason              string
+	BaseRouteGeneration int64
+}
+
 type UploadRevisionInput struct {
-	IdempotencyKey string
-	SpaFallback    *bool
-	Description    string
+	IdempotencyKey    string
+	SpaFallback       *bool
+	Description       string
+	PublishVisibility *sohaapi.UpdateHostedAppVisibilityRequest
 }
 
 type BrowserAuthStartInput struct {

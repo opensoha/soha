@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/opensoha/soha/contracts/apphosting/sourceignore"
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
@@ -54,6 +55,7 @@ func (s *Service) BundlePersonalWorkspace(
 	principal domainidentity.Principal,
 	sourcePath, assistantID string,
 	envVersion int64,
+	kind sohaapi.HostedAppKind,
 ) (io.ReadCloser, error) {
 	if s == nil {
 		return nil, apperrors.ErrServiceUnavailable
@@ -75,7 +77,7 @@ func (s *Service) BundlePersonalWorkspace(
 	if item.Backend == "vm" {
 		return s.bundleVMWorkspaceSingleFile(ctx, principal, item, cleanSubpath)
 	}
-	return s.bundleContainerWorkspace(ctx, principal, item, cleanSubpath)
+	return s.bundleContainerWorkspace(ctx, principal, item, cleanSubpath, kind == sohaapi.HostedAppKindDynamic)
 }
 
 func verifyWorkspacePublishPreconditions(item domain.PersonalEnvironmentRecord, assistantID string, envVersion int64) error {
@@ -126,6 +128,7 @@ func (s *Service) bundleContainerWorkspace(
 	principal domainidentity.Principal,
 	item domain.PersonalEnvironmentRecord,
 	cleanSubpath string,
+	dynamic bool,
 ) (io.ReadCloser, error) {
 	exportTargetVersion, err := s.ensureContainerSleepingForExport(ctx, principal, item)
 	if err != nil {
@@ -152,7 +155,14 @@ func (s *Service) bundleContainerWorkspace(
 	if _, err := rawTar.Seek(0, io.SeekStart); err != nil {
 		return nil, apperrors.ErrServiceUnavailable
 	}
-	return repackExportedWorkspaceTar(rawTar, cleanSubpath)
+	var ignores *sourceignore.Rules
+	if dynamic {
+		ignores, err = readWorkspaceSourceIgnores(rawTar, cleanSubpath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return repackExportedWorkspaceTar(rawTar, cleanSubpath, ignores)
 }
 
 func (s *Service) ensureContainerSleepingForExport(
@@ -192,7 +202,7 @@ func (s *Service) ensureContainerSleepingForExport(
 	)
 }
 
-func repackExportedWorkspaceTar(rawTar io.Reader, cleanSubpath string) (io.ReadCloser, error) {
+func repackExportedWorkspaceTar(rawTar io.Reader, cleanSubpath string, ignores *sourceignore.Rules) (io.ReadCloser, error) {
 	tr := tar.NewReader(rawTar)
 	var files []bundledStaticEntry
 	var totalBytes int64
@@ -218,15 +228,15 @@ func repackExportedWorkspaceTar(rawTar io.Reader, cleanSubpath string) (io.ReadC
 			continue
 		}
 		relPath, inScope, exactMatch := matchWorkspaceSubpath(entryPath, cleanSubpath)
-		if !inScope || shouldSkipWorkspacePath(relPath) {
+		if !inScope || skipWorkspaceBundleEntry(relPath, hdr.Typeflag == tar.TypeDir, ignores) {
 			continue
+		}
+		if err := validateWorkspaceBundleEntry(entryPath, relPath, hdr.Typeflag, ignores != nil); err != nil {
+			return nil, err
 		}
 		if hdr.Typeflag == tar.TypeDir {
 			matchedDir = true
 			continue
-		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != '\x00' {
-			return nil, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "unsupported_workspace_entry", fmt.Sprintf("workspace path %q uses a disallowed non-regular entry (such as a symlink)", entryPath), fmt.Sprintf("工作空间路径 %q 包含不允许的符号链接或特殊文件", entryPath))
 		}
 		if len(files)+1 > maxWorkspaceBundleFileCount {
 			return nil, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "workspace_too_many_files", "selected workspace path exceeds maximum file count", "所选工作空间目录文件数量超过上限")
@@ -253,6 +263,19 @@ func repackExportedWorkspaceTar(rawTar io.Reader, cleanSubpath string) (io.ReadC
 		return nil, apperrors.NewBusiness(apperrors.ErrNotFound, "workspace_path_not_found", fmt.Sprintf("workspace path %q contains no publishable files", cleanSubpath), "个人工作空间指定路径下未找到可发布文件")
 	}
 	return packDeterministicTarGzReader(files)
+}
+
+func validateWorkspaceBundleEntry(entryPath, relativePath string, typeFlag byte, dynamic bool) error {
+	if dynamic && len(relativePath) > sourceignore.MaxPathBytes {
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_workspace_archive_path",
+			"workspace source path exceeds the hosting limit", "工作空间源码路径超出托管上限")
+	}
+	switch typeFlag {
+	case tar.TypeDir, tar.TypeReg, tar.TypeRegA:
+		return nil
+	default:
+		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "unsupported_workspace_entry", fmt.Sprintf("workspace path %q uses a disallowed non-regular entry (such as a symlink)", entryPath), fmt.Sprintf("工作空间路径 %q 包含不允许的符号链接或特殊文件", entryPath))
+	}
 }
 
 func sanitizeExportTarPath(raw string, isDir bool) (string, bool, error) {

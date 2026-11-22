@@ -144,17 +144,27 @@ func (s *Service) UploadRevision(ctx context.Context, principal domainidentity.P
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
 
+	publishVisibility, err := prepareRevisionVisibility(app, principal.UserID, normalizedInput)
+	if err != nil {
+		return sohaapi.HostedAppDeploymentReceipt{}, err
+	}
+
 	spooled, err := spoolCompressedBundle(bundle, settings.MaxBundleCompressedBytes)
 	if err != nil {
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
 	defer spooled.Close()
 
-	if receipt, handled, err := s.checkUploadIdempotency(ctx, app, settings, normalizedInput.IdempotencyKey, spooled.sha256Hex); handled || err != nil {
+	if receipt, handled, err := s.checkUploadIdempotency(ctx, app, settings, normalizedInput.IdempotencyKey, spooled.sha256Hex, publishVisibility); handled || err != nil {
 		return receipt, err
 	}
+	if publishVisibility != nil && publishVisibility.Scope.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+		if err := domainapphosting.CheckOrganizationVisibilityPolicy(settings); err != nil {
+			return sohaapi.HostedAppDeploymentReceipt{}, err
+		}
+	}
 	if app.Kind == sohaapi.HostedAppKindDynamic {
-		return s.queueDynamicBundle(ctx, principal, app, settings, normalizedInput, spooled)
+		return s.queueDynamicBundle(ctx, principal, app, settings, normalizedInput, spooled, publishVisibility)
 	}
 
 	archiveReader, err := spooled.OpenReader()
@@ -170,7 +180,7 @@ func (s *Service) UploadRevision(ctx context.Context, principal domainidentity.P
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
 
-	return s.persistAndActivateBundle(ctx, principal, app, settings, normalizedInput, spooled.sha256Hex, validated)
+	return s.persistAndActivateBundle(ctx, principal, app, settings, normalizedInput, spooled.sha256Hex, validated, publishVisibility)
 }
 
 func (s *Service) prepareRevisionUpload(ctx context.Context, principal domainidentity.Principal, appID string, input domainapphosting.UploadRevisionInput) (domainapphosting.App, domainapphosting.Settings, domainapphosting.UploadRevisionInput, error) {
@@ -182,9 +192,10 @@ func (s *Service) prepareRevisionUpload(ctx context.Context, principal domainide
 		return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, err
 	}
 	normalized := domainapphosting.UploadRevisionInput{
-		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
-		SpaFallback:    input.SpaFallback,
-		Description:    strings.TrimSpace(input.Description),
+		IdempotencyKey:    strings.TrimSpace(input.IdempotencyKey),
+		SpaFallback:       input.SpaFallback,
+		Description:       strings.TrimSpace(input.Description),
+		PublishVisibility: input.PublishVisibility,
 	}
 	if len(normalized.IdempotencyKey) > 128 || utf8.RuneCountInString(normalized.Description) > 512 {
 		return domainapphosting.App{}, domainapphosting.Settings{}, domainapphosting.UploadRevisionInput{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_upload_params", "idempotencyKey or description exceeds maximum length", "上传参数超出长度限制")
@@ -216,7 +227,7 @@ func (s *Service) prepareRevisionUpload(ctx context.Context, principal domainide
 	return app, settings, normalized, nil
 }
 
-func (s *Service) checkUploadIdempotency(ctx context.Context, app domainapphosting.App, settings domainapphosting.Settings, idempotencyKey, bundleSha256 string) (sohaapi.HostedAppDeploymentReceipt, bool, error) {
+func (s *Service) checkUploadIdempotency(ctx context.Context, app domainapphosting.App, settings domainapphosting.Settings, idempotencyKey, bundleSha256 string, publishVisibility *domainapphosting.RevisionVisibility) (sohaapi.HostedAppDeploymentReceipt, bool, error) {
 	if idempotencyKey == "" {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, nil
 	}
@@ -227,8 +238,9 @@ func (s *Service) checkUploadIdempotency(ctx context.Context, app domainapphosti
 	if err != nil {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, err
 	}
-	if existing.BundleSha256 != bundleSha256 {
-		return sohaapi.HostedAppDeploymentReceipt{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_key_conflict", "idempotencyKey was already used with a different bundle digest", "同一幂等键已被不同内容的构建包占用")
+	if existing.BundleSha256 != bundleSha256 ||
+		(existing.PublicationVisibilityRecorded && !sameRevisionVisibility(existing.PublishVisibility, publishVisibility)) {
+		return sohaapi.HostedAppDeploymentReceipt{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "idempotency_key_conflict", "idempotencyKey was already used with a different bundle or sharing intent", "同一幂等键已被不同内容或分享范围的发布占用")
 	}
 	if app.Kind == sohaapi.HostedAppKindDynamic && existing.Status == sohaapi.HostedAppRevisionStatusUploading {
 		return sohaapi.HostedAppDeploymentReceipt{}, false, nil
@@ -255,6 +267,7 @@ func (s *Service) persistAndActivateBundle(
 	input domainapphosting.UploadRevisionInput,
 	bundleSha256 string,
 	validated *validatedBundle,
+	publishVisibility *domainapphosting.RevisionVisibility,
 ) (sohaapi.HostedAppDeploymentReceipt, error) {
 	spaFallback := app.SpaFallback
 	if input.SpaFallback != nil {
@@ -278,6 +291,7 @@ func (s *Service) persistAndActivateBundle(
 		IdempotencyKey:       input.IdempotencyKey,
 		CreatedBy:            firstNonEmpty(principal.UserID, principal.UserName),
 		CreatedAt:            now,
+		PublishVisibility:    publishVisibility,
 	}
 	createdRev, err := s.repo.CreateUploadingRevision(ctx, app.ID, draft)
 	if err != nil {
@@ -299,12 +313,19 @@ func (s *Service) persistAndActivateBundle(
 		Files:                manifestFiles,
 		RetainedRevisionsMax: settings.RetainedRevisionsPerApp,
 		Now:                  s.now(),
+		BeforeActivate: func(ctx context.Context) error {
+			return s.checkCurrentPublisher(ctx, createdRev.CreatedBy)
+		},
 	})
 	if err != nil {
+		if errors.Is(err, apperrors.ErrAccessDenied) {
+			_ = s.repo.FailRevision(context.WithoutCancel(ctx), app.ID, createdRev.ID, "activate", "publisher permission revoked")
+		}
 		s.bestEffortDeleteKeys(ctx, createdRev.StorageIntegrationID, storeKeys)
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
 
+	s.recordVisibilityUpdate(ctx, principal, activated.Visibility)
 	for _, evicted := range activated.EvictedRevisions {
 		s.bestEffortDeleteKeys(ctx, evicted.StorageIntegrationID, buildRevisionStoreKeys(evicted))
 	}

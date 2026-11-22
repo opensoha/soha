@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/apphosting"
+	"github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -181,27 +181,11 @@ func (s *Service) loadDynamicDeployment(ctx context.Context, rev domain.Revision
 }
 
 func (s *Service) checkDynamicPublisher(ctx context.Context, publisherID string) error {
-	if s.audience == nil {
-		return apperrors.ErrServiceUnavailable
-	}
-	principal, active, err := s.audience.ResolveUserPrincipal(ctx, publisherID)
-	if errors.Is(err, apperrors.ErrNotFound) {
-		return ErrDynamicRevisionFailed
-	}
-	if err != nil {
-		return err
-	}
-	if !active || principal.UserID != publisherID {
-		return ErrDynamicRevisionFailed
-	}
-	err = s.authorize(ctx, principal, access.PermAppHostingAppsPublish)
+	err := s.checkCurrentPublisher(ctx, publisherID)
 	if errors.Is(err, apperrors.ErrAccessDenied) {
-		return ErrDynamicRevisionFailed
+		return errors.Join(ErrDynamicRevisionFailed, err)
 	}
-	if err != nil {
-		return err
-	}
-	return ctx.Err()
+	return err
 }
 
 func canReconcileDynamicApp(app domain.App) bool {
@@ -248,7 +232,7 @@ func (s *Service) observeDynamicRuntime(ctx context.Context, repo dynamicReposit
 		return repo.AdvanceDynamicRevision(ctx, rev.ID, rev.ClaimID, "starting", rev.ImageRef, s.now().Add(3*time.Second))
 	}
 	grantAttempted := false
-	_, err = s.repo.ActivateRevision(ctx, ActivateRevisionInput{
+	activated, err := s.repo.ActivateRevision(ctx, ActivateRevisionInput{
 		AppID: app.ID, RevisionID: rev.ID, ActorUserID: rev.CreatedBy, Now: s.now(),
 		RetainedRevisionsMax: settings.RetainedRevisionsPerApp, DynamicClaimID: rev.ClaimID,
 		BeforeActivate: func(activation context.Context) error {
@@ -267,6 +251,7 @@ func (s *Service) observeDynamicRuntime(ctx context.Context, repo dynamicReposit
 		}
 		return err
 	}
+	s.recordVisibilityUpdate(ctx, identity.Principal{UserID: rev.CreatedBy}, activated.Visibility)
 	return s.dynamic.DeleteBuild(ctx, rev)
 }
 

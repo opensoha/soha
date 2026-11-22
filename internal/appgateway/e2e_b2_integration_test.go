@@ -25,6 +25,7 @@ func (s stubE2EWorkspaceBundleSource) BundlePersonalWorkspace(
 	principal domainidentity.Principal,
 	sourcePath, _ string,
 	_ int64,
+	_ sohaapi.HostedAppKind,
 ) (io.ReadCloser, error) {
 	if principal.UserID == "" {
 		return nil, apperrors.ErrUnauthorized

@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -1382,6 +1384,99 @@ func (c *Client) PreflightHostedAppDeployment(ctx context.Context, appID string,
 }
 
 func (c *Client) UploadHostedAppRevision(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams) (HostedAppDeploymentReceipt, error) {
+	return c.uploadHostedAppRevision(ctx, appID, bundle, params, "application/gzip")
+}
+
+// UploadHostedAppRevisionWithVisibility sends an audience change as part of a single publication.
+func (c *Client) UploadHostedAppRevisionWithVisibility(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams, visibility UpdateHostedAppVisibilityRequest) (HostedAppDeploymentReceipt, error) {
+	if bundle == nil {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("revision bundle reader is required")
+	}
+	if strings.TrimSpace(params.IdempotencyKey) == "" {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("publishing with a visibility change requires an idempotency key")
+	}
+	body, contentType, err := publicationBody(bundle, visibility)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	return c.uploadHostedAppRevision(ctx, appID, body, params, contentType)
+}
+
+type publicationUploadBody struct {
+	io.Reader
+	bundleCloser io.Closer
+	length       int64
+	replay       func() (io.ReadCloser, error)
+}
+
+func (b *publicationUploadBody) Close() error {
+	if b.bundleCloser != nil {
+		return b.bundleCloser.Close()
+	}
+	return nil
+}
+
+func publicationBody(bundle io.Reader, visibility UpdateHostedAppVisibilityRequest) (*publicationUploadBody, string, error) {
+	var framing bytes.Buffer
+	writer := multipart.NewWriter(&framing)
+	meta, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="publishVisibility"`},
+		"Content-Type":        {"application/json"},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if err := json.NewEncoder(meta).Encode(visibility); err != nil {
+		return nil, "", err
+	}
+	if _, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="bundle"; filename="bundle.tar.gz"`},
+		"Content-Type":        {"application/gzip"},
+	}); err != nil {
+		return nil, "", err
+	}
+	bundleOffset := framing.Len()
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	raw := framing.Bytes()
+	// Add multipart framing without copying the uploaded archive or spawning a pipe goroutine.
+	frame := func(source io.Reader) io.Reader {
+		return io.MultiReader(bytes.NewReader(raw[:bundleOffset]), source, bytes.NewReader(raw[bundleOffset:]))
+	}
+	body := &publicationUploadBody{Reader: frame(bundle)}
+	body.bundleCloser, _ = bundle.(io.Closer)
+	if fresh, size := replayableBundle(bundle); fresh != nil {
+		body.length = int64(len(raw)) + int64(size)
+		body.replay = func() (io.ReadCloser, error) { return io.NopCloser(frame(fresh())), nil }
+	}
+	return body, writer.FormDataContentType(), nil
+}
+
+// Preserve the same body replay support net/http gives to the raw upload.
+func replayableBundle(bundle io.Reader) (func() io.Reader, int) {
+	switch reader := bundle.(type) {
+	case *bytes.Reader:
+		initial := *reader
+		return func() io.Reader {
+			replayed := initial
+			return &replayed
+		}, initial.Len()
+	case *bytes.Buffer:
+		initial := reader.Bytes()
+		return func() io.Reader { return bytes.NewReader(initial) }, len(initial)
+	case *strings.Reader:
+		initial := *reader
+		return func() io.Reader {
+			replayed := initial
+			return &replayed
+		}, initial.Len()
+	default:
+		return nil, 0
+	}
+}
+
+func (c *Client) uploadHostedAppRevision(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams, contentType string) (HostedAppDeploymentReceipt, error) {
 	if bundle == nil {
 		return HostedAppDeploymentReceipt{}, fmt.Errorf("revision bundle reader is required")
 	}
@@ -1405,8 +1500,12 @@ func (c *Client) UploadHostedAppRevision(ctx context.Context, appID string, bund
 	if err != nil {
 		return HostedAppDeploymentReceipt{}, err
 	}
+	if framed, ok := bundle.(*publicationUploadBody); ok && framed.replay != nil {
+		req.GetBody = framed.replay
+		req.ContentLength = framed.length
+	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/gzip")
+	req.Header.Set("Content-Type", contentType)
 	if c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
 	}
@@ -1424,10 +1523,10 @@ func (c *Client) UploadHostedAppRevision(ctx context.Context, appID string, bund
 	defer resp.Body.Close()
 	raw, err := readResponseBody(resp, maxJSONResponseBytes)
 	if err != nil {
-		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %w", path, err)
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %w", basePath, err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %s: %s", path, resp.Status, responseErrorMessage(raw))
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %s: %s", basePath, resp.Status, responseErrorMessage(raw))
 	}
 	var out HostedAppDeploymentResponse
 	if err := json.Unmarshal(raw, &out); err != nil {

@@ -60,6 +60,10 @@ func (r *MemoryRepository) UpdateAppVisibility(_ context.Context, input appappho
 	if !ok {
 		return appapphosting.UpdateVisibilityTxOutput{}, apperrors.ErrNotFound
 	}
+	return r.applyVisibilityLocked(app, settings, input)
+}
+
+func (r *MemoryRepository) applyVisibilityLocked(app domainapphosting.App, settings domainapphosting.Settings, input appapphosting.UpdateVisibilityTxInput) (appapphosting.UpdateVisibilityTxOutput, error) {
 	if !app.IsOwner(input.ActorUserID) {
 		return appapphosting.UpdateVisibilityTxOutput{}, apperrors.ErrAccessDenied
 	}
@@ -154,6 +158,9 @@ func (r *MemoryRepository) WithdrawVisibilityApproval(_ context.Context, appID, 
 	pending.UpdatedAt = nowUTC
 	pending.DecidedAt = &nowUTC
 	r.approvals[pending.ID] = cloneApproval(*pending)
+	app.RouteGeneration++
+	app.UpdatedAt = nowUTC
+	r.appsByID[app.ID] = cloneApp(app)
 	return cloneApp(app), cloneApproval(*pending), nil
 }
 
@@ -279,6 +286,9 @@ func (r *MemoryRepository) RejectVisibilityApproval(_ context.Context, approvalI
 	apv.UpdatedAt = nowUTC
 	apv.DecidedAt = &nowUTC
 	r.approvals[apv.ID] = cloneApproval(apv)
+	app.RouteGeneration++
+	app.UpdatedAt = nowUTC
+	r.appsByID[app.ID] = cloneApp(app)
 	return cloneApp(app), cloneApproval(apv), nil
 }
 

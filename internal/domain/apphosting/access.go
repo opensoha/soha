@@ -10,6 +10,22 @@ import (
 )
 
 func NormalizeVisibilityInput(input *sohaapi.HostedAppVisibilityInput, settings Settings) (sohaapi.HostedAppVisibilityScope, error) {
+	if input != nil && input.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+		if err := CheckOrganizationVisibilityPolicy(settings); err != nil {
+			return sohaapi.HostedAppVisibilityScope{}, err
+		}
+	}
+	return NormalizeVisibilityScope(input)
+}
+
+func CheckOrganizationVisibilityPolicy(settings Settings) error {
+	if settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyDisabled {
+		return apperrors.NewBusiness(apperrors.ErrAccessDenied, "organization_visibility_disabled", "organization-wide visibility is disabled by platform policy", "平台管理员当前已禁用全公司公开可见范围")
+	}
+	return nil
+}
+
+func NormalizeVisibilityScope(input *sohaapi.HostedAppVisibilityInput) (sohaapi.HostedAppVisibilityScope, error) {
 	if input == nil {
 		return sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}, nil
 	}
@@ -23,9 +39,6 @@ func NormalizeVisibilityInput(input *sohaapi.HostedAppVisibilityInput, settings 
 		}
 		return sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}, nil
 	case sohaapi.HostedAppVisibilityModeOrganization:
-		if settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyDisabled {
-			return sohaapi.HostedAppVisibilityScope{}, apperrors.NewBusiness(apperrors.ErrAccessDenied, "organization_visibility_disabled", "organization-wide visibility is disabled by platform policy", "平台管理员当前已禁用全公司公开可见范围")
-		}
 		if len(input.UserIDs) > 0 || len(input.TeamIDs) > 0 {
 			return sohaapi.HostedAppVisibilityScope{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_organization_visibility", "organization visibility must not specify userIds or teamIds", "全公司可见模式不能附带指定用户或部门")
 		}

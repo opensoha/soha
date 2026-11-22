@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -207,6 +208,7 @@ func TestHostDeployLifecyclePreservesVisibilityAndSupportsDryRun(t *testing.T) {
 		preflightCalls  int
 		uploadCalls     int
 		allowPreflight  = true
+		rejectUpload    bool
 		lastCreateReq   sohaapi.CreateHostedAppRequest
 		lastUploadQuery string
 	)
@@ -299,10 +301,8 @@ func TestHostDeployLifecyclePreservesVisibilityAndSupportsDryRun(t *testing.T) {
 			"POST /api/v1/app-hosting/apps/app_existing/revisions":
 			uploadCalls++
 			lastUploadQuery = r.URL.RawQuery
-			if got := r.Header.Get("Content-Type"); got != "application/gzip" {
-				t.Fatalf("Content-Type = %q, want application/gzip", got)
-			}
-			rawGz, err := io.ReadAll(r.Body)
+			bundle, intent := readHostUpload(t, r)
+			rawGz, err := io.ReadAll(bundle)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -328,6 +328,15 @@ func TestHostDeployLifecyclePreservesVisibilityAndSupportsDryRun(t *testing.T) {
 					CreatedAt:         now,
 					UpdatedAt:         now,
 				}
+			}
+			if intent != nil {
+				appOut.Visibility = sohaapi.HostedAppVisibilityScope{
+					Mode: intent.Visibility.Mode, TeamIDs: intent.Visibility.TeamIDs, UserIDs: intent.Visibility.UserIDs,
+				}
+			}
+			if rejectUpload {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				return
 			}
 			w.WriteHeader(http.StatusCreated)
 			writeJSON(t, w, sohaapi.HostedAppDeploymentResponse{
@@ -446,20 +455,58 @@ func TestHostDeployLifecyclePreservesVisibilityAndSupportsDryRun(t *testing.T) {
 		}
 	})
 
-	t.Run("updating existing app with explicit --visibility updates scope", func(t *testing.T) {
+	t.Run("updating existing app attaches the audience to the upload", func(t *testing.T) {
 		var out, errBuf bytes.Buffer
 		code := Run(context.Background(), []string{"host", "deploy", bundleDir, "--app-id", "app_existing", "--visibility", "selected", "--team", "team_fin", "--user", "usr_carol", "--yes"}, Runtime{
 			Out:        &out,
 			Err:        &errBuf,
 			ConfigPath: cfgPath,
 		})
-		if code != 0 || visibilityCalls != 1 {
+		if code != 0 || visibilityCalls != 0 {
 			t.Fatalf("code=%d visibilityCalls=%d err=%s", code, visibilityCalls, errBuf.String())
 		}
 		if !strings.Contains(out.String(), "selected (teams=team_fin users=usr_carol)") {
 			t.Fatalf("unexpected visibility summary: %s", out.String())
 		}
 	})
+	t.Run("rejected upload does not call the visibility endpoint", func(t *testing.T) {
+		rejectUpload = true
+		var out, errBuf bytes.Buffer
+		code := Run(context.Background(), []string{"host", "deploy", bundleDir, "--app-id", "app_existing", "--visibility", "private", "--idempotency-key", "publish-rejected", "--yes"}, Runtime{
+			Out: &out, Err: &errBuf, ConfigPath: cfgPath,
+		})
+		if code == 0 || visibilityCalls != 0 {
+			t.Fatalf("code=%d visibilityCalls=%d output=%s", code, visibilityCalls, out.String())
+		}
+	})
+}
+
+func readHostUpload(t *testing.T, r *http.Request) (io.Reader, *sohaapi.UpdateHostedAppVisibilityRequest) {
+	t.Helper()
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contentType == "application/gzip" {
+		return r.Body, nil
+	}
+	reader, err := r.MultipartReader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := reader.NextPart()
+	if err != nil || meta.FormName() != "publishVisibility" {
+		t.Fatalf("visibility part: %v", err)
+	}
+	var intent sohaapi.UpdateHostedAppVisibilityRequest
+	if err := json.NewDecoder(meta).Decode(&intent); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := reader.NextPart()
+	if err != nil || bundle.FormName() != "bundle" || bundle.Header.Get("Content-Type") != "application/gzip" {
+		t.Fatalf("bundle part: %v", err)
+	}
+	return bundle, &intent
 }
 
 func TestHostManagementAndAudienceSubcommands(t *testing.T) {
@@ -641,7 +688,7 @@ func TestHostClientTokenRefreshAndSecretRedaction(t *testing.T) {
 	freshAccess := "fresh-secret-access-token-67890"
 	refreshTok := "stored-refresh-token-abcdef"
 
-	var refreshCalls int
+	var refreshCalls, uploadCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/auth/refresh":
@@ -684,6 +731,24 @@ func TestHostClientTokenRefreshAndSecretRedaction(t *testing.T) {
 					UpdatedAt:         now,
 				},
 			})
+		case "/api/v1/app-hosting/apps/app_secret/revisions":
+			uploadCalls++
+			rawBundle, intent := readHostUpload(t, r)
+			bundle, err := io.ReadAll(rawBundle)
+			if err != nil || string(bundle) != "gzip fixture" || intent == nil || intent.Reason != "deploy review" {
+				t.Errorf("multipart upload changed on replay: %+v, %v", intent, err)
+			}
+			if r.Header.Get("Authorization") == "Bearer "+staleAccess {
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer "+freshAccess {
+				t.Error("upload retry did not use refreshed token")
+			}
+			writeJSON(t, w, sohaapi.HostedAppDeploymentResponse{
+				Data: sohaapi.HostedAppDeploymentReceipt{Revision: sohaapi.HostedAppRevision{ID: "rev_1"}},
+			})
 		case "/api/v1/app-hosting/apps/app_leak":
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = io.WriteString(w, "upstream failure echoing "+freshAccess+" and "+refreshTok)
@@ -715,6 +780,22 @@ func TestHostClientTokenRefreshAndSecretRedaction(t *testing.T) {
 	}
 	if strings.Contains(errBuf.String(), freshAccess) || strings.Contains(errBuf.String(), refreshTok) {
 		t.Fatalf("stderr leaked credential: %s", errBuf.String())
+	}
+
+	stalePath := writeTestConfigWithProfile(t, ProfileConfig{
+		ServerURL: server.URL, AccessToken: staleAccess, RefreshToken: refreshTok, UserID: "u-1", UserName: "Ada",
+	})
+	client, err := loadHostClient(t.Context(), Runtime{ConfigPath: stalePath}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := client.UploadRevision(t.Context(), "app_secret", strings.NewReader("gzip fixture"),
+		sohaapi.UploadHostedAppRevisionParams{IdempotencyKey: "same-on-retry"}, &sohaapi.UpdateHostedAppVisibilityRequest{
+			Visibility: sohaapi.HostedAppVisibilityInput{Mode: sohaapi.HostedAppVisibilityModePrivate},
+			Reason:     "deploy review",
+		})
+	if err != nil || receipt.Revision.ID != "rev_1" || uploadCalls != 2 || refreshCalls != 2 {
+		t.Fatalf("multipart retry: revision=%s err=%v uploads=%d refreshes=%d", receipt.Revision.ID, err, uploadCalls, refreshCalls)
 	}
 }
 
@@ -1044,13 +1125,25 @@ func TestHostDeployOrganizationPendingApprovalNotice(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/v1/app-hosting/apps":
+			var req sohaapi.CreateHostedAppRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Visibility == nil || req.Visibility.Mode != sohaapi.HostedAppVisibilityModeOrganization || !req.DeferVisibilityUntilPublication {
+				t.Errorf("draft creation must defer organization visibility: %+v, %v", req, err)
+			}
+			draft := appRecord
+			draft.Status = sohaapi.HostedAppStatusDraft
+			draft.PendingVisibilityApproval = nil
+			draft.ActiveRevisionID = ""
 			w.WriteHeader(http.StatusCreated)
-			writeJSON(t, w, sohaapi.HostedAppResponse{Data: appRecord})
+			writeJSON(t, w, sohaapi.HostedAppResponse{Data: draft})
 		case "POST /api/v1/app-hosting/apps/app_pending_org/deployments/preflight":
 			writeJSON(t, w, sohaapi.HostedAppPreflightResponse{
 				Data: sohaapi.HostedAppPreflightResult{Allowed: true, AppID: appRecord.ID, URL: appRecord.URL, MaxCompressedBytes: 1 << 20, MaxUncompressedBytes: 4 << 20, MaxFileCount: 100},
 			})
 		case "POST /api/v1/app-hosting/apps/app_pending_org/revisions":
+			_, intent := readHostUpload(t, r)
+			if intent == nil || intent.Visibility.Mode != sohaapi.HostedAppVisibilityModeOrganization {
+				t.Errorf("organization intent must belong to the upload: %+v", intent)
+			}
 			w.WriteHeader(http.StatusCreated)
 			writeJSON(t, w, sohaapi.HostedAppDeploymentResponse{
 				Data: sohaapi.HostedAppDeploymentReceipt{

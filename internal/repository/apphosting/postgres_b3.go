@@ -32,19 +32,28 @@ func (r *PostgresRepository) WithLockedDynamicRuntime(ctx context.Context, appID
 	})
 }
 
-func lockEnabledDynamicHosting(ctx context.Context, tx *gorm.DB) error {
+func lockAppHostingSettings(tx *gorm.DB) error {
 	// Acquire the settings lock before the app lock, in the same order as visibility updates.
-	if err := tx.Exec(`SELECT pg_advisory_xact_lock_shared(hashtextextended('app_hosting_settings/default', 0))`).Error; err != nil {
-		return err
+	return tx.Exec(`SELECT pg_advisory_xact_lock_shared(hashtextextended('app_hosting_settings/default', 0))`).Error
+}
+
+func lockEnabledDynamicHosting(ctx context.Context, tx *gorm.DB) error {
+	_, err := loadLockedAppHostingSettings(ctx, tx, true)
+	return err
+}
+
+func loadLockedAppHostingSettings(ctx context.Context, tx *gorm.DB, requireEnabled bool) (domainapphosting.Settings, error) {
+	if err := lockAppHostingSettings(tx); err != nil {
+		return domainapphosting.Settings{}, err
 	}
 	settings, err := loadSettingsRow(ctx, tx)
 	if err != nil {
-		return err
+		return domainapphosting.Settings{}, err
 	}
-	if !settings.Enabled {
-		return appapphosting.ErrDynamicRevisionFailed
+	if requireEnabled && !settings.Enabled {
+		return domainapphosting.Settings{}, appapphosting.ErrDynamicRevisionFailed
 	}
-	return nil
+	return settings, nil
 }
 
 func (r *PostgresRepository) QueueDynamicRevision(ctx context.Context, appID, revID, sourceKey, template string, database bool, dataSchema int, now time.Time) error {

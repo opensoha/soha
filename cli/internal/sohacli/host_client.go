@@ -178,7 +178,11 @@ func (c *hostClient) PreflightDeployment(ctx context.Context, appID string, req 
 	return res, c.wrapErr(err)
 }
 
-func (c *hostClient) UploadRevision(ctx context.Context, appID string, bundle io.Reader, params sohaapi.UploadHostedAppRevisionParams) (sohaapi.HostedAppDeploymentReceipt, error) {
+func (c *hostClient) UploadRevision(ctx context.Context, appID string, bundle io.Reader, params sohaapi.UploadHostedAppRevisionParams, visibility *sohaapi.UpdateHostedAppVisibilityRequest) (sohaapi.HostedAppDeploymentReceipt, error) {
+	if visibility != nil {
+		res, err := c.sdk.UploadHostedAppRevisionWithVisibility(ctx, appID, bundle, params, *visibility)
+		return res, c.wrapErr(err)
+	}
 	res, err := c.sdk.UploadHostedAppRevision(ctx, appID, bundle, params)
 	return res, c.wrapErr(err)
 }

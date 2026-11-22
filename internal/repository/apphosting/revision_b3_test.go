@@ -106,15 +106,17 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 	}
 	applyMigration("0156_app_hosting_b3.sql")
 	applyMigration("0157_app_hosting_runtime_controls.sql")
+	applyMigration("0158_app_hosting_publication_visibility.sql")
 	repo, err := NewPostgresRepository(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacy, err := repo.GetRevision(t.Context(), "legacy", "legacy-rev")
-	if err != nil || legacy.Kind != sohaapi.HostedAppKindStatic || legacy.BuildPhase != "" || legacy.ImageRef != "" || legacy.Database || legacy.DataSchema != 0 || legacy.RuntimeEnvironment != nil {
+	if err != nil || legacy.Kind != sohaapi.HostedAppKindStatic || legacy.BuildPhase != "" || legacy.ImageRef != "" || legacy.Database || legacy.DataSchema != 0 || legacy.RuntimeEnvironment != nil || legacy.PublishVisibility != nil {
 		t.Fatalf("legacy static revision after migration = %#v, %v", legacy, err)
 	}
 	testDynamicRevisionLifecycle(t, repo)
+	t.Run("publication-visibility", func(t *testing.T) { testPostgresPublicationVisibility(t, repo) })
 	t.Run("deleted-runtime-cleanup", func(t *testing.T) { testDeletedDynamicRuntimeCleanup(t, repo) })
 	t.Run("runtime-config", func(t *testing.T) { testRuntimeConfig(t, repo) })
 	t.Run("runtime-authority-with-one-connection", func(t *testing.T) {

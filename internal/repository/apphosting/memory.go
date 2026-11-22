@@ -268,6 +268,7 @@ func (r *MemoryRepository) CreateUploadingRevision(_ context.Context, appID stri
 	}
 	stored := cloneRevision(draft)
 	stored.RuntimeEnvironment = nil
+	stored.PublicationVisibilityRecorded = true
 	stored.RevisionNumber = maxNum + 1
 	stored.Status = sohaapi.HostedAppRevisionStatusUploading
 	r.revisions[appID] = append(list, stored)
@@ -327,7 +328,7 @@ func (r *MemoryRepository) ActivateRevision(ctx context.Context, input appapphos
 		}
 		return appapphosting.ActivateRevisionOutput{}, err
 	}
-	if rev.Kind == sohaapi.HostedAppKindDynamic && input.BeforeActivate != nil {
+	if input.BeforeActivate != nil {
 		if err := input.BeforeActivate(ctx); err != nil {
 			return appapphosting.ActivateRevisionOutput{}, err
 		}
@@ -356,11 +357,23 @@ func (r *MemoryRepository) ActivateRevision(ctx context.Context, input appapphos
 		r.invalidatePendingApprovalForAppLocked(app.ID, "route_generation_changed", nowUTC)
 	}
 
+	var visibility *appapphosting.UpdateVisibilityTxOutput
+	settings := r.settings.WithDefaults()
+	if visibilityInput, ok := publicationVisibilityInput(app, prevGen, *rev, settings, nowUTC); ok {
+		updated, err := r.applyVisibilityLocked(app, settings, visibilityInput)
+		if err != nil {
+			return appapphosting.ActivateRevisionOutput{}, err
+		}
+		app = updated.App
+		visibility = &updated
+	}
+
 	evicted := evictExcessMemoryRevisions(list, app.ActiveRevisionID, input.RetainedRevisionsMax, nowUTC)
 	return appapphosting.ActivateRevisionOutput{
 		App:              cloneApp(app),
 		Revision:         cloneRevision(*rev),
 		EvictedRevisions: evicted,
+		Visibility:       visibility,
 	}, nil
 }
 
@@ -720,6 +733,11 @@ func cloneRevision(r domainapphosting.Revision) domainapphosting.Revision {
 	out := r
 	out.Files = slices.Clone(r.Files)
 	out.RuntimeEnvironment = maps.Clone(r.RuntimeEnvironment)
+	if r.PublishVisibility != nil {
+		visibility := *r.PublishVisibility
+		visibility.Scope = domainapphosting.CloneVisibilityScope(visibility.Scope)
+		out.PublishVisibility = &visibility
+	}
 	if r.ActivatedAt != nil {
 		t := r.ActivatedAt.UTC()
 		out.ActivatedAt = &t

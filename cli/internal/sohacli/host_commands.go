@@ -385,7 +385,7 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 
 	uploadKey := opts.idempotencyKey
 	if uploadKey == "" {
-		uploadKey = defaultUploadIdempotencyKey(app, bundle.BundleSHA256, spaFallback, opts.description)
+		uploadKey = defaultUploadIdempotencyKey(app, bundle.BundleSHA256, spaFallback, opts.description, opts.visibilityInput, opts.visibilityReason)
 	}
 	uploadParams := sohaapi.UploadHostedAppRevisionParams{
 		IdempotencyKey: uploadKey,
@@ -394,7 +394,11 @@ func runHostDeploy(ctx context.Context, args []string, rt Runtime) error {
 	if opts.kind == sohaapi.HostedAppKindStatic {
 		uploadParams.SpaFallback = &spaFallback
 	}
-	receipt, err := client.UploadRevision(ctx, app.ID, bytes.NewReader(bundle.Archive), uploadParams)
+	var visibility *sohaapi.UpdateHostedAppVisibilityRequest
+	if opts.visibilityInput != nil {
+		visibility = &sohaapi.UpdateHostedAppVisibilityRequest{Visibility: *opts.visibilityInput, Reason: opts.visibilityReason}
+	}
+	receipt, err := client.UploadRevision(ctx, app.ID, bytes.NewReader(bundle.Archive), uploadParams, visibility)
 	if err != nil {
 		return err
 	}
@@ -444,12 +448,13 @@ func resolveDeployTargetApp(ctx context.Context, client *hostClient, opts hostDe
 		createKey = defaultCreateAppIdempotencyKey(opts.kind, bundle.AbsDir, appName, opts.slug, vis)
 	}
 	createRequest := sohaapi.CreateHostedAppRequest{
-		Name:           appName,
-		Slug:           opts.slug,
-		Description:    opts.description,
-		Kind:           opts.kind,
-		Visibility:     &vis,
-		IdempotencyKey: createKey,
+		Name:                            appName,
+		Slug:                            opts.slug,
+		Description:                     opts.description,
+		Kind:                            opts.kind,
+		Visibility:                      &vis,
+		DeferVisibilityUntilPublication: opts.visibilityInput != nil,
+		IdempotencyKey:                  createKey,
 	}
 	if opts.kind == sohaapi.HostedAppKindStatic {
 		createRequest.SpaFallback = &spaFallback
@@ -480,16 +485,6 @@ func applyExistingAppDeployUpdates(ctx context.Context, client *hostClient, opts
 			patch.SpaFallback = &spaCopy
 		}
 		updated, err := client.UpdateApp(ctx, app.ID, patch)
-		if err != nil {
-			return sohaapi.HostedApp{}, err
-		}
-		app = updated
-	}
-	if opts.visibilityInput != nil {
-		updated, err := client.UpdateVisibility(ctx, app.ID, sohaapi.UpdateHostedAppVisibilityRequest{
-			Visibility: *opts.visibilityInput,
-			Reason:     opts.visibilityReason,
-		})
 		if err != nil {
 			return sohaapi.HostedApp{}, err
 		}
@@ -1161,16 +1156,19 @@ func defaultCreateAppIdempotencyKey(kind sohaapi.HostedAppKind, absDir, name, sl
 	)
 }
 
-func defaultUploadIdempotencyKey(app sohaapi.HostedApp, bundleSHA256 string, spaFallback bool, description string) string {
-	return hashIdempotencyKey(
-		"host-rev-",
+func defaultUploadIdempotencyKey(app sohaapi.HostedApp, bundleSHA256 string, spaFallback bool, description string, visibility *sohaapi.HostedAppVisibilityInput, reason string) string {
+	parts := []string{
 		app.ID,
 		app.ActiveRevisionID,
 		strconv.FormatInt(app.RouteGeneration, 10),
 		bundleSHA256,
 		strconv.FormatBool(spaFallback),
 		description,
-	)
+	}
+	if visibility != nil {
+		parts = append(parts, string(visibility.Mode), strings.Join(visibility.UserIDs, ","), strings.Join(visibility.TeamIDs, ","), reason)
+	}
+	return hashIdempotencyKey("host-rev-", parts...)
 }
 
 func hashIdempotencyKey(prefix string, parts ...string) string {

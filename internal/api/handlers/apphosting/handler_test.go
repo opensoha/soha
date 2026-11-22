@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"reflect"
 	"slices"
@@ -155,7 +158,7 @@ type fakeWorkspaceBundleSource struct {
 	bundle []byte
 }
 
-func (f *fakeWorkspaceBundleSource) BundlePersonalWorkspace(_ context.Context, _ domainidentity.Principal, _, _ string, _ int64) (io.ReadCloser, error) {
+func (f *fakeWorkspaceBundleSource) BundlePersonalWorkspace(_ context.Context, _ domainidentity.Principal, _, _ string, _ int64, _ sohaapi.HostedAppKind) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(f.bundle)), nil
 }
 
@@ -272,6 +275,57 @@ func verifyHandlerBundleUploads(t *testing.T, ctx context.Context, baseURL strin
 	goodBundle := buildSimpleTarGz(t, map[string]string{"index.html": "<!doctype html><h1>ok</h1>"})
 	if _, err := aliceClient.UploadHostedAppRevision(ctx, appID, bytes.NewReader(goodBundle), sohaapi.UploadHostedAppRevisionParams{Description: "v1"}); err != nil {
 		t.Fatalf("UploadHostedAppRevision: %v", err)
+	}
+	intent := sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: sohaapi.HostedAppVisibilityInput{Mode: sohaapi.HostedAppVisibilityModeSelected, UserIDs: []string{"bob"}},
+		Reason:     "财务报表",
+	}
+	receipt, err := aliceClient.UploadHostedAppRevisionWithVisibility(ctx, appID, bytes.NewReader(goodBundle),
+		sohaapi.UploadHostedAppRevisionParams{IdempotencyKey: "v2-share"}, intent)
+	if err != nil || receipt.Revision.ID == "" || receipt.App.ActiveRevisionID != receipt.Revision.ID || receipt.App.Visibility.Mode != intent.Visibility.Mode {
+		t.Fatalf("UploadHostedAppRevisionWithVisibility: %#v, %v", receipt, err)
+	}
+	var extra bytes.Buffer
+	writer := multipart.NewWriter(&extra)
+	meta, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="publishVisibility"`}, "Content-Type": {"application/json"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(meta).Encode(intent); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="bundle"; filename="app.tar.gz"`}, "Content-Type": {"application/gzip"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bundle.Write(goodBundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("unexpected", "ignored?"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertAuthedPostStatus(t, ctx, baseURL+"/api/v1/app-hosting/apps/"+appID+"/revisions?idempotencyKey=unexpected", "alice-tok",
+		writer.FormDataContentType(), extra.Bytes(), http.StatusUnprocessableEntity)
+	encoded := bytes.Replace(extra.Bytes(), []byte("Content-Type: application/gzip"),
+		[]byte("Content-Type: application/gzip\r\nContent-Transfer-Encoding: quoted-printable"), 1)
+	assertAuthedPostStatus(t, ctx, baseURL+"/api/v1/app-hosting/apps/"+appID+"/revisions?idempotencyKey=encoded", "alice-tok",
+		writer.FormDataContentType(), encoded, http.StatusBadRequest)
+	unchanged, err := aliceClient.GetHostedApp(ctx, appID)
+	if err != nil || unchanged.ActiveRevisionID != receipt.Revision.ID {
+		t.Fatalf("invalid multipart changed the active revision: %#v, %v", unchanged, err)
+	}
+	_, err = aliceClient.UpdateHostedAppVisibility(ctx, appID, sohaapi.UpdateHostedAppVisibilityRequest{
+		Visibility: sohaapi.HostedAppVisibilityInput{Mode: sohaapi.HostedAppVisibilityModePrivate},
+	})
+	if err != nil {
+		t.Fatalf("reset application visibility: %v", err)
 	}
 }
 

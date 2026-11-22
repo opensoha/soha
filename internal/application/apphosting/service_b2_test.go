@@ -707,7 +707,7 @@ type stubWorkspaceBundleSource struct {
 	artifactTitle  string
 }
 
-func (s *stubWorkspaceBundleSource) BundlePersonalWorkspace(_ context.Context, _ domainidentity.Principal, _, _ string, _ int64) (io.ReadCloser, error) {
+func (s *stubWorkspaceBundleSource) BundlePersonalWorkspace(_ context.Context, _ domainidentity.Principal, _, _ string, _ int64, _ sohaapi.HostedAppKind) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(s.workspaceTarGz)), nil
 }
 
@@ -756,6 +756,12 @@ func TestDeployFromWorkspacePermissionsDLPAndIdempotency(t *testing.T) {
 	replay, err := h.svc.DeployFromWorkspace(ctx, h.alice, req)
 	if err != nil || replay.Created || replay.App.ID != res1.App.ID || replay.Revision.ID != res1.Revision.ID {
 		t.Fatalf("idempotent workspace deploy replay = %#v, %v", replay, err)
+	}
+
+	setOrgVisibilityPolicy(t, ctx, h, sohaapi.AppHostingOrganizationVisibilityPolicyDisabled)
+	replay, err = h.svc.DeployFromWorkspace(ctx, h.alice, req)
+	if err != nil || replay.Revision.ID != res1.Revision.ID || replay.App.PendingVisibilityApproval != nil {
+		t.Fatalf("policy change must not replay the audience or discard the receipt: %#v, %v", replay, err)
 	}
 
 	// Secret DLP scanning still rejects leaked credentials in workspace bundles!

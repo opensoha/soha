@@ -12884,6 +12884,10 @@
       "CreateHostedAppRequest": {
         "additionalProperties": false,
         "properties": {
+          "deferVisibilityUntilPublication": {
+            "description": "Create a private draft without applying visibility or requesting approval. Use visibility only to match the idempotent app creation request. Attach the intended audience to the subsequent revision upload.\n",
+            "type": "boolean"
+          },
           "description": {
             "maxLength": 1024,
             "type": "string"
@@ -94496,6 +94500,34 @@
                 "format": "binary",
                 "type": "string"
               }
+            },
+            "multipart/form-data": {
+              "encoding": {
+                "bundle": {
+                  "contentType": "application/gzip"
+                },
+                "publishVisibility": {
+                  "contentType": "application/json"
+                }
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundle": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "publishVisibility": {
+                    "$ref": "#/components/schemas/UpdateHostedAppVisibilityRequest",
+                    "description": "Send this JSON part before the bundle. Requires idempotencyKey and application ownership. The server applies the audience, or requests required approval, only when the revision activates and the application's routing generation has not changed since upload. Idempotent replays leave the current audience untouched.\n"
+                  }
+                },
+                "required": [
+                  "publishVisibility",
+                  "bundle"
+                ],
+                "type": "object"
+              }
             }
           },
           "required": true
@@ -94519,7 +94551,7 @@
                 }
               }
             },
-            "description": "Uploaded and activated new hosted application revision."
+            "description": "Uploaded a new hosted application revision. Static revisions activate immediately; dynamic revisions are queued."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -94546,7 +94578,7 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "summary": "Upload a tar.gz static bundle, run DLP checks, persist to object storage, and activate the revision",
+        "summary": "Upload a tar.gz bundle for static activation or dynamic build",
         "tags": [
           "AppHosting"
         ]

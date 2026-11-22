@@ -499,7 +499,7 @@ const hostedRevisionColumns = `id, app_id, revision_number, description, kind, s
 	storage_prefix, manifest_json, failure_stage, failure_reason,
 	idempotency_key, created_by, created_at, activated_at,
 	source_key, build_template, image_ref, build_phase, database_enabled, data_schema, claim_id,
-	next_check_at, claim_expires_at, runtime_environment`
+	next_check_at, claim_expires_at, runtime_environment, publish_visibility`
 
 func (r *PostgresRepository) FindRevisionByIdempotencyKey(ctx context.Context, appID, idempotencyKey string) (domainapphosting.Revision, error) {
 	rev, err := scanHostedRevision(r.db.WithContext(ctx).Raw(`
@@ -530,6 +530,7 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 		}
 		stored := draft
 		stored.RuntimeEnvironment = nil
+		stored.PublicationVisibilityRecorded = true
 		stored.RevisionNumber = nextNum
 		stored.Status = sohaapi.HostedAppRevisionStatusUploading
 		stored.Files = nonNilManifest(draft.Files)
@@ -537,18 +538,22 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 		if err != nil {
 			return err
 		}
+		visibilityJSON, err := json.Marshal(stored.PublishVisibility)
+		if err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO public.hosted_app_revisions (
 				id, app_id, revision_number, description, kind, status, bundle_sha256,
 				file_count, total_bytes, spa_fallback, storage_integration_id, storage_prefix,
-				manifest_json, failure_stage, failure_reason, idempotency_key, created_by, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, '', '', ?, ?, ?)
+				manifest_json, failure_stage, failure_reason, idempotency_key, created_by, created_at, publish_visibility
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, '', '', ?, ?, ?, ?::jsonb)
 		`,
 			stored.ID, stored.AppID, stored.RevisionNumber, stored.Description,
 			string(stored.Kind), string(stored.Status), stored.BundleSha256,
 			stored.FileCount, stored.TotalBytes, stored.SpaFallback,
 			stored.StorageIntegrationID, stored.StoragePrefix, string(manifestBytes),
-			stored.IdempotencyKey, stored.CreatedBy, stored.CreatedAt.UTC(),
+			stored.IdempotencyKey, stored.CreatedBy, stored.CreatedAt.UTC(), string(visibilityJSON),
 		).Error; err != nil {
 			return mapPostgresRevisionWriteError(err)
 		}
@@ -582,10 +587,9 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 
 	err := dbtx.Within(ctx, r.db, func(ctx context.Context) error {
 		tx := dbtx.DB(ctx, r.db)
-		if input.DynamicClaimID != "" {
-			if err := lockEnabledDynamicHosting(ctx, tx); err != nil {
-				return err
-			}
+		settings, err := loadLockedAppHostingSettings(ctx, tx, input.DynamicClaimID != "")
+		if err != nil {
+			return err
 		}
 		app, err := getAppWhere(ctx, tx, "id = ?", input.AppID, true)
 		if err != nil {
@@ -606,7 +610,7 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 			rejectedConflict = rejection
 			return markRevisionActivationFailedTx(tx, input, failureReason)
 		}
-		if rev.Kind == sohaapi.HostedAppKindDynamic && input.BeforeActivate != nil {
+		if input.BeforeActivate != nil {
 			if err := input.BeforeActivate(ctx); err != nil {
 				return err
 			}
@@ -647,11 +651,20 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 			return err
 		}
 
+		var visibility *appapphosting.UpdateVisibilityTxOutput
+		if visibilityInput, ok := publicationVisibilityInput(app, prevGen, rev, settings, nowUTC); ok {
+			updated, err := applyPostgresVisibility(ctx, tx, app, settings, visibilityInput)
+			if err != nil {
+				return err
+			}
+			app = updated.App
+			visibility = &updated
+		}
 		evicted, err := evictExcessPostgresRevisions(ctx, tx, app.ID, app.ActiveRevisionID, input.RetainedRevisionsMax, nowUTC)
 		if err != nil {
 			return err
 		}
-		out = appapphosting.ActivateRevisionOutput{App: app, Revision: rev, EvictedRevisions: evicted}
+		out = appapphosting.ActivateRevisionOutput{App: app, Revision: rev, EvictedRevisions: evicted, Visibility: visibility}
 		return nil
 	})
 	if err != nil {
@@ -1102,7 +1115,7 @@ func scanHostedApp(scanner rowScanner) (domainapphosting.App, error) {
 func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 	var rev domainapphosting.Revision
 	var kindStr, statusStr string
-	var manifestRaw, environmentRaw []byte
+	var manifestRaw, environmentRaw, visibilityRaw []byte
 	var activatedAt, nextCheckAt, claimExpiresAt sql.NullTime
 	err := scanner.Scan(
 		&rev.ID, &rev.AppID, &rev.RevisionNumber, &rev.Description, &kindStr, &statusStr,
@@ -1111,7 +1124,7 @@ func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 		&rev.FailureStage, &rev.FailureReason, &rev.IdempotencyKey,
 		&rev.CreatedBy, &rev.CreatedAt, &activatedAt,
 		&rev.SourceKey, &rev.BuildTemplate, &rev.ImageRef, &rev.BuildPhase, &rev.Database, &rev.DataSchema, &rev.ClaimID,
-		&nextCheckAt, &claimExpiresAt, &environmentRaw,
+		&nextCheckAt, &claimExpiresAt, &environmentRaw, &visibilityRaw,
 	)
 	if err != nil {
 		return domainapphosting.Revision{}, err
@@ -1125,6 +1138,12 @@ func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 	}
 	if len(environmentRaw) > 0 {
 		if err := json.Unmarshal(environmentRaw, &rev.RuntimeEnvironment); err != nil {
+			return domainapphosting.Revision{}, err
+		}
+	}
+	if len(visibilityRaw) > 0 {
+		rev.PublicationVisibilityRecorded = true
+		if err := json.Unmarshal(visibilityRaw, &rev.PublishVisibility); err != nil {
 			return domainapphosting.Revision{}, err
 		}
 	}

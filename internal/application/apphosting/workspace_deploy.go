@@ -31,11 +31,11 @@ func (s *Service) DeployFromWorkspace(
 	if s.workspaceSource == nil {
 		return sohaapi.WorkspaceHostedAppDeploymentResult{}, apperrors.NewBusiness(apperrors.ErrServiceUnavailable, "workspace_bundle_unavailable", "assistant workspace publishing is not configured", "当前未启用个人助手工作空间直接发布能力")
 	}
-	if err := s.validateWorkspaceDeployRequest(ctx, principal, req); err != nil {
+	if err := s.validateWorkspaceDeployRequest(ctx, principal, &req); err != nil {
 		return sohaapi.WorkspaceHostedAppDeploymentResult{}, err
 	}
 
-	bundleRC, inferredTitle, err := s.openWorkspaceSourceBundle(ctx, principal, req.Source)
+	bundleRC, inferredTitle, err := s.openWorkspaceSourceBundle(ctx, principal, req.Source, req.Kind)
 	if err != nil {
 		return sohaapi.WorkspaceHostedAppDeploymentResult{}, err
 	}
@@ -48,22 +48,18 @@ func (s *Service) DeployFromWorkspace(
 	}
 
 	uploadKey := deriveChildIdempotencyKey("ws-upload", principal.UserID, idemKey)
+	var visibility *sohaapi.UpdateHostedAppVisibilityRequest
+	if req.Visibility != nil {
+		visibility = &sohaapi.UpdateHostedAppVisibilityRequest{Visibility: *req.Visibility, Reason: req.VisibilityReason}
+	}
 	receipt, err := s.UploadRevision(ctx, principal, targetAppID, domainapphosting.UploadRevisionInput{
-		IdempotencyKey: uploadKey,
-		SpaFallback:    req.SpaFallback,
-		Description:    strings.TrimSpace(req.Description),
+		IdempotencyKey:    uploadKey,
+		SpaFallback:       req.SpaFallback,
+		Description:       strings.TrimSpace(req.Description),
+		PublishVisibility: visibility,
 	}, bundleRC)
 	if err != nil {
 		return sohaapi.WorkspaceHostedAppDeploymentResult{}, err
-	}
-
-	if strings.TrimSpace(req.AppID) != "" && req.Visibility != nil && !receipt.ReusedIdempotencyKey {
-		if _, err := s.UpdateVisibility(ctx, principal, targetAppID, sohaapi.UpdateHostedAppVisibilityRequest{
-			Visibility: *req.Visibility,
-			Reason:     req.VisibilityReason,
-		}); err != nil {
-			return sohaapi.WorkspaceHostedAppDeploymentResult{}, err
-		}
 	}
 
 	finalApp, err := s.GetApp(ctx, principal, targetAppID)
@@ -80,7 +76,7 @@ func (s *Service) DeployFromWorkspace(
 func (s *Service) validateWorkspaceDeployRequest(
 	ctx context.Context,
 	principal domainidentity.Principal,
-	req sohaapi.WorkspaceHostedAppDeploymentRequest,
+	req *sohaapi.WorkspaceHostedAppDeploymentRequest,
 ) error {
 	idemKey := strings.TrimSpace(req.IdempotencyKey)
 	if idemKey == "" || len(idemKey) > 128 {
@@ -107,7 +103,7 @@ func (s *Service) validateWorkspaceDeployRequest(
 		return apperrors.NewBusiness(apperrors.ErrServiceUnavailable, "app_hosting_unavailable", "workspace App Hosting or object storage is not enabled", "工作区应用托管或对象存储尚未启用")
 	}
 	if req.Visibility != nil {
-		if _, err := domainapphosting.NormalizeVisibilityInput(req.Visibility, settings); err != nil {
+		if _, err := domainapphosting.NormalizeVisibilityScope(req.Visibility); err != nil {
 			return err
 		}
 	}
@@ -117,7 +113,7 @@ func (s *Service) validateWorkspaceDeployRequest(
 func (s *Service) validateExistingTargetAppPreconditions(
 	ctx context.Context,
 	principal domainidentity.Principal,
-	req sohaapi.WorkspaceHostedAppDeploymentRequest,
+	req *sohaapi.WorkspaceHostedAppDeploymentRequest,
 ) error {
 	targetID := strings.TrimSpace(req.AppID)
 	if targetID == "" {
@@ -142,6 +138,7 @@ func (s *Service) validateExistingTargetAppPreconditions(
 	if (strings.TrimSpace(req.Name) != "" || req.Visibility != nil) && !existing.IsOwner(principal.UserID) {
 		return apperrors.ErrAccessDenied
 	}
+	req.Kind = existing.Kind
 	return nil
 }
 
@@ -149,13 +146,14 @@ func (s *Service) openWorkspaceSourceBundle(
 	ctx context.Context,
 	principal domainidentity.Principal,
 	src sohaapi.WorkspaceHostedAppSource,
+	kind sohaapi.HostedAppKind,
 ) (io.ReadCloser, string, error) {
 	switch src.Kind {
 	case sohaapi.WorkspaceHostedAppSourceKindPersonalEnvironment:
 		if src.EnvironmentVersion < 0 || len(strings.TrimSpace(src.AssistantID)) > 128 || len(src.SourcePath) > 512 {
 			return nil, "", apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_workspace_source", "personal_environment source parameters are invalid", "个人工作空间发布参数不合法")
 		}
-		rc, err := s.workspaceSource.BundlePersonalWorkspace(ctx, principal, src.SourcePath, src.AssistantID, src.EnvironmentVersion)
+		rc, err := s.workspaceSource.BundlePersonalWorkspace(ctx, principal, src.SourcePath, src.AssistantID, src.EnvironmentVersion, kind)
 		return rc, inferWorkspaceAppName(src.SourcePath), err
 	case sohaapi.WorkspaceHostedAppSourceKindConversationArtifact:
 		artID := strings.TrimSpace(src.ArtifactID)
@@ -188,15 +186,16 @@ func (s *Service) resolveWorkspaceTargetApp(
 	if kind == "" {
 		kind = sohaapi.HostedAppKindStatic
 	}
-	created, reused, err := s.createAppWithReason(ctx, principal, sohaapi.CreateHostedAppRequest{
-		Name:           appName,
-		Slug:           req.Slug,
-		Description:    req.Description,
-		Kind:           kind,
-		SpaFallback:    req.SpaFallback,
-		Visibility:     req.Visibility,
-		IdempotencyKey: createKey,
-	}, req.VisibilityReason)
+	created, reused, err := s.CreateApp(ctx, principal, sohaapi.CreateHostedAppRequest{
+		Name:                            appName,
+		Slug:                            req.Slug,
+		Description:                     req.Description,
+		Kind:                            kind,
+		SpaFallback:                     req.SpaFallback,
+		Visibility:                      req.Visibility,
+		DeferVisibilityUntilPublication: req.Visibility != nil,
+		IdempotencyKey:                  createKey,
+	})
 	if err != nil {
 		return "", false, err
 	}

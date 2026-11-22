@@ -35,6 +35,7 @@ type ActivateRevisionOutput struct {
 	App              domainapphosting.App
 	Revision         domainapphosting.Revision
 	EvictedRevisions []domainapphosting.Revision
+	Visibility       *UpdateVisibilityTxOutput
 }
 
 type AppEnrichment struct {
@@ -112,7 +113,7 @@ type AudienceDirectory interface {
 }
 
 type WorkspaceBundleSource interface {
-	BundlePersonalWorkspace(ctx context.Context, principal domainidentity.Principal, sourcePath, assistantID string, envVersion int64) (io.ReadCloser, error)
+	BundlePersonalWorkspace(ctx context.Context, principal domainidentity.Principal, sourcePath, assistantID string, envVersion int64, kind sohaapi.HostedAppKind) (io.ReadCloser, error)
 	BundleConversationArtifact(ctx context.Context, principal domainidentity.Principal, sessionID, artifactID, entryFileName string) (io.ReadCloser, string, error)
 }
 

@@ -151,46 +151,46 @@ func (r *PostgresRepository) UpdateAppVisibility(ctx context.Context, input appa
 		if err != nil {
 			return err
 		}
-		if !app.IsOwner(input.ActorUserID) {
-			return apperrors.ErrAccessDenied
-		}
-		nowUTC := input.Now.UTC()
-		if input.RequestedScope.Mode == sohaapi.HostedAppVisibilityModeOrganization {
-			if settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyDisabled {
-				return apperrors.NewBusiness(apperrors.ErrAccessDenied, "organization_visibility_disabled", "organization-wide visibility is disabled by platform policy", "平台管理员当前已禁用全公司公开可见范围")
-			}
-			if settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval &&
-				app.Visibility.Mode != sohaapi.HostedAppVisibilityModeOrganization {
-				pending, upsertErr := upsertPostgresPendingApprovalTx(ctx, tx, app, settings, input, nowUTC)
-				if upsertErr != nil {
-					return upsertErr
-				}
-				out = appapphosting.UpdateVisibilityTxOutput{
-					App:               app,
-					Settings:          settings,
-					PendingApproval:   &pending,
-					RequestedApproval: true,
-				}
-				return nil
-			}
-		}
-
-		app.Visibility = domainapphosting.CloneVisibilityScope(input.RequestedScope)
-		app.RouteGeneration++
-		app.UpdatedAt = nowUTC
-		if err := persistHostedAppUpdate(tx, app); err != nil {
-			return err
-		}
-		if err := invalidateAppPendingApprovalsTx(tx, app.ID, "visibility_changed", nowUTC); err != nil {
-			return err
-		}
-		out = appapphosting.UpdateVisibilityTxOutput{App: app, Settings: settings, RequestedApproval: false}
-		return nil
+		out, err = applyPostgresVisibility(ctx, tx, app, settings, input)
+		return err
 	})
 	if err != nil {
 		return appapphosting.UpdateVisibilityTxOutput{}, err
 	}
 	return out, nil
+}
+
+func applyPostgresVisibility(ctx context.Context, tx *gorm.DB, app domainapphosting.App, settings domainapphosting.Settings, input appapphosting.UpdateVisibilityTxInput) (appapphosting.UpdateVisibilityTxOutput, error) {
+	if !app.IsOwner(input.ActorUserID) {
+		return appapphosting.UpdateVisibilityTxOutput{}, apperrors.ErrAccessDenied
+	}
+	nowUTC := input.Now.UTC()
+	if input.RequestedScope.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+		switch settings.EffectiveOrganizationPolicy() {
+		case sohaapi.AppHostingOrganizationVisibilityPolicyDisabled:
+			return appapphosting.UpdateVisibilityTxOutput{}, apperrors.NewBusiness(apperrors.ErrAccessDenied, "organization_visibility_disabled", "organization-wide visibility is disabled by platform policy", "平台管理员当前已禁用全公司公开可见范围")
+		case sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval:
+			if app.Visibility.Mode != sohaapi.HostedAppVisibilityModeOrganization {
+				pending, err := upsertPostgresPendingApprovalTx(ctx, tx, app, settings, input, nowUTC)
+				if err != nil {
+					return appapphosting.UpdateVisibilityTxOutput{}, err
+				}
+				return appapphosting.UpdateVisibilityTxOutput{
+					App: app, Settings: settings, PendingApproval: &pending, RequestedApproval: true,
+				}, nil
+			}
+		}
+	}
+	app.Visibility = domainapphosting.CloneVisibilityScope(input.RequestedScope)
+	app.RouteGeneration++
+	app.UpdatedAt = nowUTC
+	if err := persistHostedAppUpdate(tx, app); err != nil {
+		return appapphosting.UpdateVisibilityTxOutput{}, err
+	}
+	if err := invalidateAppPendingApprovalsTx(tx, app.ID, "visibility_changed", nowUTC); err != nil {
+		return appapphosting.UpdateVisibilityTxOutput{}, err
+	}
+	return appapphosting.UpdateVisibilityTxOutput{App: app, Settings: settings}, nil
 }
 
 func upsertPostgresPendingApprovalTx(
@@ -255,6 +255,9 @@ func (r *PostgresRepository) WithdrawVisibilityApproval(ctx context.Context, app
 	var app domainapphosting.App
 	var withdrawn domainapphosting.VisibilityApproval
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAppHostingSettings(tx); err != nil {
+			return err
+		}
 		loadedApp, err := getAppWhere(ctx, tx, "id = ?", strings.TrimSpace(appID), true)
 		if err != nil {
 			return err
@@ -280,6 +283,11 @@ func (r *PostgresRepository) WithdrawVisibilityApproval(ctx context.Context, app
 		pending.Status = sohaapi.HostedAppVisibilityApprovalStatusWithdrawn
 		pending.UpdatedAt = nowUTC
 		pending.DecidedAt = &nowUTC
+		loadedApp.RouteGeneration++
+		loadedApp.UpdatedAt = nowUTC
+		if err := persistHostedAppUpdate(tx, loadedApp); err != nil {
+			return err
+		}
 		app = loadedApp
 		withdrawn = *pending
 		return nil
@@ -456,6 +464,11 @@ func (r *PostgresRepository) RejectVisibilityApproval(ctx context.Context, appro
 		apv.ReviewComment = comment
 		apv.UpdatedAt = nowUTC
 		apv.DecidedAt = &nowUTC
+		loadedApp.RouteGeneration++
+		loadedApp.UpdatedAt = nowUTC
+		if err := persistHostedAppUpdate(tx, loadedApp); err != nil {
+			return err
+		}
 		app = loadedApp
 		rejected = apv
 		return nil

@@ -209,9 +209,14 @@ func (s *Service) buildAppCandidateWithApproval(
 	if err != nil {
 		return domainapphosting.App{}, nil, err
 	}
-	requestedVis, err := domainapphosting.NormalizeVisibilityInput(req.Visibility, settings)
+	requestedVis, err := domainapphosting.NormalizeVisibilityScope(req.Visibility)
 	if err != nil {
 		return domainapphosting.App{}, nil, err
+	}
+	if !req.DeferVisibilityUntilPublication && requestedVis.Mode == sohaapi.HostedAppVisibilityModeOrganization {
+		if err := domainapphosting.CheckOrganizationVisibilityPolicy(settings); err != nil {
+			return domainapphosting.App{}, nil, err
+		}
 	}
 	explicitSlug, err := domainapphosting.ValidateExplicitSlug(req.Slug)
 	if err != nil {
@@ -222,7 +227,9 @@ func (s *Service) buildAppCandidateWithApproval(
 	now := s.now()
 	effectiveVis := requestedVis
 	var approval *domainapphosting.VisibilityApproval
-	if requestedVis.Mode == sohaapi.HostedAppVisibilityModeOrganization &&
+	if req.DeferVisibilityUntilPublication {
+		effectiveVis = sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}
+	} else if requestedVis.Mode == sohaapi.HostedAppVisibilityModeOrganization &&
 		settings.EffectiveOrganizationPolicy() == sohaapi.AppHostingOrganizationVisibilityPolicyRequireApproval {
 		effectiveVis = sohaapi.HostedAppVisibilityScope{Mode: sohaapi.HostedAppVisibilityModePrivate}
 		approval = &domainapphosting.VisibilityApproval{
@@ -398,6 +405,14 @@ func (s *Service) UpdateVisibility(ctx context.Context, principal domainidentity
 	if err != nil {
 		return sohaapi.HostedApp{}, err
 	}
+	s.recordVisibilityUpdate(ctx, principal, &out)
+	return s.enrichHostedApp(ctx, out.Settings, out.App)
+}
+
+func (s *Service) recordVisibilityUpdate(ctx context.Context, principal domainidentity.Principal, out *UpdateVisibilityTxOutput) {
+	if out == nil {
+		return
+	}
 	if out.RequestedApproval && out.PendingApproval != nil {
 		s.recordAudit(ctx, principal, "app.visibility.request_approval", "success", out.App.ID, "Submitted organization-wide visibility approval request", map[string]any{
 			"appId":               out.App.ID,
@@ -413,7 +428,6 @@ func (s *Service) UpdateVisibility(ctx context.Context, principal domainidentity
 			"routeGeneration": out.App.RouteGeneration,
 		})
 	}
-	return s.enrichHostedApp(ctx, out.Settings, out.App)
 }
 
 func (s *Service) TakeOffline(ctx context.Context, principal domainidentity.Principal, appID, reason string) (sohaapi.HostedApp, error) {

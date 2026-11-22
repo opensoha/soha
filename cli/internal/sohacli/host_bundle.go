@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/opensoha/soha/contracts/apphosting/sourceignore"
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
@@ -74,7 +76,11 @@ func buildHostBundle(dir string, kind sohaapi.HostedAppKind) (hostStaticBundle, 
 		return hostStaticBundle{}, fmt.Errorf("resolve bundle directory %q: %w", targetDir, err)
 	}
 
-	entries, err := scanHostBundleDirectory(absDir, "", kind)
+	var ignores *sourceignore.Rules
+	if kind == sohaapi.HostedAppKindDynamic {
+		ignores = new(sourceignore.Rules)
+	}
+	entries, err := scanHostBundleDirectory(absDir, "", kind, ignores)
 	if err != nil {
 		return hostStaticBundle{}, err
 	}
@@ -190,7 +196,12 @@ func validateHostDynamicBundle(entries []hostBundleEntry) error {
 	return nil
 }
 
-func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedAppKind) ([]hostBundleEntry, error) {
+func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedAppKind, ignores *sourceignore.Rules) ([]hostBundleEntry, error) {
+	if ignores != nil {
+		if err := loadHostSourceIgnore(currentAbs, currentRel, ignores); err != nil {
+			return nil, err
+		}
+	}
 	dirEntries, err := os.ReadDir(currentAbs)
 	if err != nil {
 		return nil, fmt.Errorf("read directory %q: %w", firstNonEmptyString(currentRel, "."), err)
@@ -198,7 +209,7 @@ func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedA
 	var collected []hostBundleEntry
 	for _, item := range dirEntries {
 		name := item.Name()
-		if isIgnoredHostBundleEntry(name, kind) {
+		if isIgnoredHostBundleEntry(name, kind) || (ignores != nil && name == ".gitignore") {
 			continue
 		}
 		relPath := name
@@ -213,6 +224,9 @@ func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedA
 		if err != nil {
 			return nil, fmt.Errorf("inspect %q: %w", relPath, err)
 		}
+		if ignores != nil && ignores.Ignored(relPath, info.IsDir()) {
+			continue
+		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("bundle contains symlink %q; remove symlinks or copy regular files into the output directory before deploying", relPath)
 		}
@@ -220,7 +234,7 @@ func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedA
 			return nil, fmt.Errorf("bundle contains sensitive file %q (%s); remove secret or credential files before deploying", relPath, reason)
 		}
 		if info.IsDir() {
-			nested, err := scanHostBundleDirectory(fullPath, relPath, kind)
+			nested, err := scanHostBundleDirectory(fullPath, relPath, kind, ignores)
 			if err != nil {
 				return nil, err
 			}
@@ -243,6 +257,21 @@ func scanHostBundleDirectory(currentAbs, currentRel string, kind sohaapi.HostedA
 		}
 	}
 	return collected, nil
+}
+
+func loadHostSourceIgnore(directory, relativeDirectory string, rules *sourceignore.Rules) error {
+	relative := path.Join(relativeDirectory, ".gitignore")
+	raw, err := readRegularBundleFileWithinLimit(filepath.Join(directory, ".gitignore"), relative, sourceignore.MaxFileBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := rules.Add(relativeDirectory, raw); err != nil {
+		return fmt.Errorf("read ignore rules %q: %w", relative, err)
+	}
+	return nil
 }
 
 func isIgnoredHostBundleEntry(name string, kind sohaapi.HostedAppKind) bool {
@@ -328,6 +357,11 @@ func writeDeterministicTarGz(entries []hostBundleEntry) ([]byte, int64, error) {
 			_ = gzWriter.Close()
 			return nil, 0, fmt.Errorf("bundle exceeds local safety limit of %d MiB uncompressed", hostLocalMaxUncompressedBytes>>20)
 		}
+		if err := inspectHostBundleContent(entry.relPath, raw); err != nil {
+			_ = tarWriter.Close()
+			_ = gzWriter.Close()
+			return nil, 0, err
+		}
 		header := &tar.Header{
 			Typeflag: tar.TypeReg,
 			Name:     entry.relPath,
@@ -362,6 +396,10 @@ func writeDeterministicTarGz(entries []hostBundleEntry) ([]byte, int64, error) {
 }
 
 func readRegularBundleFile(fullPath, relPath string) ([]byte, error) {
+	return readRegularBundleFileWithinLimit(fullPath, relPath, hostLocalMaxUncompressedBytes)
+}
+
+func readRegularBundleFileWithinLimit(fullPath, relPath string, maxBytes int64) ([]byte, error) {
 	info, err := os.Lstat(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %q: %w", relPath, err)
@@ -382,11 +420,11 @@ func readRegularBundleFile(fullPath, relPath string) ([]byte, error) {
 	if !os.SameFile(info, openInfo) || !openInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("bundle file %q changed while reading", relPath)
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, hostLocalMaxUncompressedBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %q: %w", relPath, err)
 	}
-	if int64(len(raw)) > hostLocalMaxUncompressedBytes {
+	if int64(len(raw)) > maxBytes {
 		return nil, fmt.Errorf("file %q exceeds local safety limit", relPath)
 	}
 	return raw, nil

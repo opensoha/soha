@@ -29535,7 +29535,7 @@ paths:
       tags:
         - AppHosting
       operationId: uploadHostedAppRevision
-      summary: Upload a tar.gz static bundle, run DLP checks, persist to object storage, and activate the revision
+      summary: Upload a tar.gz bundle for static activation or dynamic build
       parameters:
         - $ref: "#/components/parameters/HostedAppID"
         - name: idempotencyKey
@@ -29564,9 +29564,32 @@ paths:
             schema:
               type: string
               format: binary
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - publishVisibility
+                - bundle
+              properties:
+                publishVisibility:
+                  description: >
+                    Send this JSON part before the bundle. Requires idempotencyKey and application ownership.
+                    The server applies the audience, or requests required approval, only when the revision
+                    activates and the application's routing generation has not changed since upload.
+                    Idempotent replays leave the current audience untouched.
+                  $ref: "#/components/schemas/UpdateHostedAppVisibilityRequest"
+                bundle:
+                  type: string
+                  format: binary
+            encoding:
+              publishVisibility:
+                contentType: application/json
+              bundle:
+                contentType: application/gzip
       responses:
         "201":
-          description: Uploaded and activated new hosted application revision.
+          description: Uploaded a new hosted application revision. Static revisions activate immediately; dynamic revisions are queued.
           content:
             application/json:
               schema:
@@ -70610,6 +70633,12 @@ components:
           x-go-pointer: true
         visibility:
           $ref: "#/components/schemas/HostedAppVisibilityInput"
+        deferVisibilityUntilPublication:
+          type: boolean
+          description: >
+            Create a private draft without applying visibility or requesting approval.
+            Use visibility only to match the idempotent app creation request.
+            Attach the intended audience to the subsequent revision upload.
         idempotencyKey:
           type: string
           minLength: 1
