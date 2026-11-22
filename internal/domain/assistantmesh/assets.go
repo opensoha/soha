@@ -68,6 +68,31 @@ type Parameter struct {
 }
 
 func (in AssetInput) Validate() error {
+	if err := in.validateKindFields(); err != nil {
+		return err
+	}
+	if in.Kind != KindWorkPulse && (in.WorkStatus != "" || in.BlockerReason != "") {
+		return invalid("this asset kind cannot define work pulse fields")
+	}
+	if strings.TrimSpace(in.Title) == "" {
+		return invalid("title is required")
+	}
+	if utf8.RuneCountInString(in.Title) > maxTitleRunes {
+		return invalid("title exceeds 256 characters")
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return invalid("body is required")
+	}
+	if len(in.Body) > maxBodyBytes {
+		return invalid("body exceeds 16 KiB")
+	}
+	if len(in.Applicability) > 4096 || !utf8.ValidString(in.Title+in.Body+in.Applicability+in.WorkStatus+in.BlockerReason) {
+		return invalid("title, body, applicability and work pulse fields must be bounded UTF-8 text")
+	}
+	return nil
+}
+
+func (in AssetInput) validateKindFields() error {
 	switch in.Kind {
 	case KindSkill:
 		if err := in.validateFiles(); err != nil {
@@ -90,40 +115,27 @@ func (in AssetInput) Validate() error {
 		if in.Files != nil || in.Dependencies != nil || in.Parameters != nil {
 			return invalid("work pulses cannot define skill resources")
 		}
-		switch in.WorkStatus {
-		case "in_progress", "blocked", "done":
-		default:
-			return invalid("work pulse status must be in_progress, blocked or done")
-		}
-		if in.BlockerReason != "" {
-			if in.WorkStatus != "blocked" {
-				return invalid("blocker reason requires blocked status")
-			}
-			if utf8.RuneCountInString(in.BlockerReason) > maxBlockerRunes || !utf8.ValidString(in.BlockerReason) ||
-				strings.ContainsRune(in.BlockerReason, 0) || fileReference.MatchString(in.BlockerReason) {
-				return invalid("blocker reason must be bounded plain UTF-8 text without file references")
-			}
-		}
+		return in.validateWorkPulse()
 	default:
 		return invalid("kind must be skill, experience_card or work_pulse")
 	}
-	if in.Kind != KindWorkPulse && (in.WorkStatus != "" || in.BlockerReason != "") {
-		return invalid("this asset kind cannot define work pulse fields")
+	return nil
+}
+
+func (in AssetInput) validateWorkPulse() error {
+	switch in.WorkStatus {
+	case "in_progress", "blocked", "done":
+	default:
+		return invalid("work pulse status must be in_progress, blocked or done")
 	}
-	if strings.TrimSpace(in.Title) == "" {
-		return invalid("title is required")
-	}
-	if utf8.RuneCountInString(in.Title) > maxTitleRunes {
-		return invalid("title exceeds 256 characters")
-	}
-	if strings.TrimSpace(in.Body) == "" {
-		return invalid("body is required")
-	}
-	if len(in.Body) > maxBodyBytes {
-		return invalid("body exceeds 16 KiB")
-	}
-	if len(in.Applicability) > 4096 || !utf8.ValidString(in.Title+in.Body+in.Applicability+in.WorkStatus+in.BlockerReason) {
-		return invalid("title, body, applicability and work pulse fields must be bounded UTF-8 text")
+	if in.BlockerReason != "" {
+		if in.WorkStatus != "blocked" {
+			return invalid("blocker reason requires blocked status")
+		}
+		if utf8.RuneCountInString(in.BlockerReason) > maxBlockerRunes || !utf8.ValidString(in.BlockerReason) ||
+			strings.ContainsRune(in.BlockerReason, 0) || fileReference.MatchString(in.BlockerReason) {
+			return invalid("blocker reason must be bounded plain UTF-8 text without file references")
+		}
 	}
 	return nil
 }
