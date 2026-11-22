@@ -171,7 +171,7 @@ make init
 
 该命令会安装 Go 依赖并准备配置，不会启动 Docker。默认的 `DEV_DB_MODE=external`
 使用配置中的外部 PostgreSQL；只有 `make init DEV_DB_MODE=local` 才会从
-`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端和 SDK 依赖从本仓根目录执行 `npm ci`，唯一根锁文件管理 `contracts/`、`web/`、`connectors/` 和 `cli/npm/cli/`，不使用旧 sibling 检出。
+`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端和 SDK 依赖从本仓根目录执行 `npm ci`，唯一根锁文件管理 `contracts/`、`web/`、`connectors/`、`cli/npm/cli/` 和 `plugin-sdk/ui/`，不使用旧 sibling 检出。
 
 MinIO 的 S3 API 为 `http://127.0.0.1:9000`，控制台为 `http://127.0.0.1:9001`，数据持久化到 `opensoha-minio-data`。本地默认凭据为 `minioadmin` / `minioadmin`；通过环境变量或不提交 Git 的 `deploy/.env` 设置 `SOHA_MINIO_ROOT_USER`、`SOHA_MINIO_ROOT_PASSWORD`，可沿用已有凭据。暴露到回环地址以外前必须更换默认凭据。使用 `docker compose -f deploy/docker-compose.yaml up -d minio` 单独启动；`make init` 和 `make dev` 不启动 MinIO。
 
