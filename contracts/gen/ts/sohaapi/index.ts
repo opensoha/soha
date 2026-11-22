@@ -33435,6 +33435,11 @@ export interface components {
             recommendationPriority?: number;
             autoConnect?: boolean;
             nasSession?: components["schemas"]["NetworkConnectionNASSession"];
+            /** @description Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account. */
+            strictOnline?: {
+                /** Format: date-time */
+                leaseUntil?: string;
+            };
         };
         /** @description Last Core observation of the NAS session bound to this access network and registered device. */
         NetworkConnectionNASSession: {

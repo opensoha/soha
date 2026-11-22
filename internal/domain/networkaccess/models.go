@@ -422,18 +422,23 @@ type NASBindingFilter struct {
 }
 
 type ConnectionOption struct {
-	SiteID                 string                `json:"siteId"`
-	SiteName               string                `json:"siteName"`
-	AccessMedium           string                `json:"accessMedium"`
-	SSID                   string                `json:"ssid,omitempty"`
-	Authentication         string                `json:"authentication"`
-	AccessProfile          string                `json:"accessProfile"`
-	PolicyVersion          int                   `json:"policyVersion"`
-	AccessNetworkID        string                `json:"accessNetworkId,omitempty"`
-	NetworkName            string                `json:"networkName,omitempty"`
-	RecommendationPriority int                   `json:"recommendationPriority,omitempty"`
-	AutoConnect            bool                  `json:"autoConnect,omitempty"`
-	NASSession             *ConnectionNASSession `json:"nasSession,omitempty"`
+	SiteID                 string                  `json:"siteId"`
+	SiteName               string                  `json:"siteName"`
+	AccessMedium           string                  `json:"accessMedium"`
+	SSID                   string                  `json:"ssid,omitempty"`
+	Authentication         string                  `json:"authentication"`
+	AccessProfile          string                  `json:"accessProfile"`
+	PolicyVersion          int                     `json:"policyVersion"`
+	AccessNetworkID        string                  `json:"accessNetworkId,omitempty"`
+	NetworkName            string                  `json:"networkName,omitempty"`
+	RecommendationPriority int                     `json:"recommendationPriority,omitempty"`
+	AutoConnect            bool                    `json:"autoConnect,omitempty"`
+	NASSession             *ConnectionNASSession   `json:"nasSession,omitempty"`
+	StrictOnline           *ConnectionStrictOnline `json:"strictOnline,omitempty"`
+}
+
+type ConnectionStrictOnline struct {
+	LeaseUntil *time.Time `json:"leaseUntil,omitempty"`
 }
 
 type ConnectionNASSession struct {

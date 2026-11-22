@@ -62257,6 +62257,12 @@ components:
         recommendationPriority: { type: integer, minimum: 1, maximum: 10000 }
         autoConnect: { type: boolean }
         nasSession: { $ref: "#/components/schemas/NetworkConnectionNASSession" }
+        strictOnline:
+          type: object
+          description: Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+          additionalProperties: false
+          properties:
+            leaseUntil: { type: string, format: date-time }
       additionalProperties: false
     NetworkConnectionNASSession:
       type: object

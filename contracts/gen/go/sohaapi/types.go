@@ -31116,6 +31116,11 @@ type NetworkConnectionOption struct {
 
 	// Ssid Present only for Wi-Fi options.
 	Ssid string `json:"ssid,omitempty"`
+
+	// StrictOnline Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+	StrictOnline *struct {
+		LeaseUntil *time.Time `json:"leaseUntil,omitempty"`
+	} `json:"strictOnline,omitempty"`
 }
 
 // NetworkConnectionOptionListEnvelope defines model for NetworkConnectionOptionListEnvelope.

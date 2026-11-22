@@ -149,6 +149,7 @@ type accessNetworkChoiceCatalog struct {
 	AccessNetworkCatalog
 	items       []domain.AccessNetwork
 	readSession func(domain.Device, []string) map[string]domain.ConnectionNASSession
+	presence    domain.PresenceRecord
 }
 
 func (c accessNetworkChoiceCatalog) ListAccessNetworks(context.Context, string) ([]domain.AccessNetwork, error) {
@@ -157,6 +158,10 @@ func (c accessNetworkChoiceCatalog) ListAccessNetworks(context.Context, string) 
 
 func (c accessNetworkChoiceCatalog) LatestAccessNetworkNASSessions(_ context.Context, device domain.Device, ids []string) (map[string]domain.ConnectionNASSession, error) {
 	return c.readSession(device, ids), nil
+}
+
+func (c accessNetworkChoiceCatalog) EndpointPresence(context.Context, string) (domain.PresenceRecord, error) {
+	return c.presence, nil
 }
 
 func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
@@ -202,5 +207,27 @@ func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
 	}
 	if _, _, err := service.ListAccessNetworkChoices(ctx, identity.Principal{UserID: "other-user"}, "device-1", AccessNetworkChoiceOptions{IncludeNASSession: true}); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("foreign device readback returned %v", err)
+	}
+
+	for index := range catalog.items {
+		if catalog.items[index].ID == "second" {
+			catalog.items[index].Configuration.Kind = domain.AccessNetworkStrict
+		}
+	}
+	store.bindings[0].StrictOnlineQualified = true
+	store.bindings[0].DisconnectSupported = true
+	store.bindings[0].EAPServerTrust = &domain.EAPServerTrust{EapMethod: "tls"}
+	until := time.Now().Add(20 * time.Second)
+	catalog.presence.StrictUI = domain.StrictUILease{SubjectID: "user-1", Epoch: "bound", Until: &until}
+	service.accessNetworks = catalog
+	items, _, err = service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{IncludeBootstrap: true})
+	if err != nil || len(items) != 2 || items[0].StrictOnline != nil || items[1].StrictOnline == nil || items[1].StrictOnline.LeaseUntil == nil || !items[1].StrictOnline.LeaseUntil.Equal(until) {
+		t.Fatalf("strict lease readback: %#v, %v", items, err)
+	}
+	catalog.presence.StrictUI.SubjectID = "another-account"
+	service.accessNetworks = catalog
+	items, _, err = service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{IncludeBootstrap: true})
+	if err != nil || len(items) != 2 || items[1].StrictOnline == nil || items[1].StrictOnline.LeaseUntil != nil {
+		t.Fatalf("foreign lease readback: %#v, %v", items, err)
 	}
 }

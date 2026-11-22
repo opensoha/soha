@@ -70,10 +70,26 @@ func (s *Service) ListAccessNetworkChoices(ctx context.Context, principal identi
 		return []domain.ConnectionOption{}, nil, nil
 	}
 	items, bootstrap, err := s.accessNetworkChoices(ctx, principal, site, subject, device, networks, options.IncludeBootstrap)
-	if err != nil || !options.IncludeNASSession {
+	if err != nil {
 		return items, bootstrap, err
 	}
-	return items, bootstrap, s.readNASSessionChoices(ctx, device, items)
+	if options.IncludeBootstrap && slices.ContainsFunc(items, func(item domain.ConnectionOption) bool { return item.StrictOnline != nil }) {
+		presence, err := s.accessNetworks.EndpointPresence(ctx, device.ID)
+		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+			return nil, nil, err
+		}
+		if presence.StrictUI.CurrentFor(device.OwnerUserID, time.Now()) {
+			for _, item := range items {
+				if item.StrictOnline != nil {
+					item.StrictOnline.LeaseUntil = presence.StrictUI.Until
+				}
+			}
+		}
+	}
+	if options.IncludeNASSession {
+		err = s.readNASSessionChoices(ctx, device, items)
+	}
+	return items, bootstrap, err
 }
 
 func (s *Service) readNASSessionChoices(ctx context.Context, device domain.Device, items []domain.ConnectionOption) error {
@@ -161,11 +177,15 @@ func (s *Service) accessNetworkChoices(ctx context.Context, principal identity.P
 			return nil, nil, err
 		}
 		if decision.Allowed {
-			items = append(items, domain.ConnectionOption{
+			option := domain.ConnectionOption{
 				SiteID: site.ID, SiteName: site.Name, AccessMedium: cfg.AccessMedium, SSID: cfg.SSID,
 				Authentication: domain.ConnectionAuthenticationRadius8021X, AccessProfile: decision.AccessProfile, PolicyVersion: snapshot.PolicyVersion,
 				AccessNetworkID: item.ID, NetworkName: cfg.Name, RecommendationPriority: cfg.Priority, AutoConnect: cfg.AutoConnect,
-			})
+			}
+			if includeBootstrap && decision.StrictOnline {
+				option.StrictOnline = &domain.ConnectionStrictOnline{}
+			}
+			items = append(items, option)
 		}
 	}
 	return items, bootstrap, nil

@@ -50713,6 +50713,17 @@
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "strictOnline": {
+            "additionalProperties": false,
+            "description": "Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.",
+            "properties": {
+              "leaseUntil": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "type": "object"
           }
         },
         "required": [

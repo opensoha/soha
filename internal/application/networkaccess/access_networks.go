@@ -19,6 +19,7 @@ type AccessNetworkCatalog interface {
 	SaveAccessNetwork(context.Context, domain.AccessNetwork, bool) (domain.AccessNetwork, error)
 	DeleteAccessNetwork(context.Context, string, time.Time) error
 	LatestAccessNetworkNASSessions(ctx context.Context, device domain.Device, networkIDs []string) (map[string]domain.ConnectionNASSession, error)
+	EndpointPresence(context.Context, string) (domain.PresenceRecord, error)
 }
 
 func (s *Service) SetAccessNetworkCatalog(catalog AccessNetworkCatalog) {
