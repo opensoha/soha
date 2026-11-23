@@ -28,6 +28,13 @@
               ]
             }
           },
+          "publisherKeys": {
+            "description": "Trusted raw Ed25519 publisher public keys in standard base64. Core only uses keys from its official catalog.",
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[A-Za-z0-9+/]{43}=$"}
+          },
           "summary": {"type": "string", "maxLength": 1000}
         },
         "additionalProperties": false

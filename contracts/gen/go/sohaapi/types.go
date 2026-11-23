@@ -12427,6 +12427,27 @@ func (e PluginProvenanceStatementSignatureAlgorithm) Valid() bool {
 	}
 }
 
+// Defines values for PluginRepositoryPreviewInstallEligibility.
+const (
+	Confirmable            PluginRepositoryPreviewInstallEligibility = "confirmable"
+	PublisherTrustRequired PluginRepositoryPreviewInstallEligibility = "publisher-trust-required"
+	SignedReleaseRequired  PluginRepositoryPreviewInstallEligibility = "signed-release-required"
+)
+
+// Valid indicates whether the value is a known member of the PluginRepositoryPreviewInstallEligibility enum.
+func (e PluginRepositoryPreviewInstallEligibility) Valid() bool {
+	switch e {
+	case Confirmable:
+		return true
+	case PublisherTrustRequired:
+		return true
+	case SignedReleaseRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PluginRepositoryRefsRequestKind.
 const (
 	PluginRepositoryRefsRequestKindBranch  PluginRepositoryRefsRequestKind = "branch"
@@ -12447,14 +12468,17 @@ func (e PluginRepositoryRefsRequestKind) Valid() bool {
 
 // Defines values for PluginRuntimeSpecMode.
 const (
-	ExternalHTTP     PluginRuntimeSpecMode = "external-http"
-	ManagedContainer PluginRuntimeSpecMode = "managed-container"
-	ManifestOnly     PluginRuntimeSpecMode = "manifest-only"
+	ExecutablePackageV1 PluginRuntimeSpecMode = "executable-package-v1"
+	ExternalHTTP        PluginRuntimeSpecMode = "external-http"
+	ManagedContainer    PluginRuntimeSpecMode = "managed-container"
+	ManifestOnly        PluginRuntimeSpecMode = "manifest-only"
 )
 
 // Valid indicates whether the value is a known member of the PluginRuntimeSpecMode enum.
 func (e PluginRuntimeSpecMode) Valid() bool {
 	switch e {
+	case ExecutablePackageV1:
+		return true
 	case ExternalHTTP:
 		return true
 	case ManagedContainer:
@@ -24693,22 +24717,34 @@ type IdentitySettingsEnvelope struct {
 
 // InstalledPlugin defines model for InstalledPlugin.
 type InstalledPlugin struct {
-	ActiveVersion        string                   `json:"activeVersion,omitempty"`
-	Artifacts            []PluginArtifactRecord   `json:"artifacts,omitempty"`
-	ChecksumStatus       string                   `json:"checksumStatus"`
-	ConfiguredSecretRefs map[string]string        `json:"configuredSecretRefs,omitempty"`
-	DisabledAt           *time.Time               `json:"disabledAt,omitempty"`
-	EnabledAt            *time.Time               `json:"enabledAt,omitempty"`
-	ID                   string                   `json:"id"`
-	InstalledAt          time.Time                `json:"installedAt"`
-	InstalledBy          string                   `json:"installedBy"`
-	Manifest             PluginManifest           `json:"manifest"`
-	Metadata             map[string]any           `json:"metadata,omitempty"`
-	Name                 string                   `json:"name"`
-	Publisher            string                   `json:"publisher"`
+	ActiveVersion        string                 `json:"activeVersion,omitempty"`
+	Artifacts            []PluginArtifactRecord `json:"artifacts,omitempty"`
+	ChecksumStatus       string                 `json:"checksumStatus"`
+	ConfiguredSecretRefs map[string]string      `json:"configuredSecretRefs,omitempty"`
+	DisabledAt           *time.Time             `json:"disabledAt,omitempty"`
+	EnabledAt            *time.Time             `json:"enabledAt,omitempty"`
+	ID                   string                 `json:"id"`
+	InstalledAt          time.Time              `json:"installedAt"`
+	InstalledBy          string                 `json:"installedBy"`
+	Manifest             PluginManifest         `json:"manifest"`
+	Metadata             map[string]any         `json:"metadata,omitempty"`
+	Name                 string                 `json:"name"`
+	Publisher            string                 `json:"publisher"`
+
+	// ReferenceCount Number of stored integrations referring to the driver supplied by the plugin.
+	ReferenceCount       *int                     `json:"referenceCount,omitempty"`
 	RequestedPermissions *PluginPermissionRequest `json:"requestedPermissions,omitempty"`
-	SignatureStatus      string                   `json:"signatureStatus,omitempty"`
-	Source               string                   `json:"source"`
+
+	// RollbackRequiresPermissionConfirmation Restoring the previous version adds a permission compared to the installed version.
+	RollbackRequiresPermissionConfirmation bool `json:"rollbackRequiresPermissionConfirmation,omitempty"`
+
+	// RollbackVersion Previous verified version available for offline rollback.
+	RollbackVersion string `json:"rollbackVersion,omitempty"`
+
+	// RuntimeReady The selected executable package is serving on this execution host.
+	RuntimeReady    *bool  `json:"runtimeReady,omitempty"`
+	SignatureStatus string `json:"signatureStatus,omitempty"`
+	Source          string `json:"source"`
 
 	// SourceInfo Server-computed distribution source. Never use author-provided catalog or manifest claims as trust evidence.
 	SourceInfo *PluginSourceInfo `json:"sourceInfo,omitempty"`
@@ -30616,6 +30652,9 @@ type MarketplacePlugin struct {
 	Publisher     string                `json:"publisher"`
 	PublisherInfo *MarketplacePublisher `json:"publisherInfo,omitempty"`
 
+	// PublisherKeys Publisher keys from this server's official repository catalog registration.
+	PublisherKeys []string `json:"publisherKeys,omitempty"`
+
 	// RepositoryURL Public GitHub repository registered by the marketplace catalog. Release data is queried separately.
 	RepositoryURL string `json:"repositoryUrl,omitempty"`
 	RiskLevel     string `json:"riskLevel,omitempty"`
@@ -35028,6 +35067,7 @@ type PluginManifest struct {
 	Capabilities    *PluginCapabilityRequest `json:"capabilities,omitempty"`
 	CompanionPack   *CompanionPackManifest   `json:"companionPack,omitempty"`
 	Compatibility   *PluginCompatibility     `json:"compatibility,omitempty"`
+	Components      *PluginPackageComponents `json:"components,omitempty"`
 	ConfigSchema    JSONSchema               `json:"configSchema,omitempty"`
 	Description     string                   `json:"description,omitempty"`
 	ExtensionPoints *PluginExtensionPoints   `json:"extensionPoints,omitempty"`
@@ -35079,6 +35119,12 @@ type PluginObservabilityProvider struct {
 // PluginObservabilityProviderSignals defines model for PluginObservabilityProvider.Signals.
 type PluginObservabilityProviderSignals string
 
+// PluginPackageComponents defines model for PluginPackageComponents.
+type PluginPackageComponents struct {
+	Backend *PluginStorageDriverPackage `json:"backend,omitempty"`
+	Web     *PluginReleaseArtifact      `json:"web,omitempty"`
+}
+
 // PluginPackageDescriptor defines model for PluginPackageDescriptor.
 type PluginPackageDescriptor struct {
 	ContentType        PluginPackageDescriptorContentType        `json:"contentType"`
@@ -35119,9 +35165,29 @@ type PluginProvenanceStatement struct {
 // PluginProvenanceStatementSignatureAlgorithm defines model for PluginProvenanceStatement.SignatureAlgorithm.
 type PluginProvenanceStatementSignatureAlgorithm string
 
+// PluginReleaseArtifact defines model for PluginReleaseArtifact.
+type PluginReleaseArtifact struct {
+	ByteLength int64 `json:"byteLength"`
+
+	// Name Flat filename of one asset attached to the pinned GitHub Release.
+	Name   string `json:"name"`
+	Sha256 string `json:"sha256"`
+}
+
+// PluginReleaseAttestation defines model for PluginReleaseAttestation.
+type PluginReleaseAttestation struct {
+	CommitSha         string                  `json:"commitSha"`
+	Components        PluginPackageComponents `json:"components"`
+	PluginID          string                  `json:"pluginId"`
+	RawManifestSha256 string                  `json:"rawManifestSha256"`
+	Repository        string                  `json:"repository"`
+	SchemaVersion     string                  `json:"schemaVersion"`
+	Version           string                  `json:"version"`
+}
+
 // PluginRepositoryInstallRequest defines model for PluginRepositoryInstallRequest.
 type PluginRepositoryInstallRequest struct {
-	// Enable Repository installs are disabled unless enabled explicitly.
+	// Enable Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation.
 	Enable bool `json:"enable,omitempty"`
 
 	// PreviewToken An unexpired token issued to the same caller and scope by the repository preview endpoint.
@@ -35131,17 +35197,27 @@ type PluginRepositoryInstallRequest struct {
 // PluginRepositoryPreview defines model for PluginRepositoryPreview.
 type PluginRepositoryPreview struct {
 	// ChecksumStatus A computed digest can bind confirmation to the preview; it does not authenticate the publisher.
-	ChecksumStatus string         `json:"checksumStatus"`
-	ExpiresAt      time.Time      `json:"expiresAt"`
-	Manifest       PluginManifest `json:"manifest"`
+	ChecksumStatus string    `json:"checksumStatus"`
+	ExpiresAt      time.Time `json:"expiresAt"`
 
-	// PreviewToken Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.
+	// InstallEligibility Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.
+	InstallEligibility PluginRepositoryPreviewInstallEligibility `json:"installEligibility,omitempty"`
+	Manifest           PluginManifest                            `json:"manifest"`
+
+	// PreviewToken For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.
 	PreviewToken string `json:"previewToken"`
+
+	// PublisherKeyFingerprint SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust.
+	PublisherKeyFingerprint string                    `json:"publisherKeyFingerprint,omitempty"`
+	ReleaseAttestation      *PluginReleaseAttestation `json:"releaseAttestation,omitempty"`
 
 	// SignatureStatus A signature declared by a repository is not verified until checked against a trusted key.
 	SignatureStatus string                        `json:"signatureStatus"`
 	SourceInfo      PluginRepositoryPreviewSource `json:"sourceInfo"`
 }
+
+// PluginRepositoryPreviewInstallEligibility Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.
+type PluginRepositoryPreviewInstallEligibility string
 
 // PluginRepositoryPreviewEnvelope defines model for PluginRepositoryPreviewEnvelope.
 type PluginRepositoryPreviewEnvelope struct {
@@ -35161,6 +35237,9 @@ type PluginRepositoryPreviewRequest struct {
 
 	// RepositoryURL Public GitHub repository, tree revision, or published release tag URL. The manifest must be at the repository root.
 	RepositoryURL string `json:"repositoryUrl"`
+
+	// TrustPublisherFingerprint Administrator acknowledgement of the exact publisher key shown by a read-only preview.
+	TrustPublisherFingerprint string `json:"trustPublisherFingerprint,omitempty"`
 }
 
 // PluginRepositoryPreviewSource defines model for PluginRepositoryPreviewSource.
@@ -35210,6 +35289,19 @@ type PluginRepositoryRefsRequest struct {
 
 // PluginRepositoryRefsRequestKind defines model for PluginRepositoryRefsRequest.Kind.
 type PluginRepositoryRefsRequestKind string
+
+// PluginRepositoryRollbackRequest defines model for PluginRepositoryRollbackRequest.
+type PluginRepositoryRollbackRequest struct {
+	// ConfirmPermissionIncrease Explicitly acknowledges additional permissions when restoring the retained version.
+	ConfirmPermissionIncrease bool `json:"confirmPermissionIncrease,omitempty"`
+
+	// ExpectedUpdatedAt Revision of the installed version shown during review.
+	ExpectedUpdatedAt time.Time `json:"expectedUpdatedAt"`
+	ExpectedVersion   string    `json:"expectedVersion"`
+
+	// Version The retained verified version shown to the operator.
+	Version string `json:"version"`
+}
 
 // PluginRepositoryUpgradeRequest defines model for PluginRepositoryUpgradeRequest.
 type PluginRepositoryUpgradeRequest struct {
@@ -35264,8 +35356,14 @@ type PluginSourceInfo struct {
 	// PinnedRef Selected repository revision, including a qualified release tag when available. Use commitSha for the immutable revision.
 	PinnedRef string `json:"pinnedRef,omitempty"`
 
+	// PublisherKeyFingerprint SHA-256 of the verified raw Ed25519 publisher public key.
+	PublisherKeyFingerprint string `json:"publisherKeyFingerprint,omitempty"`
+
 	// RawManifestChecksum Digest of the original manifest bytes, not of a reserialized JSON object.
 	RawManifestChecksum string `json:"rawManifestChecksum,omitempty"`
+
+	// ReleaseAttestationDigest SHA-256 of the verified release inventory.
+	ReleaseAttestationDigest string `json:"releaseAttestationDigest,omitempty"`
 
 	// RepositoryURL The author repository for a repository-backed marketplace installation.
 	RepositoryURL string `json:"repositoryUrl,omitempty"`
@@ -35274,6 +35372,13 @@ type PluginSourceInfo struct {
 
 // PluginSourceInfoKind defines model for PluginSourceInfo.Kind.
 type PluginSourceInfoKind string
+
+// PluginStorageDriverPackage defines model for PluginStorageDriverPackage.
+type PluginStorageDriverPackage struct {
+	DriverID  string                           `json:"driverId"`
+	Platforms map[string]PluginReleaseArtifact `json:"platforms"`
+	Protocol  string                           `json:"protocol"`
+}
 
 // PluginUIExtensions defines model for PluginUIExtensions.
 type PluginUIExtensions struct {
@@ -36959,6 +37064,18 @@ type SourceTag struct {
 // SourceTagListEnvelope defines model for SourceTagListEnvelope.
 type SourceTagListEnvelope struct {
 	Items []SourceTag `json:"items"`
+}
+
+// StorageDriverDescriptor defines model for StorageDriverDescriptor.
+type StorageDriverDescriptor struct {
+	ConfigSchema JSONSchema `json:"configSchema"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+}
+
+// StorageDriverListEnvelope defines model for StorageDriverListEnvelope.
+type StorageDriverListEnvelope struct {
+	Items []StorageDriverDescriptor `json:"items"`
 }
 
 // StreamTicket defines model for StreamTicket.
@@ -44531,6 +44648,9 @@ type ActivateInstalledPluginJSONRequestBody = CompanionActivationRequest
 
 // ConfigureInstalledPluginJSONRequestBody defines body for ConfigureInstalledPlugin for application/json ContentType.
 type ConfigureInstalledPluginJSONRequestBody = PluginConfigRequest
+
+// RollbackRepositoryPluginJSONRequestBody defines body for RollbackRepositoryPlugin for application/json ContentType.
+type RollbackRepositoryPluginJSONRequestBody = PluginRepositoryRollbackRequest
 
 // UpgradeRepositoryPluginJSONRequestBody defines body for UpgradeRepositoryPlugin for application/json ContentType.
 type UpgradeRepositoryPluginJSONRequestBody = PluginRepositoryUpgradeRequest

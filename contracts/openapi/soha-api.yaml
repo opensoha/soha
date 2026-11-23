@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Soha API
-  version: 0.2.2
+  version: 0.2.3
   description: >
     Public OpenSoha core API contract. This first contract focuses on stable cross-repository boundaries: auth, health, runner-facing control-plane callbacks, AI Gateway, and MCP capability discovery. Pod session WebSocket targets and their UID-aware ticket requirements are described separately in x-soha-websocket-paths to preserve HTTP client generation.
 servers:
@@ -1921,6 +1921,21 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+  /system-integrations/storage-drivers:
+    get:
+      tags: [ System Integrations ]
+      operationId: listSystemIntegrationStorageDrivers
+      responses:
+        "200":
+          description: Verified storage drivers available to the system integration form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageDriverListEnvelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
           $ref: "#/components/responses/Error"
   /system-integrations/{integrationID}:
     get:
@@ -17650,6 +17665,37 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /plugins/{pluginID}/repository/rollback:
+    post:
+      tags: [ Plugins ]
+      operationId: rollbackRepositoryPlugin
+      description: Restores the previous verified local package without contacting its repository.
+      x-soha-permissions:
+        mode: all
+        keys: [ plugin.upgrade ]
+      parameters:
+        - $ref: "#/components/parameters/PluginID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PluginRepositoryRollbackRequest"
+      responses:
+        "200":
+          description: Previous verified package restored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstalledPluginEnvelope"
+        "400":
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
@@ -33449,6 +33495,26 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/SystemIntegrationOAuthAuthorization"
+      additionalProperties: false
+    StorageDriverDescriptor:
+      type: object
+      required: [ id, name, configSchema ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        configSchema:
+          $ref: "#/components/schemas/JSONSchema"
+      additionalProperties: false
+    StorageDriverListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageDriverDescriptor"
       additionalProperties: false
     SystemIntegrationConfigurationField:
       type: object
@@ -58812,7 +58878,7 @@ components:
       properties:
         mode:
           type: string
-          enum: [ manifest-only, external-http, managed-container ]
+          enum: [ manifest-only, external-http, managed-container, executable-package-v1 ]
         endpoint:
           type: string
         healthPath:
@@ -59309,6 +59375,91 @@ components:
           type: object
           additionalProperties: true
       additionalProperties: false
+    PluginReleaseArtifact:
+      type: object
+      required:
+        - name
+        - sha256
+        - byteLength
+      properties:
+        name:
+          type: string
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$
+          description: Flat filename of one asset attached to the pinned GitHub Release.
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        byteLength:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+      additionalProperties: false
+    PluginStorageDriverPackage:
+      type: object
+      required:
+        - driverId
+        - protocol
+        - platforms
+      properties:
+        driverId:
+          type: string
+          pattern: ^[a-z][a-z0-9.-]{0,126}$
+        protocol:
+          type: string
+          const: object-storage/v1
+        platforms:
+          type: object
+          minProperties: 1
+          propertyNames:
+            type: string
+            pattern: ^[a-z0-9]+/[a-z0-9]+$
+          additionalProperties:
+            $ref: "#/components/schemas/PluginReleaseArtifact"
+      additionalProperties: false
+    PluginPackageComponents:
+      type: object
+      properties:
+        backend:
+          $ref: "#/components/schemas/PluginStorageDriverPackage"
+        web:
+          $ref: "#/components/schemas/PluginReleaseArtifact"
+      additionalProperties: false
+    PluginReleaseAttestation:
+      type: object
+      required:
+        - schemaVersion
+        - pluginId
+        - version
+        - repository
+        - commitSha
+        - rawManifestSha256
+        - components
+      properties:
+        schemaVersion:
+          type: string
+          const: "1"
+        pluginId:
+          maxLength: 255
+          type: string
+          pattern: ^[a-z0-9][a-z0-9.-]*\.[a-z0-9][a-z0-9._-]*$
+        version:
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+          type: string
+          minLength: 1
+        repository:
+          type: string
+          pattern: ^https://github\.com/[a-z0-9-]+/[a-z0-9_.-]+$
+        commitSha:
+          type: string
+          pattern: ^[a-f0-9]{40}$
+        rawManifestSha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        components:
+          $ref: "#/components/schemas/PluginPackageComponents"
+      additionalProperties: false
     PluginManifest:
       type: object
       required: [ id, name, version, publisher, type ]
@@ -59363,6 +59514,9 @@ components:
           $ref: "#/components/schemas/PluginIntegrity"
         runtime:
           $ref: "#/components/schemas/PluginRuntimeSpec"
+        components:
+          $ref: "#/components/schemas/PluginPackageComponents"
+          minProperties: 1
         companionPack:
           $ref: "#/components/schemas/CompanionPackManifest"
         configSchema:
@@ -59372,6 +59526,25 @@ components:
         metadata:
           type: object
           additionalProperties: true
+      if:
+        required: [ runtime ]
+        properties:
+          runtime:
+            required: [ mode ]
+            properties:
+              mode: { const: executable-package-v1 }
+      then:
+        required: [ components ]
+        properties:
+          id: { maxLength: 255 }
+          version: { maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9.+_-]*$" }
+          companionPack: false
+          type: { not: { const: companion-pack } }
+          configSchema:
+            properties:
+              x-soha-test-connection-action: { const: storage.testConnection }
+      else:
+        not: { required: [ components ] }
       additionalProperties: false
     CloudExtensionPointKind:
       type: string
@@ -59455,6 +59628,12 @@ components:
           type: string
           x-go-name: RepositoryURL
           description: Public GitHub repository registered by the marketplace catalog. Release data is queried separately.
+        publisherKeys:
+          type: array
+          description: Publisher keys from this server's official repository catalog registration.
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9+/]{43}=$"
         riskLevel:
           type: string
         latestVersion:
@@ -59817,6 +59996,14 @@ components:
           type: string
           pattern: "^sha256:[0-9a-f]{64}$"
           description: Digest of the original manifest bytes, not of a reserialized JSON object.
+        publisherKeyFingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the verified raw Ed25519 publisher public key.
+        releaseAttestationDigest:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: SHA-256 of the verified release inventory.
         official:
           type: boolean
           description: True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification.
@@ -59843,6 +60030,10 @@ components:
           type: string
           x-go-name: MarketplaceSourceID
           description: Configured repository catalog source. The server verifies the plugin and repository binding.
+        trustPublisherFingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: Administrator acknowledgement of the exact publisher key shown by a read-only preview.
       additionalProperties: false
     PluginRepositoryRefsRequest:
       type: object
@@ -59969,14 +60160,56 @@ components:
         signatureStatus:
           type: string
           description: A signature declared by a repository is not verified until checked against a trusted key.
+        releaseAttestation:
+          $ref: "#/components/schemas/PluginReleaseAttestation"
+        publisherKeyFingerprint:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust.
+        installEligibility:
+          type: string
+          enum: [ confirmable, signed-release-required, publisher-trust-required ]
+          description: Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.
         previewToken:
           type: string
           minLength: 1
           maxLength: 8192
-          description: Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.
+          description: For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.
         expiresAt:
           type: string
           format: date-time
+      if:
+        required: [ installEligibility ]
+        properties:
+          installEligibility: { enum: [ signed-release-required, publisher-trust-required ] }
+      then:
+        properties:
+          previewToken: { const: preview-only }
+          manifest: { required: [ components ] }
+          releaseAttestation:
+            properties:
+              components: { minProperties: 1 }
+        if:
+          properties:
+            installEligibility: { const: publisher-trust-required }
+        then:
+          required: [ publisherKeyFingerprint, releaseAttestation ]
+          properties:
+            signatureStatus: { const: untrusted }
+      else:
+        properties:
+          previewToken: { not: { const: preview-only } }
+        if:
+          properties:
+            manifest: { required: [ components ] }
+        then:
+          required: [ installEligibility, releaseAttestation ]
+          properties:
+            installEligibility: { const: confirmable }
+            signatureStatus: { const: verified }
+            releaseAttestation:
+              properties:
+                components: { minProperties: 1 }
       additionalProperties: false
     PluginRepositoryPreviewEnvelope:
       type: object
@@ -59993,10 +60226,11 @@ components:
           type: string
           minLength: 1
           maxLength: 8192
+          not: { const: preview-only }
           description: An unexpired token issued to the same caller and scope by the repository preview endpoint.
         enable:
           type: boolean
-          description: Repository installs are disabled unless enabled explicitly.
+          description: Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation.
       additionalProperties: false
     PluginRepositoryUpgradeRequest:
       type: object
@@ -60006,10 +60240,30 @@ components:
           type: string
           minLength: 1
           maxLength: 8192
+          not: { const: preview-only }
           description: An unexpired token issued to the same caller and scope for the selected repository version.
         confirmPermissionIncrease:
           type: boolean
           description: Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization.
+      additionalProperties: false
+    PluginRepositoryRollbackRequest:
+      type: object
+      required: [ expectedVersion, expectedUpdatedAt, version ]
+      properties:
+        expectedVersion:
+          type: string
+          minLength: 1
+        expectedUpdatedAt:
+          type: string
+          format: date-time
+          description: Revision of the installed version shown during review.
+        version:
+          type: string
+          minLength: 1
+          description: The retained verified version shown to the operator.
+        confirmPermissionIncrease:
+          type: boolean
+          description: Explicitly acknowledges additional permissions when restoring the retained version.
       additionalProperties: false
     InstalledPlugin:
       type: object
@@ -60040,6 +60294,21 @@ components:
           type: string
         activeVersion:
           type: string
+        rollbackVersion:
+          type: string
+          description: Previous verified version available for offline rollback.
+        rollbackRequiresPermissionConfirmation:
+          type: boolean
+          description: Restoring the previous version adds a permission compared to the installed version.
+        runtimeReady:
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+          description: The selected executable package is serving on this execution host.
+        referenceCount:
+          type: integer
+          minimum: 0
+          x-go-type-skip-optional-pointer: false
+          description: Number of stored integrations referring to the driver supplied by the plugin.
         artifacts:
           type: array
           items:

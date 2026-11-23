@@ -1,0 +1,20 @@
+{
+  "id": "example.blob",
+  "name": "Example Blob",
+  "publisher": "example",
+  "version": "1.0.0",
+  "type": "resource-extension",
+  "runtime": {
+    "mode": "executable-package-v1"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "credential": {
+        "type": "string",
+        "x-soha-widget": "secret-ref"
+      }
+    },
+    "x-soha-test-connection-action": "storage.testConnection"
+  }
+}
