@@ -18,7 +18,7 @@ import (
 func TestExecutableReleaseVector(t *testing.T) {
 	read := func(path string) []byte {
 		t.Helper()
-		b, err := os.ReadFile(path)
+		b, err := os.ReadFile(path) //nolint:gosec // G304: fixed test fixture paths owned by this package.
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,7 +34,10 @@ func TestExecutableReleaseVector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := key.(ed25519.PublicKey)
+	pub, ok := key.(ed25519.PublicKey)
+	if !ok {
+		t.Fatal("test public key is not Ed25519")
+	}
 	if !ed25519.Verify(pub, body, signature) || ed25519.Verify(pub, append(body, ' '), signature) {
 		t.Fatal("signature must match only the exact attestation bytes")
 	}

@@ -125,8 +125,8 @@ func TestAuthorClientStorageOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader, writer := io.Pipe()
-	defer writer.Close()
-	defer reader.Close()
+	defer func() { _ = writer.Close() }()
+	defer func() { _ = reader.Close() }()
 	input := bytes.Repeat([]byte("ABC"), 1<<20)
 	putReq := storagedriver.PutObjectRequest{Binding: binding, Key: "objects/fixture", ContentType: storagedriver.MediaTypeBinary}
 	transfer := make(chan error, 1)
@@ -215,7 +215,7 @@ func TestInterruptedOpenReleasesOnlyThatStream(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer opened.Body.Close()
+			defer func() { _ = opened.Body.Close() }()
 			if err := client.TestConnection(context.Background(), binding); err != nil {
 				t.Fatalf("another request waited for the open stream: %v", err)
 			}
@@ -256,7 +256,7 @@ func TestShortOpenStreamFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer opened.Body.Close()
+	defer func() { _ = opened.Body.Close() }()
 	if _, err := io.ReadAll(opened.Body); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("short stream succeeded or returned the wrong error: %v", err)
 	}
@@ -284,8 +284,8 @@ func TestCancelledUploadStopsProviderRead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	pipe, writer := io.Pipe()
-	defer pipe.Close()
-	defer writer.Close()
+	defer func() { _ = pipe.Close() }()
+	defer func() { _ = writer.Close() }()
 	request := storagedriver.PutObjectRequest{
 		Binding: storagedriver.Binding{ID: "fixture", Container: "objects"}, Key: "stream", ContentType: storagedriver.MediaTypeBinary,
 	}

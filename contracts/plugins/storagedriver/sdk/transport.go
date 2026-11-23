@@ -105,7 +105,7 @@ func clientTransport(cfg ClientOptions) *http.Transport {
 		pin := cfg.TLSLeafSHA256
 		tlsCfg := tlsConfig()
 		// The supervisor provisions and pins the exact ephemeral certificate.
-		tlsCfg.InsecureSkipVerify = true //nolint:gosec // VerifyConnection performs mandatory pin verification.
+		tlsCfg.InsecureSkipVerify = true // VerifyConnection performs mandatory pin verification.
 		tlsCfg.VerifyConnection = func(state tls.ConnectionState) error {
 			if len(state.PeerCertificates) == 0 {
 				return ErrTransport

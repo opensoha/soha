@@ -29,7 +29,7 @@ func TestHandshakeWireVector(t *testing.T) {
 		t.Fatal("unexpected identity or driver proof")
 	}
 	hostToken, err := response.Verify(secret, request)
-	if err != nil || hostToken != serverToken || hostToken != "sn2-Bp14ngxhpzNwzxIqJRCsi8ttC57zB5Jhs1XLqRU" {
+	if err != nil || hostToken != serverToken || hostToken != "sn2-Bp14ngxhpzNwzxIqJRCsi8ttC57zB5Jhs1XLqRU" { //nolint:gosec // G101: fixed cross-language test vector, not a credential.
 		t.Fatalf("unexpected handshake result: %v", err)
 	}
 	encoded, err := json.Marshal(response)
@@ -210,7 +210,7 @@ func TestOpenConditionsAndRanges(t *testing.T) {
 		ETag: `"other-version"`, ContentType: MediaTypeBinary, ContentLength: 3,
 		ContentRange: &ContentRange{Start: 4, End: 6, Size: 7}, Body: io.NopCloser(strings.NewReader("abc")),
 	}
-	defer partial.Body.Close()
+	defer func() { _ = partial.Body.Close() }()
 	if err := partial.Validate(request); err != nil {
 		t.Fatal(err)
 	}

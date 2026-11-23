@@ -69,7 +69,7 @@ func TestTLSHandshakeAndMessageBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	if _, err := Dial(ctx, cfg); err != rpcError(storagedriver.CodeUnauthenticated) {
 		t.Fatalf("second handshake was accepted: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestBootstrapRejectsUnprotectedEndpoints(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o755); err != nil {
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: intentionally world-accessible parent for the negative bootstrap fixture.
 		t.Fatal(err)
 	}
 	cfg := Bootstrap{Network: "unix", Address: filepath.Join(dir, "s"), LaunchSecret: secret}
@@ -224,7 +224,7 @@ func exchange(t *testing.T, ctx context.Context, client *http.Client, method, ur
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +280,7 @@ func TestClientDoesNotReplayOpenWithoutResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	binding := storagedriver.Binding{ID: "binding", Container: "container"}
 	if err := client.TestConnection(ctx, binding); err != nil {
 		t.Fatal(err)

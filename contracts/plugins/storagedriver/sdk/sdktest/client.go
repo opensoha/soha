@@ -37,7 +37,7 @@ func NewClient(t testing.TB, options sdk.ServerOptions, driver storagedriver.Dri
 	var serveErr error
 	go func() {
 		defer close(stopped)
-		defer input.Close()
+		defer func() { _ = input.Close() }()
 		serveErr = sdk.Serve(ctx, input, options, driver)
 	}()
 	t.Cleanup(func() {

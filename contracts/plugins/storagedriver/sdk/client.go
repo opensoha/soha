@@ -124,7 +124,7 @@ func (c *Client) PutObject(ctx context.Context, req storagedriver.PutObjectReque
 	if err != nil {
 		return storagedriver.PutObjectResult{}, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	var result storagedriver.PutObjectResult
 	if err := readResponse(ctx, response, &result); err != nil {
 		return storagedriver.PutObjectResult{}, err
@@ -211,7 +211,7 @@ func (c *Client) control(ctx context.Context, path string, input, output any) er
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	return readResponse(ctx, response, output)
 }
 

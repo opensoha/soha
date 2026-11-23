@@ -53,7 +53,7 @@ func Serve(ctx context.Context, input io.Reader, options ServerOptions, driver s
 	if cfg.TLS != nil {
 		clear(cfg.TLS.PrivateKeyDER)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	return serve(ctx, listener, identity, cfg.LaunchSecret, options.CallTimeout, driver)
 }
 
@@ -76,7 +76,7 @@ func serve(ctx context.Context, listener net.Listener, identity storagedriver.Id
 	}
 	stop := context.AfterFunc(ctx, func() { _ = server.Close() })
 	defer stop()
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 	err := server.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
