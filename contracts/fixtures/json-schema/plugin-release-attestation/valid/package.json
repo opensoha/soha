@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "pluginId": "example.blob",
+  "version": "1.0.0",
+  "repository": "https://github.com/example/blob",
+  "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rawManifestSha256": "dd0bb0c98d8856cc4efa70a18e669345fb165bb06b7386087f42fbba1f058e2f",
+  "components": {
+    "backend": {
+      "driverId": "example.blob",
+      "protocol": "object-storage/v1",
+      "platforms": {
+        "linux/amd64": {
+          "name": "blob-linux-amd64",
+          "byteLength": 15,
+          "sha256": "487a7e67344ca30d2d97401fe0949c02e7ff97904ae180bf59b39acb858eaca6"
+        }
+      }
+    },
+    "web": {
+      "name": "panel.tar.gz",
+      "byteLength": 11,
+      "sha256": "a4d42926b35e04e85231eb05b66e3b71e80f1a463d1e530b172c1ea78cf9cae7"
+    }
+  }
+}

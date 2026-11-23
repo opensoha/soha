@@ -93,6 +93,7 @@ const requiredJsonSchemas = [
   { file: "plugins/companion-pack.schema.json", fixtureDir: "fixtures/json-schema/companion-pack" },
   { file: "plugins/companion-provenance.schema.json", fixtureDir: "fixtures/json-schema/companion-provenance" },
   { file: "plugins/plugin-manifest.schema.json", fixtureDir: "fixtures/json-schema/plugin-manifest" },
+  { file: "plugins/plugin-release-attestation.schema.json", fixtureDir: "fixtures/json-schema/plugin-release-attestation" },
   {
     file: "plugins/observability-log-query-v1.schema.json",
     fixtureDir: "fixtures/json-schema/observability-log-query-v1",
@@ -504,6 +505,12 @@ async function validateOpenapiFixtures(openapi) {
     const validate = getOpenapiSchemaValidator(openapiAjv, schemaName);
     fixtureCount += await validateFixtureDirectory(new URL(`fixtures/openapi/${schemaName}/`, root), validate);
   }
+  // Release consumers validate the detached document independently of the HTTP API.
+  // Exercise the same inventory fixtures against the generated SDK's OpenAPI source.
+  fixtureCount += await validateFixtureDirectory(
+    new URL("fixtures/json-schema/plugin-release-attestation/", root),
+    getOpenapiSchemaValidator(openapiAjv, "PluginReleaseAttestation"),
+  );
   return fixtureCount;
 }
 

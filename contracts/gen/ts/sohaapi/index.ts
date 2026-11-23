@@ -931,6 +931,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system-integrations/storage-drivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSystemIntegrationStorageDrivers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system-integrations/{integrationID}": {
         parameters: {
             query?: never;
@@ -10206,6 +10222,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/{pluginID}/repository/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restores the previous verified local package without contacting its repository. */
+        post: operations["rollbackRepositoryPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugins/{pluginID}/config": {
         parameters: {
             query?: never;
@@ -17392,6 +17425,14 @@ export interface components {
         };
         SystemIntegrationOAuthAuthorizationEnvelope: {
             data: components["schemas"]["SystemIntegrationOAuthAuthorization"];
+        };
+        StorageDriverDescriptor: {
+            id: string;
+            name: string;
+            configSchema: components["schemas"]["JSONSchema"];
+        };
+        StorageDriverListEnvelope: {
+            items: components["schemas"]["StorageDriverDescriptor"][];
         };
         SystemIntegrationConfigurationField: {
             key: string;
@@ -31897,7 +31938,7 @@ export interface components {
         };
         PluginRuntimeSpec: {
             /** @enum {string} */
-            mode: "manifest-only" | "external-http" | "managed-container";
+            mode: "manifest-only" | "external-http" | "managed-container" | "executable-package-v1";
             endpoint?: string;
             healthPath?: string;
             manifestPath?: string;
@@ -32086,6 +32127,35 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        PluginReleaseArtifact: {
+            /** @description Flat filename of one asset attached to the pinned GitHub Release. */
+            name: string;
+            sha256: string;
+            /** Format: int64 */
+            byteLength: number;
+        };
+        PluginStorageDriverPackage: {
+            driverId: string;
+            /** @constant */
+            protocol: "object-storage/v1";
+            platforms: {
+                [key: string]: components["schemas"]["PluginReleaseArtifact"];
+            };
+        };
+        PluginPackageComponents: {
+            backend?: components["schemas"]["PluginStorageDriverPackage"];
+            web?: components["schemas"]["PluginReleaseArtifact"];
+        };
+        PluginReleaseAttestation: {
+            /** @constant */
+            schemaVersion: "1";
+            pluginId: string;
+            version: string;
+            repository: string;
+            commitSha: string;
+            rawManifestSha256: string;
+            components: components["schemas"]["PluginPackageComponents"];
+        };
         PluginManifest: {
             id: string;
             name: string;
@@ -32104,6 +32174,7 @@ export interface components {
             };
             integrity?: components["schemas"]["PluginIntegrity"];
             runtime?: components["schemas"]["PluginRuntimeSpec"];
+            components?: components["schemas"]["PluginPackageComponents"];
             companionPack?: components["schemas"]["CompanionPackManifest"];
             configSchema?: components["schemas"]["JSONSchema"];
             extensionPoints?: components["schemas"]["PluginExtensionPoints"];
@@ -32144,6 +32215,8 @@ export interface components {
             sourceUrl?: string;
             /** @description Public GitHub repository registered by the marketplace catalog. Release data is queried separately. */
             repositoryUrl?: string;
+            /** @description Publisher keys from this server's official repository catalog registration. */
+            publisherKeys?: string[];
             riskLevel?: string;
             latestVersion?: string;
             categories?: string[];
@@ -32276,6 +32349,10 @@ export interface components {
             commitSha?: string;
             /** @description Digest of the original manifest bytes, not of a reserialized JSON object. */
             rawManifestChecksum?: string;
+            /** @description SHA-256 of the verified raw Ed25519 publisher public key. */
+            publisherKeyFingerprint?: string;
+            /** @description SHA-256 of the verified release inventory. */
+            releaseAttestationDigest?: string;
             /** @description True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification. */
             official: boolean;
         };
@@ -32288,6 +32365,8 @@ export interface components {
             pluginId?: string;
             /** @description Configured repository catalog source. The server verifies the plugin and repository binding. */
             marketplaceSourceId?: string;
+            /** @description Administrator acknowledgement of the exact publisher key shown by a read-only preview. */
+            trustPublisherFingerprint?: string;
         };
         PluginRepositoryRefsRequest: {
             repositoryUrl: string;
@@ -32342,7 +32421,15 @@ export interface components {
             checksumStatus: string;
             /** @description A signature declared by a repository is not verified until checked against a trusted key. */
             signatureStatus: string;
-            /** @description Opaque server-signed confirmation token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest. */
+            releaseAttestation?: components["schemas"]["PluginReleaseAttestation"];
+            /** @description SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust. */
+            publisherKeyFingerprint?: string;
+            /**
+             * @description Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.
+             * @enum {string}
+             */
+            installEligibility?: "confirmable" | "signed-release-required" | "publisher-trust-required";
+            /** @description For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest. */
             previewToken: string;
             /** Format: date-time */
             expiresAt: string;
@@ -32353,13 +32440,25 @@ export interface components {
         PluginRepositoryInstallRequest: {
             /** @description An unexpired token issued to the same caller and scope by the repository preview endpoint. */
             previewToken: string;
-            /** @description Repository installs are disabled unless enabled explicitly. */
+            /** @description Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation. */
             enable?: boolean;
         };
         PluginRepositoryUpgradeRequest: {
             /** @description An unexpired token issued to the same caller and scope for the selected repository version. */
             previewToken: string;
             /** @description Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization. */
+            confirmPermissionIncrease?: boolean;
+        };
+        PluginRepositoryRollbackRequest: {
+            expectedVersion: string;
+            /**
+             * Format: date-time
+             * @description Revision of the installed version shown during review.
+             */
+            expectedUpdatedAt: string;
+            /** @description The retained verified version shown to the operator. */
+            version: string;
+            /** @description Explicitly acknowledges additional permissions when restoring the retained version. */
             confirmPermissionIncrease?: boolean;
         };
         InstalledPlugin: {
@@ -32376,6 +32475,14 @@ export interface components {
             checksumStatus: string;
             signatureStatus?: string;
             activeVersion?: string;
+            /** @description Previous verified version available for offline rollback. */
+            rollbackVersion?: string;
+            /** @description Restoring the previous version adds a permission compared to the installed version. */
+            rollbackRequiresPermissionConfirmation?: boolean;
+            /** @description The selected executable package is serving on this execution host. */
+            runtimeReady?: boolean;
+            /** @description Number of stored integrations referring to the driver supplied by the plugin. */
+            referenceCount?: number;
             artifacts?: components["schemas"]["PluginArtifactRecord"][];
             requestedPermissions?: components["schemas"]["PluginPermissionRequest"];
             configuredSecretRefs?: {
@@ -36325,6 +36432,8 @@ export type SystemIntegrationHealthStatus = components['schemas']['SystemIntegra
 export type SystemIntegrationTestStatus = components['schemas']['SystemIntegrationTestStatus'];
 export type SystemIntegrationOAuthAuthorization = components['schemas']['SystemIntegrationOAuthAuthorization'];
 export type SystemIntegrationOAuthAuthorizationEnvelope = components['schemas']['SystemIntegrationOAuthAuthorizationEnvelope'];
+export type StorageDriverDescriptor = components['schemas']['StorageDriverDescriptor'];
+export type StorageDriverListEnvelope = components['schemas']['StorageDriverListEnvelope'];
 export type SystemIntegrationConfigurationField = components['schemas']['SystemIntegrationConfigurationField'];
 export type SystemIntegrationCredentialInput = components['schemas']['SystemIntegrationCredentialInput'];
 export type SystemIntegrationCreateRequest = components['schemas']['SystemIntegrationCreateRequest'];
@@ -38017,6 +38126,10 @@ export type MarketplacePublisher = components['schemas']['MarketplacePublisher']
 export type MarketplacePluginVersion = components['schemas']['MarketplacePluginVersion'];
 export type MarketplaceAdvisory = components['schemas']['MarketplaceAdvisory'];
 export type MarketplaceCatalog = components['schemas']['MarketplaceCatalog'];
+export type PluginReleaseArtifact = components['schemas']['PluginReleaseArtifact'];
+export type PluginStorageDriverPackage = components['schemas']['PluginStorageDriverPackage'];
+export type PluginPackageComponents = components['schemas']['PluginPackageComponents'];
+export type PluginReleaseAttestation = components['schemas']['PluginReleaseAttestation'];
 export type PluginManifest = components['schemas']['PluginManifest'];
 export type CloudExtensionPointKind = components['schemas']['CloudExtensionPointKind'];
 export type CloudExtensionBoundary = components['schemas']['CloudExtensionBoundary'];
@@ -38048,6 +38161,7 @@ export type PluginRepositoryPreview = components['schemas']['PluginRepositoryPre
 export type PluginRepositoryPreviewEnvelope = components['schemas']['PluginRepositoryPreviewEnvelope'];
 export type PluginRepositoryInstallRequest = components['schemas']['PluginRepositoryInstallRequest'];
 export type PluginRepositoryUpgradeRequest = components['schemas']['PluginRepositoryUpgradeRequest'];
+export type PluginRepositoryRollbackRequest = components['schemas']['PluginRepositoryRollbackRequest'];
 export type InstalledPlugin = components['schemas']['InstalledPlugin'];
 export type PluginInstallRequest = components['schemas']['PluginInstallRequest'];
 export type CompanionActivationRequest = components['schemas']['CompanionActivationRequest'];
@@ -40494,6 +40608,28 @@ export interface operations {
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    listSystemIntegrationStorageDrivers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified storage drivers available to the system integration form. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageDriverListEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
         };
     };
     getSystemIntegration: {
@@ -59178,6 +59314,36 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rollbackRepositoryPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pluginID: components["parameters"]["PluginID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginRepositoryRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Previous verified package restored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledPluginEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
