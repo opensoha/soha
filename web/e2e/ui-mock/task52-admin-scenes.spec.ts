@@ -709,7 +709,8 @@ for (const route of ['/plugins/marketplace', '/plugins/marketplace/qa-plugin']) 
     const entry = route === '/plugins/marketplace' ? page.locator('.soha-plugin-market-card') : page
     await entry.getByRole('button', { name: /安\s*装$/ }).click()
     const dialog = page.getByRole('dialog', { name: `安装 ${plugin.name}`, exact: true })
-    const confirm = dialog.getByRole('button', { name: /^安\s*装$/ })
+    // Pending confirmation can add Ant Design's accessible loading icon to the button name.
+    const confirm = dialog.getByRole('button', { name: /^(?:loading\s+)?安\s*装$/ })
     await confirm.click()
     await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
     await expect(confirm).toBeDisabled()
