@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -102,5 +104,40 @@ func TestDirectManifestCreationUsesTheYAMLEditManager(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("create calls=%d", calls)
+	}
+}
+
+func TestDirectDeploymentReadsPreserveKubernetesPermissionError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || (r.URL.Path != "/apis/apps/v1/namespaces/demo/deployments" && r.URL.Path != "/apis/apps/v1/namespaces/demo/deployments/sample") {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Status","status":"Failure","reason":"Forbidden","code":403}`))
+	}))
+	defer server.Close()
+	kubeconfig := fmt.Sprintf("apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster:\n    server: %s\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\nusers:\n- name: test\n  user: {}\n", server.URL)
+	direct := NewDirect(NewClusters(k8sinfra.NewManager([]cfgpkg.ClusterConfig{{ID: "test", KubeconfigData: kubeconfig}})), nil)
+	items, _, err := direct.ListDeployments(t.Context(), "test", "demo")
+	if len(items) != 0 || !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("deployment list = %+v, %v; want access denied", items, err)
+	}
+	_, err = direct.GetDeploymentYAML(t.Context(), "test", "demo", "sample")
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("deployment source = %v; want access denied", err)
+	}
+}
+
+func TestDeliveryKubeReadDistinguishesDialFailureFromDeadline(t *testing.T) {
+	offline := deliveryKubeReadError(&net.OpError{Op: "dial", Err: errors.New("connection refused")})
+	if !errors.Is(offline, apperrors.ErrClusterUnready) {
+		t.Fatalf("dial failure = %v; want cluster unavailable", offline)
+	}
+	for _, cause := range []error{context.DeadlineExceeded, os.ErrDeadlineExceeded} {
+		deadline := deliveryKubeReadError(&net.OpError{Op: "dial", Err: cause})
+		if !errors.Is(deadline, context.DeadlineExceeded) || errors.Is(deadline, apperrors.ErrClusterUnready) {
+			t.Fatalf("deadline = %v; want only deadline classification", deadline)
+		}
 	}
 }

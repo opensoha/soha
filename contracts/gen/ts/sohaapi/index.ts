@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh/application-workbench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Refresh a browser session using its HttpOnly refresh cookie. The permission snapshot and named application entry are optional. The entry requires delivery workbench and application view permissions, enabled delivery, and authorization for all three scoped reads. Missing or denied entry data does not invalidate the session. */
+        post: operations["refreshApplicationWorkbench"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/oidc/login": {
         parameters: {
             query?: never;
@@ -1206,6 +1223,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{applicationID}/application-environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApplicationEnvironmentNavigation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/runtime-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getApplicationEnvironmentRuntimeSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/services/{serviceID}/pods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getApplicationServicePods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/workflow": {
         parameters: {
             query?: never;
@@ -1215,6 +1280,23 @@ export interface paths {
         };
         get?: never;
         put: operations["saveApplicationEnvironmentWorkflow"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{applicationID}/service-directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the identity fields needed to navigate an application's services. */
+        get: operations["listApplicationServiceDirectory"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -21429,6 +21511,38 @@ export interface components {
         AuthResultEnvelope: {
             data: components["schemas"]["AuthResult"];
         };
+        ApplicationWorkbenchRefreshRequest: {
+            applicationId: string;
+        };
+        ApplicationWorkbenchRefreshEnvelope: {
+            data: components["schemas"]["ApplicationWorkbenchRefreshResult"];
+        };
+        ApplicationWorkbenchRefreshResult: {
+            session: components["schemas"]["AuthResult"];
+            permissionSnapshot?: components["schemas"]["PermissionSnapshot"];
+            entry?: components["schemas"]["ApplicationWorkbenchEntry"];
+        };
+        ApplicationWorkbenchEntry: {
+            application: components["schemas"]["Application"];
+            environments: components["schemas"]["ApplicationEnvironmentNavigation"][];
+            services: components["schemas"]["ApplicationServiceDirectoryItem"][];
+        };
+        PermissionSnapshot: {
+            permissionKeys: string[];
+            visibleMenuIds: string[];
+            visibleMenus: components["schemas"]["VisibleMenu"][];
+        };
+        VisibleMenu: {
+            id: string;
+            parentId?: string;
+            path: string;
+            labelZh: string;
+            labelEn: string;
+            iconKey: string;
+            section: string;
+            sortOrder: number;
+            enabled: boolean;
+        };
         AuthProviderListEnvelope: {
             items: components["schemas"]["AuthProvider"][];
         };
@@ -21849,6 +21963,18 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
+        };
+        ApplicationServiceDirectoryItem: {
+            id: string;
+            applicationId: string;
+            key: string;
+            name: string;
+            /** @enum {string} */
+            serviceKind: "kubernetes_workload" | "helm_release" | "external_service" | "job";
+            enabled: boolean;
+        };
+        ApplicationServiceDirectoryEnvelope: {
+            data: components["schemas"]["ApplicationServiceDirectoryItem"][];
         };
         ApplicationService: {
             deploymentTemplate?: components["schemas"]["ServiceDeploymentTemplateBinding"];
@@ -23814,6 +23940,9 @@ export interface components {
             /** @enum {string} */
             sourceStatus?: "linked" | "changed" | "replaced" | "missing" | "unavailable" | "forbidden";
             applicationEnvironmentId: string;
+            serviceId?: string;
+            serviceKey?: string;
+            healthStatus?: string;
             clusterId: string;
             namespace: string;
             workloadKind: string;
@@ -23834,6 +23963,50 @@ export interface components {
             latestBuild?: components["schemas"]["BuildRecord"];
             latestWorkflow?: components["schemas"]["WorkflowRun"];
             latestRelease?: components["schemas"]["ReleaseRecord"];
+        };
+        ApplicationEnvironmentNavigation: {
+            applicationEnvironmentId: string;
+            environmentId: string;
+            environmentName: string;
+            environmentKey: string;
+            isProduction: boolean;
+            requiresApproval: boolean;
+            actionKind?: string;
+            clusterId?: string;
+            namespace?: string;
+        };
+        ApplicationEnvironmentNavigationEnvelope: {
+            data: components["schemas"]["ApplicationEnvironmentNavigation"][];
+        };
+        ApplicationEnvironmentRuntimeSummary: {
+            environment: components["schemas"]["ApplicationRuntimeEnvironment"];
+            /** @enum {string} */
+            observationStatus: "available" | "partial" | "timeout" | "cluster_unready" | "forbidden" | "identity_mismatch" | "unconfigured" | "unavailable";
+            /** Format: date-time */
+            observedAt: string;
+        };
+        ApplicationEnvironmentRuntimeSummaryEnvelope: {
+            data: components["schemas"]["ApplicationEnvironmentRuntimeSummary"];
+        };
+        ApplicationServicePod: {
+            clusterId: string;
+            targetId?: string;
+            workloadKind: string;
+            workloadName: string;
+            /** @description Current Pod status with verified immutable UID. */
+            pod: components["schemas"]["KubernetesPod"] & {
+                uid: string;
+            };
+        };
+        ApplicationServicePods: {
+            /** @enum {string} */
+            status: "available" | "partial" | "relation_only" | "unconfigured" | "unavailable";
+            /** @description Stable reason code for an incomplete observation or unverified ownership. */
+            reason?: string;
+            items: components["schemas"]["ApplicationServicePod"][];
+        };
+        ApplicationServicePodsEnvelope: {
+            data: components["schemas"]["ApplicationServicePods"];
         };
         ApplicationRuntimeEnvironment: {
             applicationEnvironmentId: string;
@@ -35318,6 +35491,13 @@ export interface components {
              * @description Present only when the current container state is terminated, including a successful zero exit code.
              */
             exitCode?: number;
+            /** @description Reason reported for the previous terminated container instance. */
+            lastTerminationReason?: string;
+            /**
+             * Format: int32
+             * @description Exit code of the previous terminated container instance, including zero.
+             */
+            lastTerminationExitCode?: number;
         };
         KubernetesObservedResourceYamlInput: {
             content: string;
@@ -36955,6 +37135,12 @@ export type StreamTicket = components['schemas']['StreamTicket'];
 export type PrincipalEnvelope = components['schemas']['PrincipalEnvelope'];
 export type UserProfileEnvelope = components['schemas']['UserProfileEnvelope'];
 export type AuthResultEnvelope = components['schemas']['AuthResultEnvelope'];
+export type ApplicationWorkbenchRefreshRequest = components['schemas']['ApplicationWorkbenchRefreshRequest'];
+export type ApplicationWorkbenchRefreshEnvelope = components['schemas']['ApplicationWorkbenchRefreshEnvelope'];
+export type ApplicationWorkbenchRefreshResult = components['schemas']['ApplicationWorkbenchRefreshResult'];
+export type ApplicationWorkbenchEntry = components['schemas']['ApplicationWorkbenchEntry'];
+export type PermissionSnapshot = components['schemas']['PermissionSnapshot'];
+export type VisibleMenu = components['schemas']['VisibleMenu'];
 export type AuthProviderListEnvelope = components['schemas']['AuthProviderListEnvelope'];
 export type LoginOptionsEnvelope = components['schemas']['LoginOptionsEnvelope'];
 export type AuthBootstrapEnvelope = components['schemas']['AuthBootstrapEnvelope'];
@@ -36993,6 +37179,8 @@ export type Application = components['schemas']['Application'];
 export type ApplicationInput = components['schemas']['ApplicationInput'];
 export type ApplicationServiceContainer = components['schemas']['ApplicationServiceContainer'];
 export type ApplicationServiceContainerInput = components['schemas']['ApplicationServiceContainerInput'];
+export type ApplicationServiceDirectoryItem = components['schemas']['ApplicationServiceDirectoryItem'];
+export type ApplicationServiceDirectoryEnvelope = components['schemas']['ApplicationServiceDirectoryEnvelope'];
 export type ApplicationService = components['schemas']['ApplicationService'];
 export type ApplicationServiceInput = components['schemas']['ApplicationServiceInput'];
 export type BuildPolicy = components['schemas']['BuildPolicy'];
@@ -37181,6 +37369,13 @@ export type OperationState = components['schemas']['OperationState'];
 export type ApplicationBindingSummary = components['schemas']['ApplicationBindingSummary'];
 export type ApplicationDeliveryDetail = components['schemas']['ApplicationDeliveryDetail'];
 export type ApplicationRuntimeWorkload = components['schemas']['ApplicationRuntimeWorkload'];
+export type ApplicationEnvironmentNavigation = components['schemas']['ApplicationEnvironmentNavigation'];
+export type ApplicationEnvironmentNavigationEnvelope = components['schemas']['ApplicationEnvironmentNavigationEnvelope'];
+export type ApplicationEnvironmentRuntimeSummary = components['schemas']['ApplicationEnvironmentRuntimeSummary'];
+export type ApplicationEnvironmentRuntimeSummaryEnvelope = components['schemas']['ApplicationEnvironmentRuntimeSummaryEnvelope'];
+export type ApplicationServicePod = components['schemas']['ApplicationServicePod'];
+export type ApplicationServicePods = components['schemas']['ApplicationServicePods'];
+export type ApplicationServicePodsEnvelope = components['schemas']['ApplicationServicePodsEnvelope'];
 export type ApplicationRuntimeEnvironment = components['schemas']['ApplicationRuntimeEnvironment'];
 export type ApplicationRuntimeDetail = components['schemas']['ApplicationRuntimeDetail'];
 export type ApplicationEnvironmentDeliveryDetail = components['schemas']['ApplicationEnvironmentDeliveryDetail'];
@@ -39609,6 +39804,48 @@ export interface operations {
             401: components["responses"]["Error"];
         };
     };
+    refreshApplicationWorkbench: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationWorkbenchRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Refreshed session with optional startup reads. The response is not cacheable. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationWorkbenchRefreshEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            /** @description Too many refresh requests from this client address. */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        error: "rate_limited";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
     beginOIDCLogin: {
         parameters: {
             query?: never;
@@ -41178,6 +41415,82 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    listApplicationEnvironmentNavigation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationID: components["parameters"]["ApplicationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visible environment navigation for one application. Reads configuration only. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationEnvironmentNavigationEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getApplicationEnvironmentRuntimeSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationID: components["parameters"]["ApplicationID"];
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Observed runtime for one authorized application environment. Downstream observation errors are represented in the result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationEnvironmentRuntimeSummaryEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getApplicationServicePods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationID: components["parameters"]["ApplicationID"];
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+                serviceID: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified Pods owned by the selected service in this application environment. Provider and ownership gaps are represented in the result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationServicePodsEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
     saveApplicationEnvironmentWorkflow: {
         parameters: {
             query?: never;
@@ -41204,6 +41517,30 @@ export interface operations {
                 };
             };
             400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listApplicationServiceDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationID: components["parameters"]["ApplicationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service identities visible to a principal authorized to read the application and its services. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationServiceDirectoryEnvelope"];
+                };
+            };
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
@@ -54616,6 +54953,10 @@ export interface operations {
     getClusterPodMetrics: {
         parameters: {
             query?: {
+                /** @description Restrict samples to the reviewed Pod UID. A replaced Pod returns conflict. Samples without verified UID evidence are omitted. */
+                expectedUid?: string;
+                /** @description Optional container filter for UID-scoped CPU and memory. Requires expectedUid. */
+                container?: string;
                 namespace?: string;
                 rangeMinutes?: number;
                 /** @description Requested step. The server may increase it to keep the response below 1440 points per series. */
@@ -54642,6 +54983,7 @@ export interface operations {
             400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };
     };

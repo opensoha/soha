@@ -5,6 +5,7 @@ import { App, ConfigProvider } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { ApiError } from '@/services/api-error'
 import { deliveryApi } from '../api'
 import { deliveryKeys } from '../keys'
 import type { DeliveryBatch, DeliveryPlan } from '../types'
@@ -12,6 +13,7 @@ import { DeliveryBatchDetailPage } from './detail-page'
 import { DeliveryBatchPlanDrawer } from './plan-drawer'
 import { templateUpdateKeys } from '../template-updates/queries'
 import type {
+  DeliveryPlanServiceReferenceImpact,
   TemplateUpdatePreview,
   TemplateUpdateCandidate,
 } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -36,6 +38,118 @@ const batch: DeliveryBatch = {
   createdAt: '',
   updatedAt: '',
 }
+
+const referencePlan: DeliveryPlan = {
+  id: 'reference-plan',
+  source: 'delivery_batch',
+  status: 'waiting_approval',
+  applicationId: 'app',
+  applicationEnvironmentId: 'source-env',
+  action: 'deploy',
+  riskLevel: 'high',
+  requiresApproval: true,
+  createdAt: '',
+  updatedAt: '',
+  impact: { hasServiceReferenceConsumers: false },
+}
+
+const referenceImpact: DeliveryPlanServiceReferenceImpact = {
+  planId: referencePlan.id,
+  sourceApplicationEnvironmentId: referencePlan.applicationEnvironmentId,
+  revision: 'a'.repeat(64),
+  currentRevision: 'a'.repeat(64),
+  isCurrent: true,
+  items: [],
+  hasRestrictedConsumers: false,
+}
+
+const visibleConsumer = {
+  referenceId: 'visible-reference',
+  referenceRevision: 1,
+  applicationEnvironmentId: 'consumer-binding',
+  environmentId: 'consumer-environment',
+  environmentKey: 'test-a',
+  serviceId: 'service-a',
+  sourceApplicationEnvironmentId: 'source-env',
+  sourceTargetIds: ['target-a'],
+}
+
+it('uses authorized impact pages and keeps a stale plan blocked when returning to the preceding page', async () => {
+  vi.mocked(deliveryApi.plans.referenceImpact).mockRestore()
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, 'http://localhost')
+    expect(url.pathname).toBe('/api/v1/delivery/plans/reference-plan/service-reference-impact')
+    return Response.json(
+      url.searchParams.get('cursor') === 'visible-reference'
+        ? {
+            ...referenceImpact,
+            isCurrent: false,
+            currentRevision: 'b'.repeat(64),
+            items: [{ ...visibleConsumer, referenceId: 'reference-b', environmentKey: 'test-b' }],
+          }
+        : {
+            ...referenceImpact,
+            items: [visibleConsumer],
+            nextCursor: 'visible-reference',
+            hasRestrictedConsumers: true,
+          },
+    )
+  })
+  vi.stubGlobal('fetch', fetcher)
+  client.setQueryData(deliveryKeys.plans.detail(referencePlan.id), referencePlan)
+  await render(<DeliveryBatchPlanDrawer id={referencePlan.id} onClose={() => undefined} />)
+  const button = (name: string) =>
+    [...document.querySelectorAll('button')].find(
+      (item) => item.textContent?.replace(/\s/g, '') === name,
+    )!
+
+  await vi.waitFor(
+    async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(document.body.textContent).toContain('test-a')
+    },
+    { timeout: 3000 },
+  )
+  expect(document.body.textContent).toContain('部分引用环境受权限保护')
+  expect(button('批准此计划').disabled).toBe(false)
+  await act(async () => button('下一页').click())
+  await vi.waitFor(() => expect(document.body.textContent).toContain('test-b'))
+  expect(document.body.textContent).not.toContain('test-a')
+  expect(document.body.textContent).toContain('请重新预检并生成新的交付计划')
+  expect(button('批准此计划').disabled).toBe(true)
+  expect(button('拒绝').disabled).toBe(false)
+  expect(fetcher.mock.calls.some(([input]) => input.includes('cursor=visible-reference'))).toBe(
+    true,
+  )
+  await act(async () => button('上一页').click())
+  await vi.waitFor(() => expect(document.body.textContent).toContain('test-a'))
+  expect(button('批准此计划').disabled).toBe(true)
+})
+
+it('removes previously readable consumers on denial without treating the result as empty', async () => {
+  vi.mocked(deliveryApi.plans.referenceImpact)
+    .mockResolvedValueOnce({ ...referenceImpact, items: [visibleConsumer] })
+    .mockRejectedValueOnce(new ApiError(403, 'reference source access denied'))
+  client.setQueryData(deliveryKeys.plans.detail(referencePlan.id), referencePlan)
+  await render(<DeliveryBatchPlanDrawer id={referencePlan.id} onClose={() => undefined} />)
+  await vi.waitFor(
+    async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(document.body.textContent).toContain('test-a')
+    },
+    { timeout: 3000 },
+  )
+  const refresh = [...document.querySelectorAll('button')].find((item) =>
+    item.textContent?.includes('刷新引用影响'),
+  )!
+  await act(async () => refresh.click())
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain('test-a'))
+  expect(document.body.textContent).not.toContain('当前没有下游引用')
+})
 
 it('blocks a migration Plan even with a comment, then requires that comment for the fresh legal Plan', async () => {
   const migration = {
@@ -209,6 +323,7 @@ beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
+  vi.spyOn(deliveryApi.plans, 'referenceImpact').mockResolvedValue(referenceImpact)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)

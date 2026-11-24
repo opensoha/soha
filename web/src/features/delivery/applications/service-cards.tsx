@@ -1,3 +1,4 @@
+import type { ApplicationServiceDirectoryItem } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useState, type ReactNode } from 'react'
 import { Button, Card, Segmented, Typography } from 'antd'
 import './service-cards.css'
@@ -7,7 +8,6 @@ import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import type {
   ApplicationRuntimeWorkload,
-  ApplicationServiceComponent,
   DeliveryApplicationBindingSummary,
   WorkflowRun,
 } from '../types'
@@ -18,7 +18,7 @@ export type ServiceCard = {
   id: string
   name: string
   kind: string
-  service?: ApplicationServiceComponent
+  service?: ApplicationServiceDirectoryItem
   workloads: ApplicationRuntimeWorkload[]
 }
 
@@ -32,7 +32,7 @@ export function ServiceWorkflowCard({
   state = 'ready',
   onSelectStage,
 }: {
-  service?: ApplicationServiceComponent
+  service?: ApplicationServiceDirectoryItem
   environmentId: string
   binding?: DeliveryApplicationBindingSummary
   workloads: ApplicationRuntimeWorkload[]

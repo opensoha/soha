@@ -1,0 +1,28 @@
+{
+  "data": {
+    "environment": {
+      "applicationEnvironmentId": "binding-1",
+      "environmentId": "dev",
+      "requiresApproval": false,
+      "status": "available",
+      "workloads": [
+        {
+          "applicationEnvironmentId": "binding-1",
+          "serviceId": "web-id",
+          "serviceKey": "web",
+          "clusterId": "cluster-1",
+          "namespace": "demo",
+          "workloadKind": "Deployment",
+          "workloadName": "web",
+          "desiredReplicas": 1,
+          "readyReplicas": 1,
+          "updatedReplicas": 1,
+          "availableReplicas": 1,
+          "healthStatus": "healthy"
+        }
+      ]
+    },
+    "observationStatus": "available",
+    "observedAt": "2026-11-22T00:00:00Z"
+  }
+}

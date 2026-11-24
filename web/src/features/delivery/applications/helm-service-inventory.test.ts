@@ -52,8 +52,6 @@ const native: ServiceCard = {
     name: 'Cart',
     serviceKind: 'kubernetes_workload',
     enabled: true,
-    createdAt: 'now',
-    updatedAt: 'now',
   },
   workloads: [nativeWorkload],
 }

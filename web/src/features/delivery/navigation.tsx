@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Breadcrumb, Button, Input, Popover, Select } from 'antd'
 import { ArrowLeftOutlined, CheckOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons'
 import { ManagementState } from '@/components/management-list'
@@ -8,6 +8,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { useI18n } from '@/i18n'
+import { readableQueryData } from '@/utils/query-feedback'
 import { deliveryQueries } from './queries'
 import {
   APPLICATION_SETTINGS_KEYS,
@@ -34,24 +35,22 @@ function useApplicationNavigation() {
     ''
   const workload = workloadMatch?.params.workloadName
   const tab = workload ? 'services' : design ? 'delivery' : search.get('tab') || 'services'
-  const detailQuery = useQuery(
-    deliveryQueries.applications.detail(applicationId, Boolean(applicationId)),
-  )
   return {
     applicationId,
     environmentId,
     workload,
     tab,
     design,
-    application: detailQuery.data?.application,
     search,
   }
 }
 
 export function ApplicationIdentity() {
   const navigate = useNavigate()
-  const { applicationId, application, environmentId, search, design, workload } =
-    useApplicationNavigation()
+  const { applicationId, environmentId, search, design, workload } = useApplicationNavigation()
+  const application = readableQueryData(
+    useQuery(deliveryQueries.applications.record(applicationId)),
+  )
   const { localeCode } = useI18n()
   const english = localeCode === 'en_US'
   const [switching, setSwitching] = useState(false)
@@ -61,9 +60,10 @@ export function ApplicationIdentity() {
   const permissions = usePermissionSnapshot()
   const canBrowse = hasPermission(permissions.data?.data, 'delivery.applications.view')
   const applications = useQuery(deliveryQueries.applications.list(switching && canBrowse))
-  const runtime = useQuery(deliveryQueries.applications.runtime(applicationId, canBrowse))
-  const catalog = useQuery(deliveryQueries.environmentCatalog.list(canBrowse))
-  const environments = runtime.data?.environments ?? []
+  const navigationQuery = useQuery(
+    deliveryQueries.applications.environmentNavigation(applicationId, Boolean(design || workload)),
+  )
+  const environments = readableQueryData(navigationQuery) ?? []
   const selectedEnvironmentId = environmentId || environments[0]?.applicationEnvironmentId
   const userId = useAuthStore((state) => state.user?.userId)
   const visitApplication = usePreferencesStore((state) => state.visitApplication)
@@ -195,10 +195,10 @@ export function ApplicationIdentity() {
             value={selectedEnvironmentId}
             placeholder={english ? 'Select environment' : '选择环境'}
             showSearch={{ optionFilterProp: 'label' }}
-            loading={runtime.isFetching}
+            loading={navigationQuery.isFetching}
             options={environments.map((environment) => ({
               value: environment.applicationEnvironmentId,
-              label: `${environment.environmentName || environment.environmentKey || environment.environmentId}${catalog.data?.find((item) => item.id === environment.environmentId)?.isProduction ? ' PROD' : ''}`,
+              label: `${environment.environmentName || environment.environmentKey || environment.environmentId}${environment.isProduction ? ' PROD' : ''}`,
             }))}
             onChange={(id) => {
               const next = applicationEnvironmentSearch(search, id)
@@ -213,7 +213,11 @@ export function ApplicationIdentity() {
               navigate(`/applications/${encodeURIComponent(applicationId)}?${next}`)
             }}
             notFoundContent={
-              runtime.isError ? (english ? 'Environments unavailable' : '环境加载失败') : undefined
+              navigationQuery.isError
+                ? english
+                  ? 'Environments unavailable'
+                  : '环境加载失败'
+                : undefined
             }
           />
         </>
@@ -227,12 +231,14 @@ export function ApplicationEnvironmentNavigation({
   activeId,
   productionIds,
   clusterName,
+  serviceSummary,
   onCreate,
 }: {
   environments: ApplicationRuntimeEnvironment[]
   activeId: string
   productionIds: string[]
   clusterName?: string
+  serviceSummary?: ReactNode
   onCreate?: () => void
 }) {
   const { applicationId, search } = useApplicationNavigation()
@@ -288,8 +294,12 @@ export function ApplicationEnvironmentNavigation({
           </Button>
         ) : null}
       </nav>
-      {clusterName ? (
-        <span className="soha-application-environments__cluster">{clusterName}</span>
+      {serviceSummary || clusterName ? (
+        <span className="soha-application-environments__cluster">
+          {serviceSummary}
+          {serviceSummary && clusterName ? ' · ' : null}
+          {clusterName}
+        </span>
       ) : null}
     </section>
   )
@@ -308,7 +318,10 @@ export function ApplicationNavigation() {
 }
 
 export function ApplicationBreadcrumb() {
-  const { applicationId, environmentId, tab, design, application } = useApplicationNavigation()
+  const { applicationId, environmentId, tab, design } = useApplicationNavigation()
+  const application = readableQueryData(
+    useQuery(deliveryQueries.applications.record(applicationId)),
+  )
   const { localeCode } = useI18n()
   const english = localeCode === 'en_US'
   const appPath = applicationWorkspacePath(applicationId, 'services', environmentId)

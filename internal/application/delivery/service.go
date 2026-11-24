@@ -34,13 +34,18 @@ type ApplicationReader interface {
 	Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error)
 	Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error)
 	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
+	ListServiceIdentities(context.Context, domainidentity.Principal, string) ([]domainapp.ServiceIdentity, error)
+	GetService(context.Context, domainidentity.Principal, string, string) (domainapp.Service, error)
 	CreateService(context.Context, domainidentity.Principal, string, domainapp.ServiceInput) (domainapp.Service, error)
 	UpdateService(context.Context, domainidentity.Principal, string, string, domainapp.ServiceInput) (domainapp.Service, error)
 }
 
 type CatalogReader interface {
+	ListEnvironmentNavigation(context.Context, domainidentity.Principal, string) ([]domaincatalog.EnvironmentNavigationRow, error)
 	ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error)
+	GetEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.Environment, error)
 	ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error)
+	ListApplicationEnvironmentsByApplication(context.Context, domainidentity.Principal, string) ([]domaincatalog.ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
 	AuthorizeApplicationEnvironmentPermission(context.Context, domainidentity.Principal, string, string) (domaincatalog.ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
@@ -304,7 +309,7 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 			if workloadsErr == nil {
 				workloads, workloadsErr = s.listRuntimeWorkloadsForBinding(ctx, principal, app, runtimeBinding, bundles, tasks, builds, workflows, releases)
 			}
-			if workloadsErr != nil && !errors.Is(workloadsErr, apperrors.ErrClusterUnready) && !errors.Is(workloadsErr, context.DeadlineExceeded) {
+			if workloadsErr != nil && !isRuntimeObservationFailure(workloadsErr) {
 				errs[index] = workloadsErr
 				return
 			}
@@ -341,6 +346,13 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 		return domaindelivery.ApplicationRuntimeDetail{}, err
 	}
 	return detail, nil
+}
+
+func isRuntimeObservationFailure(err error) bool {
+	return errors.Is(err, apperrors.ErrClusterUnready) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, apperrors.ErrAccessDenied) ||
+		errors.Is(err, apperrors.ErrUnauthorized)
 }
 
 func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, principal domainidentity.Principal, applicationID, bindingID, workloadName string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error) {
@@ -2921,7 +2933,9 @@ func (s *Service) loadDeliveryContext(ctx context.Context, principal domainident
 		errs         [7]error
 		group        sync.WaitGroup
 	)
-	group.Go(func() { bindings, errs[0] = s.catalog.ListApplicationEnvironments(ctx, principal) })
+	group.Go(func() {
+		bindings, errs[0] = s.catalog.ListApplicationEnvironmentsByApplication(ctx, principal, applicationID)
+	})
 	group.Go(func() { environments, errs[1] = s.catalog.ListEnvironments(ctx, principal) })
 	group.Go(func() {
 		bundles, errs[2] = s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: applicationID, Limit: 20})
@@ -3180,9 +3194,33 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 	workflows []domainworkflow.Run,
 	releases []domainrelease.Record,
 ) ([]domaindelivery.ApplicationRuntimeWorkload, error) {
+	return s.collectRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases, false)
+}
+
+func (s *Service) collectRuntimeWorkloadsForBinding(
+	ctx context.Context,
+	principal domainidentity.Principal,
+	app domainapp.App,
+	binding domaincatalog.ApplicationEnvironment,
+	bundles []domaindelivery.ReleaseBundle,
+	tasks []domaindelivery.ExecutionTask,
+	builds []domainbuild.Record,
+	workflows []domainworkflow.Run,
+	releases []domainrelease.Record,
+	allowPartial bool,
+) ([]domaindelivery.ApplicationRuntimeWorkload, error) {
+	type namespaceRead struct {
+		items []domainresource.DeploymentView
+		err   error
+	}
+	reads := make(map[[2]string]namespaceRead)
+	var observationErr error
 	workloads := make([]domaindelivery.ApplicationRuntimeWorkload, 0)
 	seen := make(map[string]struct{})
-	imported := s.importedRuntimeWorkloads(ctx, principal, binding)
+	imported, importErr := s.importedRuntimeWorkloads(ctx, principal, binding)
+	if allowPartial {
+		observationErr = importErr
+	}
 	for _, target := range binding.Targets {
 		clusterID := strings.TrimSpace(target.ClusterID)
 		namespace := strings.TrimSpace(target.Namespace)
@@ -3197,22 +3235,25 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 			workloads = append(workloads, imported[target.ID])
 			continue
 		}
-		items, err := s.targets.ListDeployments(ctx, principal, clusterID, namespace)
-		if err != nil {
-			return nil, err
+		key := [2]string{clusterID, namespace}
+		read, cached := reads[key]
+		if !cached {
+			read.items, read.err = s.targets.ListDeployments(ctx, principal, clusterID, namespace)
+			reads[key] = read
+			observationErr = errors.Join(observationErr, read.err)
 		}
-		for _, item := range items {
-			if target.ExecutorKind == "manifest_inventory" {
-				if item.Name != target.WorkloadName {
-					continue
-				}
-			} else if len(binding.ResourceSelector.MatchLabels) > 0 {
-				if !selectorMatchesLabels(binding.ResourceSelector.MatchLabels, item.Labels) {
-					continue
-				}
-			} else if strings.TrimSpace(item.Name) != strings.TrimSpace(target.WorkloadName) {
+		if read.err != nil {
+			if !allowPartial {
+				return nil, read.err
+			}
+			continue
+		}
+		matched := false
+		for _, item := range read.items {
+			if !matchesRuntimeDeployment(binding, target, item, allowPartial) {
 				continue
 			}
+			matched = true
 			key := fmt.Sprintf("%s/%s/%s", clusterID, namespace, item.Name)
 			if _, ok := seen[key]; ok {
 				continue
@@ -3224,7 +3265,7 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 				Namespace:                namespace,
 				WorkloadKind:             "Deployment",
 				WorkloadName:             item.Name,
-				ServiceID:                metadataString(target.Metadata, "serviceId"),
+				ServiceID:                target.ResolvedServiceID(),
 				Labels:                   item.Labels,
 				DesiredReplicas:          item.DesiredReplicas,
 				ReadyReplicas:            item.ReadyReplicas,
@@ -3238,8 +3279,28 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 				LatestRelease:            latestReleaseForBinding(binding, releases),
 			})
 		}
+		if allowPartial && !matched {
+			observationErr = errors.Join(observationErr, apperrors.ErrNotFound)
+		}
 	}
-	return workloads, nil
+	return workloads, observationErr
+}
+
+const runtimeInventoryUID = "runtimeInventoryUid"
+
+func matchesRuntimeDeployment(binding domaincatalog.ApplicationEnvironment, target domaincatalog.ReleaseTarget, item domainresource.DeploymentView, scoped bool) bool {
+	if target.ExecutorKind == "manifest_inventory" {
+		return target.WorkloadName == item.Name &&
+			(!scoped || (item.UID != "" && metadataString(target.Metadata, runtimeInventoryUID) == item.UID))
+	}
+	name := strings.TrimSpace(target.WorkloadName)
+	if scoped && target.WorkloadKind != "" && !strings.EqualFold(target.WorkloadKind, "Deployment") {
+		return false
+	}
+	if len(binding.ResourceSelector.MatchLabels) > 0 && (!scoped || name == "") {
+		return selectorMatchesLabels(binding.ResourceSelector.MatchLabels, item.Labels)
+	}
+	return name == strings.TrimSpace(item.Name)
 }
 
 func matchesBindingTarget(binding domaincatalog.ApplicationEnvironment, clusterID, namespace, workloadName string) bool {

@@ -1,13 +1,13 @@
+import type { ApplicationServiceDirectoryItem } from '@opensoha/contracts/gen/ts/sohaapi'
 import type {
   ApplicationRuntimeWorkload,
-  ApplicationServiceComponent,
   DeliveryApplicationBindingSummary,
   ReleaseTarget,
   WorkflowRun,
 } from '../types'
 
 export function serviceDeliveryKind(
-  service: ApplicationServiceComponent,
+  service: ApplicationServiceDirectoryItem,
   targets: Pick<
     ReleaseTarget,
     'metadata' | 'executorKind' | 'targetKind' | 'workloadKind' | 'helm'
@@ -33,7 +33,7 @@ export function serviceDeliveryKind(
 }
 
 export function serviceWorkflow(
-  service: ApplicationServiceComponent | undefined,
+  service: ApplicationServiceDirectoryItem | undefined,
   environmentId: string,
   binding: DeliveryApplicationBindingSummary | undefined,
   workloads: ApplicationRuntimeWorkload[],

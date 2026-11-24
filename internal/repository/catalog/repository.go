@@ -27,10 +27,11 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+const environmentSelect = `SELECT id, environment_key, name, tier, stage_level, sort_order, is_production, requires_approval, enabled, created_at, updated_at
+	FROM delivery_environments`
+
 func (r *Repository) ListEnvironments(ctx context.Context) ([]domaincatalog.Environment, error) {
-	rows, err := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, environment_key, name, tier, stage_level, sort_order, is_production, requires_approval, enabled, created_at, updated_at
-		FROM delivery_environments
+	rows, err := dbtx.DB(ctx, r.db).Raw(environmentSelect + `
 		ORDER BY sort_order ASC, name ASC
 	`).Rows()
 	if err != nil {
@@ -43,6 +44,52 @@ func (r *Repository) ListEnvironments(ctx context.Context) ([]domaincatalog.Envi
 		item, err := scanEnvironment(rows)
 		if err != nil {
 			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetEnvironment(ctx context.Context, id string) (domaincatalog.Environment, error) {
+	row := dbtx.DB(ctx, r.db).Raw(environmentSelect+" WHERE id = ?", strings.TrimSpace(id)).Row()
+	item, err := scanEnvironment(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domaincatalog.Environment{}, ErrNotFound
+	}
+	return item, err
+}
+
+func (r *Repository) ListEnvironmentNavigation(ctx context.Context, applicationID string) ([]domaincatalog.EnvironmentNavigationRow, error) {
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT ae.id, ae.application_id, COALESCE(a.business_line_id, ''), COALESCE(a.app_group, ''), ae.environment_id,
+			COALESCE(e.environment_key, ae.environment_id), COALESCE(e.name, ae.environment_id),
+			COALESCE(e.is_production, false), COALESCE(e.requires_approval, false),
+			COALESCE(ae.cluster_id, ''), COALESCE(ae.namespace, ''), ae.release_policy
+		FROM application_environments ae
+		JOIN applications a ON a.id = ae.application_id
+		LEFT JOIN delivery_environments e ON e.id = ae.environment_id
+		WHERE ae.application_id = ?
+		ORDER BY ae.created_at DESC, ae.id
+	`, applicationID).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query environment navigation: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]domaincatalog.EnvironmentNavigationRow, 0)
+	for rows.Next() {
+		var item domaincatalog.EnvironmentNavigationRow
+		var policy []byte
+		b, e := &item.Binding, &item.Environment
+		if err := rows.Scan(&b.ID, &b.ApplicationID, &b.BusinessLineID, &b.ApplicationGroup,
+			&b.EnvironmentID, &b.EnvironmentKey, &e.Name, &e.IsProduction, &e.RequiresApproval,
+			&b.ClusterID, &b.Namespace, &policy); err != nil {
+			return nil, fmt.Errorf("scan environment navigation: %w", err)
+		}
+		e.ID, e.Key = b.EnvironmentID, b.EnvironmentKey
+		if len(policy) > 0 {
+			if err := json.Unmarshal(policy, &b.ReleasePolicy); err != nil {
+				return nil, fmt.Errorf("decode environment release policy: %w", err)
+			}
 		}
 		items = append(items, item)
 	}
@@ -451,10 +498,10 @@ func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, input
 	return nil
 }
 
-func scanEnvironment(rows *sql.Rows) (domaincatalog.Environment, error) {
+func scanEnvironment(row interface{ Scan(...any) error }) (domaincatalog.Environment, error) {
 	var item domaincatalog.Environment
 	var tier sql.NullString
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &tier, &item.StageLevel, &item.SortOrder, &item.IsProduction, &item.RequiresApproval, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &tier, &item.StageLevel, &item.SortOrder, &item.IsProduction, &item.RequiresApproval, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincatalog.Environment{}, fmt.Errorf("scan environment: %w", err)
 	}
 	item.Tier = tier.String

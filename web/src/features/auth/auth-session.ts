@@ -43,6 +43,7 @@ export function withAuthCookieRequest<T>(
     method.toUpperCase() !== 'POST' ||
     !(
       ['/auth/login', '/auth/logout', '/auth/refresh', '/auth/oidc/exchange'].includes(pathname) ||
+      pathname === '/auth/refresh/application-workbench' ||
       /^\/auth\/desktop\/attempts\/[^/]+\/exchange$/.test(pathname) ||
       /^\/auth\/browser-handoffs\/[^/]+\/complete$/.test(pathname)
     )

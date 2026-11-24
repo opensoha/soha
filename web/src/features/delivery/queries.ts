@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
+import { takeWorkbenchEntryRead } from '@/features/auth/workbench-startup-reads'
 import { deliveryApi } from './api'
 import {
   deliveryKeys,
@@ -127,6 +128,16 @@ export const deliveryQueries = {
         refetchInterval: (query) =>
           query.state.status === 'error' || query.state.data?.status === 'confirmed' ? false : 2000,
       }),
+    referenceImpact: (id: string, cursor: string) =>
+      queryOptions({
+        queryKey: deliveryKeys.plans.referenceImpact(id, cursor),
+        queryFn: () => deliveryApi.plans.referenceImpact(id, cursor),
+        enabled: hasValue(id),
+        staleTime: 0,
+        gcTime: 0,
+        retry: false,
+        refetchOnMount: 'always',
+      }),
   },
   deliveryWorkflows: {
     list: (enabled = true) =>
@@ -231,6 +242,38 @@ export const deliveryQueries = {
         enabled: enabled && hasValue(applicationId),
       })
     },
+    record: (id: string) => {
+      const applicationId = normalizeDeliveryId(id)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.record(applicationId),
+        queryFn: ({ signal }) =>
+          takeWorkbenchEntryRead(applicationId, 'application', signal) ??
+          deliveryApi.applications.get(applicationId, signal),
+        enabled: hasValue(applicationId),
+      })
+    },
+    environmentNavigation: (id: string, enabled = true) => {
+      const applicationId = normalizeDeliveryId(id)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.environmentNavigation(applicationId),
+        queryFn: ({ signal }) =>
+          takeWorkbenchEntryRead(applicationId, 'environments', signal) ??
+          deliveryApi.applications.environmentNavigation(applicationId, signal),
+        enabled: enabled && hasValue(applicationId),
+      })
+    },
+    environmentRuntimeSummary: (id: string, bindingId: string, enabled = true) => {
+      const applicationId = normalizeDeliveryId(id)
+      const environmentId = normalizeDeliveryId(bindingId)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.environmentRuntimeSummary(applicationId, environmentId),
+        queryFn: ({ signal }) =>
+          deliveryApi.applications.environmentRuntimeSummary(applicationId, environmentId, signal),
+        enabled: enabled && hasValue(applicationId) && hasValue(environmentId),
+        retry: false,
+        retryOnMount: false,
+      })
+    },
     runtime: (id: string, enabled = true, refetchInterval: number | false = false) => {
       const applicationId = normalizeDeliveryId(id)
       return queryOptions({
@@ -240,11 +283,32 @@ export const deliveryQueries = {
         enabled: enabled && hasValue(applicationId),
       })
     },
+    serviceDirectory: (id: string, enabled = true) => {
+      const applicationId = normalizeDeliveryId(id)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.serviceDirectory(applicationId),
+        queryFn: ({ signal }) =>
+          takeWorkbenchEntryRead(applicationId, 'services', signal) ??
+          deliveryApi.applications.serviceDirectory(applicationId, signal),
+        enabled: enabled && hasValue(applicationId),
+        retryOnMount: false,
+      })
+    },
+    service: (id: string, serviceId: string, enabled = true) => {
+      const applicationId = normalizeDeliveryId(id)
+      const selectedId = normalizeDeliveryId(serviceId)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.service(applicationId, selectedId),
+        queryFn: ({ signal }) =>
+          deliveryApi.applications.service(applicationId, selectedId, signal),
+        enabled: enabled && hasValue(applicationId) && hasValue(selectedId),
+      })
+    },
     services: (id: string, enabled = true) => {
       const applicationId = normalizeDeliveryId(id)
       return queryOptions({
         queryKey: deliveryKeys.applications.services(applicationId),
-        queryFn: () => deliveryApi.applications.services(applicationId),
+        queryFn: ({ signal }) => deliveryApi.applications.services(applicationId, signal),
         enabled: enabled && hasValue(applicationId),
       })
     },
@@ -539,6 +603,25 @@ export const deliveryQueries = {
     },
   },
   workloads: {
+    servicePods: (app: string, binding: string, service: string, enabled: boolean) => {
+      const applicationId = normalizeDeliveryId(app)
+      const bindingId = normalizeDeliveryId(binding)
+      const serviceId = normalizeDeliveryId(service)
+      return queryOptions({
+        queryKey: deliveryKeys.workloads.servicePods(applicationId, bindingId, serviceId),
+        queryFn: ({ signal }) =>
+          deliveryApi.workloads.servicePods(applicationId, bindingId, serviceId, signal),
+        enabled: enabled && hasValue(applicationId) && hasValue(bindingId) && hasValue(serviceId),
+        retry: false,
+        retryOnMount: false,
+        refetchInterval: ({ state }) =>
+          state.status === 'success' &&
+          (state.data?.status === 'available' || state.data?.status === 'partial')
+            ? 15_000
+            : false,
+        refetchIntervalInBackground: false,
+      })
+    },
     runtime: (
       ref: DeliveryWorkloadRef,
       enabled = true,

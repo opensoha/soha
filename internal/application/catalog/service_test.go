@@ -28,6 +28,7 @@ type stubCatalogRepository struct {
 	lastBuildTemplate       domaincatalog.BuildTemplateInput
 	applicationEnvironments map[string]domaincatalog.ApplicationEnvironment
 	environments            []domaincatalog.Environment
+	environmentReadID       string
 	workflowTemplates       map[string]domaincatalog.WorkflowTemplate
 }
 
@@ -52,6 +53,35 @@ func (s *stubCatalogRepository) ListEnvironments(context.Context) ([]domaincatal
 	return s.environments, nil
 }
 
+func (s *stubCatalogRepository) GetEnvironment(_ context.Context, id string) (domaincatalog.Environment, error) {
+	s.environmentReadID = id
+	for _, item := range s.environments {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return domaincatalog.Environment{}, apperrors.ErrNotFound
+}
+
+func TestGetEnvironmentUsesScopedReadAndCatalogPermission(t *testing.T) {
+	repo := &stubCatalogRepository{environments: []domaincatalog.Environment{
+		{ID: "env-dev", Name: "Development"},
+		{ID: "env-prod", Name: "Production", RequiresApproval: true},
+	}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvView), nil, nil)
+	if _, err := service.GetEnvironment(t.Context(), domainidentity.Principal{UserID: "user-1", Roles: []string{"unknown"}}, "env-prod"); !errors.Is(err, apperrors.ErrAccessDenied) || repo.environmentReadID != "" {
+		t.Fatalf("missing catalog permission reached the scoped read: %v, query scope %q", err, repo.environmentReadID)
+	}
+	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}
+	item, err := service.GetEnvironment(t.Context(), principal, "env-prod")
+	if err != nil || item.Name != "Production" || !item.RequiresApproval || repo.environmentReadID != "env-prod" {
+		t.Fatalf("read requested environment = %+v, %v, query scope %q", item, err, repo.environmentReadID)
+	}
+	if _, err := service.GetEnvironment(t.Context(), principal, "missing"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("missing environment error = %v", err)
+	}
+}
+
 func (s *stubCatalogRepository) ListApplicationEnvironments(context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
 	if len(s.applicationEnvironments) == 0 {
 		return nil, nil
@@ -59,6 +89,18 @@ func (s *stubCatalogRepository) ListApplicationEnvironments(context.Context) ([]
 	items := make([]domaincatalog.ApplicationEnvironment, 0, len(s.applicationEnvironments))
 	for _, item := range s.applicationEnvironments {
 		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (s *stubCatalogRepository) ListEnvironmentNavigation(ctx context.Context, appID string) ([]domaincatalog.EnvironmentNavigationRow, error) {
+	bindings, err := s.ListApplicationEnvironmentsByApplication(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domaincatalog.EnvironmentNavigationRow, 0, len(bindings))
+	for _, binding := range bindings {
+		items = append(items, domaincatalog.EnvironmentNavigationRow{Binding: binding})
 	}
 	return items, nil
 }
@@ -564,6 +606,54 @@ func TestListApplicationEnvironmentsFiltersOutsideScopeGrant(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ApplicationID != "app-1" {
 		t.Fatalf("ListApplicationEnvironments() = %#v, want only app-1", got)
+	}
+}
+
+func TestListEnvironmentNavigationFiltersOutsideScopeGrant(t *testing.T) {
+	items := map[string]domaincatalog.ApplicationEnvironment{
+		"binding-1": {
+			ID:             "binding-1",
+			ApplicationID:  "app-1",
+			BusinessLineID: "bl-retail",
+			EnvironmentID:  "env-dev",
+			EnvironmentKey: "dev",
+		},
+		"binding-2": {
+			ID:             "binding-2",
+			ApplicationID:  "app-1",
+			BusinessLineID: "bl-retail",
+			EnvironmentID:  "env-prod",
+			EnvironmentKey: "prod",
+		},
+	}
+	repo := &stubCatalogRepository{applicationEnvironments: items}
+	authorizer := accessServiceForCatalogTests([]domainscopegrant.Record{{
+		ID:             "grant-1",
+		SubjectType:    "user",
+		SubjectID:      "user-1",
+		BusinessLineID: "bl-retail",
+		EnvironmentIDs: []string{"env-dev"},
+		ApplicationIDs: []string{"app-1"},
+		Role:           "developer",
+		Effect:         "allow",
+		Enabled:        true,
+	}}, []domaincatalog.Environment{{ID: "env-dev", Key: "dev"}, {ID: "env-prod", Key: "prod"}}, []domaincatalog.ApplicationEnvironment{items["binding-1"], items["binding-2"]})
+	service := New(repo, authorizer, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvView), nil, nil)
+
+	principal := domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"admin"},
+	}
+	got, err := service.ListEnvironmentNavigation(context.Background(), principal, "app-1")
+	if err != nil {
+		t.Fatalf("ListEnvironmentNavigation() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Binding.ID != "binding-1" {
+		t.Fatalf("ListEnvironmentNavigation() = %#v, want only binding-1", got)
+	}
+	bindings, err := service.ListApplicationEnvironmentsByApplication(context.Background(), principal, "app-1")
+	if err != nil || len(bindings) != 1 || bindings[0].ID != "binding-1" {
+		t.Fatalf("ListApplicationEnvironmentsByApplication() = %#v, %v, want only binding-1", bindings, err)
 	}
 }
 

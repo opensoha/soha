@@ -1,0 +1,33 @@
+{
+  "data": {
+    "status": "partial",
+    "reason": "ownership_unverified",
+    "items": [
+      {
+        "clusterId": "demo",
+        "targetId": "target-1",
+        "workloadKind": "Deployment",
+        "workloadName": "api",
+        "pod": {
+          "uid": "pod-uid-1",
+          "name": "api-1",
+          "namespace": "apps",
+          "phase": "Running",
+          "readyContainers": "0/1",
+          "restarts": 2,
+          "ageSeconds": 30,
+          "containerStatuses": [
+            {
+              "name": "api",
+              "kind": "container",
+              "ready": false,
+              "state": "waiting",
+              "lastTerminationReason": "Error",
+              "lastTerminationExitCode": 1
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

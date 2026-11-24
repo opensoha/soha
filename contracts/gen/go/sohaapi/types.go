@@ -805,6 +805,42 @@ func (e ApplicationDeliveryActionKind) Valid() bool {
 	}
 }
 
+// Defines values for ApplicationEnvironmentRuntimeSummaryObservationStatus.
+const (
+	ApplicationEnvironmentRuntimeSummaryObservationStatusAvailable        ApplicationEnvironmentRuntimeSummaryObservationStatus = "available"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusClusterUnready   ApplicationEnvironmentRuntimeSummaryObservationStatus = "cluster_unready"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusForbidden        ApplicationEnvironmentRuntimeSummaryObservationStatus = "forbidden"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusIdentityMismatch ApplicationEnvironmentRuntimeSummaryObservationStatus = "identity_mismatch"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusPartial          ApplicationEnvironmentRuntimeSummaryObservationStatus = "partial"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusTimeout          ApplicationEnvironmentRuntimeSummaryObservationStatus = "timeout"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusUnavailable      ApplicationEnvironmentRuntimeSummaryObservationStatus = "unavailable"
+	ApplicationEnvironmentRuntimeSummaryObservationStatusUnconfigured     ApplicationEnvironmentRuntimeSummaryObservationStatus = "unconfigured"
+)
+
+// Valid indicates whether the value is a known member of the ApplicationEnvironmentRuntimeSummaryObservationStatus enum.
+func (e ApplicationEnvironmentRuntimeSummaryObservationStatus) Valid() bool {
+	switch e {
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusAvailable:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusClusterUnready:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusForbidden:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusIdentityMismatch:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusPartial:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusTimeout:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusUnavailable:
+		return true
+	case ApplicationEnvironmentRuntimeSummaryObservationStatusUnconfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApplicationRuntimeEnvironmentStatus.
 const (
 	ApplicationRuntimeEnvironmentStatusAvailable   ApplicationRuntimeEnvironmentStatus = "available"
@@ -877,6 +913,30 @@ func (e ApplicationServiceServiceKind) Valid() bool {
 	}
 }
 
+// Defines values for ApplicationServiceDirectoryItemServiceKind.
+const (
+	ApplicationServiceDirectoryItemServiceKindExternalService    ApplicationServiceDirectoryItemServiceKind = "external_service"
+	ApplicationServiceDirectoryItemServiceKindHelmRelease        ApplicationServiceDirectoryItemServiceKind = "helm_release"
+	ApplicationServiceDirectoryItemServiceKindJob                ApplicationServiceDirectoryItemServiceKind = "job"
+	ApplicationServiceDirectoryItemServiceKindKubernetesWorkload ApplicationServiceDirectoryItemServiceKind = "kubernetes_workload"
+)
+
+// Valid indicates whether the value is a known member of the ApplicationServiceDirectoryItemServiceKind enum.
+func (e ApplicationServiceDirectoryItemServiceKind) Valid() bool {
+	switch e {
+	case ApplicationServiceDirectoryItemServiceKindExternalService:
+		return true
+	case ApplicationServiceDirectoryItemServiceKindHelmRelease:
+		return true
+	case ApplicationServiceDirectoryItemServiceKindJob:
+		return true
+	case ApplicationServiceDirectoryItemServiceKindKubernetesWorkload:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApplicationServiceInputServiceKind.
 const (
 	ApplicationServiceInputServiceKindExternalService    ApplicationServiceInputServiceKind = "external_service"
@@ -895,6 +955,33 @@ func (e ApplicationServiceInputServiceKind) Valid() bool {
 	case ApplicationServiceInputServiceKindJob:
 		return true
 	case ApplicationServiceInputServiceKindKubernetesWorkload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApplicationServicePodsStatus.
+const (
+	ApplicationServicePodsStatusAvailable    ApplicationServicePodsStatus = "available"
+	ApplicationServicePodsStatusPartial      ApplicationServicePodsStatus = "partial"
+	ApplicationServicePodsStatusRelationOnly ApplicationServicePodsStatus = "relation_only"
+	ApplicationServicePodsStatusUnavailable  ApplicationServicePodsStatus = "unavailable"
+	ApplicationServicePodsStatusUnconfigured ApplicationServicePodsStatus = "unconfigured"
+)
+
+// Valid indicates whether the value is a known member of the ApplicationServicePodsStatus enum.
+func (e ApplicationServicePodsStatus) Valid() bool {
+	switch e {
+	case ApplicationServicePodsStatusAvailable:
+		return true
+	case ApplicationServicePodsStatusPartial:
+		return true
+	case ApplicationServicePodsStatusRelationOnly:
+		return true
+	case ApplicationServicePodsStatusUnavailable:
+		return true
+	case ApplicationServicePodsStatusUnconfigured:
 		return true
 	default:
 		return false
@@ -16296,19 +16383,19 @@ func (e ListApplicationEnvironmentTargetCandidatesParamsWorkloadKind) Valid() bo
 
 // Defines values for ExecuteKubernetesWorkloadActionConditionalParamsKind.
 const (
-	ExecuteKubernetesWorkloadActionConditionalParamsKindDaemonSet   ExecuteKubernetesWorkloadActionConditionalParamsKind = "DaemonSet"
-	ExecuteKubernetesWorkloadActionConditionalParamsKindDeployment  ExecuteKubernetesWorkloadActionConditionalParamsKind = "Deployment"
-	ExecuteKubernetesWorkloadActionConditionalParamsKindStatefulSet ExecuteKubernetesWorkloadActionConditionalParamsKind = "StatefulSet"
+	DaemonSet   ExecuteKubernetesWorkloadActionConditionalParamsKind = "DaemonSet"
+	Deployment  ExecuteKubernetesWorkloadActionConditionalParamsKind = "Deployment"
+	StatefulSet ExecuteKubernetesWorkloadActionConditionalParamsKind = "StatefulSet"
 )
 
 // Valid indicates whether the value is a known member of the ExecuteKubernetesWorkloadActionConditionalParamsKind enum.
 func (e ExecuteKubernetesWorkloadActionConditionalParamsKind) Valid() bool {
 	switch e {
-	case ExecuteKubernetesWorkloadActionConditionalParamsKindDaemonSet:
+	case DaemonSet:
 		return true
-	case ExecuteKubernetesWorkloadActionConditionalParamsKindDeployment:
+	case Deployment:
 		return true
-	case ExecuteKubernetesWorkloadActionConditionalParamsKindStatefulSet:
+	case StatefulSet:
 		return true
 	default:
 		return false
@@ -18089,6 +18176,39 @@ type ApplicationEnvironmentListEnvelope struct {
 	Items []ApplicationEnvironment `json:"items,omitempty"`
 }
 
+// ApplicationEnvironmentNavigation defines model for ApplicationEnvironmentNavigation.
+type ApplicationEnvironmentNavigation struct {
+	ActionKind               string `json:"actionKind,omitempty"`
+	ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
+	ClusterID                string `json:"clusterId,omitempty"`
+	EnvironmentID            string `json:"environmentId"`
+	EnvironmentKey           string `json:"environmentKey"`
+	EnvironmentName          string `json:"environmentName"`
+	IsProduction             bool   `json:"isProduction"`
+	Namespace                string `json:"namespace,omitempty"`
+	RequiresApproval         bool   `json:"requiresApproval"`
+}
+
+// ApplicationEnvironmentNavigationEnvelope defines model for ApplicationEnvironmentNavigationEnvelope.
+type ApplicationEnvironmentNavigationEnvelope struct {
+	Data []ApplicationEnvironmentNavigation `json:"data"`
+}
+
+// ApplicationEnvironmentRuntimeSummary defines model for ApplicationEnvironmentRuntimeSummary.
+type ApplicationEnvironmentRuntimeSummary struct {
+	Environment       ApplicationRuntimeEnvironment                         `json:"environment"`
+	ObservationStatus ApplicationEnvironmentRuntimeSummaryObservationStatus `json:"observationStatus"`
+	ObservedAt        time.Time                                             `json:"observedAt"`
+}
+
+// ApplicationEnvironmentRuntimeSummaryObservationStatus defines model for ApplicationEnvironmentRuntimeSummary.ObservationStatus.
+type ApplicationEnvironmentRuntimeSummaryObservationStatus string
+
+// ApplicationEnvironmentRuntimeSummaryEnvelope defines model for ApplicationEnvironmentRuntimeSummaryEnvelope.
+type ApplicationEnvironmentRuntimeSummaryEnvelope struct {
+	Data ApplicationEnvironmentRuntimeSummary `json:"data"`
+}
+
 // ApplicationInput defines model for ApplicationInput.
 type ApplicationInput struct {
 	BuildContextDir string             `json:"buildContextDir,omitempty"`
@@ -18161,6 +18281,7 @@ type ApplicationRuntimeWorkload struct {
 	BuildSource              *BuildSource      `json:"buildSource,omitempty"`
 	ClusterID                string            `json:"clusterId"`
 	DesiredReplicas          int               `json:"desiredReplicas"`
+	HealthStatus             string            `json:"healthStatus,omitempty"`
 	Labels                   map[string]string `json:"labels,omitempty"`
 	LatestBuild              *BuildRecord      `json:"latestBuild,omitempty"`
 	LatestBundle             *ReleaseBundle    `json:"latestBundle,omitempty"`
@@ -18170,6 +18291,8 @@ type ApplicationRuntimeWorkload struct {
 	Namespace                string            `json:"namespace"`
 	ReadyReplicas            int               `json:"readyReplicas"`
 	Selector                 map[string]string `json:"selector,omitempty"`
+	ServiceID                string            `json:"serviceId,omitempty"`
+	ServiceKey               string            `json:"serviceKey,omitempty"`
 
 	// Source Safe source identity captured from an authorized live read. No YAML, spec values, annotations or status are persisted here. For native workloads specDigest covers configuration and ownership metadata excluding status/resourceVersion. For CRs it fences the public UID, generation and owner references without hashing secret content; metadata-only edits are outside that fence. CRs without a positive generation are rejected. UID identifies recreation.
 	Source          *KubernetesImportSource                `json:"source,omitempty"`
@@ -18243,6 +18366,24 @@ type ApplicationServiceContainerInput struct {
 	RuntimePorts       []int          `json:"runtimePorts,omitempty"`
 }
 
+// ApplicationServiceDirectoryEnvelope defines model for ApplicationServiceDirectoryEnvelope.
+type ApplicationServiceDirectoryEnvelope struct {
+	Data []ApplicationServiceDirectoryItem `json:"data"`
+}
+
+// ApplicationServiceDirectoryItem defines model for ApplicationServiceDirectoryItem.
+type ApplicationServiceDirectoryItem struct {
+	ApplicationID string                                     `json:"applicationId"`
+	Enabled       bool                                       `json:"enabled"`
+	ID            string                                     `json:"id"`
+	Key           string                                     `json:"key"`
+	Name          string                                     `json:"name"`
+	ServiceKind   ApplicationServiceDirectoryItemServiceKind `json:"serviceKind"`
+}
+
+// ApplicationServiceDirectoryItemServiceKind defines model for ApplicationServiceDirectoryItem.ServiceKind.
+type ApplicationServiceDirectoryItemServiceKind string
+
 // ApplicationServiceEnvelope defines model for ApplicationServiceEnvelope.
 type ApplicationServiceEnvelope struct {
 	Data ApplicationService `json:"data"`
@@ -18279,6 +18420,82 @@ type ApplicationServiceListEnvelope struct {
 	// Items Legacy alias of data; both arrays contain the same authorized rows.
 	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Items []ApplicationService `json:"items,omitempty"`
+}
+
+// ApplicationServicePod defines model for ApplicationServicePod.
+type ApplicationServicePod struct {
+	ClusterID string `json:"clusterId"`
+
+	// Pod Current Pod status with verified immutable UID.
+	Pod struct {
+		AgeSeconds     int64    `json:"ageSeconds"`
+		AllowedActions []string `json:"allowedActions,omitempty"`
+
+		// ContainerStatuses Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+		ContainerStatuses      []KubernetesPodContainerStatus `json:"containerStatuses,omitempty"`
+		CPU                    string                         `json:"cpu,omitempty"`
+		CreatedAt              string                         `json:"createdAt,omitempty"`
+		Labels                 *KubernetesStringMap           `json:"labels,omitempty"`
+		Limits                 *KubernetesResourceQuantity    `json:"limits,omitempty"`
+		Memory                 string                         `json:"memory,omitempty"`
+		Name                   string                         `json:"name"`
+		Namespace              string                         `json:"namespace"`
+		NodeName               string                         `json:"nodeName,omitempty"`
+		PersistentVolumeClaims []string                       `json:"persistentVolumeClaims,omitempty"`
+		Phase                  string                         `json:"phase"`
+		PodIP                  string                         `json:"podIp,omitempty"`
+
+		// QosClass Kubernetes status.qosClass, omitted when not reported.
+		QosClass        string                      `json:"qosClass,omitempty"`
+		ReadyContainers string                      `json:"readyContainers"`
+		Requests        *KubernetesResourceQuantity `json:"requests,omitempty"`
+		Restarts        int32                       `json:"restarts"`
+		UID             string                      `json:"uid"`
+	} `json:"pod"`
+	TargetID     string `json:"targetId,omitempty"`
+	WorkloadKind string `json:"workloadKind"`
+	WorkloadName string `json:"workloadName"`
+}
+
+// ApplicationServicePods defines model for ApplicationServicePods.
+type ApplicationServicePods struct {
+	Items []ApplicationServicePod `json:"items"`
+
+	// Reason Stable reason code for an incomplete observation or unverified ownership.
+	Reason string                       `json:"reason,omitempty"`
+	Status ApplicationServicePodsStatus `json:"status"`
+}
+
+// ApplicationServicePodsStatus defines model for ApplicationServicePods.Status.
+type ApplicationServicePodsStatus string
+
+// ApplicationServicePodsEnvelope defines model for ApplicationServicePodsEnvelope.
+type ApplicationServicePodsEnvelope struct {
+	Data ApplicationServicePods `json:"data"`
+}
+
+// ApplicationWorkbenchEntry defines model for ApplicationWorkbenchEntry.
+type ApplicationWorkbenchEntry struct {
+	Application  Application                        `json:"application"`
+	Environments []ApplicationEnvironmentNavigation `json:"environments"`
+	Services     []ApplicationServiceDirectoryItem  `json:"services"`
+}
+
+// ApplicationWorkbenchRefreshEnvelope defines model for ApplicationWorkbenchRefreshEnvelope.
+type ApplicationWorkbenchRefreshEnvelope struct {
+	Data ApplicationWorkbenchRefreshResult `json:"data"`
+}
+
+// ApplicationWorkbenchRefreshRequest defines model for ApplicationWorkbenchRefreshRequest.
+type ApplicationWorkbenchRefreshRequest struct {
+	ApplicationID string `json:"applicationId"`
+}
+
+// ApplicationWorkbenchRefreshResult defines model for ApplicationWorkbenchRefreshResult.
+type ApplicationWorkbenchRefreshResult struct {
+	Entry              *ApplicationWorkbenchEntry `json:"entry,omitempty"`
+	PermissionSnapshot *PermissionSnapshot        `json:"permissionSnapshot,omitempty"`
+	Session            AuthResult                 `json:"session"`
 }
 
 // ApplicationWorkflowInput defines model for ApplicationWorkflowInput.
@@ -27144,12 +27361,18 @@ type KubernetesPodArgvInput struct {
 // KubernetesPodContainerStatus defines model for KubernetesPodContainerStatus.
 type KubernetesPodContainerStatus struct {
 	// ExitCode Present only when the current container state is terminated, including a successful zero exit code.
-	ExitCode *int32                            `json:"exitCode,omitempty"`
-	Kind     KubernetesPodContainerStatusKind  `json:"kind"`
-	Name     string                            `json:"name"`
-	Ready    bool                              `json:"ready"`
-	Reason   string                            `json:"reason,omitempty"`
-	State    KubernetesPodContainerStatusState `json:"state"`
+	ExitCode *int32                           `json:"exitCode,omitempty"`
+	Kind     KubernetesPodContainerStatusKind `json:"kind"`
+
+	// LastTerminationExitCode Exit code of the previous terminated container instance, including zero.
+	LastTerminationExitCode *int32 `json:"lastTerminationExitCode,omitempty"`
+
+	// LastTerminationReason Reason reported for the previous terminated container instance.
+	LastTerminationReason string                            `json:"lastTerminationReason,omitempty"`
+	Name                  string                            `json:"name"`
+	Ready                 bool                              `json:"ready"`
+	Reason                string                            `json:"reason,omitempty"`
+	State                 KubernetesPodContainerStatusState `json:"state"`
 }
 
 // KubernetesPodContainerStatusKind defines model for KubernetesPodContainerStatus.Kind.
@@ -34323,6 +34546,13 @@ type PermissionRiskLevel string
 // PermissionScopeKind defines model for PermissionScopeKind.
 type PermissionScopeKind string
 
+// PermissionSnapshot defines model for PermissionSnapshot.
+type PermissionSnapshot struct {
+	PermissionKeys []string      `json:"permissionKeys"`
+	VisibleMenuIDs []string      `json:"visibleMenuIds"`
+	VisibleMenus   []VisibleMenu `json:"visibleMenus"`
+}
+
 // PermissionStatus defines model for PermissionStatus.
 type PermissionStatus string
 
@@ -38571,6 +38801,19 @@ type VirtualizationWorkerPoolSpecOsProfile string
 // VirtualizationWorkerPoolSpecOwner defines model for VirtualizationWorkerPoolSpec.Owner.
 type VirtualizationWorkerPoolSpecOwner string
 
+// VisibleMenu defines model for VisibleMenu.
+type VisibleMenu struct {
+	Enabled   bool   `json:"enabled"`
+	IconKey   string `json:"iconKey"`
+	ID        string `json:"id"`
+	LabelEn   string `json:"labelEn"`
+	LabelZh   string `json:"labelZh"`
+	ParentID  string `json:"parentId,omitempty"`
+	Path      string `json:"path"`
+	Section   string `json:"section"`
+	SortOrder int    `json:"sortOrder"`
+}
+
 // WorkbenchAdapter defines model for WorkbenchAdapter.
 type WorkbenchAdapter struct {
 	Category                string                 `json:"category,omitempty"`
@@ -42188,6 +42431,11 @@ type GetKubernetesPodLogsParams struct {
 
 // GetClusterPodMetricsParams defines parameters for GetClusterPodMetrics.
 type GetClusterPodMetricsParams struct {
+	// ExpectedUID Restrict samples to the reviewed Pod UID. A replaced Pod returns conflict. Samples without verified UID evidence are omitted.
+	ExpectedUID string `form:"expectedUid,omitempty" json:"expectedUid,omitempty"`
+
+	// Container Optional container filter for UID-scoped CPU and memory. Requires expectedUid.
+	Container    string `form:"container,omitempty" json:"container,omitempty"`
 	Namespace    string `form:"namespace,omitempty" json:"namespace,omitempty"`
 	RangeMinutes int    `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
 
@@ -43778,6 +44026,9 @@ type ChangeCurrentUserPasswordJSONRequestBody = ChangePasswordRequest
 
 // RefreshAuthSessionJSONRequestBody defines body for RefreshAuthSession for application/json ContentType.
 type RefreshAuthSessionJSONRequestBody = RefreshRequest
+
+// RefreshApplicationWorkbenchJSONRequestBody defines body for RefreshApplicationWorkbench for application/json ContentType.
+type RefreshApplicationWorkbenchJSONRequestBody = ApplicationWorkbenchRefreshRequest
 
 // IssueStreamTicketJSONRequestBody defines body for IssueStreamTicket for application/json ContentType.
 type IssueStreamTicketJSONRequestBody = StreamTicketRequest

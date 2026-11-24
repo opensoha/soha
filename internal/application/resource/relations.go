@@ -29,6 +29,10 @@ type relationAgent interface {
 }
 
 func (r *Runtime) GetApplicationResourceRelations(ctx context.Context, p di.Principal, source dr.ResourceSourceSnapshot, config cr.RelationConfig) (cr.ResourceRelationsView, error) {
+	return r.getApplicationResourceRelations(ctx, p, source, config, nil, false)
+}
+
+func (r *Runtime) getApplicationResourceRelations(ctx context.Context, p di.Principal, source dr.ResourceSourceSnapshot, config cr.RelationConfig, queries []cr.RelationQuery, controllerOnly bool) (cr.ResourceRelationsView, error) {
 	if config.Version == "" {
 		config = cr.RelationConfig{Version: "v1", RootUID: source.Resource.UID, Sources: []cr.RelationSource{}, Rules: []cr.RelationRule{}}
 	}
@@ -38,17 +42,27 @@ func (r *Runtime) GetApplicationResourceRelations(ctx context.Context, p di.Prin
 	if config.RootUID != source.Resource.UID {
 		return cr.ResourceRelationsView{}, fmt.Errorf("%w: relation rules belong to a replaced root", apperrors.ErrConflict)
 	}
+	if queries == nil {
+		queries = relationQueries(source, config)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := r.verifyRelationRoot(ctx, p, source); err != nil {
+	rootCtx := ctx
+	if controllerOnly {
+		rootCtx = graphResourceName(ctx, source.Resource.Name)
+	}
+	if err := r.verifyRelationRoot(rootCtx, p, source); err != nil {
 		return cr.ResourceRelationsView{}, err
 	}
-	queries := relationQueries(source, config)
 	allowed := cr.RelationSnapshotRequest{}
 	snapshot := cr.RelationSnapshot{Version: cr.RelationSnapshotFeature, Sources: []cr.RelationSourceResult{}}
 	var connection dc.Connection
 	for _, query := range queries {
-		current, err := r.authorizeRelationQuery(ctx, p, source.Resource.ClusterID, query)
+		queryCtx := ctx
+		if controllerOnly {
+			queryCtx = deliveryRelationPolicyContext(ctx, query)
+		}
+		current, err := r.authorizeRelationQuery(queryCtx, p, source.Resource.ClusterID, query)
 		if err != nil {
 			snapshot.Sources = append(snapshot.Sources, relationFailure(query.ID, "denied", "source_permission"))
 			continue
@@ -75,12 +89,27 @@ func (r *Runtime) GetApplicationResourceRelations(ctx context.Context, p di.Prin
 			snapshot.Sources = append(snapshot.Sources, sanitizeRelationSnapshot(read, allowed, source.Resource.ClusterID).Sources...)
 		}
 	}
-	if err := r.verifyRelationRoot(ctx, p, source); err != nil {
+	if err := r.verifyRelationRoot(rootCtx, p, source); err != nil {
 		return cr.ResourceRelationsView{}, err
+	}
+	if controllerOnly {
+		for i := range snapshot.Sources {
+			for j := range snapshot.Sources[i].Objects {
+				object := &snapshot.Sources[i].Objects[j]
+				object.Owners = slices.DeleteFunc(slices.Clone(object.Owners), func(owner cr.RelationOwner) bool { return !owner.Controller })
+			}
+		}
 	}
 	view := dr.BuildResourceRelations(source.Resource, config, snapshot)
 	_ = r.Workloads.recordAudit(ctx, p, source.Resource.ClusterID, source.Resource.Namespace, source.Resource.Kind, source.Resource.Name, "view", "success", "viewed linked resource metadata relationships")
 	return view, nil
+}
+
+func deliveryRelationPolicyContext(ctx context.Context, query cr.RelationQuery) context.Context {
+	if query.Name != "" {
+		return graphResourceName(ctx, query.Name)
+	}
+	return topologySourcePolicyContext(ctx, query.Source.Namespace, true)
 }
 
 func (r *Runtime) verifyRelationRoot(ctx context.Context, p di.Principal, expected dr.ResourceSourceSnapshot) error {
@@ -131,7 +160,7 @@ func (r *Runtime) authorizeRelationQuery(ctx context.Context, p di.Principal, cl
 	if !cr.IsBuiltinRelationSource(q.Source) {
 		group = "extensions"
 	}
-	connection, decision, err := r.generic.authorizeResourceGroup(ctx, p, clusterID, q.Source.Namespace, group, q.Source.Kind, action)
+	connection, decision, err := r.generic.authorizeResourceGate(ctx, p, clusterID, q.Source.Namespace, group, q.Source.Kind, action)
 	if err != nil {
 		return connection, err
 	}

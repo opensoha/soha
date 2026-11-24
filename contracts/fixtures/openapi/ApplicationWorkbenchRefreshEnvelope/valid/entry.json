@@ -1,0 +1,61 @@
+{
+  "data": {
+    "session": {
+      "user": {
+        "userId": "u-1",
+        "userName": "operator",
+        "email": "operator@example.com",
+        "roles": ["developer"],
+        "teams": [],
+        "projects": [],
+        "tags": []
+      },
+      "tokens": {
+        "accessToken": "sample-access-token",
+        "refreshToken": "sample-refresh-token",
+        "tokenType": "Bearer",
+        "expiresIn": 900,
+        "expiresAt": "2026-11-23T13:00:00Z"
+      }
+    },
+    "permissionSnapshot": {
+      "permissionKeys": ["workbench.delivery.view", "delivery.applications.view"],
+      "visibleMenuIds": ["delivery"],
+      "visibleMenus": [
+        {
+          "id": "delivery",
+          "path": "/delivery",
+          "labelZh": "交付",
+          "labelEn": "Delivery",
+          "iconKey": "delivery",
+          "section": "workbench",
+          "sortOrder": 10,
+          "enabled": true
+        }
+      ]
+    },
+    "entry": {
+      "application": {
+        "id": "app-1",
+        "name": "Orders",
+        "key": "orders",
+        "group": "example",
+        "language": "go",
+        "enabled": true,
+        "createdAt": "2026-11-23T10:00:00Z",
+        "updatedAt": "2026-11-23T10:00:00Z"
+      },
+      "environments": [],
+      "services": [
+        {
+          "id": "service-1",
+          "applicationId": "app-1",
+          "key": "api",
+          "name": "API",
+          "serviceKind": "kubernetes_workload",
+          "enabled": true
+        }
+      ]
+    }
+  }
+}

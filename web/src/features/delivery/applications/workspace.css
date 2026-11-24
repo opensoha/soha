@@ -314,6 +314,9 @@
   padding: 0 24px 24px;
   background: var(--soha-bg-surface-muted);
 }
+.soha-service-console[data-invalid-environment] {
+  display: contents;
+}
 .soha-service-selector {
   display: flex;
   flex-direction: column;
@@ -369,6 +372,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.soha-service-selector__identity > .ant-tag {
+  align-self: flex-start;
+  margin-top: 3px;
 }
 .soha-service-selector__list strong {
   font-weight: 600;

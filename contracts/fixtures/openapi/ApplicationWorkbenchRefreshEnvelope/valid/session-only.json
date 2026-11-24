@@ -1,0 +1,22 @@
+{
+  "data": {
+    "session": {
+      "user": {
+        "userId": "u-1",
+        "userName": "operator",
+        "email": "operator@example.com",
+        "roles": [],
+        "teams": [],
+        "projects": [],
+        "tags": []
+      },
+      "tokens": {
+        "accessToken": "sample-access-token",
+        "refreshToken": "sample-refresh-token",
+        "tokenType": "Bearer",
+        "expiresIn": 900,
+        "expiresAt": "2026-11-23T13:00:00Z"
+      }
+    }
+  }
+}

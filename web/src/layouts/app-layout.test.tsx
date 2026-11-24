@@ -11,14 +11,17 @@ import { WORKBENCH_ENTRY_PERMISSION_KEYS } from '@/routes/meta'
 import type { PermissionSnapshot } from '@/types'
 
 const workbenchEntryPermissions = Object.values(WORKBENCH_ENTRY_PERMISSION_KEYS)
-const { sessionRuntimeMock } = vi.hoisted(() => ({ sessionRuntimeMock: vi.fn() }))
+const environmentNavigationMock = vi.hoisted(() => vi.fn())
 vi.mock('@/features/delivery/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/delivery/api')>()
   return {
     ...actual,
     deliveryApi: {
       ...actual.deliveryApi,
-      applications: { ...actual.deliveryApi.applications, runtime: sessionRuntimeMock },
+      applications: {
+        ...actual.deliveryApi.applications,
+        environmentNavigation: environmentNavigationMock,
+      },
     },
   }
 })
@@ -246,16 +249,18 @@ async function renderWithProviders(route: string, snapshotOverrides?: Partial<Pe
 
 describe('app layout workspace navigation', () => {
   beforeEach(() => {
-    sessionRuntimeMock.mockReset().mockResolvedValue({
-      environments: [
-        {
-          applicationEnvironmentId: 'binding-test',
-          environmentId: 'test',
-          requiresApproval: false,
-        },
-      ],
-    })
+    environmentNavigationMock.mockReset().mockResolvedValue([
+      {
+        applicationEnvironmentId: 'binding-test',
+        environmentId: 'test',
+        environmentName: 'Test',
+        environmentKey: 'test',
+        isProduction: false,
+        requiresApproval: false,
+      },
+    ])
   })
+
   it.each([
     ['/applications/demo?applicationEnvironmentId=binding-test', true],
     ['/applications/demo?applicationEnvironmentId=removed', false],

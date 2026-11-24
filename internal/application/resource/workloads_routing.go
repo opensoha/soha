@@ -49,7 +49,11 @@ type workloadGetSpec[T any] struct {
 
 func getWorkloadResource[T any](ctx context.Context, w *Workloads, principal domainidentity.Principal, clusterID, namespace, name string, spec workloadGetSpec[T]) (T, error) {
 	var zero T
-	connection, decision, err := w.authorize(ctx, principal, clusterID, namespace, spec.kind, domainaccess.ActionView)
+	authorize := w.authorizeResourceGroup
+	if spec.finalize == nil && ctx.Value(deliveryObservationKey{}) != nil {
+		authorize = w.authorizeResourceGate
+	}
+	connection, decision, err := authorize(ctx, principal, clusterID, namespace, resourceGroupForKind(spec.kind), spec.kind, domainaccess.ActionView)
 	if err != nil {
 		return zero, err
 	}

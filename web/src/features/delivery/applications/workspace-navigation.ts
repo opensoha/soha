@@ -20,6 +20,7 @@ export function applicationEnvironmentSearch(search: URLSearchParams, environmen
   const next = new URLSearchParams(search)
   for (const key of [
     'pod',
+    'podUid',
     'podCluster',
     'podNamespace',
     'tool',

@@ -1,3 +1,4 @@
+import type { ApplicationServiceDirectoryItem } from '@opensoha/contracts/gen/ts/sohaapi'
 import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -39,7 +40,6 @@ import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 import { deliveryQueries } from '../queries'
-import type { ApplicationServiceComponent } from '../types'
 import { manifestMutations } from './mutations'
 import { manifestQueries } from './queries'
 import { ManifestOperationsPanel } from './operations-panel'
@@ -90,7 +90,7 @@ export function ManifestLibraryWorkspace({
 }: {
   applicationId?: string
   serviceId?: string
-  services?: ApplicationServiceComponent[]
+  services?: ApplicationServiceDirectoryItem[]
   readOnly?: boolean
 }) {
   const { message } = App.useApp()

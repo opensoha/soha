@@ -1,6 +1,9 @@
 import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import type {
+  ApplicationEnvironmentNavigation,
+  ApplicationServiceDirectoryItem,
+  ApplicationEnvironmentRuntimeSummary,
   HelmChartInspection,
   HelmChartInspectionInput,
   BuildpacksCapability,
@@ -11,6 +14,7 @@ import type {
   ProgressiveRolloutStatus,
   ProgressiveRolloutControlInput,
   ResourceRelationsView,
+  DeliveryPlanServiceReferenceImpact,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import type {
   DeliveryDocumentSourceInfo,
@@ -42,6 +46,8 @@ import type {
   DeliveryWorkflowInput,
   ApplicationEnvironment,
   ApplicationRuntimeDetail,
+  ApplicationRuntimeEnvironment,
+  ApplicationServicePods,
   ApplicationServiceComponent,
   ApplicationWorkloadRuntimeDetail,
   ApplicationWorkflowInput,
@@ -112,6 +118,28 @@ async function unwrap<T>(request: Promise<ApiResponse<T>>): Promise<T> {
 
 async function discard(request: Promise<unknown>): Promise<void> {
   await request
+}
+
+function verifiedServicePods(projection: ApplicationServicePods): ApplicationServicePods {
+  if (!['available', 'partial'].includes(projection.status)) return { ...projection, items: [] }
+  const observed = new Map<string, ApplicationServicePods['items'][number]>()
+  const conflicts = new Set<string>()
+  let incomplete = false
+  for (const item of projection.items ?? []) {
+    if (!item.clusterId || !item.pod.namespace || !item.pod.name || !item.pod.uid?.trim()) {
+      incomplete = true
+      continue
+    }
+    const key = JSON.stringify([item.clusterId, item.pod.namespace, item.pod.name])
+    const previous = observed.get(key)
+    if (previous && previous.pod.uid !== item.pod.uid) conflicts.add(key)
+    observed.set(key, item)
+  }
+  return {
+    ...projection,
+    status: incomplete || conflicts.size > 0 ? 'partial' : projection.status,
+    items: [...observed].filter(([key]) => !conflicts.has(key)).map(([, item]) => item),
+  }
 }
 
 function segment(value: string) {
@@ -408,6 +436,33 @@ export const deliveryApi = {
         ),
       ),
     list: () => unwrap(api.get<ApiResponse<DeliveryApplication[]>>('/applications')),
+    get: (id: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<DeliveryApplication>>(
+          `/applications/${segment(id)}`,
+          signal ? { signal } : undefined,
+        ),
+      ),
+    environmentNavigation: (applicationId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<ApplicationEnvironmentNavigation[]>>(
+          `/applications/${segment(applicationId)}/application-environments`,
+          { signal },
+        ),
+      ),
+    environmentRuntimeSummary: (applicationId: string, bindingId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<
+          ApiResponse<
+            Omit<ApplicationEnvironmentRuntimeSummary, 'environment'> & {
+              environment: ApplicationRuntimeEnvironment
+            }
+          >
+        >(
+          `/applications/${segment(applicationId)}/application-environments/${segment(bindingId)}/runtime-summary`,
+          signal ? { signal } : undefined,
+        ),
+      ),
     detail: (id: string) =>
       unwrap(
         api.get<ApiResponse<DeliveryApplicationDetail>>(`/applications/${segment(id)}/detail`),
@@ -436,10 +491,25 @@ export const deliveryApi = {
       return discard(api.put(`/applications/${segment(id)}`, { ...input, expectedVersion }))
     },
     delete: (id: string) => discard(api.delete(`/applications/${segment(id)}`)),
-    services: (applicationId: string) =>
+    serviceDirectory: (applicationId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<ApplicationServiceDirectoryItem[]>>(
+          `/applications/${segment(applicationId)}/service-directory`,
+          { signal },
+        ),
+      ),
+    service: (applicationId: string, serviceId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<ApplicationServiceComponent>>(
+          `/applications/${segment(applicationId)}/services/${segment(serviceId)}`,
+          { signal },
+        ),
+      ),
+    services: (applicationId: string, signal?: AbortSignal) =>
       unwrap(
         api.get<ApiResponse<ApplicationServiceComponent[]>>(
           `/applications/${segment(applicationId)}/services`,
+          { signal },
         ),
       ),
     createService: (applicationId: string, payload: DeliveryRecordInput) =>
@@ -747,10 +817,41 @@ export const deliveryApi = {
       unwrap(api.get<ApiResponse<DeliveryRuntimeDetail>>(deliveryRuntimeDetailPath(kind, id))),
   },
   workloads: {
+    servicePods: async (
+      applicationId: string,
+      bindingId: string,
+      serviceId: string,
+      signal: AbortSignal,
+    ) =>
+      verifiedServicePods(
+        await unwrap(
+          api.get<ApiResponse<ApplicationServicePods>>(
+            `/applications/${segment(applicationId)}/application-environments/${segment(bindingId)}/services/${segment(serviceId)}/pods`,
+            { signal },
+          ),
+        ),
+      ),
     runtime: (ref: DeliveryWorkloadRef) =>
       unwrap(api.get<ApiResponse<ApplicationWorkloadRuntimeDetail>>(workloadRuntimePath(ref))),
     metrics: (ref: DeliveryWorkloadMetricsRef) =>
       unwrap(api.get<ApiResponse<ResourceMetrics>>(workloadMetricsPath(ref))),
+    podMetricsPreview: (
+      clusterId: string,
+      namespace: string,
+      podName: string,
+      expectedUid: string,
+      signal: AbortSignal,
+    ) =>
+      unwrap(
+        api.get<ApiResponse<ResourceMetrics>>(
+          withQuery(`/clusters/${segment(clusterId)}/workloads/pods/${segment(podName)}/metrics`, {
+            namespace: namespace.trim(),
+            rangeMinutes: 60,
+            expectedUid,
+          }),
+          { signal },
+        ),
+      ),
     restart: (input: DeliveryWorkloadRestartInput) =>
       discard(
         api.post(`/clusters/${segment(input.clusterId)}/workloads/deployments/restart`, {
@@ -778,6 +879,10 @@ export const deliveryApi = {
   plans: {
     detail: (id: string) =>
       unwrap(api.get<ApiResponse<DeliveryPlan>>(`/delivery/plans/${segment(id)}`)),
+    referenceImpact: (id: string, cursor: string) =>
+      api.getEnvelope<DeliveryPlanServiceReferenceImpact>(
+        withQuery(`/delivery/plans/${segment(id)}/service-reference-impact`, { cursor }),
+      ),
     create: (payload: DeliveryPlanRequest) =>
       unwrap(api.post<ApiResponse<DeliveryPlan>>('/delivery/plans', payload)),
     confirm: (id: string) =>

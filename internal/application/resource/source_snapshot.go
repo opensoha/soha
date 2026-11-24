@@ -48,6 +48,9 @@ func (r *Runtime) GetApplicationSourceYAML(ctx context.Context, principal domain
 }
 
 func (r *Runtime) readImportSource(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, crdName string) (domainresource.ResourceSourceSnapshot, domainresource.ResourceYAMLView, error) {
+	if ctx.Value(deliveryObservationKey{}) != nil {
+		ctx = graphResourceName(context.WithValue(ctx, graphNamespacePolicyKey{}, true), name)
+	}
 	var item domainresource.ResourceYAMLView
 	var err error
 	apiVersion, plural := "apps/v1", ""
@@ -226,7 +229,11 @@ func (c *CustomResources) importSource(ctx context.Context, principal domainiden
 	if strings.TrimSpace(crdName) == "" || strings.TrimSpace(namespace) == "" {
 		return domainresource.ResourceSourceSnapshot{}, domainresource.ResourceYAMLView{}, fmt.Errorf("%w: an explicit CRD and namespace are required", apperrors.ErrInvalidArgument)
 	}
-	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+	definitionCtx := ctx
+	if ctx.Value(deliveryObservationKey{}) != nil {
+		definitionCtx = graphResourceName(ctx, crdName)
+	}
+	connection, err := c.authorizeCRDDefinitionAccess(definitionCtx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceSourceSnapshot{}, domainresource.ResourceYAMLView{}, err
 	}
@@ -237,7 +244,7 @@ func (c *CustomResources) importSource(ctx context.Context, principal domainiden
 	if !definition.Namespaced {
 		return domainresource.ResourceSourceSnapshot{}, domainresource.ResourceYAMLView{}, fmt.Errorf("%w: this import path requires a namespaced resource", apperrors.ErrUnsupportedOperation)
 	}
-	item, err := c.GetCRDResourceYAML(ctx, principal, clusterID, crdName, namespace, name)
+	item, err := c.readAuthorizedCRDYAML(ctx, principal, connection, definition, clusterID, namespace, name)
 	if err != nil {
 		return domainresource.ResourceSourceSnapshot{}, domainresource.ResourceYAMLView{}, err
 	}

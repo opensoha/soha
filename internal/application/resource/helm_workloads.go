@@ -2,8 +2,10 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -55,29 +57,32 @@ func (r *Runtime) GetHelmReleaseWorkloadSources(ctx context.Context, principal d
 		return nil, err
 	}
 	sources := make([]domainresource.ResourceSourceSnapshot, len(refs))
-	group, ctx := errgroup.WithContext(ctx)
+	readErrors := make([]error, len(refs))
+	var group errgroup.Group
 	group.SetLimit(4)
 	for index, ref := range refs {
 		group.Go(func() error {
 			source, current, readErr := r.readImportSource(ctx, principal, clusterID, namespace, ref.Kind, ref.Name, "")
 			if readErr != nil {
-				return readErr
+				readErrors[index] = readErr
+				return nil
 			}
 			var object helmWorkloadDocument
 			if yaml.Unmarshal([]byte(current.Content), &object) != nil ||
 				object.Metadata.Labels["app.kubernetes.io/managed-by"] != "Helm" ||
 				object.Metadata.Annotations["meta.helm.sh/release-name"] != releaseName ||
 				object.Metadata.Annotations["meta.helm.sh/release-namespace"] != namespace {
-				return fmt.Errorf("%w: live workload is not owned by this Helm release", apperrors.ErrConflict)
+				readErrors[index] = fmt.Errorf("%w: live workload is not owned by this Helm release", apperrors.ErrConflict)
+				return nil
 			}
 			sources[index] = source
 			return nil
 		})
 	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-	return sources, nil
+	_ = group.Wait()
+	return slices.DeleteFunc(sources, func(source domainresource.ResourceSourceSnapshot) bool {
+		return source.Resource.UID == ""
+	}), errors.Join(readErrors...)
 }
 
 func helmWorkloadRefs(content, namespace string) ([]domainresource.ResourceRef, error) {
@@ -120,9 +125,7 @@ func (p *helmWorkloadParser) visit(document helmWorkloadDocument, depth int) boo
 		}
 		return true
 	}
-	if document.APIVersion != "apps/v1" ||
-		(document.Kind != "Deployment" && document.Kind != "StatefulSet" && document.Kind != "DaemonSet") ||
-		document.Metadata.Annotations["helm.sh/hook"] != "" {
+	if !helmNativeController(document.APIVersion, document.Kind) || document.Metadata.Annotations["helm.sh/hook"] != "" {
 		return true
 	}
 	actualNamespace := document.Metadata.Namespace
@@ -141,4 +144,15 @@ func (p *helmWorkloadParser) visit(document helmWorkloadDocument, depth int) boo
 		p.refs = append(p.refs, domainresource.ResourceRef{APIVersion: document.APIVersion, Kind: document.Kind, Namespace: p.namespace, Name: document.Metadata.Name})
 	}
 	return true
+}
+
+func helmNativeController(apiVersion, kind string) bool {
+	switch kind {
+	case "Deployment", "StatefulSet", "DaemonSet":
+		return apiVersion == "apps/v1"
+	case "Job", "CronJob":
+		return apiVersion == "batch/v1"
+	default:
+		return false
+	}
 }

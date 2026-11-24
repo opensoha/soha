@@ -153,8 +153,8 @@ export const deliveryRoutes = defineRoutes([
     permissionExemptReason:
       'Application detail authorization is enforced by the parent resource and backend.',
     load: async () => {
-      const module = await import('./applications/detail-page')
-      return { default: module.ApplicationDetailPage }
+      const module = await import('./applications/workspace-page')
+      return { default: module.ApplicationWorkspacePage }
     },
   },
   {

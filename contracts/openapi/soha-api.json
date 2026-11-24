@@ -6171,6 +6171,105 @@
         ],
         "type": "object"
       },
+      "ApplicationEnvironmentNavigation": {
+        "additionalProperties": false,
+        "properties": {
+          "actionKind": {
+            "type": "string"
+          },
+          "applicationEnvironmentId": {
+            "type": "string"
+          },
+          "clusterId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "environmentKey": {
+            "type": "string"
+          },
+          "environmentName": {
+            "type": "string"
+          },
+          "isProduction": {
+            "type": "boolean"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "requiresApproval": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "applicationEnvironmentId",
+          "environmentId",
+          "environmentName",
+          "environmentKey",
+          "isProduction",
+          "requiresApproval"
+        ],
+        "type": "object"
+      },
+      "ApplicationEnvironmentNavigationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationEnvironmentNavigation"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApplicationEnvironmentRuntimeSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/ApplicationRuntimeEnvironment"
+          },
+          "observationStatus": {
+            "enum": [
+              "available",
+              "partial",
+              "timeout",
+              "cluster_unready",
+              "forbidden",
+              "identity_mismatch",
+              "unconfigured",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "observationStatus",
+          "observedAt"
+        ],
+        "type": "object"
+      },
+      "ApplicationEnvironmentRuntimeSummaryEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ApplicationEnvironmentRuntimeSummary"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "ApplicationInput": {
         "additionalProperties": false,
         "properties": {
@@ -6385,6 +6484,9 @@
           "desiredReplicas": {
             "type": "integer"
           },
+          "healthStatus": {
+            "type": "string"
+          },
           "labels": {
             "additionalProperties": {
               "type": "string"
@@ -6417,6 +6519,12 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "serviceKey": {
+            "type": "string"
           },
           "source": {
             "$ref": "#/components/schemas/KubernetesImportSource"
@@ -6658,6 +6766,59 @@
         ],
         "type": "object"
       },
+      "ApplicationServiceDirectoryEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationServiceDirectoryItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApplicationServiceDirectoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serviceKind": {
+            "enum": [
+              "kubernetes_workload",
+              "helm_release",
+              "external_service",
+              "job"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "applicationId",
+          "key",
+          "name",
+          "serviceKind",
+          "enabled"
+        ],
+        "type": "object"
+      },
       "ApplicationServiceEnvelope": {
         "additionalProperties": false,
         "properties": {
@@ -6766,6 +6927,164 @@
         },
         "required": [
           "data"
+        ],
+        "type": "object"
+      },
+      "ApplicationServicePod": {
+        "additionalProperties": false,
+        "properties": {
+          "clusterId": {
+            "type": "string"
+          },
+          "pod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KubernetesPod"
+              },
+              {
+                "properties": {
+                  "uid": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9._-]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Current Pod status with verified immutable UID."
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "workloadKind": {
+            "type": "string"
+          },
+          "workloadName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clusterId",
+          "workloadKind",
+          "workloadName",
+          "pod"
+        ],
+        "type": "object"
+      },
+      "ApplicationServicePods": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationServicePod"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "description": "Stable reason code for an incomplete observation or unverified ownership.",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "partial",
+              "relation_only",
+              "unconfigured",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ApplicationServicePodsEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ApplicationServicePods"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApplicationWorkbenchEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/Application"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationEnvironmentNavigation"
+            },
+            "type": "array"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationServiceDirectoryItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "application",
+          "environments",
+          "services"
+        ],
+        "type": "object"
+      },
+      "ApplicationWorkbenchRefreshEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ApplicationWorkbenchRefreshResult"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApplicationWorkbenchRefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "applicationId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "applicationId"
+        ],
+        "type": "object"
+      },
+      "ApplicationWorkbenchRefreshResult": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/ApplicationWorkbenchEntry"
+          },
+          "permissionSnapshot": {
+            "$ref": "#/components/schemas/PermissionSnapshot"
+          },
+          "session": {
+            "$ref": "#/components/schemas/AuthResult"
+          }
+        },
+        "required": [
+          "session"
         ],
         "type": "object"
       },
@@ -36369,6 +36688,16 @@
             ],
             "type": "string"
           },
+          "lastTerminationExitCode": {
+            "description": "Exit code of the previous terminated container instance, including zero.",
+            "format": "int32",
+            "type": "integer",
+            "x-go-type-skip-optional-pointer": false
+          },
+          "lastTerminationReason": {
+            "description": "Reason reported for the previous terminated container instance.",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -63914,6 +64243,35 @@
           "PermissionScopeKindOwner"
         ]
       },
+      "PermissionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "permissionKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "visibleMenuIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "visibleMenus": {
+            "items": {
+              "$ref": "#/components/schemas/VisibleMenu"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissionKeys",
+          "visibleMenuIds",
+          "visibleMenus"
+        ],
+        "type": "object"
+      },
       "PermissionStatus": {
         "enum": [
           "active",
@@ -78079,6 +78437,49 @@
         },
         "required": [
           "bindingRevision"
+        ],
+        "type": "object"
+      },
+      "VisibleMenu": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "iconKey": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "labelEn": {
+            "type": "string"
+          },
+          "labelZh": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "labelZh",
+          "labelEn",
+          "iconKey",
+          "section",
+          "sortOrder",
+          "enabled"
         ],
         "type": "object"
       },
@@ -93571,6 +93972,114 @@
         ]
       }
     },
+    "/applications/{applicationID}/application-environments": {
+      "get": {
+        "operationId": "listApplicationEnvironmentNavigation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationEnvironmentNavigationEnvelope"
+                }
+              }
+            },
+            "description": "Visible environment navigation for one application. Reads configuration only."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Applications",
+          "Delivery"
+        ]
+      }
+    },
+    "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/runtime-summary": {
+      "get": {
+        "operationId": "getApplicationEnvironmentRuntimeSummary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationID"
+          },
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationEnvironmentRuntimeSummaryEnvelope"
+                }
+              }
+            },
+            "description": "Observed runtime for one authorized application environment. Downstream observation errors are represented in the result."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Applications",
+          "Delivery"
+        ]
+      }
+    },
+    "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/services/{serviceID}/pods": {
+      "get": {
+        "operationId": "getApplicationServicePods",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationID"
+          },
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationServicePodsEnvelope"
+                }
+              }
+            },
+            "description": "Verified Pods owned by the selected service in this application environment. Provider and ownership gaps are represented in the result."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Applications",
+          "Delivery"
+        ]
+      }
+    },
     "/applications/{applicationID}/application-environments/{applicationEnvironmentID}/workflow": {
       "put": {
         "operationId": "saveApplicationEnvironmentWorkflow",
@@ -93905,6 +94414,38 @@
         "tags": [
           "Applications",
           "Delivery"
+        ]
+      }
+    },
+    "/applications/{applicationID}/service-directory": {
+      "get": {
+        "operationId": "listApplicationServiceDirectory",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationServiceDirectoryEnvelope"
+                }
+              }
+            },
+            "description": "Service identities visible to a principal authorized to read the application and its services."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List the identity fields needed to navigate an application's services.",
+        "tags": [
+          "Applications"
         ]
       }
     },
@@ -95685,6 +96226,87 @@
           },
           "401": {
             "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/refresh/application-workbench": {
+      "post": {
+        "description": "Refresh a browser session using its HttpOnly refresh cookie. The permission snapshot and named application entry are optional. The entry requires delivery workbench and application view permissions, enabled delivery, and authorization for all three scoped reads. Missing or denied entry data does not invalidate the session.",
+        "operationId": "refreshApplicationWorkbench",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationWorkbenchRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationWorkbenchRefreshEnvelope"
+                }
+              }
+            },
+            "description": "Refreshed session with optional startup reads. The response is not cacheable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "const": "rate_limited",
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Too many refresh requests from this client address.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [],
@@ -104964,6 +105586,25 @@
             }
           },
           {
+            "description": "Restrict samples to the reviewed Pod UID. A replaced Pod returns conflict. Samples without verified UID evidence are omitted.",
+            "in": "query",
+            "name": "expectedUid",
+            "schema": {
+              "pattern": "^[A-Za-z0-9._-]{1,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional container filter for UID-scoped CPU and memory. Requires expectedUid.",
+            "in": "query",
+            "name": "container",
+            "schema": {
+              "maxLength": 63,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "namespace",
             "schema": {
@@ -105012,6 +105653,9 @@
             "$ref": "#/components/responses/Error"
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
             "$ref": "#/components/responses/Error"
           },
           "503": {

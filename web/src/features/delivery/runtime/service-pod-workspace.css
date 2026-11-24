@@ -110,6 +110,15 @@
   font-size: 14px;
   overflow-wrap: anywhere;
 }
+.soha-pod-card-container-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .soha-pod-card-facts {
   grid-column: 1;
   display: flex;

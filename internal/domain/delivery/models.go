@@ -727,6 +727,24 @@ type ApplicationRuntimeSummary struct {
 	LatestExecutionStatus string `json:"latestExecutionStatus,omitempty"`
 }
 
+type ApplicationEnvironmentNavigation struct {
+	ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
+	EnvironmentID            string `json:"environmentId"`
+	EnvironmentName          string `json:"environmentName"`
+	EnvironmentKey           string `json:"environmentKey"`
+	IsProduction             bool   `json:"isProduction"`
+	RequiresApproval         bool   `json:"requiresApproval"`
+	ActionKind               string `json:"actionKind,omitempty"`
+	ClusterID                string `json:"clusterId,omitempty"`
+	Namespace                string `json:"namespace,omitempty"`
+}
+
+type ApplicationEnvironmentRuntimeSummary struct {
+	Environment       ApplicationRuntimeEnvironment `json:"environment"`
+	ObservationStatus string                        `json:"observationStatus"`
+	ObservedAt        time.Time                     `json:"observedAt"`
+}
+
 type ApplicationRuntimeEnvironment struct {
 	ManifestDeployments      []domainmanifest.Deployment    `json:"manifestDeployments,omitempty"`
 	ApplicationEnvironmentID string                         `json:"applicationEnvironmentId"`

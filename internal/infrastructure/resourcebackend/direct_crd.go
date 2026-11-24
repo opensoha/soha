@@ -99,7 +99,7 @@ func (d *Direct) ResolveCRD(ctx context.Context, clusterID, crdName string) (dom
 		if apierrors.IsNotFound(err) {
 			return domainresource.CRDResourceDefinition{}, fmt.Errorf("%w: CRD not found", apperrors.ErrNotFound)
 		}
-		return domainresource.CRDResourceDefinition{}, err
+		return domainresource.CRDResourceDefinition{}, deliveryKubeReadError(err)
 	}
 	return parseCRDDefinition(*item)
 }
@@ -191,7 +191,7 @@ func (d *Direct) GetCustomResourceYAML(ctx context.Context, clusterID string, de
 		if apierrors.IsNotFound(err) {
 			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: custom resource not found", apperrors.ErrNotFound)
 		}
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
 	return renderCustomResource(definition.Kind, item)

@@ -15,7 +15,7 @@ vi.mock('@/components/resource-metrics-panel', () => ({
   ),
 }))
 
-it('partitions name-based metric caches by Pod UID and hides stale samples during a fresh read', async () => {
+it('passes the reviewed Pod UID and hides stale samples during a fresh read', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   const host = document.createElement('div')
   document.body.append(host)
@@ -66,6 +66,7 @@ it('partitions name-based metric caches by Pod UID and hides stale samples durin
       await new Promise((resolve) => setTimeout(resolve, 20))
     })
     expect(state.read).toHaveBeenCalledTimes(1)
+    expect(state.read.mock.calls[0][0]).toContain('expectedUid=new-uid')
     expect(host.textContent).not.toContain('old-name-cache')
     expect(host.textContent).not.toContain('stale-new-uid-cache')
     await act(async () => finish({ data: metrics('fresh-response') }))

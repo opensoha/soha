@@ -34,6 +34,7 @@ import type {
   RegistryConnection,
   RegistryConnectionInput,
 } from '@opensoha/contracts/gen/ts/sohaapi'
+export type { ApplicationServicePods } from '@opensoha/contracts/gen/ts/sohaapi'
 
 export type * from './domain-types'
 

@@ -163,6 +163,7 @@ type AuthHandler struct {
 	sessions            IdentitySessionService
 	streamTickets       IdentityStreamTicketService
 	access              AuthBootstrapAccessService
+	workbench           AuthApplicationWorkbenchServices
 	settings            AuthBootstrapSettingsService
 	loginOptions        dto.LoginOptionsResponse
 	refreshCookieMaxAge int
@@ -340,18 +341,24 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid refresh payload")
 		return
 	}
-	refreshToken := refreshTokenFromRequest(c, req.RefreshToken)
+	result, ok := h.refreshSession(c, refreshTokenFromRequest(c, req.RefreshToken))
+	if ok {
+		apiresponse.Item(c, http.StatusOK, result)
+	}
+}
+
+func (h *AuthHandler) refreshSession(c *gin.Context, refreshToken string) (domainidentity.AuthResult, bool) {
 	if refreshToken == "" {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "refresh token is required")
-		return
+		return domainidentity.AuthResult{}, false
 	}
 	result, err := h.auth.RefreshSession(c.Request.Context(), refreshToken)
 	if err != nil {
 		writeError(c, err)
-		return
+		return domainidentity.AuthResult{}, false
 	}
 	h.setAuthCookies(c, result)
-	apiresponse.Item(c, http.StatusOK, result)
+	return result, true
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {

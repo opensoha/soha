@@ -77,7 +77,7 @@ func (s *Service) GetImportedTargetSource(ctx context.Context, principal domaini
 	return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: linked target not found", apperrors.ErrNotFound)
 }
 
-func (s *Service) importedRuntimeWorkload(ctx context.Context, principal domainidentity.Principal, bindingID string, target domaincatalog.ReleaseTarget) domaindelivery.ApplicationRuntimeWorkload {
+func (s *Service) importedRuntimeWorkload(ctx context.Context, principal domainidentity.Principal, bindingID string, target domaincatalog.ReleaseTarget) (domaindelivery.ApplicationRuntimeWorkload, error) {
 	item := domaindelivery.ApplicationRuntimeWorkload{
 		ApplicationEnvironmentID: bindingID, TargetID: target.ID, ClusterID: target.ClusterID, Namespace: target.Namespace,
 		WorkloadKind: target.WorkloadKind, WorkloadName: target.WorkloadName, ServiceID: metadataString(target.Metadata, "serviceId"),
@@ -85,18 +85,18 @@ func (s *Service) importedRuntimeWorkload(ctx context.Context, principal domaini
 	}
 	source, err := importedTargetSource(target)
 	if err != nil {
-		return item
+		return item, err
 	}
 	item.Source = &source
 	reader, ok := s.targets.(KubernetesImportSourceReader)
 	if !ok {
-		return item
+		return item, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	current, err := reader.GetImportSource(ctx, principal, target.ClusterID, target.Namespace, target.WorkloadKind, target.WorkloadName, source.CRDName)
 	switch {
-	case errors.Is(err, apperrors.ErrAccessDenied):
+	case errors.Is(err, apperrors.ErrAccessDenied), errors.Is(err, apperrors.ErrUnauthorized):
 		item.SourceStatus = "forbidden"
 	case errors.Is(err, apperrors.ErrNotFound):
 		item.SourceStatus = "missing"
@@ -114,14 +114,15 @@ func (s *Service) importedRuntimeWorkload(ctx context.Context, principal domaini
 		item.UpdatedReplicas, item.AvailableReplicas = current.Replicas.Updated, current.Replicas.Available
 		item.NativeObservationAvailable = true
 	}
-	return item
+	return item, err
 }
 
-func (s *Service) importedRuntimeWorkloads(ctx context.Context, principal domainidentity.Principal, binding domaincatalog.ApplicationEnvironment) map[string]domaindelivery.ApplicationRuntimeWorkload {
+func (s *Service) importedRuntimeWorkloads(ctx context.Context, principal domainidentity.Principal, binding domaincatalog.ApplicationEnvironment) (map[string]domaindelivery.ApplicationRuntimeWorkload, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	items := make(map[string]domaindelivery.ApplicationRuntimeWorkload)
 	var mu sync.Mutex
+	var observationErr error
 	var group errgroup.Group
 	group.SetLimit(4)
 	for _, target := range binding.Targets {
@@ -129,15 +130,16 @@ func (s *Service) importedRuntimeWorkloads(ctx context.Context, principal domain
 			continue
 		}
 		group.Go(func() error {
-			item := s.importedRuntimeWorkload(ctx, principal, binding.ID, target)
+			item, err := s.importedRuntimeWorkload(ctx, principal, binding.ID, target)
 			mu.Lock()
 			items[target.ID] = item
+			observationErr = errors.Join(observationErr, err)
 			mu.Unlock()
 			return nil
 		})
 	}
 	_ = group.Wait()
-	return items
+	return items, observationErr
 }
 
 func selectRuntimeWorkload(items []domaindelivery.ApplicationRuntimeWorkload, name string) (*domaindelivery.ApplicationRuntimeWorkload, error) {

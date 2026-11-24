@@ -149,11 +149,15 @@ func (c *CustomResources) GetCRDResourceYAML(ctx context.Context, principal doma
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
+	return c.readAuthorizedCRDYAML(ctx, principal, connection, definition, clusterID, namespace, name)
+}
+
+func (c *CustomResources) readAuthorizedCRDYAML(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, definition crdResourceDefinition, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	effectiveNamespace, err := requiredCustomResourceNamespace(definition, namespace)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
+	if _, _, err := c.authorizeResourceGate(ctx, principal, clusterID, effectiveNamespace, "extensions", definition.Kind, domainaccess.ActionView); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	if err := c.requireCustomResourceAction(ctx, connection, definition, effectiveNamespace, name, domainaccess.ActionView); err != nil {

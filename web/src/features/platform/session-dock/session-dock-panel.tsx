@@ -55,6 +55,7 @@ interface RealtimeSessionDockPanelProps {
   onReplaceSession: (sessionId: string, input: RealtimeSessionInput) => void
   sessions: RealtimeSession[]
   visible: boolean
+  validateReference?: (session: RealtimeSession, localeCode: string) => Promise<void>
 }
 
 interface DockResizeState {
@@ -112,12 +113,8 @@ function TerminalSessionContent({
   const reloadContainersLabel = localeCode === 'zh_CN' ? '重新加载容器' : 'Reload containers'
   const replaceTerminal = (container: string | undefined, shell: string) => {
     onReplaceSession(session.id, {
-      clusterId: session.clusterId,
+      ...session,
       container,
-      kind: 'terminal',
-      podUid: session.podUid,
-      namespace: session.namespace,
-      podName: session.podName,
       shell,
     })
   }
@@ -194,9 +191,11 @@ function TerminalSessionContent({
 function AuthorizedSessionContent({
   onReplaceSession,
   session,
+  validateReference,
 }: {
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
   session: RealtimeSession
+  validateReference: RealtimeSessionDockPanelProps['validateReference']
 }) {
   const { localeCode } = useI18n()
   const permissions = usePermissionSnapshot()
@@ -213,7 +212,10 @@ function AuthorizedSessionContent({
     { clusterId: session.clusterId, namespace: session.namespace },
     session.podName,
   )
-  const detail = useQuery({ ...options, enabled: options.enabled && permitted })
+  const detail = useQuery({
+    ...options,
+    enabled: options.enabled && permitted && !session.reference,
+  })
   useInlineApiError(permissions.error)
   useInlineApiError(detail.error)
   const [verified, setVerified] = useState(false)
@@ -275,6 +277,15 @@ function AuthorizedSessionContent({
             : 'Session access is no longer permitted.',
         )
       }
+      if (session.reference) {
+        if (!validateReference)
+          throw new Error(
+            localeCode === 'zh_CN'
+              ? '无法校验引用来源。'
+              : 'The reference source cannot be validated.',
+          )
+        await validateReference(session, localeCode)
+      }
       const pod = await refetchDetail()
       if (pod.isError || !pod.data)
         throw new Error(
@@ -312,9 +323,9 @@ function AuthorizedSessionContent({
     permissionKey,
     refetchDetail,
     refetchPermissions,
-    session.container,
-    session.podUid,
+    session,
     terminatedContainerError,
+    validateReference,
   ])
   useEffect(() => {
     void validateConnection()
@@ -418,15 +429,23 @@ function SessionContent({
   requested,
   session,
   onReplaceSession,
+  validateReference,
 }: {
   requested: boolean
   session: RealtimeSession
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
+  validateReference: RealtimeSessionDockPanelProps['validateReference']
 }) {
   const { localeCode } = useI18n()
   const [started, setStarted] = useState(false)
   if (started || requested)
-    return <AuthorizedSessionContent session={session} onReplaceSession={onReplaceSession} />
+    return (
+      <AuthorizedSessionContent
+        session={session}
+        onReplaceSession={onReplaceSession}
+        validateReference={validateReference}
+      />
+    )
   return (
     <ManagementState
       compact
@@ -436,8 +455,12 @@ function SessionContent({
       }
       description={
         localeCode === 'zh_CN'
-          ? '手动重连时将重新校验 Pod UID、容器和权限。'
-          : 'Reconnect to revalidate the Pod UID, container and permissions.'
+          ? session.reference
+            ? '手动重连时将重新校验引用来源、Pod UID、容器和权限。'
+            : '手动重连时将重新校验 Pod UID、容器和权限。'
+          : session.reference
+            ? 'Reconnect to revalidate the reference, Pod UID, container and permissions.'
+            : 'Reconnect to revalidate the Pod UID, container and permissions.'
       }
       actions={
         <Button
@@ -466,6 +489,7 @@ export function RealtimeSessionDockPanel({
   onReplaceSession,
   sessions,
   visible,
+  validateReference,
 }: RealtimeSessionDockPanelProps) {
   const { localeCode } = useI18n()
   const dockRef = useRef<HTMLElement>(null)
@@ -684,6 +708,7 @@ export function RealtimeSessionDockPanel({
                         requested={connectRequests.includes(session.id)}
                         session={session}
                         onReplaceSession={onReplaceSession}
+                        validateReference={validateReference}
                       />
                     ),
                   }

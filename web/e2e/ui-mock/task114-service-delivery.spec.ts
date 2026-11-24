@@ -77,6 +77,34 @@ for (const width of [1440, 1024, 768, 320]) {
         }
       if (path === '/delivery/release-bundles') return { body: { data: [] } }
       const response = task114Response(url, method)
+      if (path === '/applications/retail/detail' && response) {
+        return {
+          body: {
+            data: {
+              ...(response.body as { data: Record<string, unknown> }).data,
+              bindings: [
+                {
+                  applicationEnvironmentId: 'retail-test',
+                  environmentId: 'test',
+                  environmentName: '测试环境',
+                  targets: [
+                    {
+                      id: 'order-local',
+                      serviceId: 'order-api',
+                      clusterId: 'cluster-a',
+                      namespace: 'retail-test',
+                      workloadKind: 'Deployment',
+                      workloadName: 'order-api',
+                      enabled: true,
+                      metadata: { ownershipMode: 'managed', serviceId: 'order-api' },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+      }
       if (path === '/access/permission-snapshot' && response) {
         const body = structuredClone(response.body) as { data: { permissionKeys: string[] } }
         body.data.permissionKeys.push(

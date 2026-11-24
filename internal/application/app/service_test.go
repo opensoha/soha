@@ -15,7 +15,8 @@ import (
 )
 
 type captureAppRepository struct {
-	items map[string]domainapp.App
+	items                    map[string]domainapp.App
+	serviceIdentityReadAppID string
 }
 
 func (r *captureAppRepository) List(context.Context, domainapp.Filter) ([]domainapp.App, error) {
@@ -74,6 +75,11 @@ func (r *captureAppRepository) ListServices(context.Context, string) ([]domainap
 	return nil, nil
 }
 
+func (r *captureAppRepository) ListServiceIdentities(_ context.Context, applicationID string) ([]domainapp.ServiceIdentity, error) {
+	r.serviceIdentityReadAppID = applicationID
+	return []domainapp.ServiceIdentity{{ID: "service-1", ApplicationID: applicationID}}, nil
+}
+
 func (r *captureAppRepository) GetService(context.Context, string, string) (domainapp.Service, error) {
 	return domainapp.Service{}, nil
 }
@@ -93,6 +99,50 @@ func (r *captureAppRepository) DeleteService(context.Context, string, string) er
 type captureAppAuthorizer struct {
 	requests []domainaccess.Request
 	allowed  bool
+}
+
+type serviceListPermissionReader struct{}
+
+func (serviceListPermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return map[string][]string{
+		"app-reader":     {appaccess.PermDeliveryApplicationsView},
+		"service-reader": {appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationServicesView},
+	}, nil
+}
+
+func TestListServiceIdentitiesRequiresServicePermissionAndApplicationScope(t *testing.T) {
+	for _, tc := range []struct {
+		name, role string
+		inScope    bool
+	}{
+		{name: "missing service permission", role: "app-reader", inScope: true},
+		{name: "outside application scope", role: "service-reader"},
+		{name: "authorized", role: "service-reader", inScope: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &captureAppRepository{items: map[string]domainapp.App{
+				"app-1": {ID: "app-1", Name: "Example", BusinessLineID: "retail"},
+			}}
+			auth := &captureAppAuthorizer{allowed: tc.inScope}
+			service := New(repo, nil, auth, nil, nil)
+			service.SetPermissionResolver(appaccess.NewPermissionResolver(serviceListPermissionReader{}))
+			principal := domainidentity.Principal{UserID: "reader", Roles: []string{tc.role}}
+			items, err := service.ListServiceIdentities(t.Context(), principal, " app-1 ")
+			if tc.role != "service-reader" || !tc.inScope {
+				if !errors.Is(err, apperrors.ErrAccessDenied) || repo.serviceIdentityReadAppID != "" {
+					t.Fatalf("denied service identity read = %+v, %v, query scope %q", items, err, repo.serviceIdentityReadAppID)
+				}
+				return
+			}
+			if err != nil || len(items) != 1 || items[0].ID != "service-1" || repo.serviceIdentityReadAppID != "app-1" {
+				t.Fatalf("authorized service identity read = %+v, %v, query scope %q", items, err, repo.serviceIdentityReadAppID)
+			}
+			if len(auth.requests) != 1 || auth.requests[0].Delivery.ApplicationID != "app-1" ||
+				auth.requests[0].Delivery.BusinessLineID != "retail" || auth.requests[0].Action != domainaccess.ActionView {
+				t.Fatalf("unexpected application scope check: %+v", auth.requests)
+			}
+		})
+	}
 }
 
 type appScopeGrantReader struct {

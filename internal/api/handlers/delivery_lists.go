@@ -9,8 +9,12 @@ import (
 
 // These Delivery contracts require data; existing raw list consumers use items.
 func writeDeliveryList[T any](c *gin.Context, items []T) {
+	apiresponse.JSON(c, http.StatusOK, deliveryList(items))
+}
+
+func deliveryList[T any](items []T) gin.H {
 	if items == nil {
 		items = []T{}
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"data": items, "items": items})
+	return gin.H{"data": items, "items": items}
 }

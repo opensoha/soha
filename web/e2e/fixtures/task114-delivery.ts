@@ -205,8 +205,57 @@ export function task114Response(
         },
       ],
     })
-  const app = applications.find((item) => path.startsWith(`/applications/${item.id}/`))
+  const app = applications.find(
+    (item) => path === `/applications/${item.id}` || path.startsWith(`/applications/${item.id}/`),
+  )
   if (!app) return undefined
+  if (path === `/applications/${app.id}`) return data(app)
+  if (path === `/applications/${app.id}/application-environments`)
+    return data(
+      environments(app.id).map((environment) => ({
+        applicationEnvironmentId: environment.applicationEnvironmentId,
+        environmentId: environment.environmentId,
+        environmentName: environment.environmentName,
+        environmentKey: environment.environmentKey,
+        requiresApproval: environment.requiresApproval,
+        isProduction: environment.environmentKey === 'prod',
+      })),
+    )
+  if (path === `/applications/${app.id}/service-directory`)
+    return data(app.id === 'retail' ? services : [])
+  const summary = path.match(
+    /^\/applications\/[^/]+\/application-environments\/([^/]+)\/runtime-summary$/,
+  )
+  if (summary) {
+    const environment = environments(app.id).find(
+      (item) => item.applicationEnvironmentId === summary[1],
+    )
+    if (environment)
+      return data({ environment, observationStatus: 'available', observedAt: createdAt })
+  }
+  const ownedPods = path.match(
+    /^\/applications\/retail\/application-environments\/retail-test\/services\/([^/]+)\/pods$/,
+  )
+  if (ownedPods)
+    return data({
+      status: 'available',
+      items: [0, 1].map((index) => ({
+        clusterId: 'cluster-a',
+        workloadName: ownedPods[1],
+        workloadKind: 'Deployment',
+        pod: {
+          uid: `uid-${ownedPods[1]}-pod-${index}`,
+          name: `${ownedPods[1]}-pod-${index}`,
+          namespace: 'retail-test',
+          phase: 'Running',
+          readyContainers: '2/2',
+          restarts: index,
+          nodeName: 'worker-1',
+          podIp: `10.0.0.${index + 1}`,
+          ageSeconds: 600,
+        },
+      })),
+    })
   if (path === `/applications/${app.id}/runtime`)
     return data({
       application: app,

@@ -313,13 +313,13 @@ func registerSPAFS(router *gin.Engine, distFS fs.FS) {
 		requestPath := c.Request.URL.Path
 		f, err := fs.Stat(distFS, strings.TrimPrefix(requestPath, "/"))
 		if err == nil && !f.IsDir() {
-			fileServer.ServeHTTP(c.Writer, c.Request)
+			serveSPAAsset(fileServer, distFS, c.Writer, c.Request)
 			return
 		}
 
-		// SPA fallback: serve index.html for all other routes
-		c.Request.URL.Path = "/"
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		request := c.Request.Clone(c.Request.Context())
+		request.URL.Path = spaEntryPath(distFS, requestPath)
+		fileServer.ServeHTTP(c.Writer, request)
 	})
 }
 

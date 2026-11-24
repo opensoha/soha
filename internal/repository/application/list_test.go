@@ -102,3 +102,64 @@ func TestListLoadsApplicationRelationsWithoutPerItemQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestListServicesBatchesContainersAndPreservesOrder(t *testing.T) {
+	repo, mock := newApplicationRepository(t)
+	now := time.Date(2026, 11, 22, 0, 0, 0, 0, time.UTC)
+	services := sqlmock.NewRows([]string{
+		"id", "application_id", "service_key", "service_name", "description", "service_kind", "owner_team",
+		"repository_provider", "repository_id", "repository_project_id", "repository_path", "default_branch",
+		"build_source_id", "enabled", "metadata", "created_at", "updated_at", "version", "deployment_template",
+	})
+	for _, id := range []string{"api", "cache", "worker"} {
+		services.AddRow(id, "app", id, id, nil, "kubernetes_workload", nil, nil, nil, nil, nil, nil, nil, true, "{}", now, now, 1, nil)
+	}
+	mock.ExpectQuery(`(?s)^SELECT .*FROM application_services\s+WHERE application_id = \$1`).
+		WithArgs("app").WillReturnRows(services).RowsWillBeClosed()
+
+	containers := sqlmock.NewRows([]string{
+		"id", "service_id", "container_name", "image_repository", "default_tag_template", "dockerfile_path", "build_context_dir",
+		"runtime_ports", "env_schema", "resource_profile", "health_check", "metadata", "created_at", "updated_at",
+	})
+	for _, fixture := range []struct{ id, service, name string }{
+		{"1", "api", "http"}, {"2", "worker", "main"}, {"3", "api", "sidecar"},
+	} {
+		containers.AddRow(fixture.id, fixture.service, fixture.name, nil, nil, nil, nil, "[]", "{}", "{}", "{}", "{}", now, now)
+	}
+	mock.ExpectQuery(`(?s)^SELECT .*FROM application_service_containers\s+WHERE service_id IN \(SELECT id FROM application_services WHERE application_id = \$1\)`).
+		WithArgs("app").WillReturnRows(containers).RowsWillBeClosed()
+
+	got, err := repo.ListServices(t.Context(), "app")
+	if err != nil || len(got) != 3 {
+		t.Fatalf("list services = %+v, %v", got, err)
+	}
+	if len(got[0].Containers) != 2 || got[0].Containers[0].Name != "http" || got[0].Containers[1].Name != "sidecar" ||
+		got[1].Containers == nil || len(got[1].Containers) != 0 ||
+		len(got[2].Containers) != 1 || got[2].Containers[0].Name != "main" {
+		t.Fatalf("incorrect container grouping or ordering: %+v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestListServiceIdentitiesReadsOnlyApplicationDirectory(t *testing.T) {
+	repo, mock := newApplicationRepository(t)
+	rows := sqlmock.NewRows([]string{"id", "application_id", "service_key", "service_name", "service_kind", "enabled"}).
+		AddRow("service-1", "app", "web", "Web", "helm_release", true).
+		AddRow("service-2", "app", "api", "API", "kubernetes_workload", false)
+	mock.ExpectQuery(`^SELECT id, application_id, service_key, service_name, service_kind, enabled FROM application_services WHERE application_id = \$1 ORDER BY enabled DESC, service_key ASC, id ASC$`).
+		WithArgs("app").WillReturnRows(rows).RowsWillBeClosed()
+
+	got, err := repo.ListServiceIdentities(t.Context(), " app ")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("list service identities = %+v, %v", got, err)
+	}
+	if got[0].ID != "service-1" || got[0].ApplicationID != "app" || got[0].Key != "web" || got[0].Name != "Web" ||
+		got[0].ServiceKind != "helm_release" || !got[0].Enabled || got[1].Enabled {
+		t.Fatalf("incorrect service identity projection: %+v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

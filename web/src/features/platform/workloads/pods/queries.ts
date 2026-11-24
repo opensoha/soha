@@ -39,10 +39,19 @@ export const podQueries = {
       queryFn: () => getPodDetail(target(scope, name)),
       enabled: hasPodReference(scope, name),
     }),
-  metrics: (scope: ScopeKey, name: string, rangeMinutes: number, uid?: string) =>
+  metrics: (
+    scope: ScopeKey,
+    name: string,
+    rangeMinutes: number,
+    uid?: string,
+    container?: string,
+  ) =>
     queryOptions<PodMetrics>({
-      queryKey: workloadKeys.metrics('pods', scope, name, rangeMinutes, uid),
-      queryFn: () => getPodMetrics(target(scope, name), rangeMinutes),
+      queryKey: [
+        ...workloadKeys.metrics('pods', scope, name, rangeMinutes, uid),
+        ...(container ? ['container', container] : []),
+      ],
+      queryFn: () => getPodMetrics({ ...target(scope, name), uid }, rangeMinutes, container),
       enabled: hasPodReference(scope, name),
     }),
   events: (scope: ScopeKey, name: string) =>

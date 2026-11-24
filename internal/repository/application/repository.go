@@ -228,13 +228,48 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close application services: %w", err)
 	}
+	if len(items) == 0 {
+		return items, nil
+	}
+	containers, err := r.readServiceContainers(ctx, `
+		WHERE service_id IN (SELECT id FROM application_services WHERE application_id = ?)
+	`, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	byService := make(map[string][]domainapp.ServiceContainer, len(items))
+	for _, container := range containers {
+		byService[container.ServiceID] = append(byService[container.ServiceID], container)
+	}
 	for index := range items {
-		items[index].Containers, err = r.listServiceContainers(ctx, items[index].ID)
-		if err != nil {
-			return nil, err
+		items[index].Containers = byService[items[index].ID]
+		if items[index].Containers == nil {
+			items[index].Containers = []domainapp.ServiceContainer{}
 		}
 	}
 	return items, nil
+}
+
+func (r *Repository) ListServiceIdentities(ctx context.Context, applicationID string) ([]domainapp.ServiceIdentity, error) {
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT id, application_id, service_key, service_name, service_kind, enabled
+		FROM application_services
+		WHERE application_id = ?
+		ORDER BY enabled DESC, service_key ASC, id ASC
+	`, strings.TrimSpace(applicationID)).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query application service identities: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]domainapp.ServiceIdentity, 0)
+	for rows.Next() {
+		var item domainapp.ServiceIdentity
+		if err := rows.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &item.ServiceKind, &item.Enabled); err != nil {
+			return nil, fmt.Errorf("scan application service identity: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {
@@ -745,13 +780,16 @@ func replaceBuildSourcesTx(tx *gorm.DB, applicationID string, items []domainapp.
 }
 
 func (r *Repository) listServiceContainers(ctx context.Context, serviceID string) ([]domainapp.ServiceContainer, error) {
+	return r.readServiceContainers(ctx, "WHERE service_id = ?", serviceID)
+}
+
+func (r *Repository) readServiceContainers(ctx context.Context, filter string, id string) ([]domainapp.ServiceContainer, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, service_id, container_name, image_repository, default_tag_template, dockerfile_path, build_context_dir,
 			runtime_ports, env_schema, resource_profile, health_check, metadata, created_at, updated_at
 		FROM application_service_containers
-		WHERE service_id = ?
-		ORDER BY container_name ASC, id ASC
-	`, strings.TrimSpace(serviceID)).Rows()
+	`+filter+` ORDER BY container_name ASC, id ASC
+	`, strings.TrimSpace(id)).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query application service containers: %w", err)
 	}

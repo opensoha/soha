@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -58,9 +59,37 @@ func TestImportedRuntimeSeparatesRootIdentityFromHealth(t *testing.T) {
 				current.SpecDigest = test.digest
 			}
 			service := identityImportService(stubApplicationReader{}, stubCatalogReader{}, stubTargetReader{importSources: map[string]domainresource.ResourceSourceSnapshot{target.WorkloadKind + "/api": current}, importSourceErr: test.denied}, stubRepository{})
-			item := service.importedRuntimeWorkload(context.Background(), deliveryActionPrincipal(), "binding", target)
+			item, err := service.importedRuntimeWorkload(t.Context(), deliveryActionPrincipal(), "binding", target)
+			if !errors.Is(err, test.denied) {
+				t.Fatalf("source observation error = %v, want %v", err, test.denied)
+			}
 			if item.SourceStatus != test.status || runtimeWorkloadHealth(item) != test.health {
 				t.Fatalf("runtime=%+v health=%s", item, runtimeWorkloadHealth(item))
+			}
+		})
+	}
+}
+
+func TestImportedRuntimeSummaryPreservesFaultClassification(t *testing.T) {
+	for _, test := range []struct {
+		err    error
+		status string
+	}{
+		{apperrors.ErrAccessDenied, "forbidden"},
+		{apperrors.ErrClusterUnready, "cluster_unready"},
+		{context.DeadlineExceeded, "timeout"},
+	} {
+		t.Run(test.status, func(t *testing.T) {
+			target := linkedSourceTarget(t, identityImportSource("Deployment"))
+			binding := domaincatalog.ApplicationEnvironment{ID: "binding", Targets: []domaincatalog.ReleaseTarget{target}}
+			s := identityImportService(stubApplicationReader{}, stubCatalogReader{}, stubTargetReader{importSourceErr: test.err}, stubRepository{})
+			workloads, err := s.collectRuntimeWorkloadsForBinding(t.Context(), deliveryActionPrincipal(), domainapp.App{}, binding, nil, nil, nil, nil, nil, true)
+			if !errors.Is(err, test.err) || runtimeObservationStatus(workloads, 0, 1, err) != test.status {
+				t.Fatalf("scoped observation = %+v, %v; want %s", workloads, err, test.status)
+			}
+			workloads, err = s.listRuntimeWorkloadsForBinding(t.Context(), deliveryActionPrincipal(), domainapp.App{}, binding, nil, nil, nil, nil, nil)
+			if err != nil || len(workloads) != 1 {
+				t.Fatalf("detailed observation = %+v, %v; want a degraded row", workloads, err)
 			}
 		})
 	}

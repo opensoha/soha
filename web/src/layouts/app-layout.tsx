@@ -39,6 +39,7 @@ import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import {
   RealtimeSessionDockProvider,
   RealtimeSessionDockTrigger,
+  type RealtimeSession,
 } from '@/features/platform/session-dock'
 import { useI18n } from '@/i18n'
 import {
@@ -570,6 +571,12 @@ function ApplicationHeaderFrame({ brand, children }: { brand?: ReactNode; childr
   )
 }
 
+async function validateSessionReference(session: RealtimeSession, localeCode: string) {
+  const { validateDeliverySessionReference } =
+    await import('@/features/delivery/applications/reference-session')
+  await validateDeliverySessionReference(session, localeCode)
+}
+
 export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -659,20 +666,18 @@ export function AppLayout() {
     (currentMeta.id === 'application-workflow-designer' ? applicationSearch.get('bindingId') : '')
   const canReadApplicationSessions =
     isApplicationWorkspace && hasPermission(snapshot, 'delivery.applications.view')
-  const sessionRuntime = useQuery(
-    deliveryQueries.applications.runtime(
-      applicationMatch?.params.applicationId || '',
-      canReadApplicationSessions,
-    ),
+  const applicationId = applicationMatch?.params.applicationId ?? ''
+  const sessionEnvironmentQuery = useQuery(
+    deliveryQueries.applications.environmentNavigation(applicationId, canReadApplicationSessions),
   )
   const sessionEnvironment = sessionEnvironmentId
-    ? sessionRuntime.data?.environments?.find(
+    ? sessionEnvironmentQuery.data?.find(
         (environment) => environment.applicationEnvironmentId === sessionEnvironmentId,
       )
-    : sessionRuntime.data?.environments?.[0]
+    : sessionEnvironmentQuery.data?.[0]
   const deliverySessionScope =
     canReadApplicationSessions &&
-    !sessionRuntime.isError &&
+    !sessionEnvironmentQuery.isError &&
     applicationMatch?.params.applicationId &&
     sessionEnvironment
       ? JSON.stringify([
@@ -1078,6 +1083,7 @@ export function AppLayout() {
         ownerKey={user?.userId}
         workbench={currentWorkbenchId === 'delivery' ? 'delivery' : 'platform'}
         scopeKey={currentWorkbenchId === 'delivery' ? deliverySessionScope : undefined}
+        validateReference={validateSessionReference}
         visible={currentWorkbenchId === 'platform' || currentWorkbenchId === 'delivery'}
       >
         <Layout className="soha-shell" hasSider={!isApplicationWorkspace}>

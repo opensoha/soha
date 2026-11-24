@@ -92,11 +92,31 @@ func (s *Service) ListEnvironments(ctx context.Context, principal domainidentity
 	return s.repo.ListEnvironments(ctx)
 }
 
+func (s *Service) GetEnvironment(ctx context.Context, principal domainidentity.Principal, id string) (domaincatalog.Environment, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return domaincatalog.Environment{}, err
+	}
+	item, err := s.repo.GetEnvironment(ctx, id)
+	return item, normalizeRepoError(err)
+}
+
 func (s *Service) ListApplicationEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return nil, err
 	}
 	items, err := s.repo.ListApplicationEnvironments(ctx)
+	return s.visibleApplicationEnvironments(ctx, principal, items, err)
+}
+
+func (s *Service) ListApplicationEnvironmentsByApplication(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domaincatalog.ApplicationEnvironment, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListApplicationEnvironmentsByApplication(ctx, applicationID)
+	return s.visibleApplicationEnvironments(ctx, principal, items, err)
+}
+
+func (s *Service) visibleApplicationEnvironments(ctx context.Context, principal domainidentity.Principal, items []domaincatalog.ApplicationEnvironment, err error) ([]domaincatalog.ApplicationEnvironment, error) {
 	if err != nil {
 		return nil, normalizeRepoError(err)
 	}
@@ -108,6 +128,26 @@ func (s *Service) ListApplicationEnvironments(ctx context.Context, principal dom
 			continue
 		}
 		if !errors.Is(err, apperrors.ErrAccessDenied) {
+			return nil, err
+		}
+	}
+	return allowed, nil
+}
+
+func (s *Service) ListEnvironmentNavigation(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domaincatalog.EnvironmentNavigationRow, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListEnvironmentNavigation(ctx, applicationID)
+	if err != nil {
+		return nil, normalizeRepoError(err)
+	}
+	allowed := items[:0]
+	for _, item := range items {
+		err := s.authorizeApplicationEnvironment(ctx, principal, domainaccess.ActionView, item.Binding)
+		if err == nil {
+			allowed = append(allowed, item)
+		} else if !errors.Is(err, apperrors.ErrAccessDenied) {
 			return nil, err
 		}
 	}

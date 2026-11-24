@@ -15,6 +15,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -24,6 +25,9 @@ import (
 func (d *Direct) ListDeployments(ctx context.Context, clusterID, namespace string) ([]domainresource.DeploymentView, string, error) {
 	items, source, err := listCachedResources(ctx, clusterID, namespace, d.cache != nil, d.listCachedDeployments, d.cacheUnavailable, d.listDeploymentsDirect)
 	if err != nil {
+		if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+			err = fmt.Errorf("%w: %w", apperrors.ErrAccessDenied, err)
+		}
 		return nil, source, err
 	}
 	return mapResourceItems(items, mapDeployment), source, nil
@@ -42,7 +46,7 @@ func (d *Direct) GetDeploymentDetail(ctx context.Context, clusterID, namespace, 
 func (d *Direct) GetDeploymentYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	item, err := d.getDeployment(ctx, clusterID, namespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
@@ -182,7 +186,7 @@ func (d *Direct) GetStatefulSetDetail(ctx context.Context, clusterID, namespace,
 func (d *Direct) GetStatefulSetYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	item, err := d.getStatefulSet(ctx, clusterID, namespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
@@ -221,7 +225,7 @@ func (d *Direct) GetDaemonSetDetail(ctx context.Context, clusterID, namespace, n
 func (d *Direct) GetDaemonSetYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	item, err := d.getDaemonSet(ctx, clusterID, namespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
@@ -260,7 +264,7 @@ func (d *Direct) GetJobDetail(ctx context.Context, clusterID, namespace, name st
 func (d *Direct) GetJobYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	item, err := d.getJob(ctx, clusterID, namespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
@@ -300,7 +304,7 @@ func (d *Direct) GetCronJobDetail(ctx context.Context, clusterID, namespace, nam
 func (d *Direct) GetCronJobYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	item, err := d.getCronJob(ctx, clusterID, namespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, deliveryKubeReadError(err)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil

@@ -24,7 +24,7 @@ import { deliveryMutations } from '../mutations'
 import { deliveryApi } from '../api'
 import { deliveryQueries } from '../queries'
 import { useUnsavedDocument } from '../documents/use-unsaved-document'
-import { serviceCreationPreset } from './service-presets'
+import { SERVICE_KIND_OPTIONS, serviceCreationPreset } from './service-presets'
 import type {
   ApplicationServiceComponent,
   ApplicationServiceContainer,
@@ -47,17 +47,6 @@ import type { DeploymentFormValues } from './deployment-template-fields'
 import './service-editor-layout.css'
 
 const { Text } = Typography
-export const SERVICE_KIND_OPTIONS = [
-  {
-    value: 'kubernetes_workload',
-    label: 'Kubernetes 工作负载',
-    description: '资源清单与容器镜像驱动',
-  },
-  { value: 'helm_release', label: 'Helm Release', description: 'Helm Chart 与 values 驱动' },
-  { value: 'external_service', label: '外部服务', description: '只纳管依赖、端点与验证' },
-  { value: 'job', label: '批处理任务', description: '一次性或周期任务交付' },
-]
-
 type ServiceFormValues = Omit<
   ApplicationServiceComponent,
   'applicationId' | 'createdAt' | 'updatedAt' | 'containers'

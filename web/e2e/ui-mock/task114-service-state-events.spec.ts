@@ -33,6 +33,7 @@ async function setup(
   canPublish = false,
   canWorkflow = false,
   podState: 'normal' | 'empty' | 'failed' | 'forbidden' = 'normal',
+  projectInventory = false,
 ) {
   let eventReads = 0
   let eventStatus = 200
@@ -54,7 +55,7 @@ async function setup(
       if (canWorkflow) body.data.permissionKeys.push('delivery.workflows.view')
       return { ...response, body }
     }
-    if (path.endsWith('/workloads/order-api/runtime') && podState === 'failed')
+    if (path.endsWith('/services/order-api/pods') && podState === 'failed')
       return {
         status: 503,
         body: { error: { code: 'runtime_unavailable', message: 'Pod 读取失败' } },
@@ -101,15 +102,23 @@ async function setup(
         containers: [],
       })
     const response = task114Response(url, method)
-    if (response && path === '/applications/retail/runtime') {
+    if (
+      response &&
+      (path === '/applications/retail/runtime' ||
+        path === '/applications/retail/application-environments/retail-test/runtime-summary')
+    ) {
       const body = structuredClone(response.body) as {
         data: {
-          environments: Array<{ applicationEnvironmentId: string; manifestDeployments?: unknown[] }>
+          environments?: Array<{
+            applicationEnvironmentId: string
+            manifestDeployments?: unknown[]
+          }>
+          environment?: { applicationEnvironmentId: string; manifestDeployments?: unknown[] }
         }
       }
-      const env = body.data.environments.find(
-        (item) => item.applicationEnvironmentId === 'retail-test',
-      )!
+      const env =
+        body.data.environment ??
+        body.data.environments!.find((item) => item.applicationEnvironmentId === 'retail-test')!
       env.manifestDeployments = [
         {
           id: 'manifest-deployment',
@@ -124,21 +133,57 @@ async function setup(
             appliedDigest: digest,
             lastExecutionTaskId: 'observe-task',
             conditions: [{ type: 'Healthy', status: 'true', observedGeneration: 1 }],
-            inventory: [
-              {
-                apiVersion: 'v1',
-                kind: 'PersistentVolumeClaim',
-                name: 'voting-db',
-                namespace: longNamespace,
-                health: 'healthy',
-                uid,
-              },
-            ],
+            inventory: projectInventory
+              ? [
+                  {
+                    deploymentId: 'manifest-deployment',
+                    generation: 1,
+                    apiVersion: 'apps/v1',
+                    kind: 'Deployment',
+                    namespace: 'retail-test',
+                    name: 'order-api',
+                    uid: 'manifest-root-uid',
+                    lastObservedAt: '2026-11-23T00:00:00Z',
+                  },
+                  {
+                    deploymentId: 'manifest-deployment',
+                    generation: 1,
+                    apiVersion: 'v1',
+                    kind: 'Secret',
+                    namespace: 'retail-test',
+                    name: 'order-secret-reference',
+                    uid: 'manifest-secret-uid',
+                    lastObservedAt: '2026-11-23T00:00:00Z',
+                    stringData: { sample: 'inventory-secret-must-not-render' },
+                  },
+                  {
+                    deploymentId: 'manifest-deployment',
+                    generation: 0,
+                    apiVersion: 'v1',
+                    kind: 'Service',
+                    namespace: 'retail-test',
+                    name: 'retired-service',
+                    uid: 'manifest-retired-uid',
+                    lastObservedAt: '2026-11-22T00:00:00Z',
+                  },
+                ]
+              : [
+                  {
+                    apiVersion: 'v1',
+                    kind: 'PersistentVolumeClaim',
+                    name: 'voting-db',
+                    namespace: longNamespace,
+                    health: 'healthy',
+                    uid,
+                  },
+                ],
           },
         },
       ]
       return { ...response, body }
     }
+    if (response && path.endsWith('/services/order-api/pods') && podState === 'empty')
+      return data({ status: 'available', items: [] })
     if (response && path.endsWith('/runtime')) {
       const body = structuredClone(response.body) as {
         data: { pods?: Array<{ name: string; uid?: string }> }
@@ -160,6 +205,27 @@ async function setup(
     },
   }
 }
+
+test('Task138 projects observed manifest identities in the relations graph and list', async ({
+  context,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1120, height: 900 })
+  const { evidence } = await setup(context, page, false, false, 'normal', true)
+  await page.goto(`${target}&serviceTab=runtime`)
+  const inventory = page.getByRole('region', { name: '已部署清单关系' })
+  const secret = inventory.getByRole('button', { name: '选择 Secret order-secret-reference' })
+  await expect(secret).toBeVisible()
+  await expect(inventory.getByText('retired-service')).toHaveCount(0)
+  await secret.click()
+  const details = inventory.getByRole('complementary', { name: '所选资源详情' })
+  await expect(details.getByText('manifest-secret-uid', { exact: true })).toBeVisible()
+  await inventory.getByText('资源列表', { exact: true }).click()
+  await expect(inventory.getByRole('table')).toContainText('order-secret-reference')
+  await expect(inventory.getByRole('table')).toContainText('清单成员')
+  await expect(inventory).not.toContainText('inventory-secret-must-not-render')
+  verifyBrowserEvidence(evidence)
+})
 
 for (const [width, theme] of [
   [1440, 'light'],

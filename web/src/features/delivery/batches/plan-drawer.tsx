@@ -12,6 +12,7 @@ import { templateUpdateQueries } from '../template-updates/queries'
 import { TemplateAdoptionDiff } from '../template-updates/diff'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
+import { PlanReferenceImpact, usePlanReferenceImpact } from '../plan-reference-impact'
 
 const approvalLabels: Record<string, string> = {
   requested: '已申请审批',
@@ -33,6 +34,7 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
   const [comment, setComment] = useState('')
   useEffect(() => setComment(''), [id])
   const plan = readableQueryData(query)
+  const referenceImpact = usePlanReferenceImpact(plan)
   const migrations = planMigrations(plan)
   const requiresMigrationComment = migrations.some((value) => value.requiresApproval)
   const migrationBlocked = migrations.some((value) => value.blocked)
@@ -54,7 +56,7 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
       query.isError ||
       comparisonMissing ||
       !canApprove ||
-      (action === 'approve' && migrationBlocked) ||
+      (action === 'approve' && (migrationBlocked || referenceImpact.changed)) ||
       plan?.status !== 'waiting_approval' ||
       (action === 'approve' && requiresMigrationComment && !comment.trim())
     )
@@ -97,6 +99,7 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
                   query.isError ||
                   comparisonMissing ||
                   migrationBlocked ||
+                  referenceImpact.changed ||
                   (requiresMigrationComment && !comment.trim())
                 }
                 onClick={() => void decide('approve')}
@@ -190,6 +193,7 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
                 { key: 'rollback', label: '回滚策略', children: plan.rollbackStrategy || '—' },
               ]}
             />
+            <PlanReferenceImpact view={referenceImpact} />
             {configurationOnly && templateCandidate ? (
               <TemplateAdoptionDiff candidate={templateCandidate} />
             ) : null}

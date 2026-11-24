@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 
 import type { ReactNode } from 'react'
-import { act } from 'react'
+import { act, lazy } from 'react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApplicationDetailPage } from './applications/detail-page'
+import { ApplicationWorkspaceRoute } from './applications/workspace-shell'
 import { WorkflowCatalog } from './release-board/workflow-catalog'
 import { ApplicationNavigation, ApplicationIdentity, ApplicationBreadcrumb } from './navigation'
 import { ApplicationWorkflowDesignerPage } from './applications/workflow-designer-page'
@@ -75,6 +76,7 @@ const testState = vi.hoisted(() => ({
   deliveryClusterConnectionMode: 'direct_kubeconfig',
   runtimeStatus: 'ok' as 'ok' | 'not-found' | 'error',
   runtimePending: false,
+  projectionScenario: 'default' as 'default' | 'mixed' | 'partial',
   serviceLegacyRepository: false,
   serviceCatalogStatus: 'ready' as 'ready' | 'pending' | 'error',
   runtimeWithProductionEnvironment: false,
@@ -84,8 +86,66 @@ const testState = vi.hoisted(() => ({
   createdRepository: undefined as Record<string, unknown> | undefined,
   lastDeliveryPlan: undefined as undefined | Record<string, unknown>,
   readErrors: new Map<string, Error>(),
-  apiGet: vi.fn(async (path: string) => {
+  apiGet: vi.fn(async (path: string, _options?: { signal?: AbortSignal }) => {
     if (testState.readErrors.has(path)) throw testState.readErrors.get(path)
+    if (
+      /^\/applications\/app-1\/application-environments\/[^/]+\/services\/svc-api\/pods$/.test(path)
+    ) {
+      if (!path.includes('/binding-test/') || testState.manifestDeployments.length)
+        return { data: { status: 'unconfigured', items: [] } }
+      const mixed = testState.projectionScenario === 'mixed'
+      const partial = testState.projectionScenario === 'partial'
+      const kinds = mixed
+        ? ['Deployment', 'StatefulSet', 'DaemonSet', 'HelmRelease', 'Job', 'CustomResource']
+        : ['Deployment']
+      const items = kinds.map((kind, index) => ({
+        clusterId: 'cluster-a',
+        workloadName: index === 0 ? 'checkout-api' : `checkout-${kind.toLowerCase()}`,
+        workloadKind: kind,
+        pod: {
+          uid: `checkout-uid-${index}`,
+          name: index === 0 ? 'checkout-api-pod' : `checkout-${kind.toLowerCase()}-pod`,
+          namespace: 'checkout-test',
+          phase: kind === 'Job' ? 'Succeeded' : 'Running',
+          readyContainers: '1/1',
+          restarts: index === 0 ? 1 : 0,
+          ageSeconds: 60,
+          containerStatuses:
+            index === 0
+              ? [
+                  {
+                    name: 'api',
+                    kind: 'container',
+                    ready: true,
+                    state: 'running',
+                    lastTerminationReason: 'OOMKilled',
+                    lastTerminationExitCode: 137,
+                  },
+                  {
+                    name: 'bootstrap',
+                    kind: 'init',
+                    ready: false,
+                    state: 'terminated',
+                    exitCode: 0,
+                  },
+                  { name: 'telemetry', kind: 'sidecar', ready: true, state: 'running' },
+                ]
+              : [],
+        },
+      }))
+      return {
+        data: {
+          status: partial ? 'partial' : 'available',
+          reason: partial ? 'ownership_unverified' : undefined,
+          items: partial
+            ? [
+                ...items,
+                { ...items[0], pod: { ...items[0].pod, name: 'unverified-pod', uid: undefined } },
+              ]
+            : items,
+        },
+      }
+    }
     if (path === '/delivery/execution-tasks/preflight-1')
       return {
         data: {
@@ -281,46 +341,48 @@ const testState = vi.hoisted(() => ({
         ],
       }
     }
-    if (path === '/application-environments') {
-      return {
-        data: [
-          {
-            id: 'binding-test',
-            applicationId: 'app-1',
-            environmentId: 'env-test',
-            alias: '集成测试',
-            clusterId: 'cluster-a',
-            namespace: 'checkout-test',
-            registryId: 'registry-a',
-            workflowTemplateId: 'wf-template-1',
-            buildPolicy: { sourceId: 'source-api', refType: 'branch' },
-            releasePolicy: { actionKind: 'deploy', requiresApproval: false },
-            resourceSelector: { matchLabels: { app: 'checkout-api' } },
-            targets: [
-              {
-                id: 'target-1',
-                ...(testState.manifestTarget
-                  ? {
-                      executorKind: 'manifest_ssa',
-                      targetKind: 'kustomize_overlay',
-                      configRef: 'manifest-binding-1',
-                      metadata: { serviceId: 'svc-api', manifestPackageName: 'Checkout config' },
-                    }
-                  : {}),
-                applicationEnvironmentId: 'binding-test',
-                clusterId: 'cluster-a',
-                namespace: 'checkout-test',
-                workloadKind: 'Deployment',
-                workloadName: 'checkout-api',
-                containerName: 'api',
-                enabled: true,
-              },
-            ],
-            createdAt: '2026-05-01T00:00:00Z',
-            updatedAt: '2026-05-10T00:00:00Z',
-          },
-        ],
-      }
+    if (
+      path === '/application-environments' ||
+      path === '/application-environments/binding-test/detail'
+    ) {
+      const bindings = [
+        {
+          id: 'binding-test',
+          applicationId: 'app-1',
+          environmentId: 'env-test',
+          alias: '集成测试',
+          clusterId: 'cluster-a',
+          namespace: 'checkout-test',
+          registryId: 'registry-a',
+          workflowTemplateId: 'wf-template-1',
+          buildPolicy: { sourceId: 'source-api', refType: 'branch' },
+          releasePolicy: { actionKind: 'deploy', requiresApproval: false },
+          resourceSelector: { matchLabels: { app: 'checkout-api' } },
+          targets: [
+            {
+              id: 'target-1',
+              ...(testState.manifestTarget
+                ? {
+                    executorKind: 'manifest_ssa',
+                    targetKind: 'kustomize_overlay',
+                    configRef: 'manifest-binding-1',
+                    metadata: { serviceId: 'svc-api', manifestPackageName: 'Checkout config' },
+                  }
+                : {}),
+              applicationEnvironmentId: 'binding-test',
+              clusterId: 'cluster-a',
+              namespace: 'checkout-test',
+              workloadKind: 'Deployment',
+              workloadName: 'checkout-api',
+              containerName: 'api',
+              enabled: true,
+            },
+          ],
+          createdAt: '2026-05-01T00:00:00Z',
+          updatedAt: '2026-05-10T00:00:00Z',
+        },
+      ]
+      return { data: path.endsWith('/detail') ? { binding: bindings[0] } : bindings }
     }
     if (path === '/delivery/environments') {
       return {
@@ -482,16 +544,23 @@ const testState = vi.hoisted(() => ({
         },
       }
     }
-    if (path === '/applications/app-1/runtime') {
-      if (testState.runtimePending) await new Promise<never>(() => {})
-      if (testState.runtimeStatus === 'not-found') {
-        throw new ApiError(404, 'application not found')
-      }
-      if (testState.runtimeStatus === 'error') {
-        throw new ApiError(500, 'runtime unavailable')
-      }
+    const runtimeSummaryBinding = path.match(
+      /^\/applications\/app-1\/application-environments\/([^/]+)\/runtime-summary$/,
+    )?.[1]
+    if (runtimeSummaryBinding && testState.runtimePending) await new Promise<never>(() => {})
+    if (runtimeSummaryBinding && testState.runtimeStatus !== 'ok') {
+      throw new ApiError(testState.runtimeStatus === 'not-found' ? 404 : 500, 'runtime unavailable')
+    }
+    if (
+      runtimeSummaryBinding ||
+      [
+        '/applications/app-1/runtime',
+        '/applications/app-1',
+        '/applications/app-1/application-environments',
+      ].includes(path)
+    ) {
       const defaultTag = testState.detailWithoutImageTagDefaults ? undefined : 'latest'
-      return {
+      const response = {
         data: {
           application: {
             id: 'app-1',
@@ -542,6 +611,17 @@ const testState = vi.hoisted(() => ({
               environmentId: 'env-test',
               environmentName: '测试环境',
               requiresApproval: false,
+              targets: testState.manifestTarget
+                ? [
+                    {
+                      id: 'target-1',
+                      enabled: true,
+                      executorKind: 'manifest_ssa',
+                      configRef: 'manifest-binding-1',
+                      metadata: { serviceId: 'svc-api' },
+                    },
+                  ]
+                : [],
               manifestDeployments: testState.manifestDeployments,
               workloads: testState.manifestDeployments.length
                 ? []
@@ -611,6 +691,38 @@ const testState = vi.hoisted(() => ({
           ],
         },
       }
+      const runtime = response.data
+      if (path === '/applications/app-1') return { data: runtime.application }
+      if (path === '/applications/app-1/application-environments')
+        return {
+          data: runtime.environments.map(
+            ({ applicationEnvironmentId, environmentId, environmentName, requiresApproval }) => ({
+              applicationEnvironmentId,
+              environmentId,
+              environmentName,
+              requiresApproval,
+              environmentKey: environmentId,
+              isProduction: environmentId === 'env-production',
+              clusterId: 'cluster-a',
+              namespace: 'checkout-test',
+            }),
+          ),
+        }
+      if (runtimeSummaryBinding) {
+        const environment = runtime.environments.find(
+          (item) => item.applicationEnvironmentId === runtimeSummaryBinding,
+        )
+        if (!environment) throw new ApiError(404, 'binding not found')
+        return {
+          data: {
+            environment,
+            observationStatus:
+              environment.status === 'unavailable' ? 'cluster_unready' : 'available',
+            observedAt: '2026-05-10T00:00:00Z',
+          },
+        }
+      }
+      return response
     }
     if (path === '/applications/app-1/detail') {
       const defaultTag = testState.detailWithoutImageTagDefaults ? undefined : 'latest'
@@ -870,35 +982,41 @@ const testState = vi.hoisted(() => ({
         },
       }
     }
-    if (path === '/applications/app-1/services') {
+    if (
+      path === '/applications/app-1/services' ||
+      path === '/applications/app-1/service-directory' ||
+      path === '/applications/app-1/services/svc-api'
+    ) {
       if (testState.serviceCatalogStatus === 'pending') return new Promise<never>(() => {})
       if (testState.serviceCatalogStatus === 'error') throw new Error('service catalog unavailable')
-      return {
-        data: [
+      const service = {
+        id: 'svc-api',
+        applicationId: 'app-1',
+        key: 'api',
+        name: 'Checkout API',
+        serviceKind: 'kubernetes_workload',
+        ownerTeam: 'checkout-dev',
+        repositoryPath: 'commerce/checkout/api',
+        buildSourceId: testState.serviceLegacyRepository ? undefined : 'source-api',
+        enabled: true,
+        containers: [
           {
-            id: 'svc-api',
-            applicationId: 'app-1',
-            key: 'api',
-            name: 'Checkout API',
-            serviceKind: 'kubernetes_workload',
-            ownerTeam: 'checkout-dev',
-            repositoryPath: 'commerce/checkout/api',
-            buildSourceId: testState.serviceLegacyRepository ? undefined : 'source-api',
-            enabled: true,
-            containers: [
-              {
-                id: 'svc-api:api',
-                serviceId: 'svc-api',
-                name: 'api',
-                imageRepository: 'registry.example.com/checkout/api',
-                runtimePorts: [8080],
-              },
-            ],
-            createdAt: '2026-05-10T00:00:00Z',
-            updatedAt: '2026-05-10T00:00:00Z',
+            id: 'svc-api:api',
+            serviceId: 'svc-api',
+            name: 'api',
+            imageRepository: 'registry.example.com/checkout/api',
+            runtimePorts: [8080],
           },
         ],
+        createdAt: '2026-05-10T00:00:00Z',
+        updatedAt: '2026-05-10T00:00:00Z',
       }
+      if (path.endsWith('/svc-api')) return { data: service }
+      if (path.endsWith('/service-directory')) {
+        const { id, applicationId, key, name, serviceKind, enabled } = service
+        return { data: [{ id, applicationId, key, name, serviceKind, enabled }] }
+      }
+      return { data: [service] }
     }
     if (path === '/repositories?applicationId=app-1') {
       if (testState.createdRepository) return { data: [testState.createdRepository] }
@@ -1168,8 +1286,8 @@ vi.mock('@/components/release-flow-dag-editor', () => ({
 
 vi.mock('@/services/api-client', () => ({
   api: {
-    get: async (path: string) => {
-      const body = await testState.apiGet(path)
+    get: async (path: string, options?: { signal?: AbortSignal }) => {
+      const body = await (options ? testState.apiGet(path, options) : testState.apiGet(path))
       if (body && typeof body === 'object' && 'items' in body && !('data' in body)) {
         return { data: (body as { items: unknown }).items }
       }
@@ -1431,6 +1549,7 @@ describe('ApplicationDetailPage workbench', () => {
     testState.deliveryClusterConnectionMode = 'direct_kubeconfig'
     testState.runtimeStatus = 'ok'
     testState.runtimePending = false
+    testState.projectionScenario = 'default'
     testState.serviceCatalogStatus = 'ready'
     testState.serviceLegacyRepository = false
     testState.runtimeWithProductionEnvironment = false
@@ -1484,12 +1603,43 @@ describe('ApplicationDetailPage workbench', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps the service directory usable while the detail module is pending', async () => {
+    const Detail = lazy(() => new Promise<never>(() => {}))
+    const container = await renderWithProviders(<ApplicationWorkspaceRoute Detail={Detail} />)
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="搜索服务"]')!
+    expect(input).toBeTruthy()
+    expect(container.textContent).toContain('正在加载服务详情')
+    const setSearch = async (value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+          input,
+          value,
+        )
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const firstRow = () =>
+      container.querySelector<HTMLButtonElement>('nav[aria-label="服务列表"] button')
+    await setSearch('no matching service')
+    expect(firstRow()).toBeNull()
+    await setSearch('')
+    const row = firstRow()
+    expect(row).toBeTruthy()
+    await act(async () => row?.click())
+    expect(row?.getAttribute('aria-current')).toBe('page')
+    expect(container.querySelector('input[aria-label="搜索服务"]')).toBe(input)
+    expect(container.textContent).toContain('正在加载服务详情')
+  })
+
   it('keeps one service pane beneath settings and workflow drawers without application tabs', async () => {
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
       '/applications/app-1?serviceId=svc-api',
     )
-    expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/runtime')
+    expect(testState.apiGet).toHaveBeenCalledWith(
+      '/applications/app-1/application-environments/binding-test/runtime-summary',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
     expect(container.querySelector('.soha-application-navigation')).toBeNull()
     expect(container.querySelectorAll('[aria-label="服务列表"] button')).toHaveLength(1)
     const pane = container.querySelector('.soha-service-console__body')
@@ -1500,9 +1650,11 @@ describe('ApplicationDetailPage workbench', () => {
     )
     await openSection(container, '权限')
     const permissions = document.querySelector('.soha-application-settings__content')!
+    await vi.waitFor(() =>
+      expect(permissions.querySelector('summary')?.textContent).toContain('查看我的权限'),
+    )
     expect(permissions.textContent).not.toContain('部署与审批')
     expect(permissions.querySelector('details')?.open).toBe(false)
-    expect(permissions.querySelector('summary')?.textContent).toContain('查看我的权限')
     expect(
       Array.from(document.querySelectorAll('[aria-label="设置分区"] button')).map(
         (item) => item.textContent,
@@ -1559,14 +1711,17 @@ describe('ApplicationDetailPage workbench', () => {
     expect(serviceActions?.textContent).not.toContain('编辑服务')
     expect(container.querySelector('.soha-pod-card')).toBeNull()
     expect(container.querySelector('[aria-label="工作负载运行关系"]')).not.toBeNull()
-    expect(header.querySelector('.soha-service-pod-count')?.textContent).toBe('1')
+    expect(header.querySelector('.soha-service-pod-count')).toBeNull()
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>('.soha-service-runtime-overview__resources button')!
         .click()
       await vi.dynamicImportSettled()
     })
-    expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+    await vi.waitFor(() =>
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod'),
+    )
+    expect(header.querySelector('.soha-service-pod-count')?.textContent).toBe('1')
     expect(container.querySelector('[aria-label="工作负载运行关系"]')).toBeNull()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
@@ -1574,9 +1729,12 @@ describe('ApplicationDetailPage workbench', () => {
         .click()
       await vi.dynamicImportSettled()
     })
-    expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
-      'commerce/checkout/api',
-    )
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
+        'commerce/checkout/api',
+      )
+    })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
         .find((tab) => tab.textContent === '状态')!
@@ -1625,11 +1783,12 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('keeps observed Helm Pods readable without exposing direct workload mutation buttons', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     const previousGet = testState.apiGet.getMockImplementation()!
     testState.apiGet.mockImplementation(async (path: string) => {
       const result = await previousGet(path)
-      if (path === '/applications/app-1/runtime' && result.data && 'environments' in result.data) {
-        const workload = result.data.environments?.[0]?.workloads?.[0]
+      if (path.endsWith('/runtime-summary') && result.data && 'environment' in result.data) {
+        const workload = result.data.environment?.workloads[0]
         if (!workload) throw new Error('Expected native workload fixture')
         Object.assign(workload, {
           sourceStatus: '',
@@ -1685,12 +1844,8 @@ describe('ApplicationDetailPage workbench', () => {
       const previousGet = testState.apiGet.getMockImplementation()!
       testState.apiGet.mockImplementation(async (path: string) => {
         const result = await previousGet(path)
-        if (
-          path === '/applications/app-1/runtime' &&
-          result.data &&
-          'environments' in result.data
-        ) {
-          const environment = result.data.environments?.[0]
+        if (path.endsWith('/runtime-summary') && result.data && 'environment' in result.data) {
+          const environment = result.data.environment
           if (!environment?.workloads[0]) throw new Error('Expected native workload fixture')
           Object.assign(environment, {
             workloads: [
@@ -1755,15 +1910,11 @@ describe('ApplicationDetailPage workbench', () => {
             expect(container.textContent).not.toContain('尚无关联 Pod 的指标证据')
           }
           expect(
-            testState.apiGet.mock.calls.some(([path]) =>
-              path.includes('/workloads/checkout-api/runtime'),
-            ),
+            testState.apiGet.mock.calls.some(([path]) => path.endsWith('/services/svc-api/pods')),
           ).toBe(true)
         })
         expect(
-          testState.apiGet.mock.calls.some(([path]) =>
-            path.includes('/workloads/cache-root/runtime'),
-          ),
+          testState.apiGet.mock.calls.some(([path]) => /\/workloads\/[^/]+\/runtime$/.test(path)),
         ).toBe(false)
       } finally {
         testState.apiGet.mockImplementation(previousGet)
@@ -1813,12 +1964,13 @@ describe('ApplicationDetailPage workbench', () => {
   )
 
   it('keeps service configuration available when the selected environment has no deployment', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     testState.runtimeWithProductionEnvironment = true
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
       '/applications/app-1?tab=services&applicationEnvironmentId=binding-production&serviceId=svc-api',
     )
-    expect(container.textContent).toContain('当前环境尚未部署此服务')
+    await vi.waitFor(() => expect(container.textContent).toContain('当前环境尚未部署此服务'))
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
     ).toEqual(['Pods', '指标', '发布与工作流', '配置与模板', '状态', '资源关系'])
@@ -1833,9 +1985,12 @@ describe('ApplicationDetailPage workbench', () => {
         .click()
       await vi.dynamicImportSettled()
     })
-    expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
-      '负责人 / 团队',
-    )
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
+        '负责人 / 团队',
+      )
+    })
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
       'applicationEnvironmentId=binding-production',
     )
@@ -2151,14 +2306,76 @@ describe('ApplicationDetailPage workbench', () => {
     )
   })
 
-  it('renders service configuration while runtime query is pending', async () => {
+  it('cancels a previous environment observation and keeps service configuration readable on 403', async () => {
+    testState.runtimeWithProductionEnvironment = true
+    testState.runtimePending = true
+    const summaryPath =
+      '/applications/app-1/application-environments/binding-production/runtime-summary'
+    testState.readErrors.set(summaryPath, new ApiError(403, 'permission denied'))
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=configuration',
+    )
+    const initialSignal = testState.apiGet.mock.calls.find(([path]) =>
+      path.endsWith('/binding-test/runtime-summary'),
+    )?.[1]?.signal
+    expect(initialSignal?.aborted).toBe(false)
+
+    await act(async () => findButton(container, '线上').click())
+    await vi.waitFor(() => expect(container.textContent).toContain('无运行态查看权限'))
+    expect(initialSignal?.aborted).toBe(true)
+    expect(container.querySelector('.soha-service-detail h1')?.textContent).toBe('Checkout API')
+    expect(container.textContent).toContain('commerce/checkout/api')
+    expect(
+      container.querySelector('[aria-label="选择环境"] [aria-current="page"]')?.textContent,
+    ).toContain('线上')
+    expect(container.querySelector('.soha-pod-card')).toBeNull()
+    expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
+  })
+
+  it('keeps the service directory clickable while only the selected environment is observed', async () => {
+    testState.runtimeWithProductionEnvironment = true
     testState.runtimePending = true
     const container = await renderWithProviders(<ApplicationDetailPage />)
     expect(container.querySelector('[aria-label="应用导航"]')).not.toBeNull()
     expect(container.querySelector('.soha-service-console')).not.toBeNull()
     expect(container.textContent).toContain('Checkout API')
-    expect(container.textContent).toContain('读取状态')
+    expect(container.textContent).toContain('待观测')
     expect(container.textContent).not.toContain('未部署')
+    expect(
+      testState.apiGet.mock.calls
+        .map(([path]) => path)
+        .filter((path) => /application|cluster|repositor|workflow|environment/.test(path))
+        .sort(),
+    ).toEqual([
+      '/applications/app-1',
+      '/applications/app-1/application-environments',
+      '/applications/app-1/application-environments/binding-test/runtime-summary',
+      '/applications/app-1/service-directory',
+    ])
+    await act(async () => findButton(container, 'Checkout API').click())
+    expect(container.querySelector('.soha-service-detail h1')?.textContent).toBe('Checkout API')
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
+      'applicationEnvironmentId=binding-test',
+    )
+  })
+
+  it('observes all application environments only after opening the overview disclosure', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    await openSection(container, '环境配置')
+    expect(
+      testState.apiGet.mock.calls.some(([path]) => path === '/applications/app-1/runtime'),
+    ).toBe(false)
+    const disclosure = Array.from(document.querySelectorAll('details')).find(
+      (details) => details.querySelector('summary')?.textContent === '查看环境运行概览',
+    )!
+    await act(async () => {
+      disclosure.open = true
+      disclosure.dispatchEvent(new Event('toggle'))
+    })
+    await vi.waitFor(() =>
+      expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/runtime'),
+    )
   })
 
   it('filters the service rail without replacing the selected service and keeps add-service inside it', async () => {
@@ -2184,8 +2401,10 @@ describe('ApplicationDetailPage workbench', () => {
     await act(async () => {
       findButton(rail, '添加服务').click()
     })
-    expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
-      '服务',
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
+        '服务来源',
+      ),
     )
   })
 
@@ -2239,6 +2458,127 @@ describe('ApplicationDetailPage workbench', () => {
     expect(testState.apiGet.mock.calls.some(([path]) => path.includes('/metrics?'))).toBe(false)
   })
 
+  it('renders mixed verified Pod cards while the environment runtime summary is pending', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    testState.runtimePending = true
+    testState.projectionScenario = 'mixed'
+    const observed: Element[] = []
+    let report = (_targets: Element[], _isIntersecting: boolean) => {}
+    const previousObserver = globalThis.IntersectionObserver
+    globalThis.IntersectionObserver = class {
+      constructor(callback: IntersectionObserverCallback) {
+        report = (targets, isIntersecting) =>
+          callback(
+            targets.map((target) => ({ target, isIntersecting }) as IntersectionObserverEntry),
+            this as unknown as IntersectionObserver,
+          )
+      }
+      observe(target: Element) {
+        observed.push(target)
+      }
+      disconnect() {}
+    } as unknown as typeof IntersectionObserver
+    const get = testState.apiGet.getMockImplementation()!
+    const inFlight = new Set<string>()
+    let peak = 0
+    testState.apiGet.mockImplementation((path, options) => {
+      if (!path.includes('/metrics?')) return get(path, options)
+      inFlight.add(path)
+      peak = Math.max(peak, inFlight.size)
+      return new Promise<never>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            inFlight.delete(path)
+            reject(new DOMException('Test preview aborted', 'AbortError'))
+          },
+          { once: true },
+        )
+      })
+    })
+    try {
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api',
+      )
+      await vi.waitFor(() => expect(observed).toHaveLength(6))
+      const list = container.querySelector('[data-testid="application-service-pod-list"]')!
+      for (const fact of [
+        'Deployment',
+        'StatefulSet',
+        'DaemonSet',
+        'HelmRelease',
+        'Job',
+        'CustomResource',
+        'OOMKilled · Exit 137',
+        'Init',
+        'Exit 0',
+        'Sidecar',
+      ])
+        expect(list.textContent).toContain(fact)
+      expect(list.querySelectorAll('[data-testid="application-service-pod-card"]')).toHaveLength(6)
+      expect(inFlight.size).toBe(0)
+      await act(async () => report(observed, true))
+      await vi.waitFor(() => expect(inFlight.size).toBe(4))
+      expect([...inFlight].some((path) => path.includes('checkout-job-pod'))).toBe(false)
+      await act(async () => report(observed.slice(0, 2), false))
+      await vi.waitFor(() =>
+        expect([...inFlight].some((path) => path.includes('checkout-customresource-pod'))).toBe(
+          true,
+        ),
+      )
+      expect([...inFlight].some((path) => path.includes('checkout-job-pod'))).toBe(true)
+      expect([...inFlight].some((path) => path.includes('checkout-api-pod'))).toBe(false)
+      expect(inFlight.size).toBe(4)
+      expect(peak).toBe(4)
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('.soha-service-selector__overview')!.click(),
+      )
+      await vi.waitFor(() => expect(inFlight.size).toBe(0))
+      expect(
+        testState.apiGet.mock.calls.filter(([path]) => path.endsWith('/services/svc-api/pods')),
+      ).toHaveLength(1)
+      expect(
+        testState.apiGet.mock.calls.some(([path]) => /\/workloads\/[^/]+\/runtime$/.test(path)),
+      ).toBe(false)
+    } finally {
+      globalThis.IntersectionObserver = previousObserver
+      testState.apiGet.mockImplementation(get)
+    }
+  })
+
+  it('keeps verified partial cards, drops rows without UID, and refuses a replaced Pod link', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view', 'platform.pods.logs')
+    testState.projectionScenario = 'partial'
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api&pod=checkout-api-pod&podUid=old-uid&tool=logs',
+    )
+    await vi.waitFor(() => expect(container.textContent).toContain('仅显示已验证归属的 Pod'))
+    expect(container.querySelectorAll('[data-testid="application-service-pod-card"]')).toHaveLength(
+      1,
+    )
+    expect(container.textContent).not.toContain('unverified-pod')
+    expect(container.querySelector('.soha-service-pod-count')).toBeNull()
+    expect(document.body.textContent).toContain('Pod 不存在或无法唯一定位')
+  })
+
+  it('shows service configuration context when the Pod projection is forbidden', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    testState.readErrors.set(
+      '/applications/app-1/application-environments/binding-test/services/svc-api/pods',
+      new ApiError(403, 'Pod access denied'),
+    )
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api',
+    )
+    await vi.waitFor(() => expect(container.textContent).toContain('无 Pod 查看权限'))
+    expect(container.querySelector('[data-testid="application-service-pod-card"]')).toBeNull()
+    expect(container.querySelector('.soha-service-detail h1')?.textContent).toBe('Checkout API')
+    expect(findButton(container, '更新配置')).not.toBeNull()
+  })
+
   it('navigates Pod metrics to the dedicated tab and clears the target on environment switch', async () => {
     testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     testState.runtimeWithProductionEnvironment = true
@@ -2284,6 +2624,7 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('filters services by the selected environment', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     testState.runtimeWithProductionEnvironment = true
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
@@ -2304,7 +2645,7 @@ describe('ApplicationDetailPage workbench', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(container.textContent).toContain('当前环境尚未部署此服务')
+    await vi.waitFor(() => expect(container.textContent).toContain('当前环境尚未部署此服务'))
     expect(container.querySelector('.soha-pod-card')).toBeNull()
     expect(container.querySelector('[aria-label="服务列表"] button')).not.toBeNull()
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
@@ -2326,7 +2667,7 @@ describe('ApplicationDetailPage workbench', () => {
       option.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(container.textContent).toContain('集群不可用')
+    await vi.waitFor(() => expect(container.textContent).toContain('集群不可用'))
     expect(container.querySelector('.soha-rollout-progress')).toBeNull()
   })
 
@@ -2386,7 +2727,7 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services',
     )
 
-    expect(testState.apiGet).toHaveBeenCalledWith('/delivery/environments')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/delivery/environments')
     expect(testState.apiGet).not.toHaveBeenCalledWith('/registries')
     await openSection(container, '环境配置')
 
@@ -2874,11 +3215,11 @@ describe('ApplicationDetailPage workbench', () => {
     expect(modal.textContent).toContain('当前草稿已保留')
 
     const previousGet = testState.apiGet.getMockImplementation()!
-    const detail = (await previousGet('/applications/app-1/detail')) as {
-      data: { application: Record<string, unknown> }
+    const record = (await previousGet('/applications/app-1')) as {
+      data: Record<string, unknown>
     }
     const latest = {
-      ...detail.data.application,
+      ...record.data,
       name: 'Updated application',
       version: 9,
       buildSources: [
@@ -2910,9 +3251,7 @@ describe('ApplicationDetailPage workbench', () => {
       ],
     }
     testState.apiGet.mockImplementation(async (path: string) =>
-      path === '/applications/app-1/detail'
-        ? ({ data: { ...detail.data, application: latest } } as never)
-        : previousGet(path),
+      path === '/applications/app-1' ? ({ data: latest } as never) : previousGet(path),
     )
     try {
       await click(findButton(modal, '重新加载构建'))
@@ -3132,6 +3471,7 @@ describe('ApplicationDetailPage workbench', () => {
   it.each(['', '&serviceTab=unknown'])(
     'defaults the service to Pods for route %s',
     async (suffix) => {
+      testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
       const container = await renderWithProviders(
         <ApplicationDetailPage />,
         '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test' + suffix,
@@ -3142,7 +3482,11 @@ describe('ApplicationDetailPage workbench', () => {
       expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toMatch(
         /^Pods/,
       )
-      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+      await vi.waitFor(() =>
+        expect(container.querySelector('.soha-pod-card')?.textContent).toContain(
+          'checkout-api-pod',
+        ),
+      )
       expect(container.querySelector('.soha-service-runtime-overview')).toBeNull()
     },
   )
@@ -3345,7 +3689,7 @@ describe('ApplicationDetailPage workbench', () => {
       expect(container.querySelector('.soha-service-console')).not.toBeNull()
       expect(container.textContent).toContain('状态读取失败')
       expect(container.textContent).toContain('Checkout API')
-      expect(container.querySelector('.soha-service-pods-panel')?.textContent).toContain('重试')
+      expect(findButton(container, '重试当前环境')).not.toBeNull()
       expect(container.textContent).not.toContain('应用不存在')
       expect(container.textContent).not.toContain('应用加载失败')
     },

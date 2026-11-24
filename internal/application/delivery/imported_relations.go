@@ -8,6 +8,7 @@ import (
 	"io"
 
 	cr "github.com/opensoha/soha/contracts/resource"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	di "github.com/opensoha/soha/internal/domain/identity"
 	dr "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -37,19 +38,27 @@ func (s *Service) GetImportedTargetRelations(ctx context.Context, p di.Principal
 		if err != nil {
 			return cr.ResourceRelationsView{}, err
 		}
-		var config cr.RelationConfig
-		if value, exists := target.Metadata["resourceRelations"]; exists {
-			data, err := json.Marshal(value)
-			if err != nil || len(data) > 16<<10 {
-				return cr.ResourceRelationsView{}, apperrors.ErrInvalidArgument
-			}
-			decoder := json.NewDecoder(bytes.NewReader(data))
-			decoder.DisallowUnknownFields()
-			if decoder.Decode(&config) != nil || decoder.Decode(new(any)) != io.EOF || cr.ValidateRelationConfig(config) != nil {
-				return cr.ResourceRelationsView{}, fmt.Errorf("%w: invalid relation configuration", apperrors.ErrInvalidArgument)
-			}
+		config, err := importedTargetRelationConfig(target)
+		if err != nil {
+			return cr.ResourceRelationsView{}, err
 		}
 		return reader.GetApplicationResourceRelations(ctx, p, source, config)
 	}
 	return cr.ResourceRelationsView{}, fmt.Errorf("%w: linked target not found", apperrors.ErrNotFound)
+}
+
+func importedTargetRelationConfig(target domaincatalog.ReleaseTarget) (cr.RelationConfig, error) {
+	var config cr.RelationConfig
+	if value, exists := target.Metadata["resourceRelations"]; exists {
+		data, err := json.Marshal(value)
+		if err != nil || len(data) > 16<<10 {
+			return config, apperrors.ErrInvalidArgument
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&config) != nil || decoder.Decode(new(any)) != io.EOF || cr.ValidateRelationConfig(config) != nil {
+			return config, fmt.Errorf("%w: invalid relation configuration", apperrors.ErrInvalidArgument)
+		}
+	}
+	return config, nil
 }

@@ -1124,6 +1124,45 @@ paths:
                 $ref: "#/components/schemas/AuthResultEnvelope"
         "401":
           $ref: "#/components/responses/Error"
+  /auth/refresh/application-workbench:
+    post:
+      tags: [ Auth ]
+      operationId: refreshApplicationWorkbench
+      description: Refresh a browser session using its HttpOnly refresh cookie. The permission snapshot and named application entry are optional. The entry requires delivery workbench and application view permissions, enabled delivery, and authorization for all three scoped reads. Missing or denied entry data does not invalidate the session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationWorkbenchRefreshRequest"
+      responses:
+        "200":
+          description: Refreshed session with optional startup reads. The response is not cacheable.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationWorkbenchRefreshEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429":
+          description: Too many refresh requests from this client address.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error, message ]
+                properties:
+                  error: { type: string, const: rate_limited }
+                  message: { type: string }
+                additionalProperties: false
   /auth/oidc/login:
     get:
       tags: [ Auth ]
@@ -2403,6 +2442,62 @@ paths:
                 $ref: "#/components/schemas/ApplicationRuntimeDetailEnvelope"
         "404":
           $ref: "#/components/responses/Error"
+  /applications/{applicationID}/application-environments:
+    get:
+      tags: [ Applications, Delivery ]
+      operationId: listApplicationEnvironmentNavigation
+      parameters:
+        - $ref: "#/components/parameters/ApplicationID"
+      responses:
+        "200":
+          description: Visible environment navigation for one application. Reads configuration only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationEnvironmentNavigationEnvelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /applications/{applicationID}/application-environments/{applicationEnvironmentID}/runtime-summary:
+    get:
+      tags: [ Applications, Delivery ]
+      operationId: getApplicationEnvironmentRuntimeSummary
+      parameters:
+        - $ref: "#/components/parameters/ApplicationID"
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+      responses:
+        "200":
+          description: Observed runtime for one authorized application environment. Downstream observation errors are represented in the result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationEnvironmentRuntimeSummaryEnvelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /applications/{applicationID}/application-environments/{applicationEnvironmentID}/services/{serviceID}/pods:
+    get:
+      tags: [ Applications, Delivery ]
+      operationId: getApplicationServicePods
+      parameters:
+        - $ref: "#/components/parameters/ApplicationID"
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      responses:
+        "200":
+          description: Verified Pods owned by the selected service in this application environment. Provider and ownership gaps are represented in the result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationServicePodsEnvelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /applications/{applicationID}/application-environments/{applicationEnvironmentID}/workflow:
     put:
       tags: [ Applications, Delivery ]
@@ -2425,6 +2520,24 @@ paths:
                 $ref: "#/components/schemas/ApplicationEnvironmentEnvelope"
         "400":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /applications/{applicationID}/service-directory:
+    get:
+      tags: [ Applications ]
+      operationId: listApplicationServiceDirectory
+      summary: List the identity fields needed to navigate an application's services.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationID"
+      responses:
+        "200":
+          description: Service identities visible to a principal authorized to read the application and its services.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationServiceDirectoryEnvelope"
         "403":
           $ref: "#/components/responses/Error"
         "404":
@@ -13011,6 +13124,19 @@ paths:
           schema:
             type: string
             minLength: 1
+        - name: expectedUid
+          in: query
+          description: Restrict samples to the reviewed Pod UID. A replaced Pod returns conflict. Samples without verified UID evidence are omitted.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._-]{1,128}$'
+        - name: container
+          in: query
+          description: Optional container filter for UID-scoped CPU and memory. Requires expectedUid.
+          schema:
+            type: string
+            maxLength: 63
+            pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
         - name: namespace
           in: query
           schema:
@@ -13044,6 +13170,8 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
@@ -40181,6 +40309,74 @@ components:
         data:
           $ref: "#/components/schemas/AuthResult"
       additionalProperties: false
+    ApplicationWorkbenchRefreshRequest:
+      type: object
+      required: [ applicationId ]
+      properties:
+        applicationId: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    ApplicationWorkbenchRefreshEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/ApplicationWorkbenchRefreshResult"
+      additionalProperties: false
+    ApplicationWorkbenchRefreshResult:
+      type: object
+      required: [ session ]
+      properties:
+        session:
+          $ref: "#/components/schemas/AuthResult"
+        permissionSnapshot:
+          $ref: "#/components/schemas/PermissionSnapshot"
+        entry:
+          $ref: "#/components/schemas/ApplicationWorkbenchEntry"
+      additionalProperties: false
+    ApplicationWorkbenchEntry:
+      type: object
+      required: [ application, environments, services ]
+      properties:
+        application:
+          $ref: "#/components/schemas/Application"
+        environments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationEnvironmentNavigation"
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationServiceDirectoryItem"
+      additionalProperties: false
+    PermissionSnapshot:
+      type: object
+      required: [ permissionKeys, visibleMenuIds, visibleMenus ]
+      properties:
+        permissionKeys:
+          type: array
+          items: { type: string }
+        visibleMenuIds:
+          type: array
+          items: { type: string }
+        visibleMenus:
+          type: array
+          items:
+            $ref: "#/components/schemas/VisibleMenu"
+      additionalProperties: false
+    VisibleMenu:
+      type: object
+      required: [ id, path, labelZh, labelEn, iconKey, section, sortOrder, enabled ]
+      properties:
+        id: { type: string }
+        parentId: { type: string }
+        path: { type: string }
+        labelZh: { type: string }
+        labelEn: { type: string }
+        iconKey: { type: string }
+        section: { type: string }
+        sortOrder: { type: integer }
+        enabled: { type: boolean }
+      additionalProperties: false
     AuthProviderListEnvelope:
       type: object
       required: [ items ]
@@ -40980,6 +41176,28 @@ components:
         metadata:
           type: object
           additionalProperties: true
+      additionalProperties: false
+    ApplicationServiceDirectoryItem:
+      type: object
+      required: [ id, applicationId, key, name, serviceKind, enabled ]
+      properties:
+        id: { type: string }
+        applicationId: { type: string }
+        key: { type: string }
+        name: { type: string }
+        serviceKind:
+          type: string
+          enum: [ kubernetes_workload, helm_release, external_service, job ]
+        enabled: { type: boolean }
+      additionalProperties: false
+    ApplicationServiceDirectoryEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationServiceDirectoryItem"
       additionalProperties: false
     ApplicationService:
       type: object
@@ -44149,6 +44367,9 @@ components:
           enum: [ linked, changed, replaced, missing, unavailable, forbidden ]
         applicationEnvironmentId:
           type: string
+        serviceId: { type: string }
+        serviceKey: { type: string }
+        healthStatus: { type: string }
         clusterId:
           type: string
         namespace:
@@ -44185,6 +44406,92 @@ components:
           $ref: "#/components/schemas/WorkflowRun"
         latestRelease:
           $ref: "#/components/schemas/ReleaseRecord"
+      additionalProperties: false
+    ApplicationEnvironmentNavigation:
+      type: object
+      required: [ applicationEnvironmentId, environmentId, environmentName, environmentKey, isProduction, requiresApproval ]
+      properties:
+        applicationEnvironmentId: { type: string }
+        environmentId: { type: string }
+        environmentName: { type: string }
+        environmentKey: { type: string }
+        isProduction: { type: boolean }
+        requiresApproval: { type: boolean }
+        actionKind: { type: string }
+        clusterId: { type: string }
+        namespace: { type: string }
+      additionalProperties: false
+    ApplicationEnvironmentNavigationEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationEnvironmentNavigation"
+      additionalProperties: false
+    ApplicationEnvironmentRuntimeSummary:
+      type: object
+      required: [ environment, observationStatus, observedAt ]
+      properties:
+        environment:
+          $ref: "#/components/schemas/ApplicationRuntimeEnvironment"
+        observationStatus:
+          type: string
+          enum: [ available, partial, timeout, cluster_unready, forbidden, identity_mismatch, unconfigured, unavailable ]
+        observedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ApplicationEnvironmentRuntimeSummaryEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/ApplicationEnvironmentRuntimeSummary"
+      additionalProperties: false
+    ApplicationServicePod:
+      type: object
+      required: [ clusterId, workloadKind, workloadName, pod ]
+      properties:
+        clusterId: { type: string }
+        targetId: { type: string }
+        workloadKind: { type: string }
+        workloadName: { type: string }
+        pod:
+          description: Current Pod status with verified immutable UID.
+          allOf:
+            - $ref: "#/components/schemas/KubernetesPod"
+            - type: object
+              required: [ uid ]
+              properties:
+                uid:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^[A-Za-z0-9._-]+$
+      additionalProperties: false
+    ApplicationServicePods:
+      type: object
+      required: [ status, items ]
+      properties:
+        status:
+          type: string
+          enum: [ available, partial, relation_only, unconfigured, unavailable ]
+        reason:
+          type: string
+          description: Stable reason code for an incomplete observation or unverified ownership.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationServicePod"
+      additionalProperties: false
+    ApplicationServicePodsEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/ApplicationServicePods"
       additionalProperties: false
     ApplicationRuntimeEnvironment:
       type: object
@@ -66997,6 +67304,14 @@ components:
           format: int32
           x-go-type-skip-optional-pointer: false
           description: Present only when the current container state is terminated, including a successful zero exit code.
+        lastTerminationReason:
+          type: string
+          description: Reason reported for the previous terminated container instance.
+        lastTerminationExitCode:
+          type: integer
+          format: int32
+          x-go-type-skip-optional-pointer: false
+          description: Exit code of the previous terminated container instance, including zero.
       additionalProperties: false
     KubernetesObservedResourceYamlInput:
       type: object

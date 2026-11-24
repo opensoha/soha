@@ -46,7 +46,7 @@ func ManifestHealth(object map[string]any) string {
 			return "healthy"
 		}
 		return "progressing"
-	case "v1/Pod", "batch/v1/Job":
+	case "v1/Pod":
 		if item.Status.Phase == "Succeeded" {
 			return "healthy"
 		}
@@ -54,6 +54,8 @@ func ManifestHealth(object map[string]any) string {
 			return "degraded"
 		}
 		return item.conditionHealth(false)
+	case "batch/v1/Job":
+		return item.jobHealth()
 	default:
 		return item.conditionHealth(true)
 	}
@@ -70,6 +72,7 @@ type manifestHealthObject struct {
 		Replicas       *int64 `json:"replicas"`
 		Type           string `json:"type"`
 		UpdateStrategy struct {
+			Type          string `json:"type"`
 			RollingUpdate struct {
 				Partition int64 `json:"partition"`
 			} `json:"rollingUpdate"`
@@ -84,6 +87,8 @@ type manifestHealthObject struct {
 		DesiredNumberScheduled int64  `json:"desiredNumberScheduled"`
 		UpdatedNumberScheduled int64  `json:"updatedNumberScheduled"`
 		NumberAvailable        int64  `json:"numberAvailable"`
+		CurrentRevision        string `json:"currentRevision"`
+		UpdateRevision         string `json:"updateRevision"`
 		Phase                  string `json:"phase"`
 		LoadBalancer           struct {
 			Ingress []json.RawMessage `json:"ingress"`
@@ -113,12 +118,45 @@ func (item manifestHealthObject) workloadHealth() string {
 	case "Deployment":
 		healthy = item.Status.UpdatedReplicas == desired && item.Status.Replicas == desired && item.Status.AvailableReplicas >= desired
 	case "StatefulSet":
-		updated := max(int64(0), desired-item.Spec.UpdateStrategy.RollingUpdate.Partition)
-		healthy = item.Status.ReadyReplicas >= desired && item.Status.UpdatedReplicas >= updated
+		// The controller indexes the ordered replica slice from zero even
+		// when the workload's first Pod has a nonzero start ordinal.
+		partition := max(int64(0), item.Spec.UpdateStrategy.RollingUpdate.Partition)
+		onDelete := item.Spec.UpdateStrategy.Type == "OnDelete"
+		if onDelete {
+			partition = 0
+		}
+		updated := max(int64(0), max(desired, int64(0))-partition)
+		healthy = item.Status.Replicas == desired && item.Status.ReadyReplicas == desired &&
+			item.Status.UpdatedReplicas >= updated && item.Status.UpdatedReplicas <= desired
+		if healthy && desired > 0 && !onDelete && partition == 0 {
+			healthy = item.Status.CurrentRevision != "" && item.Status.UpdateRevision != "" && item.Status.CurrentRevision == item.Status.UpdateRevision
+		}
 	case "DaemonSet":
-		healthy = item.Status.UpdatedNumberScheduled == item.Status.DesiredNumberScheduled && item.Status.NumberAvailable >= item.Status.DesiredNumberScheduled
+		healthy = item.Status.UpdatedNumberScheduled == item.Status.DesiredNumberScheduled && item.Status.NumberAvailable == item.Status.DesiredNumberScheduled
 	}
 	if healthy {
+		return "healthy"
+	}
+	return "progressing"
+}
+
+func (item manifestHealthObject) jobHealth() string {
+	complete, failed := false, false
+	for _, condition := range item.Status.Conditions {
+		if condition.Status != "True" {
+			continue
+		}
+		switch condition.Type {
+		case "Failed":
+			failed = true
+		case "Complete":
+			complete = true
+		}
+	}
+	if failed {
+		return "degraded"
+	}
+	if complete {
 		return "healthy"
 	}
 	return "progressing"

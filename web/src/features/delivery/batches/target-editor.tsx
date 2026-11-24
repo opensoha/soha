@@ -4,8 +4,10 @@ import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { kubernetesHelmQueries } from '@/features/platform'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { environmentReferenceQuery } from '../applications/service-reference-api'
 import { deliveryQueries } from '../queries'
-import type { DeliveryTargetInput } from '../types'
+import type { DeliveryTargetInput, ReleaseTarget } from '../types'
 import { deliveryActionLabels } from './model'
 
 type TargetForm = DeliveryTargetInput & {
@@ -19,6 +21,7 @@ export function DeliveryTargetEditor({
   embedded = false,
   pending = false,
   blockObserveOnly = false,
+  requireWritableLocalTarget = false,
   onChange,
   onSave,
   onClose,
@@ -28,6 +31,7 @@ export function DeliveryTargetEditor({
   embedded?: boolean
   pending?: boolean
   blockObserveOnly?: boolean
+  requireWritableLocalTarget?: boolean
   onChange?: () => void
   onSave: (target: DeliveryTargetInput) => void
   onClose: () => void
@@ -40,6 +44,17 @@ export function DeliveryTargetEditor({
   const releaseTargetId = Form.useWatch('releaseTargetId', form)
   const helmOperation = Form.useWatch('helmOperation', form)
   const building = action === 'build' || action === 'build_deploy'
+  const permissions = usePermissionSnapshot()
+  const canReadReferenceMetadata =
+    requireWritableLocalTarget &&
+    hasPermission(permissions.data?.data, 'delivery.application-environments.update')
+  const referenceSummaries = useQuery(
+    environmentReferenceQuery(environmentId ?? '', canReadReferenceMetadata && action !== 'build'),
+  )
+  const referenceSkipped = Boolean(
+    canReadReferenceMetadata &&
+    readableQueryData(referenceSummaries)?.some((item) => item.serviceId === serviceId),
+  )
   const applications = useQuery(deliveryQueries.applications.list(!fixed))
   const detail = useQuery(deliveryQueries.applications.detail(applicationId))
   const services = useQuery(deliveryQueries.applications.services(applicationId))
@@ -61,13 +76,18 @@ export function DeliveryTargetEditor({
   const binding = readableQueryData(detail)?.bindings?.find(
     (item) => item.applicationEnvironmentId === environmentId,
   )
+  const observeOnlyTarget = (target?: ReleaseTarget) =>
+    target?.executorKind === 'observe_only' || target?.metadata?.ownershipMode === 'observe_only'
   const targets = (binding?.targets ?? []).filter(
-    (item) => item.enabled && item.metadata?.serviceId === serviceId,
+    (item) =>
+      item.enabled &&
+      (item.serviceId || item.metadata?.serviceId) === serviceId &&
+      (!requireWritableLocalTarget || !observeOnlyTarget(item)),
   )
   const selectedTarget =
     targets.length === 1 ? targets[0] : targets.find((item) => item.id === releaseTargetId)
-  const observeOnlyTarget = (target?: (typeof targets)[number]) =>
-    target?.executorKind === 'observe_only' || target?.metadata?.ownershipMode === 'observe_only'
+  const noLocalTarget =
+    requireWritableLocalTarget && Boolean(environmentId) && action !== 'build' && !targets.length
   const observeOnly = blockObserveOnly && action !== 'build' && observeOnlyTarget(selectedTarget)
   const docker =
     selectedTarget?.executorKind === 'docker_compose' ? selectedTarget.docker : undefined
@@ -123,7 +143,7 @@ export function DeliveryTargetEditor({
           arguments: Object.entries(target.buildArgs ?? {}).map(([key, value]) => ({ key, value })),
         }}
         onFinish={(values) => {
-          if (blocked || pending || observeOnly) return
+          if (blocked || pending || observeOnly || noLocalTarget) return
           const { arguments: args, helmOperation: _operation, ...input } = values
           onSave({
             ...target,
@@ -209,6 +229,13 @@ export function DeliveryTargetEditor({
           name="applicationEnvironmentId"
           label="应用环境"
           rules={[{ required: action !== 'build' }]}
+          extra={
+            !blocked && noLocalTarget
+              ? referenceSkipped
+                ? '已跳过 1 个跨环境引用服务。请前往源环境发布。'
+                : '当前服务在该环境没有可发布的本地目标。引用服务请前往源环境发布。'
+              : undefined
+          }
         >
           <Select
             disabled={fixed && !embedded}
@@ -377,7 +404,7 @@ export function DeliveryTargetEditor({
               type="primary"
               htmlType="submit"
               loading={pending}
-              disabled={blocked || pending || observeOnly}
+              disabled={blocked || pending || observeOnly || noLocalTarget}
             >
               检查交付参数
             </Button>
@@ -395,7 +422,7 @@ export function DeliveryTargetEditor({
       width={720}
       onCancel={onClose}
       okText="保存目标"
-      okButtonProps={{ disabled: blocked || pending || observeOnly }}
+      okButtonProps={{ disabled: blocked || pending || observeOnly || noLocalTarget }}
       onOk={() => form.submit()}
     >
       {content}
