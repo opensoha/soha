@@ -1,7 +1,12 @@
+/** @vitest-environment jsdom */
+
 import { I18nProvider } from '@/i18n'
 import { ApiError } from '@/services/api-error'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { App as AntdApp } from 'antd'
+import { act, type ReactNode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { identityProviderQueries } from '../queries'
 import type { IdentityProvider } from '../types'
 import { ProviderProtocolMetadataPanel, ProviderUserMetadataPanel } from './provider-metadata-panel'
@@ -33,14 +38,54 @@ vi.mock('@tanstack/react-query', async (original) => ({
 }))
 const provider = { id: 'provider', type: 'saml' } as IdentityProvider
 
+let root: ReturnType<typeof createRoot> | undefined
+let container: HTMLDivElement | undefined
+
+beforeAll(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const getComputedStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
+  window.matchMedia = vi.fn(() => ({
+    matches: false,
+    media: '',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+})
+
+afterEach(async () => {
+  await act(async () => root?.unmount())
+  container?.remove()
+  root = undefined
+  container = undefined
+})
+
+async function renderPanel(panel: ReactNode) {
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () =>
+    root!.render(
+      <I18nProvider>
+        <AntdApp>{panel}</AntdApp>
+      </I18nProvider>,
+    ),
+  )
+  return container
+}
+
 describe('in-page provider metadata', () => {
   beforeEach(() => {
     state.canView = true
     state.error = null
     state.queries = []
   })
-  it('previews XML as inert text in the page and presents load errors', () => {
-    let html = renderToStaticMarkup(
+  it('previews XML as inert text in the page and presents load errors', async () => {
+    const html = renderToStaticMarkup(
       <I18nProvider>
         <ProviderProtocolMetadataPanel provider={provider} />
       </I18nProvider>,
@@ -49,15 +94,12 @@ describe('in-page provider metadata', () => {
     expect(html).not.toContain('<script>')
     expect(html).not.toContain('target="_blank"')
     state.error = new Error('metadata unavailable')
-    html = renderToStaticMarkup(
-      <I18nProvider>
-        <ProviderProtocolMetadataPanel provider={provider} />
-      </I18nProvider>,
-    )
-    expect(html).toContain('未更新，正在展示上次读取结果')
-    expect(html).toContain('&lt;EntityDescriptor&gt;')
-    expect(html).not.toContain('<script>')
-    expect(html).toContain('metadata unavailable')
+    const panel = await renderPanel(<ProviderProtocolMetadataPanel provider={provider} />)
+    const notice = document.querySelector('.soha-read-feedback-notification')
+    expect(notice?.textContent).toContain('未更新，正在展示上次读取结果')
+    expect(panel.innerHTML).toContain('&lt;EntityDescriptor&gt;')
+    expect(panel.querySelector('script')).toBeNull()
+    expect(notice?.textContent).toContain('metadata unavailable')
   })
   it('does not query users or reveal cached attributes without user-view permission', () => {
     state.canView = false
@@ -83,16 +125,15 @@ describe('in-page provider metadata', () => {
     expect(html).toContain('无访问权限')
     expect(html).not.toContain('&lt;EntityDescriptor&gt;')
   })
-  it('retains metadata selectors with an explicit stale warning after directory failure', () => {
+  it('retains metadata selectors with an explicit stale warning after directory failure', async () => {
     state.error = new Error('directory unavailable')
-    const html = renderToStaticMarkup(
-      <I18nProvider>
-        <ProviderUserMetadataPanel provider={{ ...provider, type: 'oidc' }} />
-      </I18nProvider>,
+    const panel = await renderPanel(
+      <ProviderUserMetadataPanel provider={{ ...provider, type: 'oidc' }} />,
     )
-    expect(html).toContain('未更新，正在展示上次读取结果')
-    expect(html).toContain('ant-form')
-    expect(html).toContain('directory unavailable')
+    const notice = document.querySelector('.soha-read-feedback-notification')
+    expect(notice?.textContent).toContain('未更新，正在展示上次读取结果')
+    expect(panel.querySelector('form')).not.toBeNull()
+    expect(notice?.textContent).toContain('directory unavailable')
   })
   it('separates preview caches for each provider, user and client', () => {
     const first = identityProviderQueries.userMetadata('provider', 'alice', 'client')

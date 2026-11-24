@@ -47,8 +47,30 @@ func runPluginInstall(ctx context.Context, args []string, rt Runtime) error {
 	version := fs.String("version", "", "plugin version")
 	expectedChecksum := fs.String("expected-checksum", "", "expected sha256:<hex> manifest checksum")
 	enable := fs.Bool("enable", false, "enable after install")
+	repositoryURL := fs.String("repository", "", "public GitHub repository URL")
+	ref := fs.String("ref", "", "repository branch, tag, or commit")
+	yes := fs.Bool("yes", false, "confirm the reviewed repository preview without prompting")
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if flagWasSet(fs, "repository") {
+		if err := validateRepositoryInstallFlags(fs, *repositoryURL); err != nil {
+			return err
+		}
+		_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
+		if err != nil {
+			return err
+		}
+		return runPluginRepositoryInstall(ctx, rt, profile, pluginRepositoryInstallOptions{
+			RepositoryURL: *repositoryURL,
+			Ref:           *ref,
+			Enable:        *enable,
+			Yes:           *yes,
+			JSON:          *jsonOutput,
+		})
+	}
+	if err := rejectPluginFlags(fs, "ref", "yes"); err != nil {
 		return err
 	}
 	_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
@@ -129,6 +151,10 @@ func runPluginUpgrade(ctx context.Context, args []string, rt Runtime) error {
 	sourceID := fs.String("source-id", "", "marketplace source id")
 	version := fs.String("version", "", "plugin version")
 	expectedChecksum := fs.String("expected-checksum", "", "expected sha256:<hex> manifest checksum")
+	repository := fs.Bool("repository", false, "upgrade from the installed plugin's stored repository source")
+	ref := fs.String("ref", "", "repository branch, tag, or commit")
+	confirmPermissionIncrease := fs.Bool("confirm-permission-increase", false, "acknowledge added repository permissions")
+	yes := fs.Bool("yes", false, "confirm the reviewed repository preview without prompting")
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -136,6 +162,24 @@ func runPluginUpgrade(ctx context.Context, args []string, rt Runtime) error {
 	pluginID := strings.TrimSpace(fs.Arg(0))
 	if pluginID == "" {
 		return fmt.Errorf("plugin upgrade requires a plugin id")
+	}
+	if *repository {
+		if err := rejectPluginFlags(fs, "manifest", "source", "marketplace", "source-id", "version", "expected-checksum"); err != nil {
+			return err
+		}
+		_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
+		if err != nil {
+			return err
+		}
+		return runPluginRepositoryUpgrade(ctx, rt, profile, pluginID, pluginRepositoryUpgradeOptions{
+			Ref:                       *ref,
+			ConfirmPermissionIncrease: *confirmPermissionIncrease,
+			Yes:                       *yes,
+			JSON:                      *jsonOutput,
+		})
+	}
+	if err := rejectPluginFlags(fs, "ref", "confirm-permission-increase", "yes"); err != nil {
+		return err
 	}
 	_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
 	if err != nil {

@@ -7,7 +7,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { CloudDownloadOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Space } from 'antd'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { manifestAssetCount, manifestExtensionCount } from '../plugin-model'
 import { pluginQueries } from '../queries'
@@ -16,7 +16,9 @@ import { PluginManifestSections } from '../shared/manifest-sections'
 import { PluginPageShell } from '../shared/page-shell'
 import { canInstallPlugin } from '../shared/permissions'
 import { PluginNameCell } from '../shared/plugin-name-cell'
+import { RepositoryRefs } from '../shared/repository-refs'
 import { useInstallPluginAction } from './install-action'
+import { useRepositoryInstallAction } from './repository-install'
 
 export function PluginMarketplaceDetailPage() {
   const { pluginId = '' } = useParams()
@@ -24,6 +26,8 @@ export function PluginMarketplaceDetailPage() {
   const navigate = useNavigate()
   const snapshot = usePermissionSnapshot().data?.data
   const installAction = useInstallPluginAction()
+  const repositoryInstallAction = useRepositoryInstallAction()
+  const [historyRepository, setHistoryRepository] = useState<string>()
   const filters = useMemo(
     () => ({
       sourceId: searchParams.get('sourceId') ?? '',
@@ -57,11 +61,23 @@ export function PluginMarketplaceDetailPage() {
     )
   }
 
+  const { repositoryUrl } = plugin
+  const allowInstall = canInstallPlugin(snapshot) && (!repositoryUrl || Boolean(plugin.sourceId))
+  const installBlocked = installAction.blocked || repositoryInstallAction.blocked
+  const showHistory = Boolean(repositoryUrl && historyRepository === repositoryUrl)
+
+  function startRepositoryInstall(ref?: string) {
+    if (plugin && repositoryUrl && allowInstall && !installBlocked) {
+      repositoryInstallAction.openMarketplace(repositoryUrl, plugin.id, plugin.sourceId, ref)
+    }
+  }
+
   return (
     <PluginPageShell>
       <ReadFeedback query={detailQuery} label="插件详情" />
       {installAction.feedback}
       {installAction.dialog}
+      {repositoryInstallAction.dialog}
       <Card size="small" className="soha-plugin-identity">
         <div className="soha-plugin-detail-heading">
           <PluginNameCell
@@ -74,6 +90,14 @@ export function PluginMarketplaceDetailPage() {
           />
           <Space wrap className="soha-plugin-detail-actions">
             <Button onClick={() => navigate('/plugins/marketplace')}>返回市场</Button>
+            {repositoryUrl ? (
+              <Button
+                aria-expanded={showHistory}
+                onClick={() => setHistoryRepository(showHistory ? undefined : repositoryUrl)}
+              >
+                {showHistory ? '收起发布历史' : '查看发布历史'}
+              </Button>
+            ) : null}
             <Button
               aria-label="刷新插件详情"
               icon={<ReloadOutlined />}
@@ -90,11 +114,13 @@ export function PluginMarketplaceDetailPage() {
               </Button>
             ) : (
               <Button
-                disabled={installAction.blocked || !canInstallPlugin(snapshot)}
+                disabled={installBlocked || !allowInstall}
                 icon={<CloudDownloadOutlined />}
-                loading={installAction.loading}
+                loading={installAction.loading || repositoryInstallAction.loading}
                 type="primary"
-                onClick={() => installAction.confirmInstall(plugin)}
+                onClick={() =>
+                  repositoryUrl ? startRepositoryInstall() : installAction.confirmInstall(plugin)
+                }
               >
                 安装
               </Button>
@@ -122,6 +148,17 @@ export function PluginMarketplaceDetailPage() {
           </div>
         </dl>
       </Card>
+      {showHistory && repositoryUrl ? (
+        <Card title={<h2 className="soha-plugin-section-title">发布历史</h2>} size="small">
+          <RepositoryRefs
+            key={repositoryUrl}
+            kind="release"
+            repositoryUrl={repositoryUrl}
+            disabled={!allowInstall || Boolean(plugin.installed) || installBlocked}
+            onSelect={startRepositoryInstall}
+          />
+        </Card>
+      ) : null}
       <PluginManifestSections manifest={plugin.manifest} />
       <Card title={<h2 className="soha-plugin-section-title">市场来源</h2>} size="small">
         <Descriptions

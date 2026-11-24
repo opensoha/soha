@@ -16,7 +16,7 @@ npx -y @opensoha/cli@latest mcp
 npx -y @opensoha/cli@latest setup --client codex --mode both
 ```
 
-Root publishes the `0.2.1` launcher through the protected `cli/v0.2.1` workflow.
+Root publishes the `0.2.2` launcher through the protected `cli/v0.2.2` workflow.
 Check the [npm package](https://www.npmjs.com/package/@opensoha/cli) and
 [Root CLI releases](https://github.com/opensoha/soha/releases?q=cli%2Fv) for available versions.
 Root `cli/v0.2.0` has its 13 native release assets and
@@ -38,20 +38,20 @@ and Go import paths may stop resolving after legacy repository deletion.
 Install the new Go submodule with:
 
 ```sh
-go install github.com/opensoha/soha/cli/cmd/soha@v0.2.1
+go install github.com/opensoha/soha/cli/cmd/soha@v0.2.2
 ```
 
-This command requires the real `cli/v0.2.1` tag and publicly available declared
+This command requires the real `cli/v0.2.2` tag and publicly available declared
 SDK; the source candidate alone does not make it installable. Historical tags and original release bytes are preserved in the Root archive;
 new installs use the Root submodule and releases.
 
 For new release binaries, download the platform archive from
-[Root CLI releases](https://github.com/opensoha/soha/releases/tag/cli%2Fv0.2.1), then verify it against `checksums.txt` before placing `soha` on your
+[Root CLI releases](https://github.com/opensoha/soha/releases/tag/cli%2Fv0.2.2), then verify it against `checksums.txt` before placing `soha` on your
 `PATH`:
 
 ```sh
 sha256sum -c checksums.txt --ignore-missing
-tar -xzf soha_0.2.1_linux_amd64.tar.gz
+tar -xzf soha_0.2.2_linux_amd64.tar.gz
 install -m 0755 soha /usr/local/bin/soha
 ```
 
@@ -75,18 +75,18 @@ make -C cli verify-image
 
 The image uses the complete Root context and the same `contracts/` source.
 `make build` injects the real Root commit and UTC build date into the existing
-ldflags symbols. Set `VERSION=0.2.1` when intentionally producing that CLI version;
+ldflags symbols. Set `VERSION=0.2.2` when intentionally producing that CLI version;
 without it the native development version remains unchanged. Root and CLI do not
 share a product version.
 
 The module/import/ldflags identity is `github.com/opensoha/soha/cli`.
-The `0.2.1` launcher downloads Root `cli/v<version>` assets with the tag slash
+The launcher downloads Root `cli/v<version>` assets with the tag slash
 URL-encoded, while published older launchers retain their original download
 source. Root Node22 installs the dependency-free workspace without install hooks.
 Original component workflow definitions remain in Git history; the active Root
 `cli-release.yml` uses `release-cli` protection and OIDC trusted npm publishing.
 GitHub Release, npm and GHCR writes require the release-control guard, including
-recovery; candidate images use `ghcr.io/opensoha/soha-cli:v0.2.1` independently of the Git tag.
+recovery. Versioned images use `ghcr.io/opensoha/soha-cli:v0.2.2`.
 
 For external declared-dependency qualification, run `make -C cli test-declared`
 or explicitly use `GOWORK=off` from `cli/`. That result and internal source
@@ -96,10 +96,9 @@ create another sibling workspace or silently fall back to a published SDK.
 ## Contracts Compatibility
 
 `soha-cli` treats `github.com/opensoha/soha/contracts` as its public API source.
-The `0.2.1` CLI candidate retains SDK `v0.2.0` in `go.mod` and uses Root
-`contracts/` for internal source validation. Source validation and explicit
-`GOWORK=off` distribution qualification remain separate; the new CLI candidate
-still requires its own release qualification. Contract upgrades should be reviewed with this minimum matrix:
+CLI `0.2.2` pins SDK `v0.2.2` in `go.mod` and uses Root `contracts/` for
+internal source validation. Independent distribution is qualified with the
+declared public module and `GOWORK=off`. Contract upgrades use the same compatibility matrix.
 
 | soha-cli | soha-contracts | Compatible Soha API | Notes |
 | --- | --- | --- | --- |

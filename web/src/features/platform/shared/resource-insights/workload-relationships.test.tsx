@@ -48,6 +48,8 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
 vi.mock('@/components/request-feedback', () => ({
   ReadFeedback: ({ query }: { query: { error: Error | null } }) =>
     query.error ? <div role="alert">{query.error.message}</div> : null,
+  requestErrorMessage: (error: Error) => error.message,
+  useInlineApiError: vi.fn(),
 }))
 vi.mock('@/components/management-list', () => ({
   ManagementState: ({ title }: { title: string }) => <div>{title}</div>,

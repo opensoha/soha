@@ -28,10 +28,7 @@ func knowledgeRetrievalGroupedWindows(t *testing.T, repo *Repository, store *dbs
 			t.Fatalf("bounded mixed lexical pool = %+v, %v", rows, err)
 		}
 		plan := explainGroupedKnowledge(t, ctx, store.DB(), *query, *args, false)
-		lexical := requiredGroupPlan(t, plan, "CTE lexical_raw")
-		if lexical.ActualRows != 501 || !groupPlanContains(lexical, func(n groupedKnowledgePlan) bool { return n.NodeType == "Limit" && n.ActualRows <= 500 }) || groupPlanContains(lexical, func(n groupedKnowledgePlan) bool { return n.NodeType == "WindowAgg" }) {
-			t.Fatalf("lexical group cap is not before RRF: %+v", lexical)
-		}
+		assertLexicalGroupCap(t, plan)
 	})
 	t.Run("no_vectors", func(t *testing.T) {
 		first, a, reader := seedRetrievalDocument(t, repo, ctx, 12)
@@ -79,6 +76,20 @@ func knowledgeRetrievalGroupedWindows(t *testing.T, repo *Repository, store *dbs
 				}
 			})
 		})
+	}
+}
+
+func assertLexicalGroupCap(t *testing.T, plan groupedKnowledgePlan) {
+	t.Helper()
+	lexical := requiredGroupPlan(t, plan, "CTE lexical_raw")
+	bounded := groupPlanContains(lexical, func(n groupedKnowledgePlan) bool {
+		return n.NodeType == "Limit" && n.ActualRows <= 500
+	})
+	windowed := groupPlanContains(lexical, func(n groupedKnowledgePlan) bool {
+		return n.NodeType == "WindowAgg"
+	})
+	if lexical.ActualRows != 501 || !bounded || windowed {
+		t.Fatalf("lexical group cap is not before RRF: %+v", lexical)
 	}
 }
 

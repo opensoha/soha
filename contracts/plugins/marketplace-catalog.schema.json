@@ -84,6 +84,7 @@
       "properties": {
         "version": { "type": "string", "minLength": 1 },
         "manifestUrl": { "type": "string", "minLength": 1 },
+        "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "packageUrl": { "type": "string" },
         "checksum": { "type": "string" },
         "signature": { "type": "string" },

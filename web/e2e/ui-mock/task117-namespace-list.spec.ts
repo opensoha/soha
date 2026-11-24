@@ -311,7 +311,10 @@ test('Namespace read and write errors preserve metadata, drafts and destructive 
   await expect(page.getByRole('button', { name: 'team-000', exact: true })).toBeVisible()
   state.failNamespaces = true
   await refresh(page).click()
-  await expect(page.getByText('Namespace read failed', { exact: false }).first()).toBeVisible()
+  const readNotice = page.locator('.soha-read-feedback-notification')
+  await expect(readNotice).toContainText('Namespace read failed')
+  await readNotice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(readNotice).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'team-000', exact: true })).toBeVisible()
   state.failNamespaces = false
   await refresh(page).click()
@@ -323,6 +326,10 @@ test('Namespace read and write errors preserve metadata, drafts and destructive 
     .click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(state.writes.filter((p) => p === 'POST ' + root + '/namespaces')).toHaveLength(1)
+  const createReceipt = page.locator('.soha-operation-feedback').filter({ hasText: '创建命名空间' })
+  await expect(createReceipt).toContainText('请求已返回')
+  await createReceipt.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(createReceipt).toHaveCount(0)
   await page.getByRole('button', { name: '更多操作：team-000' }).click()
   await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
   const edit = page.getByRole('dialog', { name: '编辑命名空间 team-000', exact: true })
@@ -333,22 +340,33 @@ test('Namespace read and write errors preserve metadata, drafts and destructive 
   await labels.fill('{"owner":"updated"}')
   state.failWrite = 409
   await save.click()
-  await expect(edit).toContainText('Namespace write failed')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('Namespace write failed')
   await expect(labels).toHaveValue('{"owner":"updated"}')
   expect(updates()).toHaveLength(1)
   state.failWrite = 0
   await save.click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(updates()).toHaveLength(2)
+  const updateReceipt = page.locator('.soha-operation-feedback').filter({ hasText: '更新命名空间' })
+  await expect(updateReceipt).toContainText('请求已返回')
+  await updateReceipt.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(updateReceipt).toHaveCount(0)
   await page.getByRole('button', { name: '更多操作：team-000' }).click()
   await page.getByRole('menuitem', { name: '删除', exact: true }).click()
   state.failWrite = 500
   await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('Namespace write failed')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('Namespace write failed')
   await expect(
     page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }),
   ).toBeDisabled()
-  await expect(page.getByRole('dialog')).toContainText('普通刷新不会确认或解锁原请求')
+  const deleteNotice = page.locator('.soha-operation-feedback')
+  await expect(deleteNotice).toContainText('请求结果不明')
+  await expect(deleteNotice).toContainText('关闭提示不会解除此操作的防重复提交保护。')
+  await deleteNotice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(deleteNotice).toHaveCount(0)
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }),
+  ).toBeDisabled()
   await expect(page.getByRole('button', { name: 'team-000', exact: true })).toBeVisible()
   expect(state.writes.filter((p) => p === 'DELETE ' + root + '/namespaces/team-000')).toHaveLength(
     1,
@@ -357,6 +375,16 @@ test('Namespace read and write errors preserve metadata, drafts and destructive 
     .getByRole('dialog')
     .getByRole('button', { name: /^取\s*消$/ })
     .click()
+  const readsBeforeRefresh = state.reads.length
+  await refresh(page).click()
+  await expect.poll(() => state.reads.length).toBeGreaterThan(readsBeforeRefresh)
+  await page.getByRole('button', { name: '更多操作：team-000' }).click()
+  await expect(page.getByRole('menuitem', { name: '编辑', exact: true })).toBeDisabled()
+  await expect(page.getByRole('menuitem', { name: '删除', exact: true })).toBeDisabled()
+  expect(state.writes.filter((p) => p === 'DELETE ' + root + '/namespaces/team-000')).toHaveLength(
+    1,
+  )
+  await page.keyboard.press('Escape')
   verifyBrowserEvidence(evidence)
 })
 

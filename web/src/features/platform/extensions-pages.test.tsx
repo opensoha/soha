@@ -867,7 +867,9 @@ describe('CRD catalog page', () => {
       await act(async () => {
         await Promise.resolve()
       })
-      expect(container.textContent).toContain('update denied')
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        'update denied',
+      )
     })
     expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(changed)
     expect(button('Apply').disabled).toBe(false)

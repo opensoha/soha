@@ -1245,14 +1245,18 @@ describe('settings ai page rendering', () => {
         Boolean(button('停用 evidence @ 1.2') && !button('停用 evidence @ 1.2')?.disabled),
       )
       expect(apiPutMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2`, { enabled: true })
+      const probeFeedback = (scope: string) =>
+        Array.from(document.querySelectorAll('.soha-operation-feedback')).find((notice) =>
+          notice.textContent?.includes(`evidence @ 1.2 · ${scope}`),
+        )?.textContent ?? ''
       await click('探测 evidence @ 1.2 · Chat')
-      await waitFor(() => Boolean(container.textContent?.includes('探测就绪')))
-      expect(container.textContent).toContain('tool:read')
+      await waitFor(() => probeFeedback('Chat').includes('探测就绪'))
+      expect(probeFeedback('Chat')).toContain('tool:read')
       expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'chat' })
       await click('探测 evidence @ 1.2 · Heya')
-      await waitFor(() => Boolean(container.textContent?.includes('探测进程清理未确认')))
+      await waitFor(() => probeFeedback('Heya').includes('探测进程清理未确认'))
       expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'heya' })
-      expect(container.textContent).toContain('探测进程清理未确认')
+      expect(probeFeedback('Heya')).toContain('探测进程清理未确认')
       expect(button('探测 evidence @ 1.2 · Heya')?.disabled).toBe(true)
     } finally {
       await act(async () => roots.pop()?.unmount())

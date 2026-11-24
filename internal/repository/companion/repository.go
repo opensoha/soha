@@ -158,7 +158,8 @@ func (r *Repository) ResetProfile(ctx context.Context, input domaincompanion.Res
 }
 
 func (r *Repository) PutArtifact(ctx context.Context, artifact domaincompanion.Artifact) (domaincompanion.Artifact, error) {
-	existing, err := getArtifact(ctx, r.db, artifact.PluginID, artifact.Version, false)
+	db := dbtx.DB(ctx, r.db)
+	existing, err := getArtifact(ctx, db, artifact.PluginID, artifact.Version, false)
 	if err == nil {
 		if existing.SHA256 != artifact.SHA256 {
 			return domaincompanion.Artifact{}, fmt.Errorf("%w: companion version is immutable", apperrors.ErrConflict)
@@ -176,7 +177,7 @@ func (r *Repository) PutArtifact(ctx context.Context, artifact domaincompanion.A
 	if err != nil {
 		return domaincompanion.Artifact{}, fmt.Errorf("encode companion pack manifest: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := db.Exec(`
 		INSERT INTO companion_artifacts (
 			plugin_id, version, sha256, size_bytes, checksum_status, signature_status,
 			provenance_status, storage_digest, assets, pack_manifest, active, installed_at, retired_at
@@ -186,11 +187,11 @@ func (r *Repository) PutArtifact(ctx context.Context, artifact domaincompanion.A
 		artifact.Active, artifact.InstalledAt, artifact.RetiredAt).Error; err != nil {
 		return domaincompanion.Artifact{}, err
 	}
-	return getArtifact(ctx, r.db, artifact.PluginID, artifact.Version, false)
+	return getArtifact(ctx, db, artifact.PluginID, artifact.Version, false)
 }
 
 func (r *Repository) ListArtifacts(ctx context.Context, pluginID string) ([]domaincompanion.Artifact, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT plugin_id, version, sha256, size_bytes, checksum_status, signature_status,
 		       provenance_status, storage_digest, assets, pack_manifest, active, installed_at, retired_at
 		FROM companion_artifacts
@@ -214,7 +215,8 @@ func (r *Repository) ListArtifacts(ctx context.Context, pluginID string) ([]doma
 
 func (r *Repository) ActivateArtifact(ctx context.Context, pluginID, version string, now time.Time) (domaincompanion.Artifact, error) {
 	var active domaincompanion.Artifact
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		tx := dbtx.DB(ctx, r.db)
 		item, err := getArtifact(ctx, tx, pluginID, version, true)
 		if err != nil {
 			return err
@@ -222,10 +224,10 @@ func (r *Repository) ActivateArtifact(ctx context.Context, pluginID, version str
 		if item.RetiredAt != nil {
 			return fmt.Errorf("%w: companion artifact is retired", apperrors.ErrConflict)
 		}
-		if err := tx.WithContext(ctx).Exec(`UPDATE companion_artifacts SET active = false WHERE plugin_id = ?`, pluginID).Error; err != nil {
+		if err := tx.Exec(`UPDATE companion_artifacts SET active = false WHERE plugin_id = ?`, pluginID).Error; err != nil {
 			return err
 		}
-		if err := tx.WithContext(ctx).Exec(`
+		if err := tx.Exec(`
 			UPDATE companion_artifacts SET active = true, retired_at = NULL
 			WHERE plugin_id = ? AND version = ?
 		`, pluginID, version).Error; err != nil {
@@ -240,7 +242,7 @@ func (r *Repository) ActivateArtifact(ctx context.Context, pluginID, version str
 }
 
 func (r *Repository) GetActiveArtifact(ctx context.Context, pluginID string) (domaincompanion.Artifact, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT plugin_id, version, sha256, size_bytes, checksum_status, signature_status,
 		       provenance_status, storage_digest, assets, pack_manifest, active, installed_at, retired_at
 		FROM companion_artifacts

@@ -108,7 +108,7 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["manifest-only", "external-http", "managed-container"]
+          "enum": ["manifest-only", "external-http", "managed-container", "executable-package-v1"]
         },
         "endpoint": { "type": "string" },
         "healthPath": { "type": "string" },
@@ -124,6 +124,7 @@
       },
       "additionalProperties": false
     },
+    "components": { "$ref": "#/$defs/packageComponents" },
     "companionPack": {
       "$ref": "https://contracts.opensoha.dev/plugins/companion-pack.schema.json"
     },
@@ -135,6 +136,56 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "runtime": {
+            "properties": {
+              "mode": {
+                "const": "executable-package-v1"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "then": {
+        "required": [
+          "components"
+        ],
+        "properties": {
+          "type": {
+            "not": {
+              "const": "companion-pack"
+            }
+          },
+          "id": { "maxLength": 255 },
+          "version": { "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$" },
+          "companionPack": false,
+          "configSchema": {
+            "properties": {
+              "x-soha-test-connection-action": {
+                "type": "string",
+                "const": "storage.testConnection",
+                "description": "Request the host storage connection test for the edited binding. Core authorizes the action."
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "components"
+          ]
+        }
+      }
+    },
     {
       "if": {
         "properties": { "type": { "const": "companion-pack" } },
@@ -225,6 +276,74 @@
     }
   ],
   "$defs": {
+    "releaseArtifact": {
+      "type": "object",
+      "required": [
+        "name",
+        "sha256",
+        "byteLength"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$",
+          "description": "Flat filename of one asset attached to the pinned GitHub Release."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "storageDriverPackage": {
+      "type": "object",
+      "required": [
+        "driverId",
+        "protocol",
+        "platforms"
+      ],
+      "properties": {
+        "driverId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,126}$"
+        },
+        "protocol": {
+          "type": "string",
+          "const": "object-storage/v1"
+        },
+        "platforms": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+/[a-z0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/releaseArtifact"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "packageComponents": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/storageDriverPackage"
+        },
+        "web": {
+          "$ref": "#/$defs/releaseArtifact"
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
+    },
     "jsonSchema": {
       "type": "object",
       "additionalProperties": true

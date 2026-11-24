@@ -117,7 +117,9 @@ async function renderLoginPage(
       <QueryClientProvider client={queryClient}>
         <App>
           <MemoryRouter
-            initialEntries={[options.startAtOIDCCallback ? '/login/callback?error=access_denied' : '/login']}
+            initialEntries={[
+              options.startAtOIDCCallback ? '/login/callback?error=access_denied' : '/login',
+            ]}
           >
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -344,7 +346,10 @@ describe('login page', () => {
       await vi.advanceTimersByTimeAsync(10)
     })
 
-    expect(document.body.querySelector('button[aria-label="重试读取登录选项"]')).not.toBeNull()
+    const retry = document.querySelector(
+      '.soha-read-feedback-notification button[aria-label="重试读取登录选项"]',
+    )
+    expect(retry).not.toBeNull()
     expect(
       container.querySelector<HTMLInputElement>('input[autocomplete="username"]')?.disabled,
     ).toBe(true)

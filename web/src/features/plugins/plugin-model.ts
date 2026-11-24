@@ -7,7 +7,15 @@ import type {
   PluginInstallRequest,
   PluginManifest,
   PluginPermissionRequest,
+  PluginRepositoryInstallRequest,
+  PluginRepositoryPreview,
+  PluginRepositoryPreviewRequest,
+  PluginRepositoryRefList,
+  PluginRepositoryRefsRequest,
+  PluginRepositoryUpgradeRequest,
   PluginSecretRequirement,
+  PluginSourceInfo,
+  PluginUpdate,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 
 export type {
@@ -19,7 +27,15 @@ export type {
   PluginInstallRequest,
   PluginManifest,
   PluginPermissionRequest,
+  PluginRepositoryInstallRequest,
+  PluginRepositoryPreview,
+  PluginRepositoryPreviewRequest,
+  PluginRepositoryRefList,
+  PluginRepositoryRefsRequest,
+  PluginRepositoryUpgradeRequest,
   PluginSecretRequirement,
+  PluginSourceInfo,
+  PluginUpdate,
 }
 
 export interface PluginMarketplaceFilters {
@@ -91,6 +107,37 @@ export function pluginTypeLabel(type?: string) {
 
 export function requestedPermissionValues(permissions?: PluginPermissionRequest | null) {
   return [...(permissions?.required ?? []), ...(permissions?.domain ?? [])].filter(Boolean)
+}
+
+const pluginSourceLabels: Record<string, string> = {
+  marketplace: '市场目录',
+  'github-repo': 'GitHub 仓库',
+  'direct-manifest': '本地清单',
+}
+
+export function pluginSourceKindLabel(kind?: string) {
+  const value = String(kind ?? '').trim()
+  return pluginSourceLabels[value] ?? (value || '-')
+}
+
+export function pluginSourceLabel(
+  sourceInfo?: Pick<PluginSourceInfo, 'kind' | 'official'> | null,
+  fallback?: string,
+) {
+  if (!sourceInfo) return fallback || '-'
+  return `${pluginSourceKindLabel(sourceInfo.kind)}${sourceInfo.official ? ' · 官方收录' : ''}`
+}
+
+export function addedPluginPermissions(
+  current?: PluginPermissionRequest | null,
+  next?: PluginPermissionRequest | null,
+) {
+  const currentRequired = new Set(current?.required ?? [])
+  const currentDomain = new Set(current?.domain ?? [])
+  return {
+    required: (next?.required ?? []).filter((value) => !currentRequired.has(value)),
+    domain: (next?.domain ?? []).filter((value) => !currentDomain.has(value)),
+  }
 }
 
 export function requiredSecretValues(secrets?: { required?: PluginSecretRequirement[] } | null) {

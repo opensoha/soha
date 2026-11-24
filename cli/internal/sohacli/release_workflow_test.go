@@ -22,7 +22,7 @@ func TestReleaseWorkflowRunsBinarySmokeBeforeChecksums(t *testing.T) {
 		"environment: release-cli",
 		"release-control.py verify --component cli",
 		"--mode declared --consumer cli",
-		"REQUESTED_CONTRACTS_REF: v0.2.0",
+		"REQUESTED_CONTRACTS_REF: v0.2.2",
 		"id-token: write",
 		"npm@12.2.2",
 		"verify-public-npm-release.mjs verify",

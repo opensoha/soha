@@ -468,6 +468,11 @@ test('refresh retains cached values on 503, removes protected content on 403; de
   await page.getByRole('button', { name: '刷新 Service', exact: true }).click()
   await expect(page.getByRole('switch', { name: /刷新失败/ })).toBeVisible()
   await expect(active(page)).toContainText('10.43.0.20')
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   state.fail = 403
   await page.getByRole('button', { name: '刷新 Service', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'api', exact: true })).toHaveCount(0)
@@ -588,7 +593,9 @@ test('YAML draft survives tab changes, refresh and a conflict response', async (
   await active(page)
     .getByRole('button', { name: /应\s*用|Apply/ })
     .click()
-  await expect(active(page)).toContainText('Service resourceVersion changed')
+  await expect(page.locator('.soha-operation-feedback')).toContainText(
+    'Service resourceVersion changed',
+  )
   await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
     'task117-service-draft',
   )
@@ -820,7 +827,9 @@ test('Service relationships use exact scope and clear protected graph and list c
   )
   await active(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
   await lastFailure
-  await expect(active(page).getByRole('alert')).toContainText('正在展示上次读取结果')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    '正在展示上次读取结果',
+  )
   await expect(podRow).toBeVisible()
   await expect(sliceRow).toHaveAttribute('aria-pressed', 'true')
   await expect(inspector).toContainText('api-endpoints')

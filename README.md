@@ -185,7 +185,9 @@ Internal lab fixtures and shared cluster dev scripts live alongside their assets
 
 ## Contributing
 
-Issues and pull requests are welcome. Before making larger backend or deployment changes, read the [backend](./.agents/skills/soha-backend/SKILL.md) and [deployment](./.agents/skills/soha-deploy/SKILL.md) rules.
+Report bugs and suggest changes in [GitHub Issues](https://github.com/opensoha/soha/issues). For source changes, see the [repository guide](./AGENTS.md) and [testing guide](./docs/testing.md). For backend or deployment changes, see the [backend](./.agents/skills/soha-backend/SKILL.md) and [deployment](./.agents/skills/soha-deploy/SKILL.md) rules.
+
+The [desktop App](https://github.com/opensoha/soha-app), [Helm charts](https://github.com/opensoha/soha-helm), and [Kubernetes Operator](https://github.com/opensoha/soha-operator) each have their own source repository.
 
 Key validation checks before submitting:
 

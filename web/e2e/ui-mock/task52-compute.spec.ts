@@ -379,7 +379,7 @@ test('relationship selection survives refresh and read failures while access den
   })
   await expect(page.locator('.soha-compute-relation-row')).toHaveCount(1)
   state.relationStatus = 403
-  await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(1)
   await page.getByRole('button', { name: '重试读取资源关系' }).click()
   await expect(page.getByText('资源关系无访问权限')).toBeVisible({ timeout: 15_000 })
   await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
@@ -413,7 +413,9 @@ test('form rejection keeps input and contextual feedback', async ({ page, contex
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('名称', { exact: true }).fill('sample-flavor')
   await dialog.getByRole('button', { name: /^保\s*存$/ }).click()
-  await expect(dialog.getByText('保存规格：操作请求失败')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('保存规格：操作请求失败'),
+  ).toBeVisible()
   await expect(dialog.getByLabel('名称', { exact: true })).toHaveValue('sample-flavor')
   expect(state.writes.filter((path) => path.includes('/flavors'))).toHaveLength(1)
   verifyBrowserEvidence(evidence)

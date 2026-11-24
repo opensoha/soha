@@ -71,11 +71,11 @@ for (const theme of ['light', 'dark']) {
     const shortText = page
       .locator('.soha-pod-table-name-link')
       .filter({ hasText: 'short-pod' })
-      .locator('.ant-typography')
+      .locator('.soha-table-cell-text')
     const longText = page
       .locator('.soha-pod-table-name-link')
       .filter({ hasText: longName })
-      .locator('.ant-typography')
+      .locator('.soha-table-cell-text')
     await expect(shortText).toBeVisible()
     if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
 

@@ -414,7 +414,9 @@ describe('endpoint response policies', () => {
       expectedRevision: 3,
       revision: 1,
     })
-    expect(document.querySelector('.ant-drawer')?.textContent).toContain('unknown-rollback')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'unknown-rollback',
+    )
     expect(button('回滚发布').disabled).toBe(true)
     await act(async () => document.querySelector<HTMLElement>('.ant-drawer-close')?.click())
     await settle(client)
@@ -511,7 +513,9 @@ describe('endpoint response policies', () => {
       input: { expectedRevision: 2, reason: 'Check current authorization' },
     })
     expect(button('重新评估并恢复').disabled).toBe(true)
-    expect(document.querySelector('.ant-modal')?.textContent).toContain('unknown-restore')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'unknown-restore',
+    )
     await click('取消')
     await act(async () => document.querySelector<HTMLElement>('.ant-drawer-close')?.click())
     await settle(client)

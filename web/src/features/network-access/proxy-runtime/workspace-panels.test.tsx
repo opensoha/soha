@@ -187,9 +187,12 @@ it.each(['known reject', 'unknown result', 'read-only cancel'])(
     const run = button('读取策略组')!
     await act(async () => run.click())
     if (scenario === 'known reject') {
-      await act(async () =>
-        vi.waitFor(() => expect(container.textContent).toContain('epoch changed')),
-      )
+      await vi.waitFor(async () => {
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+        expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+          'epoch changed',
+        )
+      })
       expect(run.disabled).toBe(false)
       expect(api.command).not.toHaveBeenCalled()
       return

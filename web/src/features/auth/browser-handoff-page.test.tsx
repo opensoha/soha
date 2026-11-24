@@ -42,16 +42,16 @@ async function renderPage(navigate = vi.fn()) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <App>
-          <MemoryRouter initialEntries={['/auth/browser-handoff/handoff-1']}>
+        <MemoryRouter initialEntries={['/auth/browser-handoff/handoff-1']}>
+          <App>
             <Routes>
               <Route
                 path="/auth/browser-handoff/:handoffId"
                 element={<BrowserHandoffPage navigate={navigate} />}
               />
             </Routes>
-          </MemoryRouter>
-        </App>
+          </App>
+        </MemoryRouter>
       </QueryClientProvider>,
     )
   })
@@ -129,6 +129,9 @@ describe('browser handoff page', () => {
     vi.mocked(inspectBrowserHandoff).mockRejectedValueOnce(new Error('handoff expired'))
     await renderPage()
     await waitForText(document.body, 'handoff expired')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'handoff expired',
+    )
     expect(document.body.querySelector('[role="status"]')?.textContent).toContain('handoff expired')
     expect(completeBrowserHandoff).not.toHaveBeenCalled()
   })
@@ -144,10 +147,14 @@ describe('browser handoff page', () => {
     await act(async () => continueButton?.click())
     await waitForText(document.body, 'browser account conflict')
 
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'browser account conflict',
+    )
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
       'browser account conflict',
     )
     expect(container.textContent).toContain('继续登录')
+    expect(continueButton?.isConnected).toBe(true)
     expect(navigate).not.toHaveBeenCalled()
   })
 })

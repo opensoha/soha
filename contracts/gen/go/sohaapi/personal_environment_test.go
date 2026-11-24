@@ -7,6 +7,18 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestPersonalGuestBrowserActionKeepsPublishedEnumConstants(t *testing.T) {
+	actions := [...]PersonalGuestRuntimeInputBrowserAction{
+		Acquire, Click, Navigate, Pointer, Release, Return, Snapshot, Takeover, Type,
+	}
+	want := [...]string{"acquire", "click", "navigate", "pointer", "release", "return", "snapshot", "takeover", "type"}
+	for i, action := range actions {
+		if string(action) != want[i] || !action.Valid() {
+			t.Errorf("published browser action %q should be valid as %q", action, want[i])
+		}
+	}
+}
+
 func TestEnvironmentTemplateKeepsTypedOptionalPersonalPolicy(t *testing.T) {
 	input := AIEnvironmentTemplateInput{ID: "personal", Name: "Personal", Backend: AIEnvironmentTemplateInputBackend("container"), IsolationMode: AIEnvironmentTemplateInputIsolationMode("disposable-write"), PersonalDocker: &PersonalDockerEnvironmentPolicy{
 		AgentClusterID: uuid.MustParse("00000000-0000-4000-8000-000000000048"), LeaseSeconds: 600,

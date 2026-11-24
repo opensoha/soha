@@ -1,8 +1,8 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
-import { StatusTag } from '@/components/status-tag'
+import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
-import { usePermissionSnapshot } from '@/features/auth'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { isApiError } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import {
@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { pluginMutations } from '../mutations'
 import type { InstalledPlugin } from '../plugin-model'
+import { pluginSourceKindLabel, pluginSourceLabel } from '../plugin-model'
 import { pluginQueries } from '../queries'
 import { RegisteredExtensionList } from '../shared/extension-list'
 import { compactPluginTags, formatPluginDateTime, pluginStatusBadge } from '../shared/formatters'
@@ -27,12 +28,14 @@ import {
   canChangePluginLifecycle,
   canConfigurePlugins,
   canConfigurePluginSecrets,
+  canInstallPlugin,
   canRemovePlugins,
   canUpgradePlugins,
 } from '../shared/permissions'
 import { PluginNameCell } from '../shared/plugin-name-cell'
 import { useInstalledPluginActions } from './actions'
 import { PluginConfigModal } from './config-modal'
+import { useRepositoryUpgradeAction } from './repository-upgrade'
 
 export function InstalledPluginDetailPage() {
   const { pluginId = '' } = useParams()
@@ -53,6 +56,17 @@ export function InstalledPluginDetailPage() {
     }),
   })
   const plugin = readableQueryData(detailQuery)
+  const repositoryUpgrade = useRepositoryUpgradeAction()
+  const repositoryBound = Boolean(plugin?.sourceInfo?.repositoryUrl)
+  const directRepository = plugin?.sourceInfo?.kind === 'github-repo'
+  const canReadUpdates =
+    (repositoryBound || directRepository) && hasPermission(snapshot, 'plugin.view')
+  const updatesQuery = useQuery(pluginQueries.updates([pluginId], canReadUpdates))
+  const update = canReadUpdates
+    ? readableQueryData(updatesQuery)?.find(
+        (item) => item.pluginId === plugin?.id && item.installedVersion === plugin?.version,
+      )
+    : undefined
   const manifest = queryAccessDenied(manifestQuery)
     ? undefined
     : (readableQueryData(manifestQuery) ?? plugin?.manifest)
@@ -96,8 +110,11 @@ export function InstalledPluginDetailPage() {
   return (
     <PluginPageShell>
       <ReadFeedback query={detailQuery} label="插件安装记录" />
+      {canReadUpdates ? <ReadFeedback query={updatesQuery} label="插件更新" /> : null}
       {actions.feedback}
       {actions.dialog}
+      {repositoryUpgrade.feedback}
+      {repositoryUpgrade.dialog}
       {!configTarget ? configMutation.feedback : null}
       <Card size="small" className="soha-plugin-identity">
         <div className="soha-plugin-detail-heading">
@@ -117,13 +134,17 @@ export function InstalledPluginDetailPage() {
               aria-label="刷新插件记录"
               icon={<ReloadOutlined />}
               loading={
-                detailQuery.isFetching || manifestQuery.isFetching || extensionsQuery.isFetching
+                detailQuery.isFetching ||
+                manifestQuery.isFetching ||
+                extensionsQuery.isFetching ||
+                (canReadUpdates && updatesQuery.isFetching)
               }
               onClick={() =>
                 void Promise.all([
                   detailQuery.refetch(),
                   manifestQuery.refetch(),
                   extensionsQuery.refetch(),
+                  ...(canReadUpdates ? [updatesQuery.refetch()] : []),
                 ])
               }
             />
@@ -156,13 +177,34 @@ export function InstalledPluginDetailPage() {
             >
               配置
             </Button>
-            <Button
-              disabled={blocked || !canUpgradePlugins(snapshot)}
-              icon={<ReloadOutlined />}
-              onClick={() => actions.upgrade(plugin.id)}
-            >
-              升级
-            </Button>
+            {directRepository || repositoryBound || update ? (
+              <Button
+                title={
+                  canUpgradePlugins(snapshot) && canInstallPlugin(snapshot)
+                    ? '从同一仓库来源预览并升级'
+                    : '仓库升级预览需要 plugin.install，确认需要 plugin.upgrade'
+                }
+                disabled={
+                  blocked ||
+                  repositoryUpgrade.blocked ||
+                  !canUpgradePlugins(snapshot) ||
+                  !canInstallPlugin(snapshot) ||
+                  (!directRepository && !update)
+                }
+                icon={<ReloadOutlined />}
+                onClick={() => repositoryUpgrade.open(plugin, update)}
+              >
+                升级
+              </Button>
+            ) : (
+              <Button
+                disabled={blocked || !canUpgradePlugins(snapshot)}
+                icon={<ReloadOutlined />}
+                onClick={() => actions.upgrade(plugin.id)}
+              >
+                升级
+              </Button>
+            )}
             <Button
               danger
               disabled={blocked || !canRemovePlugins(snapshot)}
@@ -200,7 +242,72 @@ export function InstalledPluginDetailPage() {
           layout="vertical"
           size="small"
           items={[
-            { key: 'source', label: '来源', children: plugin.source },
+            {
+              key: 'source',
+              label: '来源',
+              children: pluginSourceLabel(plugin.sourceInfo, plugin.source),
+            },
+            ...(plugin.sourceInfo
+              ? [
+                  {
+                    key: 'sourceKind',
+                    label: '来源类型',
+                    children: pluginSourceKindLabel(plugin.sourceInfo.kind),
+                  },
+                  {
+                    key: 'canonicalSource',
+                    label: '规范化来源',
+                    span: { xs: 1, sm: 2, lg: 3 },
+                    children: (
+                      <span className="soha-plugin-digest">
+                        {plugin.sourceInfo.canonicalSource}
+                      </span>
+                    ),
+                  },
+                  ...(plugin.sourceInfo.pinnedRef
+                    ? [
+                        {
+                          key: 'pinnedRef',
+                          label: '请求修订',
+                          children: plugin.sourceInfo.pinnedRef,
+                        },
+                      ]
+                    : []),
+                  ...(plugin.sourceInfo.commitSha
+                    ? [
+                        {
+                          key: 'commitSha',
+                          label: '固定提交',
+                          span: { xs: 1, sm: 2, lg: 3 },
+                          children: (
+                            <span className="soha-plugin-digest">
+                              {plugin.sourceInfo.commitSha}
+                            </span>
+                          ),
+                        },
+                      ]
+                    : []),
+                  ...(plugin.sourceInfo.rawManifestChecksum
+                    ? [
+                        {
+                          key: 'rawManifestChecksum',
+                          label: '原始摘要',
+                          span: { xs: 1, sm: 2, lg: 3 },
+                          children: (
+                            <span className="soha-plugin-digest">
+                              {plugin.sourceInfo.rawManifestChecksum}
+                            </span>
+                          ),
+                        },
+                      ]
+                    : []),
+                  {
+                    key: 'official',
+                    label: '官方收录',
+                    children: <BooleanTag value={plugin.sourceInfo.official} />,
+                  },
+                ]
+              : []),
             { key: 'installedBy', label: '安装人', children: plugin.installedBy },
             {
               key: 'signature',
