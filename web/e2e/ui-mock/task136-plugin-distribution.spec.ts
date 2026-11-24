@@ -29,6 +29,176 @@ const installed = {
   installedBy: 'browser-regression-user',
 }
 
+test('Task136 B8 reviews signed releases and rolls back with storage references present', async ({
+  context,
+  page,
+}) => {
+  const width = 390
+  await page.setViewportSize({ width, height: 900 })
+  const publisherKeyFingerprint = 'f'.repeat(64)
+  const executable = {
+    ...manifest,
+    version: '0.2.0',
+    runtime: { mode: 'executable-package-v1' },
+    components: {
+      backend: {
+        driverId: 'example.blob',
+        protocol: 'object-storage/v1',
+        platforms: { 'linux/amd64': { name: 'driver', sha256: 'a'.repeat(64), byteLength: 1 } },
+      },
+    },
+  }
+  const detail = `/plugins/${manifest.id}`
+  const repositoryUrl = sourceInfo.canonicalSource
+  let previews = 0
+  let installedVersion = ''
+  let rollbacks = 0
+  const evidence = await installMocks(context, page, (url, method, request) => {
+    const path = url.pathname.replace(/^\/api\/v1/, '')
+    if (path === '/access/permission-snapshot') {
+      const snapshot = permissions(true, true)
+      snapshot.data.permissionKeys.push(
+        'plugin.manage',
+        'plugin.lifecycle',
+        'plugin.remove',
+        'settings.system-integrations.view',
+        'software.package.view',
+      )
+      return { body: snapshot }
+    }
+    if (path === '/plugins/marketplace') return { body: { items: [] } }
+    if (path === '/plugins/updates') return { body: { items: [] } }
+    if (path === '/plugins/installed') return { body: { data: [] } }
+    if (path === '/extensions/runtime') return { body: { data: [] } }
+    if (path === '/system-integrations') {
+      expect(url.searchParams.get('category')).toBe('storage')
+      expect(url.searchParams.get('providerType')).toBe('example.blob')
+      return { body: { items: [{ id: 'archive', name: 'Archive storage' }] } }
+    }
+    const currentItem = {
+      ...installed,
+      version: installedVersion,
+      manifest: { ...executable, version: installedVersion },
+      sourceInfo: { ...sourceInfo, publisherKeyFingerprint },
+      signatureStatus: 'verified',
+      status: 'enabled',
+      rollbackVersion: rollbacks ? executable.version : manifest.version,
+      rollbackRequiresPermissionConfirmation: true,
+      runtimeReady: true,
+      referenceCount: 1,
+    }
+    if (path === detail && method === 'GET') return { body: { data: currentItem } }
+    if (path === detail + '/manifest') return { body: { data: currentItem.manifest } }
+    if (path === '/plugins/repository/preview') {
+      previews += 1
+      expect(request.postDataJSON()).toEqual(
+        previews === 3
+          ? { repositoryUrl, trustPublisherFingerprint: publisherKeyFingerprint }
+          : { repositoryUrl },
+      )
+      return {
+        body: {
+          data: {
+            manifest: executable,
+            sourceInfo,
+            expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+            previewToken: previews === 3 ? 'signed-install-proof' : 'preview-only',
+            checksumStatus: 'verified',
+            signatureStatus: ['not_provided', 'untrusted', 'verified'][previews - 1],
+            installEligibility: [
+              'signed-release-required',
+              'publisher-trust-required',
+              'confirmable',
+            ][previews - 1],
+            ...(previews > 1
+              ? {
+                  publisherKeyFingerprint,
+                  releaseAttestation: {
+                    schemaVersion: '1',
+                    pluginId: executable.id,
+                    version: executable.version,
+                    repository: repositoryUrl,
+                    commitSha: sourceInfo.commitSha,
+                    rawManifestSha256: 'e'.repeat(64),
+                    components: executable.components,
+                  },
+                }
+              : {}),
+          },
+        },
+      }
+    }
+    if (path === '/plugins/repository/install') {
+      expect(request.postDataJSON()).toEqual({ previewToken: 'signed-install-proof' })
+      installedVersion = executable.version
+      return {
+        body: {
+          data: {
+            ...currentItem,
+            version: installedVersion,
+            status: 'installed',
+            runtimeReady: false,
+            referenceCount: 0,
+          },
+        },
+      }
+    }
+    if (path === detail + '/repository/rollback') {
+      expect(request.postDataJSON()).toEqual({
+        expectedVersion: executable.version,
+        expectedUpdatedAt: installed.updatedAt,
+        version: manifest.version,
+        confirmPermissionIncrease: true,
+      })
+      rollbacks += 1
+      installedVersion = manifest.version
+      return { body: { data: { ...currentItem, version: installedVersion } } }
+    }
+  })
+
+  await page.goto('/plugins/marketplace')
+  await page.getByRole('button', { name: /从仓库安装$/ }).click()
+  const dialog = page.getByRole('dialog')
+  const confirmation = dialog.getByRole('button', { name: '确认安装' })
+  await dialog.getByLabel('仓库地址').fill(repositoryUrl)
+  await dialog.getByRole('button', { name: /^预\s*览$/ }).click()
+  await expect(dialog.getByText(/请先为此提交发布签名 Release/)).toBeVisible()
+  await expect(confirmation).toHaveCount(0)
+  await dialog.getByRole('button', { name: '重新预览' }).click()
+  await expect(dialog.getByText(publisherKeyFingerprint, { exact: true })).toBeVisible()
+  const geometry = await dialog.evaluate((node) => ({
+    visible: node.getBoundingClientRect().width,
+    scroll: node.scrollWidth,
+  }))
+  expect(geometry.visible).toBeLessThanOrEqual(width)
+  expect(geometry.scroll).toBeLessThanOrEqual(geometry.visible + 1)
+  const trust = dialog.getByRole('button', { name: '信任发布者并重新预览' })
+  await expect(trust).toBeDisabled()
+  await dialog.getByRole('checkbox', { name: /我已核对并信任/ }).check()
+  await trust.click()
+  await expect(dialog.getByText('发布者签名已验证')).toBeVisible()
+  expect(installedVersion).toBe('')
+  await confirmation.click()
+  await expect(dialog.getByText(/安装记录已保存/).first()).toBeVisible()
+  await expect(dialog.getByText(/仓库安装默认不启用/)).toBeVisible()
+
+  await page.goto(`/plugins/installed/${manifest.id}`)
+  await expect(page.getByText('Archive storage')).toBeVisible()
+  await expect(page.getByRole('button', { name: /停\s*用$/ })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /移\s*除$/ })).toBeDisabled()
+  await expect(page.getByText('已就绪', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '回退版本' }).click()
+  const confirmRollback = dialog.getByRole('button', { name: '确认回退' })
+  await expect(confirmRollback).toBeDisabled()
+  await expect(dialog.getByText(/无需访问 GitHub 或市场/)).toBeVisible()
+  await dialog.getByRole('checkbox', { name: /我已知悉回退/ }).check()
+  await confirmRollback.click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('main').getByText('v0.1.0', { exact: true })).toBeVisible()
+  expect([previews, rollbacks]).toEqual([3, 1])
+  verifyBrowserEvidence(evidence)
+})
+
 function permissions(canInstall: boolean, canUpgrade = false) {
   return {
     data: {
@@ -130,7 +300,7 @@ test('Task136 previews pinned evidence, recovers an expired proof and installs w
   await confirm.click()
   await dialog.getByRole('button', { name: '查看已安装插件' }).click()
   await expect(page).toHaveURL(/installation=installed/)
-  await expect(page.getByText(manifest.name, { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: manifest.name, exact: true })).toBeVisible()
   expect([previews, writes]).toEqual([2, 2])
 
   await page.getByRole('button', { name: /从仓库安装$/ }).click()

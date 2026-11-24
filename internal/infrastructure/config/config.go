@@ -247,6 +247,36 @@ type PluginsConfig struct {
 	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
 	Companion   PluginCompanionConfig   `mapstructure:"companion"`
 	Repository  PluginRepositoryConfig  `mapstructure:"repository"`
+	Storage     PluginStorageConfig     `mapstructure:"storage"`
+	Executable  PluginExecutableConfig  `mapstructure:"executable"`
+}
+
+type PluginExecutableConfig struct {
+	PackageRoot          string                               `mapstructure:"package_root"`
+	RuntimeRoot          string                               `mapstructure:"runtime_root"`
+	StorageAccounts      map[string][]PluginExecutableAccount `mapstructure:"-"`
+	TrustedPublisherKeys map[string]string                    `mapstructure:"-"`
+}
+
+type PluginExecutableAccount struct {
+	UID uint32 `mapstructure:"uid"`
+	GID uint32 `mapstructure:"gid"`
+}
+
+type PluginStorageConfig struct {
+	PackageRoot string                      `mapstructure:"package_root"`
+	RuntimeRoot string                      `mapstructure:"runtime_root"`
+	Drivers     []PluginStorageDriverConfig `mapstructure:"drivers"`
+}
+
+type PluginStorageDriverConfig struct {
+	PluginID      string `mapstructure:"plugin_id"`
+	Version       string `mapstructure:"version"`
+	Repository    string `mapstructure:"repository"`
+	Commit        string `mapstructure:"commit"`
+	PublicKeyPath string `mapstructure:"public_key_path"`
+	UID           uint32 `mapstructure:"uid"`
+	GID           uint32 `mapstructure:"gid"`
 }
 
 type PluginRepositoryConfig struct {
@@ -382,6 +412,15 @@ func Load() (Config, error) {
 		mapstructure.StringToTimeDurationHookFunc(),
 	))); err != nil {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	// Decode these maps as values so Viper does not split dots in plugin IDs
+	// and repository URLs into nested configuration keys.
+	if err := v.UnmarshalKey("plugins.executable.storage_accounts", &cfg.Plugins.Executable.StorageAccounts); err != nil {
+		return Config{}, fmt.Errorf("decode executable storage accounts: %w", err)
+	}
+	if err := v.UnmarshalKey("plugins.executable.trusted_publisher_keys", &cfg.Plugins.Executable.TrustedPublisherKeys); err != nil {
+		return Config{}, fmt.Errorf("decode executable trusted publisher keys: %w", err)
 	}
 
 	cfg.expandEnv()

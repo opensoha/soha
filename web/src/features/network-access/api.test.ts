@@ -3,6 +3,7 @@ import type {
   EndpointDevice,
   EndpointDeviceInput,
   NetworkAccessGrant,
+  NetworkAccessNetworkInput,
   NetworkAccessGrantInput,
   NetworkAccessGrantSecret,
   NetworkAccessPolicy,
@@ -37,6 +38,10 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import {
   analyzeNetworkAccessConflicts,
+  deleteNetworkAccessNetwork,
+  listNetworkAccessNetworks,
+  previewNetworkAccessNetworks,
+  saveNetworkAccessNetwork,
   compileNetworkAccessPolicySnapshot,
   createNetworkAccessGrant,
   createNetworkAccessPolicy,
@@ -678,6 +683,47 @@ describe('network access api', () => {
         `/network-access/${item.path}/${encodeURIComponent(item.value.id)}`,
       )
     }
+  })
+
+  it('uses site-scoped access network endpoints for configuration and preview', async () => {
+    const path = '/network-access/access-networks'
+    const input: NetworkAccessNetworkInput = {
+      siteId: 'site/id',
+      name: 'Guest network',
+      kind: 'open_guest_bootstrap',
+      accessMedium: 'wifi',
+      ssid: 'Guest',
+      enabled: true,
+      nasBindingIds: [],
+      rules: [],
+      priority: 100,
+      autoConnect: false,
+    }
+    const network = { ...timestamps, id: 'network/id', configuration: input }
+    const request = { siteId: input.siteId, deviceId: 'device-1', userId: 'user-1', draft: input }
+    const decision = {
+      accessNetworkId: 'draft',
+      allowed: false,
+      reasonCode: 'access_network_requires_other_admission',
+    }
+    apiMocks.get.mockResolvedValueOnce({ data: [network] })
+    apiMocks.post
+      .mockResolvedValueOnce({ data: network })
+      .mockResolvedValueOnce({ data: [decision] })
+    apiMocks.put.mockResolvedValueOnce({ data: network })
+    apiMocks.delete.mockResolvedValueOnce(undefined)
+
+    await expect(listNetworkAccessNetworks(input.siteId)).resolves.toEqual([network])
+    await expect(saveNetworkAccessNetwork({ input })).resolves.toEqual(network)
+    await expect(saveNetworkAccessNetwork({ id: network.id, input })).resolves.toEqual(network)
+    await expect(previewNetworkAccessNetworks(request)).resolves.toEqual([decision])
+    await deleteNetworkAccessNetwork({ id: network.id, siteId: input.siteId, name: input.name })
+
+    expect(apiMocks.get).toHaveBeenCalledWith(`${path}?siteId=site%2Fid`)
+    expect(apiMocks.post).toHaveBeenNthCalledWith(1, path, input)
+    expect(apiMocks.post).toHaveBeenNthCalledWith(2, `${path}/preview`, request)
+    expect(apiMocks.put).toHaveBeenCalledWith(`${path}/network%2Fid`, input)
+    expect(apiMocks.delete).toHaveBeenCalledWith(`${path}/network%2Fid`)
   })
 
   it('keeps session action planning separate from execution', async () => {

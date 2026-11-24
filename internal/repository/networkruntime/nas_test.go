@@ -22,6 +22,7 @@ func TestNASAuthorizationReplayRequiresCurrentDecision(t *testing.T) {
 		{"denied", func(value *domainnetworkruntime.NASAuthorization) { value.Decision = "deny" }, false},
 		{"restricted", func(value *domainnetworkruntime.NASAuthorization) { value.AccessProfile = "restricted" }, false},
 		{"new reason", func(value *domainnetworkruntime.NASAuthorization) { value.ReasonCode = "device_inactive" }, false},
+		{"new login epoch", func(value *domainnetworkruntime.NASAuthorization) { value.StrictUIEpoch = "new-login" }, false},
 		{"changed authorization inputs", func(value *domainnetworkruntime.NASAuthorization) { value.InputsHash = "new-inputs" }, false},
 		{"changed VLAN", func(value *domainnetworkruntime.NASAuthorization) {
 			attributes := *value.RadiusAttributes

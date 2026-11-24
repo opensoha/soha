@@ -92,13 +92,14 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	store         Store
-	permissions   *appaccess.PermissionResolver
-	scope         ScopeAuthorizer
-	audit         AuditRecorder
-	operations    OperationRecorder
-	keys          keyring.Ring
-	mihomoBundles MihomoBundleValidator
+	store          Store
+	permissions    *appaccess.PermissionResolver
+	scope          ScopeAuthorizer
+	audit          AuditRecorder
+	operations     OperationRecorder
+	keys           keyring.Ring
+	mihomoBundles  MihomoBundleValidator
+	accessNetworks AccessNetworkCatalog
 }
 
 func New(store Store, permissions *appaccess.PermissionResolver, scope ScopeAuthorizer, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Service, error) {
@@ -626,7 +627,7 @@ func encryptMihomoManualNode(keys keyring.Ring, value *domainnetworkaccess.Mihom
 	return secretcrypto.EncryptStringWithKeyring(keys, string(raw))
 }
 
-func (s *Service) ListConnectionOptions(ctx context.Context, principal domainidentity.Principal, deviceID string) ([]domainnetworkaccess.ConnectionOption, error) {
+func (s *Service) legacyConnectionOptions(ctx context.Context, principal domainidentity.Principal, deviceID string) ([]domainnetworkaccess.ConnectionOption, error) {
 	userID := strings.TrimSpace(principal.UserID)
 	if userID == "" {
 		return nil, fmt.Errorf("%w: authenticated user id is required", apperrors.ErrUnauthorized)

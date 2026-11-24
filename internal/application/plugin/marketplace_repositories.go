@@ -26,12 +26,13 @@ var marketplaceRepositoriesSchema = sync.OnceValues(func() (*jsonschema.Schema, 
 })
 
 type marketplaceRepositoryRegistration struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Publisher     string `json:"publisher"`
-	Type          string `json:"type"`
-	RepositoryURL string `json:"repositoryUrl"`
-	Summary       string `json:"summary"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Publisher     string   `json:"publisher"`
+	Type          string   `json:"type"`
+	RepositoryURL string   `json:"repositoryUrl"`
+	Summary       string   `json:"summary"`
+	PublisherKeys []string `json:"publisherKeys"`
 }
 
 func (p *RemoteMarketplaceProvider) decodeMarketplaceRepositories(raw []byte) ([]domainplugin.MarketplacePlugin, error) {
@@ -56,13 +57,17 @@ func (p *RemoteMarketplaceProvider) decodeMarketplaceRepositories(raw []byte) ([
 			return nil, fmt.Errorf("%w: duplicate marketplace repository or plugin identity", apperrors.ErrInvalidArgument)
 		}
 		ids[entry.ID], repositories[entry.RepositoryURL] = true, true
+		var keys []string
+		if p.official {
+			keys = entry.PublisherKeys
+		}
 		items = append(items, domainplugin.MarketplacePlugin{
 			ID: entry.ID, Name: entry.Name, Publisher: entry.Publisher, Type: entry.Type, Summary: entry.Summary,
 			Manifest: domainplugin.PluginManifest{
 				ID: entry.ID, Name: entry.Name, Publisher: entry.Publisher, Type: entry.Type,
 			},
 			Source: "marketplace:" + entry.ID, SourceID: p.sourceID, SourceURL: p.catalogURL,
-			RepositoryURL: entry.RepositoryURL,
+			RepositoryURL: entry.RepositoryURL, PublisherKeys: keys,
 			SourceInfo: &domainplugin.PluginSourceInfo{
 				Kind: domainplugin.SourceKindMarketplace, CanonicalSource: p.catalogURL,
 				SourceID: p.sourceID, RepositoryURL: entry.RepositoryURL, Official: p.official,

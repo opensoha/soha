@@ -22036,6 +22036,14 @@ paths:
       operationId: listCurrentNetworkConnectionOptions
       parameters:
         - { name: deviceId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - name: includeBootstrap
+          in: query
+          description: When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
+          schema: { type: boolean, default: false }
+        - name: includeNasSession
+          in: query
+          description: Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Wi-Fi and wired 802.1X connection options authorized for the current user and endpoint.
@@ -22239,6 +22247,107 @@ paths:
               schema: { $ref: "#/components/schemas/OperationStatus" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks:
+    get:
+      tags: [ Network Access ]
+      operationId: listNetworkAccessNetworks
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.view ]
+      parameters:
+        - { name: siteId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200":
+          description: Access networks configured for the requested site.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkListEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [ Network Access ]
+      operationId: createNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      responses:
+        "201":
+          description: Created access network.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks/preview:
+    post:
+      tags: [ Network Access ]
+      operationId: previewNetworkAccessNetworks
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.view ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkPreviewInput" }
+      responses:
+        "200":
+          description: Read-only per-network allow or deny decisions for the requested user and device. No access network is mutated.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: Always no-store because the result is user and device scoped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkDecisionListEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks/{accessNetworkId}:
+    put:
+      tags: [ Network Access ]
+      operationId: updateNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      parameters:
+        - { name: accessNetworkId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      responses:
+        "200":
+          description: Updated access network.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [ Network Access ]
+      operationId: deleteNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      parameters:
+        - { name: accessNetworkId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "204":
+          description: Access network deleted.
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /network-access/sessions:
     get:
       tags: [ Network Access ]
@@ -64480,6 +64589,164 @@ components:
       type: string
       enum: [ wifi, wired ]
       x-enum-varnames: [ NetworkAccessMediumWiFi, NetworkAccessMediumWired ]
+    NetworkAccessNetworkKind:
+      type: string
+      enum: [ standard, strict_online, open_guest_bootstrap ]
+      x-enum-varnames: [ NetworkAccessNetworkKindStandard, NetworkAccessNetworkKindStrictOnline, NetworkAccessNetworkKindOpenGuestBootstrap ]
+      description: strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+    NetworkAccessNetworkRule:
+      type: object
+      required: [ effect, subjects ]
+      description: Empty subject arrays match any subject. Core applies deny precedence before allow.
+      properties:
+        effect: { $ref: "#/components/schemas/NetworkPolicyEffect" }
+        subjects: { $ref: "#/components/schemas/NetworkPolicySubjects" }
+        deviceIds:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128 }
+        deviceStatuses:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EndpointDeviceStatus" }
+        postureStatuses:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EndpointDevicePostureStatus" }
+        authenticationMethods:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            enum: [ eap_tls, eap_ttls_pap ]
+        scheduleStartMinute: { type: integer, minimum: 0, maximum: 1439, x-go-pointer: true }
+        scheduleEndMinute: { type: integer, minimum: 0, maximum: 1439, x-go-pointer: true }
+        vlanId: { type: integer, minimum: 1, maximum: 4094 }
+        filterId: { type: string, minLength: 1, maxLength: 128 }
+        sessionTimeoutSeconds: { type: integer, minimum: 1, maximum: 86400 }
+      additionalProperties: false
+    NetworkAccessNetworkInput:
+      type: object
+      required: [ siteId, name, accessMedium, kind, enabled, nasBindingIds, priority, autoConnect, rules ]
+      properties:
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        accessMedium: { $ref: "#/components/schemas/NetworkAccessMedium" }
+        kind: { $ref: "#/components/schemas/NetworkAccessNetworkKind" }
+        enabled: { type: boolean }
+        nasBindingIds:
+          type: array
+          maxItems: 128
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128 }
+        priority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+        ssid:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Wi-Fi SSID. Core restricts this to Wi-Fi access networks.
+        bssids:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks.
+          items:
+            type: string
+            pattern: ^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$
+        portIds:
+          type: array
+          maxItems: 128
+          uniqueItems: true
+          description: Wired port identifiers. Core restricts this to wired access networks.
+          items: { type: string, minLength: 1, maxLength: 128 }
+        portStart:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+          x-go-pointer: true
+          description: Wired port range start. Core restricts this to wired access networks and validates the range order.
+        portEnd:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+          x-go-pointer: true
+          description: Wired port range end. Core restricts this to wired access networks and validates the range order.
+        vlanId: { type: integer, minimum: 1, maximum: 4094 }
+        filterId: { type: string, minLength: 1, maxLength: 128 }
+        sessionTimeoutSeconds: { type: integer, minimum: 1, maximum: 86400 }
+        rules:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/NetworkAccessNetworkRule" }
+      additionalProperties: false
+    NetworkAccessNetwork:
+      type: object
+      required: [ id, configuration, createdAt, updatedAt ]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        configuration: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    NetworkAccessNetworkEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/NetworkAccessNetwork" }
+      additionalProperties: false
+    NetworkAccessNetworkListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessNetwork" }
+      additionalProperties: false
+    NetworkAccessNetworkPreviewInput:
+      type: object
+      required: [ siteId, userId, deviceId ]
+      properties:
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        userId: { type: string, minLength: 1, maxLength: 128 }
+        deviceId: { type: string, minLength: 1, maxLength: 128 }
+        authenticationMethod:
+          type: string
+          enum: [ eap_tls, eap_ttls_pap ]
+          default: eap_tls
+        draft: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      additionalProperties: false
+    NetworkAccessNetworkDecision:
+      type: object
+      required: [ accessNetworkId, name, allowed, reasonCode ]
+      properties:
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        allowed: { type: boolean }
+        reasonCode: { type: string, minLength: 1, maxLength: 128 }
+        accessProfile: { $ref: "#/components/schemas/NetworkAccessProfile" }
+        matchedRuleIndex:
+          type: integer
+          minimum: 1
+          maximum: 128
+          description: One-based index of the first matching rule that determined the decision, when applicable.
+      additionalProperties: false
+    NetworkAccessNetworkDecisionListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessNetworkDecision" }
+      additionalProperties: false
     NetworkAccessDeviceType:
       type: string
       enum: [ wireless_controller, access_point, switch, other ]
@@ -64509,6 +64776,29 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        networkName: { type: string, minLength: 1, maxLength: 200 }
+        recommendationPriority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+        nasSession: { $ref: "#/components/schemas/NetworkConnectionNASSession" }
+        strictOnline:
+          type: object
+          description: Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+          additionalProperties: false
+          properties:
+            leaseUntil: { type: string, format: date-time }
+      additionalProperties: false
+    NetworkConnectionNASSession:
+      type: object
+      description: Last Core observation of the NAS session bound to this access network and registered device.
+      required: [ state ]
+      properties:
+        state:
+          type: string
+          enum: [ pending, observed, ended, unknown ]
+          x-enum-varnames: [ NetworkConnectionNASSessionStatePending, NetworkConnectionNASSessionStateObserved, NetworkConnectionNASSessionStateEnded, NetworkConnectionNASSessionStateUnknown ]
+          description: Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+        lastReceivedAt: { type: string, format: date-time }
       additionalProperties: false
     NetworkConnectionOptionListEnvelope:
       type: object
@@ -64518,6 +64808,22 @@ components:
           type: array
           maxItems: 200
           items: { $ref: "#/components/schemas/NetworkConnectionOption" }
+        bootstrapNetworks:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessBootstrapOption" }
+      additionalProperties: false
+    NetworkAccessBootstrapOption:
+      type: object
+      required: [ accessNetworkId, siteId, name, ssid, priority, autoConnect ]
+      properties:
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        ssid: { type: string, minLength: 1, maxLength: 32 }
+        priority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+      description: Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers.
       additionalProperties: false
     NetworkNASBindingInput:
       type: object

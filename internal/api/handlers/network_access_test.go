@@ -33,6 +33,32 @@ type networkTelemetryStub struct {
 	summary domainnetworkingest.Summary
 }
 
+type networkAccessChoicesStub struct {
+	NetworkAccessNetworkService
+	device  string
+	options appnetworkaccess.AccessNetworkChoiceOptions
+}
+
+func (s *networkAccessChoicesStub) ListAccessNetworkChoices(_ context.Context, _ domainidentity.Principal, device string, options appnetworkaccess.AccessNetworkChoiceOptions) ([]domainnetworkaccess.ConnectionOption, []appnetworkaccess.BootstrapNetworkChoice, error) {
+	s.device, s.options = device, options
+	return []domainnetworkaccess.ConnectionOption{{NASSession: &domainnetworkaccess.ConnectionNASSession{State: "pending"}}}, nil, nil
+}
+
+func TestConnectionOptionsOptsIntoNASReadback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &networkAccessChoicesStub{}
+	handler := &NetworkAccessHandler{accessNetwork: stub}
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/?deviceId=device-1&includeNasSession=true", nil)
+	handler.ListConnectionOptions(ctx)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(response.Body.String(), `"nasSession":{"state":"pending"}`) ||
+		stub.device != "device-1" || !stub.options.IncludeNASSession || stub.options.IncludeBootstrap {
+		t.Fatalf("NAS readback request = %#v, response = %d %s", stub.options, response.Code, response.Body.String())
+	}
+}
+
 func (s *networkTelemetryStub) Summary(_ context.Context, filter domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error) {
 	s.filter = filter
 	return s.summary, nil

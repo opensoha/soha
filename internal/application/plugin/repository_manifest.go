@@ -51,8 +51,8 @@ func decodeRepositoryManifest(raw []byte) (domainplugin.PluginManifest, error) {
 		return domainplugin.PluginManifest{}, invalid
 	}
 	if manifest.Type == "companion-pack" || manifest.CompanionPack != nil ||
-		(manifest.Runtime != nil && manifest.Runtime.Mode != "" && manifest.Runtime.Mode != "manifest-only") {
-		return domainplugin.PluginManifest{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "plugin_repository_runtime_unsupported", "Repository installation supports manifest-only plugins.", "仓库安装仅支持纯声明式插件。")
+		(manifest.Runtime != nil && manifest.Runtime.Mode != "" && manifest.Runtime.Mode != "manifest-only" && manifest.Runtime.Mode != "executable-package-v1") {
+		return domainplugin.PluginManifest{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "plugin_repository_runtime_unsupported", "This runtime is not supported by repository installation.", "仓库安装不支持此运行时。")
 	}
 	if schema.Validate(value) != nil {
 		return domainplugin.PluginManifest{}, invalid

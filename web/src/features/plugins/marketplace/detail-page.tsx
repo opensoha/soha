@@ -9,12 +9,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Space } from 'antd'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { manifestAssetCount, manifestExtensionCount } from '../plugin-model'
+import {
+  manifestAssetCount,
+  manifestExtensionCount,
+  pluginRequiresSignedRelease,
+} from '../plugin-model'
 import { pluginQueries } from '../queries'
 import { compactPluginTags, pluginRiskTag } from '../shared/formatters'
 import { PluginManifestSections } from '../shared/manifest-sections'
 import { PluginPageShell } from '../shared/page-shell'
-import { canInstallPlugin } from '../shared/permissions'
+import { canInstallPlugin, canTrustPluginPublisher } from '../shared/permissions'
 import { PluginNameCell } from '../shared/plugin-name-cell'
 import { RepositoryRefs } from '../shared/repository-refs'
 import { useInstallPluginAction } from './install-action'
@@ -26,7 +30,7 @@ export function PluginMarketplaceDetailPage() {
   const navigate = useNavigate()
   const snapshot = usePermissionSnapshot().data?.data
   const installAction = useInstallPluginAction()
-  const repositoryInstallAction = useRepositoryInstallAction()
+  const repositoryInstallAction = useRepositoryInstallAction(canTrustPluginPublisher(snapshot))
   const [historyRepository, setHistoryRepository] = useState<string>()
   const filters = useMemo(
     () => ({
@@ -62,7 +66,12 @@ export function PluginMarketplaceDetailPage() {
   }
 
   const { repositoryUrl } = plugin
-  const allowInstall = canInstallPlugin(snapshot) && (!repositoryUrl || Boolean(plugin.sourceId))
+  const signedRelease = pluginRequiresSignedRelease(plugin.manifest)
+  const requiresRepository = signedRelease && !repositoryUrl
+  const allowInstall =
+    canInstallPlugin(snapshot) &&
+    !requiresRepository &&
+    (!repositoryUrl || Boolean(plugin.sourceId))
   const installBlocked = installAction.blocked || repositoryInstallAction.blocked
   const showHistory = Boolean(repositoryUrl && historyRepository === repositoryUrl)
 
@@ -115,6 +124,7 @@ export function PluginMarketplaceDetailPage() {
             ) : (
               <Button
                 disabled={installBlocked || !allowInstall}
+                title={requiresRepository ? '可执行插件需要经过仓库签名 Release 预览' : undefined}
                 icon={<CloudDownloadOutlined />}
                 loading={installAction.loading || repositoryInstallAction.loading}
                 type="primary"
@@ -177,9 +187,18 @@ export function PluginMarketplaceDetailPage() {
             },
             {
               key: 'verified',
-              label: '已验证',
+              label: '目录验证',
               children: <BooleanTag value={Boolean(plugin.verified)} />,
             },
+            ...(signedRelease
+              ? [
+                  {
+                    key: 'publisherSignature',
+                    label: '发布者签名',
+                    children: plugin.installed ? '查看已安装凭据' : '在仓库预览中核验',
+                  },
+                ]
+              : []),
             {
               key: 'categories',
               label: '分类',

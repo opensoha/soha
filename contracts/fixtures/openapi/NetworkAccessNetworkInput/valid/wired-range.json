@@ -1,0 +1,19 @@
+{
+  "siteId": "site-hq",
+  "name": "HQ wired desks",
+  "accessMedium": "wired",
+  "kind": "strict_online",
+  "enabled": false,
+  "nasBindingIds": ["nas-hq-switch-a"],
+  "priority": 200,
+  "autoConnect": false,
+  "portIds": ["port-1-1", "port-1-2"],
+  "portStart": 0,
+  "portEnd": 4294967295,
+  "rules": [
+    {
+      "effect": "deny",
+      "subjects": { "users": [], "teams": [], "tags": [] }
+    }
+  ]
+}

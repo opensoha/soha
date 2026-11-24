@@ -10,6 +10,7 @@ import {
   listNetworkGateways,
   listNetworkMihomoProfiles,
   listNetworkNASBindings,
+  listNetworkAccessNetworks,
   listNetworkResources,
   listNetworkSites,
   listNetworkSiteProfileBindings,
@@ -77,6 +78,12 @@ export const networkAccessQueries = {
       queryFn: () => getNetworkTelemetrySummary(filters),
       enabled,
       retry: false,
+    }),
+  accessNetworks: (siteId: string, enabled = true) =>
+    queryOptions({
+      queryKey: networkAccessKeys.accessNetworks.list(siteId),
+      queryFn: () => listNetworkAccessNetworks(siteId.trim()),
+      enabled: enabled && Boolean(siteId.trim()),
     }),
   nasBindings: (filters: NetworkNASBindingFilters, enabled = true) =>
     queryOptions({

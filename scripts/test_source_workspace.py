@@ -291,7 +291,7 @@ class NpmSourceTest(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(workspace, "ROOT", self.root).start()
         patch.object(workspace, "SDK", self.root / "contracts").start()
-        self.names = {"contracts": "@opensoha/contracts", "web": "soha-web", "connectors": "@opensoha/connectors", "cli/npm/cli": "@opensoha/cli"}
+        self.names = {"contracts": "@opensoha/contracts", "web": "soha-web", "connectors": "@opensoha/connectors", "cli/npm/cli": "@opensoha/cli", "plugin-sdk/ui": "@opensoha/plugin-ui-sdk"}
         self.package = {"private": True, "workspaces": list(self.names)}
         self.lock = {"packages": {"": {"workspaces": list(self.names)}}}
         for part, name in self.names.items():
@@ -316,7 +316,7 @@ class NpmSourceTest(unittest.TestCase):
         (self.root / "package.json").write_text(json.dumps(self.package))
         (self.root / "package-lock.json").write_text(json.dumps(self.lock))
 
-    def test_root_four_workspaces_and_separate_dsh_lock(self):
+    def test_root_workspaces_and_separate_dsh_lock(self):
         dsh = self.root / "agent/runtimes/dsh"
         dsh.mkdir(parents=True)
         (dsh / "package-lock.json").write_text("{}")
