@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { buildSameOriginStreamURL, withStreamTicket } from '@/features/auth'
 import type { VirtualizationOperation } from './virtualization-types'
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'canceled', 'callback_timeout'])
+const TERMINAL_STATUSES = new Set([
+  'completed',
+  'succeeded',
+  'failed',
+  'canceled',
+  'callback_timeout',
+  'timeout',
+])
 
 export function useTaskStream(taskId: string | null, enabled = true) {
   const [task, setTask] = useState<VirtualizationOperation | null>(null)
@@ -31,6 +38,7 @@ export function useTaskStream(taskId: string | null, enabled = true) {
         sourceRef.current = es
 
         es.onmessage = (event) => {
+          if (cancelled) return
           try {
             const data = JSON.parse(event.data) as VirtualizationOperation
             setTask(data)
@@ -44,6 +52,7 @@ export function useTaskStream(taskId: string | null, enabled = true) {
         }
 
         es.onerror = () => {
+          if (cancelled) return
           setStatus('error')
           es.close()
         }

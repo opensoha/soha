@@ -56,15 +56,19 @@ async function generateSdk(outputRoot) {
 
   const goSpec = await writeGoCompatibilitySpec();
   try {
-  run("go", [
-      "run",
-      `github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${oapiCodegenVersion}`,
-      "-config",
-      "configs/oapi-codegen.yaml",
-      "-o",
-      goOutput,
-      goSpec.path,
-    ]);
+    run(
+      "go",
+      [
+        "run",
+        `github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${oapiCodegenVersion}`,
+        "-config",
+        "configs/oapi-codegen.yaml",
+        "-o",
+        goOutput,
+        goSpec.path,
+      ],
+      { GOWORK: "off" },
+    );
   } finally {
     if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1") await rm(goSpec.dir, { recursive: true, force: true });
   }
@@ -561,11 +565,12 @@ function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function run(command, args) {
+function run(command, args, extraEnv = {}) {
   const result = spawnSync(command, args, {
     cwd: fileURLToPath(root),
     encoding: "utf8",
     stdio: "pipe",
+    env: { ...process.env, ...extraEnv },
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (result.status !== 0) {

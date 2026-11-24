@@ -256,7 +256,7 @@ assets:
     mode: external
     dir: ../soha-docs/build
     proxy_url: http://localhost:3000
-    external_url: https://docs.opensoha.dev/
+    external_url: https://docs.opensoha.com/
 
 security:
   # Public zero-config default. Changing this after credentials are stored requires

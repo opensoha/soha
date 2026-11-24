@@ -242,7 +242,7 @@ export function AssistantPanel({
     onError: (error: Error) => void message.error(error.message),
   })
   const snapshot = usePermissionSnapshot().data?.data
-  const canReadPlans = hasPermission(snapshot, 'observe.ai.inspection.view')
+  const canReadPlans = hasPermission(snapshot, 'observe.ai.view')
   const plans = useQuery({
     ...observeQueries.operations.tasks(),
     enabled: tab === 'upcoming' && canReadPlans,

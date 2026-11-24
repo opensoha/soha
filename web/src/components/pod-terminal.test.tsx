@@ -214,4 +214,35 @@ describe('PodTerminal', () => {
     expect(first.readyState).toBe(3)
     expect(first.sent.map((value) => JSON.parse(value).type)).toEqual(['close'])
   })
+
+  it('revalidates and reconnects when the selected container or shell changes', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    roots.push(root)
+    const guard = vi.fn().mockResolvedValue(true)
+    const render = (container: string, shell: string) =>
+      act(async () => {
+        root.render(
+          <PodTerminal
+            clusterId="cluster-a"
+            namespace="default"
+            podName="pod-a"
+            container={container}
+            shell={shell}
+            beforeConnect={guard}
+          />,
+        )
+      })
+    await render('main', '/bin/sh')
+    const first = WebSocketMock.instances[0]
+    first.readyState = WebSocketMock.OPEN
+    await render('sidecar', '/bin/bash')
+    expect(guard).toHaveBeenCalledTimes(2)
+    expect(first.readyState).toBe(3)
+    expect(WebSocketMock.instances).toHaveLength(2)
+    const url = new URL(WebSocketMock.instances[1].url)
+    expect(url.searchParams.get('container')).toBe('sidecar')
+    expect(url.searchParams.get('shell')).toBe('/bin/bash')
+  })
 })

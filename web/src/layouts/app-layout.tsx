@@ -1058,7 +1058,7 @@ export function AppLayout() {
 
   if (permissionSnapshotQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="soha-viewport-center">
         <Spin size="large" />
       </div>
     )

@@ -18,10 +18,10 @@ class LocalEntries(unittest.TestCase):
     def test_npm_build_and_nested_test_are_guarded_but_services_and_mcp_are_not(self):
         for event in ('test', 'build:dev', 'typecheck:e2e', 'check:consumers', 'verify',
                       'api:reference:check', 'package:check', 'release:verify', 'smoke:compiled'):
-            self.assertTrue(npm_shell.guarded(WORKSPACE / 'soha-web', event, 'command'))
+            self.assertTrue(npm_shell.guarded(WORKSPACE / 'soha/web', event, 'command'))
         for event in ('dev', 'start', 'start:feishu', 'preview', 'test:watch', 'postinstall'):
-            self.assertFalse(npm_shell.guarded(WORKSPACE / 'soha-web', event, 'command'))
-        self.assertFalse(npm_shell.guarded(WORKSPACE / 'soha-web/node_modules/tool', 'build', 'command'))
+            self.assertFalse(npm_shell.guarded(WORKSPACE / 'soha/web', event, 'command'))
+        self.assertFalse(npm_shell.guarded(WORKSPACE / 'soha/web/node_modules/tool', 'build', 'command'))
         self.assertFalse(npm_shell.guarded('/private/tmp/opensoha-cache/npm/_npx/tool', 'test', 'command'))
 
     def test_real_npm_nested_exit_arguments_and_temporary_output_cleanup(self):
@@ -49,8 +49,8 @@ if (process.argv[2] === 'fail') process.exit(7);
 
     def test_go_make_entry_plans_use_guard_and_ci_keeps_native_commands(self):
         matrix = {'soha': ['test', 'lint', 'complexity-check'],
-                  'soha-agent': ['build', 'test', 'vet', 'deploy-images', 'verify-images'],
-                  'soha-cli': ['build', 'test', 'vet', 'deploy-image', 'verify-image'],
+                  'soha/agent': ['build', 'test', 'vet', 'deploy-images', 'verify-images'],
+                  'soha/cli': ['build', 'test', 'vet', 'deploy-image', 'verify-image'],
                   'soha-operator': ['verify', 'test-race', 'docker-build', 'verify-image']}
         for repo, targets in matrix.items():
             for target in targets:

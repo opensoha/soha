@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from 'antd'
 import { LoginPage } from './login-page'
+import { OIDCCallbackPage } from './oidc-callback-page'
 import {
   fetchLoginOptions,
   fetchPermissionSnapshot,
@@ -85,7 +86,9 @@ async function flushReact() {
   })
 }
 
-async function renderLoginPage(options: { prefetchLoginOptions?: boolean } = {}) {
+async function renderLoginPage(
+  options: { prefetchLoginOptions?: boolean; startAtOIDCCallback?: boolean } = {},
+) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   containers.push(container)
@@ -113,9 +116,12 @@ async function renderLoginPage(options: { prefetchLoginOptions?: boolean } = {})
     root.render(
       <QueryClientProvider client={queryClient}>
         <App>
-          <MemoryRouter initialEntries={['/login']}>
+          <MemoryRouter
+            initialEntries={[options.startAtOIDCCallback ? '/login/callback?error=access_denied' : '/login']}
+          >
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/login/callback" element={<OIDCCallbackPage />} />
               <Route path="/" element={<div>landing page</div>} />
               <Route path="/portal" element={<div>portal landing page</div>} />
             </Routes>
@@ -338,11 +344,27 @@ describe('login page', () => {
       await vi.advanceTimersByTimeAsync(10)
     })
 
-    expect(container.textContent).toContain('重试')
+    expect(document.body.querySelector('button[aria-label="重试读取登录选项"]')).not.toBeNull()
     expect(
       container.querySelector<HTMLInputElement>('input[autocomplete="username"]')?.disabled,
     ).toBe(true)
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
+
+  it('stays on the login form after returning from a failed OIDC callback', async () => {
+    useAuthStore.getState().setUser(user)
+    vi.mocked(restoreAuthSession).mockResolvedValue('authenticated')
+    const container = await renderLoginPage({ startAtOIDCCallback: true })
+    const backToLogin = container.querySelector<HTMLAnchorElement>('a[href="/login"]')
+    expect(backToLogin?.textContent).toBe('返回登录')
+
+    await act(async () => backToLogin?.click())
+    await flushReact()
+
+    expect(container.textContent).toContain('登录控制台')
+    expect(container.querySelector('input[autocomplete="username"]')).not.toBeNull()
+    expect(useAuthStore.getState().user).toBeNull()
+    expect(restoreAuthSession).not.toHaveBeenCalled()
   })
 
   it('restores an existing browser session from the login page', async () => {

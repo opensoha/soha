@@ -160,6 +160,7 @@ test("Root publisher preserves CI, protected OIDC stage and exact source handoff
   assert.equal(workflow.jobs.verify.uses, "./.github/workflows/contracts-ci.yml");
   assert.equal(workflow.jobs.verify.with.contracts_sha, "${{ needs.identity.outputs.sha }}");
   assert.equal(workflow.jobs.verify.with.recovery_control_sha, "${{ inputs.publish_mode == 'recover' && github.workflow_sha || '' }}");
+  assert.equal(workflow.jobs.verify.with.publish_mode, "${{ inputs.publish_mode }}");
   assert.deepEqual(workflow.jobs.release.needs, ["identity", "verify", "artifacts"]);
   assert.equal(workflow.jobs.release.environment, "release-contracts");
   assert.deepEqual(workflow.jobs.release.permissions, { actions: "read", contents: "write", "id-token": "write" });

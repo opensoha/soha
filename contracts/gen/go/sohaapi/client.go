@@ -845,7 +845,7 @@ func (c *Client) StreamComputeTask(ctx context.Context, domain ComputeTaskDomain
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
+	if resp.StatusCode != http.StatusOK {
 		path := computeTaskPath(domain, taskID) + "/stream"
 		raw, err := readResponseBody(resp, maxStreamErrorBytes)
 		if err != nil {
@@ -855,20 +855,40 @@ func (c *Client) StreamComputeTask(ctx context.Context, domain ComputeTaskDomain
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "data:") {
-			continue
+	var dataLines []string
+	flushFrame := func() error {
+		if len(dataLines) == 0 {
+			return nil
+		}
+		payload := strings.TrimSpace(strings.Join(dataLines, "\n"))
+		dataLines = dataLines[:0]
+		if payload == "" {
+			return nil
 		}
 		var event ComputeTaskStreamEvent
-		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &event); err != nil {
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
 			return fmt.Errorf("decode compute task stream event: %w", err)
 		}
-		if err := handle(event); err != nil {
-			return err
+		return handle(event)
+	}
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if line == "" {
+			if err := flushFrame(); err != nil {
+				return err
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			value := strings.TrimPrefix(line, "data:")
+			value = strings.TrimPrefix(value, " ")
+			dataLines = append(dataLines, value)
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return flushFrame()
 }
 
 func (c *Client) ListAIGatewayAuditLogs(ctx context.Context, params ListAIGatewayAuditLogsParams) ([]AuditLog, error) {
@@ -1151,7 +1171,7 @@ func (c *Client) doJSONWithHeaders(ctx context.Context, method, path string, use
 	if err != nil {
 		return fmt.Errorf("%s %s failed: %w", method, path, err)
 	}
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("%s %s failed: %s: %s", method, path, resp.Status, responseErrorMessage(raw))
 	}
 	if out == nil || len(raw) == 0 {

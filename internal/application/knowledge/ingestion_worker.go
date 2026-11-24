@@ -371,6 +371,9 @@ func (s *Service) failIngestion(
 		return s.failIngestion(finalizeCtx, job, principal, code, cause)
 	}
 	if cancelled, cancelErr := s.cancelIngestionIfRequested(ctx, job, principal); cancelled {
+		if cancelErr == nil {
+			return domainknowledge.ErrIngestionConflict
+		}
 		return cancelErr
 	} else if cancelErr != nil && !errors.Is(cancelErr, domainknowledge.ErrIngestionNotFound) {
 		return errors.Join(cause, cancelErr)

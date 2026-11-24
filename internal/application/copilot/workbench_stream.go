@@ -177,20 +177,6 @@ func normalizeFinalAgentStatus(agentStatus map[string]any) map[string]any {
 	return out
 }
 
-func replyAgentStatus(reply chatReply) string {
-	switch strings.TrimSpace(reply.Source) {
-	case "model-cancelled":
-		return "cancelled"
-	case "model-error", "model-unconfigured":
-		return "failed"
-	default:
-		if strings.TrimSpace(reply.Error) != "" {
-			return "failed"
-		}
-		return "succeeded"
-	}
-}
-
 func mergeFinalToolExecutions(tools []domaincopilot.ToolExecution, artifacts []domaincopilot.AnalysisArtifact) []domaincopilot.ToolExecution {
 	out := make([]domaincopilot.ToolExecution, 0, len(tools))
 	seen := map[string]int{}

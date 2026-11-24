@@ -125,7 +125,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
   ])
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    const handler = () => setIsFullscreen(document.fullscreenElement === containerRef.current)
     document.addEventListener('fullscreenchange', handler)
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
@@ -133,10 +133,10 @@ export function VMConsole({ vmId }: { vmId: string }) {
   const toggleFullscreen = () => {
     if (!containerRef.current) return
 
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen?.()
+    if (document.fullscreenElement !== containerRef.current) {
+      void containerRef.current.requestFullscreen?.()
     } else {
-      document.exitFullscreen?.()
+      void document.exitFullscreen?.()
     }
   }
 
@@ -207,7 +207,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
         <Space wrap>
           <Badge status={STATUS_BADGE[status]} />
           <span>VNC 控制台</span>
-          <span className="text-xs text-[var(--soha-text-secondary)]">{STATUS_LABEL[status]}</span>
+          <span className="soha-secondary-caption">{STATUS_LABEL[status]}</span>
         </Space>
       }
       extra={
@@ -248,7 +248,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
           type="warning"
           title="控制台已断开"
           description={errorMessage || '连接已关闭，请重新进入控制台后重试。'}
-          className="mb-2"
+          className="soha-mb-sm"
         />
       )}
       {status === 'error' && (
@@ -256,12 +256,12 @@ export function VMConsole({ vmId }: { vmId: string }) {
           type="error"
           title="连接失败"
           description={errorMessage}
-          className="mb-2"
+          className="soha-mb-sm"
         />
       )}
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded border border-[var(--soha-terminal-border)] bg-[var(--soha-terminal-bg)]"
+        className="soha-vm-console-frame"
         style={{ height: 'calc(100vh - 320px)', minHeight: 400 }}
       />
     </Card>

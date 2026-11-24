@@ -186,19 +186,6 @@ func (s *Service) streamGeneralWorkbenchMessage(ctx context.Context, principal d
 	return result, err
 }
 
-func applyChatReplyMetadata(metadata map[string]any, reply chatReply, userMessageID string) {
-	replyReactionMetadata(metadata, reply, userMessageID)
-	if reply.ContextUsage != nil {
-		metadata["contextUsage"] = reply.ContextUsage
-	}
-	if reply.Model != "" {
-		metadata["model"] = reply.Model
-	}
-	if reply.Error != "" {
-		metadata["error"] = reply.Error
-	}
-}
-
 func (s *Service) updateSessionAnalysisMetadata(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, patch map[string]any, messageID string) {
 	merged := bindChatSummarySource(parseSessionMetadata(session.Metadata), patch, messageID)
 	merged = applySessionAnalysisPatch(merged, patch)
@@ -206,43 +193,6 @@ func (s *Service) updateSessionAnalysisMetadata(ctx context.Context, principal d
 	session.Metadata = sessionMetadataMap(merged)
 	session.UpdatedAt = time.Now().UTC()
 	_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
-}
-
-func emitWorkbenchModelRunning(ctx context.Context, s *Service, sink domaincopilot.WorkbenchStreamEventSink) {
-	if sink == nil {
-		return
-	}
-	sink(domaincopilot.WorkbenchStreamEvent{
-		Type:         "agent.status",
-		ProviderID:   agentProviderInternal,
-		ProviderKind: s.workbenchModelInitialProviderKind(ctx),
-		Status:       "running",
-	})
-}
-
-func (s *Service) workbenchModelInitialProviderKind(ctx context.Context) string {
-	if s == nil {
-		return "internal"
-	}
-	settings, err := s.resolveAIWorkbenchSettings(ctx)
-	if err != nil || !settings.Enabled {
-		return "internal"
-	}
-	if strings.TrimSpace(settings.DefaultPublicModel) == "" && strings.TrimSpace(settings.DefaultRouteID) == "" {
-		return "internal"
-	}
-	return workbenchModelProviderKindFromEndpoint(settings.DefaultEndpoint)
-}
-
-func workbenchModelProviderKindFromEndpoint(endpoint string) string {
-	switch strings.Trim(strings.TrimSpace(endpoint), "/") {
-	case "messages":
-		return "anthropic"
-	case "chat/completions", "responses", "":
-		return "openai"
-	default:
-		return "openai"
-	}
 }
 
 func emitExternalAgentQueued(sink domaincopilot.WorkbenchStreamEventSink, envelope domaincopilot.SessionMessageEnvelope) {
@@ -266,19 +216,6 @@ func emitExternalAgentQueued(sink domaincopilot.WorkbenchStreamEventSink, envelo
 		Content:   assistant.Content,
 		Metadata:  assistant.Metadata,
 	})
-}
-
-func analysisToolIdentity(mode string) (string, string) {
-	switch normalizeSessionMode(mode) {
-	case "performance":
-		return "metrics.v1", "metrics.anomaly_summary"
-	case "trace":
-		return "traces.v1", "traces.find_slow_spans"
-	case "inspection_review":
-		return "platform-native.v1", "inspection.review"
-	default:
-		return "platform-native.v1", "root_cause.analysis"
-	}
 }
 
 func validWorkbenchReasoningEffort(value string) bool {

@@ -75,11 +75,12 @@ function PvDetailContent({ clusterId, name }: { clusterId: string; name: string 
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
+  const yamlNeeded = active === 'overview' || active === 'yaml'
   const yamlOptions = persistentVolumeQueries.yaml(scope, name)
   const yamlQuery = useQuery({
     ...yamlOptions,
-    enabled: Boolean(yamlOptions.enabled) && canRead,
-    refetchInterval: refresh.interval,
+    enabled: Boolean(yamlOptions.enabled) && canRead && yamlNeeded,
+    refetchInterval: yamlNeeded ? refresh.interval : false,
   })
   const candidate = canRead ? readableQueryData(detailQuery) : undefined
   const identityError = Boolean(candidate && candidate.name !== name)

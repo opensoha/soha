@@ -10,6 +10,20 @@ import (
 	"github.com/opensoha/soha/internal/platform/dbtx"
 )
 
+func (r *Repository) WithExecutionCreation(ctx context.Context, apply func(context.Context) error) error {
+	return dbtx.Within(ctx, r.db, apply)
+}
+
+func (r *Repository) WithExecutionTaskForUpdate(ctx context.Context, id string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
+	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		task, err := r.getExecutionTask(ctx, id, true)
+		if err != nil {
+			return err
+		}
+		return apply(ctx, task)
+	})
+}
+
 func (r *Repository) WithExecutionCallback(ctx context.Context, token string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
 	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
 		tx := dbtx.DB(ctx, r.db)

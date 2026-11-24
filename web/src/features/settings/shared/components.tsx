@@ -18,9 +18,9 @@ export const fullWidthStyle = { width: '100%' }
 
 export function SectionCallout({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mb-4 rounded border border-[var(--soha-border-color)] bg-[var(--soha-fill-weak)] p-3 text-sm">
-      <div className="font-medium">{title}</div>
-      <div className="mt-1 text-[var(--ant-colorTextSecondary)]">{description}</div>
+    <div className="soha-section-callout">
+      <div className="soha-section-callout__title">{title}</div>
+      <div className="soha-section-callout__desc">{description}</div>
     </div>
   )
 }

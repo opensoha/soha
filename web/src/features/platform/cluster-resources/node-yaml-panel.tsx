@@ -50,7 +50,7 @@ export default function NodeYAMLPanel({
   if (yamlQuery.isLoading) {
     return (
       <Card className="soha-detail-card">
-        <div className="flex items-center justify-center h-64">
+        <div className="soha-section-center">
           <Spin size="large" />
         </div>
       </Card>
@@ -77,7 +77,15 @@ export default function NodeYAMLPanel({
           }}
           onSave={() => {
             if (!draftStorageKey) return
-            window.localStorage.setItem(draftStorageKey, draft)
+            if (!yamlState.save()) {
+              void message.error(
+                t(
+                  'yamlEditor.saveFailed',
+                  'Could not save locally. Your draft remains in this editor.',
+                ),
+              )
+              return
+            }
             void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
           }}
           onApply={() =>

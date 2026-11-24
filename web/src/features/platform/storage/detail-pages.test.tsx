@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App } from 'antd'
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -280,9 +281,11 @@ async function renderDetail(path: string, route: string, page: ReactNode) {
     root.render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route path={route} element={page} />
-          </Routes>
+          <App>
+            <Routes>
+              <Route path={route} element={page} />
+            </Routes>
+          </App>
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -626,7 +629,9 @@ describe('storage detail pages', () => {
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('确认删除 claim-a？')
     expect(dialog?.textContent).toContain('selected-ns / claim-a')
-    expect(dialog?.textContent).toContain('Synthetic PVC delete conflict')
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Synthetic PVC delete conflict'),
+    )
     expect(apiDeleteMock).toHaveBeenCalledTimes(1)
     expect(container.querySelector('h1')?.textContent).toBe('claim-a')
   })

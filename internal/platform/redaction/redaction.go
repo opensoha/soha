@@ -95,9 +95,14 @@ func LogText(value string, maxBytes int) string {
 	return value + "..."
 }
 
+var (
+	sensitiveKeyNormalizer = strings.NewReplacer("_", "", "-", "", " ", "", ".", "")
+	sensitiveNeedles       = []string{"token", "password", "passwd", "secret", "credential", "apikey", "authorization", "kubeconfig", "envvar", "environmentvariable", "devicecode", "usercode", "verificationhandle", "codeverifier", "confirmationid"}
+)
+
 func SensitiveKey(key string) bool {
-	normalized := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "authorization", "kubeconfig", "envvar", "environmentvariable", "devicecode", "usercode", "verificationhandle", "codeverifier", "confirmationid"} {
+	normalized := sensitiveKeyNormalizer.Replace(strings.ToLower(strings.TrimSpace(key)))
+	for _, needle := range sensitiveNeedles {
 		if strings.Contains(normalized, needle) {
 			return true
 		}

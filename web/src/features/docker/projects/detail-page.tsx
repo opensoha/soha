@@ -182,7 +182,7 @@ function ProjectDetailWorkspace() {
                 },
               ]}
             />
-            <div className="mt-4">
+            <div className="soha-mt-md">
               <TextArea
                 rows={12}
                 spellCheck={false}

@@ -10,7 +10,7 @@ binary, configuration loader, bootstrap, or credential-encryption behavior chang
 - Build a static server with `CGO_ENABLED=0`. Keep `/app/soha` as the explicit runtime executable.
 - Build the source image from the root `go.work` and `contracts/` in the same immutable source context, without a sibling checkout or named contracts context. Generate/check the SDK and Web from that input. Public module/package release gates still require the declared, checksummed SDK with `GOWORK=off`, and must not accept a workspace link or replacement as public availability.
 - Keep runtime images minimal. Do not ship the Vite server, Go toolchain, source tree, or build caches in the final stage.
-- Treat `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, `deploy/kustomization.yaml`, config, and README commands as one compatibility surface.
+- Treat `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, `deploy/kustomization.yaml`, config, README entrypoints, and published deployment docs (`soha-docs`) as one compatibility surface.
 
 ## System-Key Contract
 

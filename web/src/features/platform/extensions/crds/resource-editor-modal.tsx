@@ -127,10 +127,6 @@ export function CRDResourceEditor({
       },
       {
         onSuccess: (yaml) => {
-          if (draftStorageKey && typeof window !== 'undefined') {
-            window.localStorage.removeItem(draftStorageKey)
-          }
-
           yamlState.applied(yaml.content)
         },
       },
@@ -232,7 +228,15 @@ export function CRDResourceEditor({
                 }}
                 onSave={() => {
                   if (!draftStorageKey || typeof window === 'undefined') return
-                  window.localStorage.setItem(draftStorageKey, draft)
+                  if (!yamlState.save()) {
+                    void message.error(
+                      t(
+                        'yamlEditor.saveFailed',
+                        'Could not save locally. Your draft remains in this editor.',
+                      ),
+                    )
+                    return
+                  }
                   void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
                 }}
                 onApply={apply}

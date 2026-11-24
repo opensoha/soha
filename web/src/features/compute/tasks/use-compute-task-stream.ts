@@ -111,7 +111,9 @@ export function useComputeTaskStream({
 
     void connect()
     const fallback = setInterval(() => {
-      if (statusRef.current !== 'live' && statusRef.current !== 'done') refresh()
+      if (!document.hidden && statusRef.current !== 'live' && statusRef.current !== 'done') {
+        refresh()
+      }
     }, 15_000)
     return () => {
       disposed = true

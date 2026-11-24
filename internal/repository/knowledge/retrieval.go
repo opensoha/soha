@@ -116,7 +116,7 @@ func (r *Repository) SearchAuthorizedChunks(ctx context.Context, p domainknowled
 		SELECT id,61.0/(60+row_number() OVER (ORDER BY relevance DESC,id)) AS lexical_score FROM shortlisted_lexical_raw
 	), scores AS (
 		SELECT c.id,coalesce(original.lexical_score,l.lexical_score,0.0) AS lexical_score,` + vectorScore + ` AS vector_score
-		FROM candidate_rows c LEFT JOIN lexical original ON original.id=c.id LEFT JOIN shortlisted_lexical l ON l.id=c.id
+		FROM candidate_rows c LEFT JOIN lexical_ranked original ON original.id=c.id LEFT JOIN shortlisted_lexical l ON l.id=c.id
 	)
 	SELECT c.id,c.knowledge_base_id,c.document_id,c.document_title,c.ordinal,c.content,c.content_hash,c.location,c.token_count,c.acl,c.created_at,c.document_version_id,c.index_revision_id,s.lexical_score,s.vector_score,c.embedding_model,c.embedding_route,coalesce(c.embedding_dimension,0),
 		c.embedding_upstream_id,c.embedding_provider_kind,c.embedding_upstream_model,a.knowledge_base_id IS NOT NULL

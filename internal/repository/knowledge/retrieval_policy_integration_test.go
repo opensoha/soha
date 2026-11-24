@@ -200,6 +200,32 @@ func knowledgeRetrievalWeightedWindow(t *testing.T, repo *Repository, ctx contex
 	})
 }
 
+func knowledgeRetrievalPreservesTruncatedLexicalRank(t *testing.T, repo *Repository, ctx context.Context) {
+	t.Helper()
+	high, heavy, reader := seedRetrievalDocument(t, repo, ctx, 50)
+	low, light, _ := seedRetrievalDocument(t, repo, ctx, 1)
+	republishRetrievalFixture(t, repo, ctx, high, heavy, "ancient deployment needle", nil)
+	republishRetrievalFixture(t, repo, ctx, low, light, "ancient instructions for deployment with a needle recorded in the operational runbook", []float64{.4, math.Sqrt(.84), 0})
+	request := domainknowledge.SearchRequest{
+		KnowledgeBaseIDs: []string{high.KnowledgeBaseID, low.KnowledgeBaseID},
+		Query:            "ancient deployment needle",
+		Policies: map[string]domainknowledge.RetrievalPolicy{
+			high.KnowledgeBaseID: {LexicalWeight: 1, MinScore: 1},
+			low.KnowledgeBaseID:  {LexicalWeight: .2, VectorWeight: .8},
+		},
+	}
+	batch := domainknowledge.EmbeddingBatch{Model: "fixture", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0, 0}}}
+	rows, err := repo.SearchAuthorizedChunks(ctx, reader, request, batch, 10)
+	if err != nil || len(rows) != 2 || rows[1].DocumentID != low.ID || math.Abs(rows[1].LexicalScore-61.0/111) > 1e-9 {
+		t.Fatalf("vector-admitted candidate lost its known lexical rank: rows=%+v err=%v", rows, err)
+	}
+	request.Policies[low.KnowledgeBaseID] = domainknowledge.RetrievalPolicy{LexicalWeight: .2, VectorWeight: .8, MinScore: .46}
+	rows, err = repo.SearchAuthorizedChunks(ctx, reader, request, batch, 10)
+	if err != nil || len(rows) != 1 || rows[0].DocumentID != high.ID {
+		t.Fatalf("lexical truncation inflated a candidate past MinScore: rows=%+v err=%v", rows, err)
+	}
+}
+
 func republishRetrievalFixture(t *testing.T, repo *Repository, ctx context.Context, document domainknowledge.Document, original []domainknowledge.Chunk, content string, vector []float64) {
 	t.Helper()
 	document.ContentHash = uuid.NewString()

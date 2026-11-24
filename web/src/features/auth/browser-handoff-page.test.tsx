@@ -2,6 +2,7 @@
 
 import { act } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App } from 'antd'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -41,14 +42,16 @@ async function renderPage(navigate = vi.fn()) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/auth/browser-handoff/handoff-1']}>
-          <Routes>
-            <Route
-              path="/auth/browser-handoff/:handoffId"
-              element={<BrowserHandoffPage navigate={navigate} />}
-            />
-          </Routes>
-        </MemoryRouter>
+        <App>
+          <MemoryRouter initialEntries={['/auth/browser-handoff/handoff-1']}>
+            <Routes>
+              <Route
+                path="/auth/browser-handoff/:handoffId"
+                element={<BrowserHandoffPage navigate={navigate} />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </App>
       </QueryClientProvider>,
     )
   })
@@ -124,9 +127,9 @@ describe('browser handoff page', () => {
 
   it('renders inspection failures without completing', async () => {
     vi.mocked(inspectBrowserHandoff).mockRejectedValueOnce(new Error('handoff expired'))
-    const { container } = await renderPage()
-    await waitForText(container, 'handoff expired')
-    expect(container.textContent).toContain('handoff expired')
+    await renderPage()
+    await waitForText(document.body, 'handoff expired')
+    expect(document.body.querySelector('[role="status"]')?.textContent).toContain('handoff expired')
     expect(completeBrowserHandoff).not.toHaveBeenCalled()
   })
 
@@ -139,9 +142,12 @@ describe('browser handoff page', () => {
     )
 
     await act(async () => continueButton?.click())
-    await waitForText(container, 'browser account conflict')
+    await waitForText(document.body, 'browser account conflict')
 
-    expect(container.textContent).toContain('browser account conflict')
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+      'browser account conflict',
+    )
+    expect(container.textContent).toContain('继续登录')
     expect(navigate).not.toHaveBeenCalled()
   })
 })

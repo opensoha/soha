@@ -20,7 +20,7 @@ func (r *Repository) createDeliveryBundle(ctx context.Context, item domaindelive
 	node, _ := domainworkflow.NodeExecutionFrom(ctx)
 	item.ID, item.Metadata = node.ResourceID("bundle"), node.Metadata(item.Metadata)
 	var stored domaindelivery.ReleaseBundle
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := repoworkflow.LockDeliveryNode(ctx, tx, item.ApplicationID, item.ApplicationEnvironmentID); err != nil {
 			return err
 		}
@@ -43,7 +43,7 @@ func (r *Repository) createDeliveryTask(ctx context.Context, item domaindelivery
 	node, _ := domainworkflow.NodeExecutionFrom(ctx)
 	item.ID, item.Payload, item.MaxRetries = node.ResourceID("task"), node.Metadata(item.Payload), 0
 	var stored domaindelivery.ExecutionTask
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := repoworkflow.LockDeliveryNode(ctx, tx, item.ApplicationID, item.ApplicationEnvironmentID); err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ func (r *Repository) rejectUnscopedDeliveryTask(ctx context.Context, item domain
 		return nil
 	}
 	var scope string
-	err := r.db.WithContext(ctx).Raw(`SELECT scope FROM workflow_runs WHERE id = ?`, runID).Row().Scan(&scope)
+	err := dbtx.DB(ctx, r.db).Raw(`SELECT scope FROM workflow_runs WHERE id = ?`, runID).Row().Scan(&scope)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

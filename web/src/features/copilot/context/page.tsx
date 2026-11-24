@@ -48,7 +48,7 @@ export function ContextInspectorPage() {
   return (
     <div className="soha-page soha-ai-context-inspector">
       <ReadFeedback label="知识库选项" query={basesQuery} />
-      <div className="grid gap-3 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
+      <div className="soha-copilot-context-grid">
         <Card size="small" variant="outlined" title="检查输入">
           <Form
             form={form}

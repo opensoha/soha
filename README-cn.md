@@ -14,7 +14,7 @@
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://www.postgresql.org/"><img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18.4-4169E1?logo=postgresql&logoColor=white"></a>
-  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Nextra-111111?logo=nextdotjs&logoColor=white"></a>
+  <a href="https://docs.opensoha.com/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Nextra-111111?logo=nextdotjs&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -32,535 +32,175 @@
 
 ## 概览
 
-Soha 面向有自建业务系统、运维人手有限的中小企业，将资源接入、日常维护、应用交付和故障处理组织在同一个权限感知的运维工作台中。本仓库是 Core、Web、Contracts、CLI、Agent、Connectors 与 Skills 的唯一开发源；服务端内嵌同一源码提交构建的 Web。
+Soha 面向有自建业务系统、运维人手有限的中小企业，将资源接入、日常维护、应用交付和故障处理组织在同一个权限感知的运维工作台中。本仓库是 Core、Web、Contracts、CLI、Agent、Connectors 与 Skills 的唯一开发源；服务端内嵌同一源码提交构建的 Web 控制台。
 
-Soha 围绕实际运维问题持续演进。当前能力覆盖内网与身份接入、Kubernetes、虚拟化、Docker、应用交付、可观测性和 AI 辅助调查；这些能力共同服务于降低运维门槛、减少重复劳动和保障业务运行。各模块的支持平台、部署条件及实验性边界以对应文档为准。
+Soha 围绕实际运维问题持续演进，覆盖内网与身份接入、Kubernetes、虚拟化、Docker、应用交付、可观测性和 AI 辅助调查。各模块的支持平台、部署条件及实验性边界以[公开文档站](https://docs.opensoha.com/)为准。
 
 ## 为什么选择 soha
 
-- **一个运行时**：需要紧凑部署时，可以用一个应用容器同时交付 API 和内嵌控制台。
-- **围绕日常运维组织操作**：从资源与应用进入维护、发布和问题调查，保留作用域动作、事件、指标、日志与长耗时操作记录。
+- **一个运行时**：需要紧凑部署时，可以用单个应用容器同时交付 API 和内嵌控制台。
+- **围绕日常运维组织操作**：从资源与应用进入维护、发布和问题调查，保留作用域动作、事件、指标、日志与持久化操作记录。
 - **权限感知的设计**：菜单、路由、按钮、API 授权、审计日志与作用域授权是相互对齐但边界清晰的控制点。
-- **Agent-ready 架构**：远程集群、AI provider、Docker 操作和持久化执行任务都可以通过 token 保护的 runner claim/callback 路径运行。
-- **按实际需要持续扩展**：内网接入、资源、交付、可观测性和 AI 等能力共享模块化后端与前端壳层，后续能力围绕企业运维问题逐步接入。
+- **Agent-ready 架构**：远程集群、AI provider、Docker 操作和持久化执行任务均通过 token 保护的 runner claim/callback 路径运行。
+- **按实际需要持续扩展**：内网接入、资源、交付、可观测性和 AI 等能力共享同一模块化后端与前端壳层。
 
 ## 功能特性
 
 | 领域 | Soha 提供的能力 |
 | --- | --- |
-| 内网与身份接入 | 应用目录、身份 Provider、Outpost、站点与网络资源、访问策略，以及通过 App 执行的受管 VPN 和代理接入。原生平台与现场设备支持范围见对应部署及验收说明。 |
+| 内网与身份接入 | 应用目录、身份 Provider、Outpost、站点与网络资源、访问策略，以及通过 App 执行的受管 VPN 和代理接入。 |
 | 平台运维 | 多集群资产、节点、命名空间、工作负载、网络、存储、CRD、Helm、YAML、日志、事件、指标与操作入口。 |
 | 应用交付 | 应用、服务、容器、构建模板、工作流模板、发布包、执行任务、审批、发布、镜像仓库与交付记录。 |
 | 可观测性 | 监控总览、告警资产、告警事件、通知策略、自愈策略、值班路由、排班、升级策略与事件流。 |
 | AI 工作台 | 会话式聊天、根因分析、性能分析、巡检复盘、MCP 证据采集、工具集、技能与 provider 执行。 |
-| Agent Runtime | 远程集群模式、runner claim/callback API、执行心跳、任务取消、Docker 主机 runtime 代理端点、Docker 操作回调与 provider 无关的 AI 执行。 |
+| Agent Runtime | 远程集群模式、runner claim/callback API、执行心跳、任务取消、Docker 主机 runtime 代理端点与 provider 无关的 AI 执行。 |
 | 虚拟化 | KubeVirt 与 Proxmox VE 连接、虚拟机生命周期、镜像和规格目录、控制台、指标、操作与同步任务。 |
-| Docker 工作台 | Docker 主机资产、Compose 项目、容器管理、服务、端口映射、模板、单容器启动、基于 agent 的运行时日志、Shell 访问、卷文件浏览与 token 保护的 runner 操作。 |
+| Docker 工作台 | Docker 主机资产、Compose 项目、容器管理、服务、端口映射、模板、运行时日志、Shell 访问与卷文件浏览。 |
 | 访问与系统 | 用户、角色、组织、策略、作用域授权、菜单、设置、公告、审计日志与操作日志。 |
 
 ## 架构
 
-Soha 采用模块化单体后端与基于路由注册的前端壳层。
+Soha 采用模块化单体后端与基于路由注册的前端壳层：
 
 ```text
-浏览器控制台
-      |
-      v
-React 18 + Vite + Ant Design
-      |
-      v
-Gin API Server
-      |
-      +--> 应用服务
-      +--> 策略引擎
-      +--> Repository
-      +--> Kubernetes / Agent / Docker / Virtualization / MCP 集成
-      |
-      v
-PostgreSQL + Kubernetes 集群
+浏览器控制台 (React 18 + Vite + Ant Design)
+        |
+        v
+Gin API Server (cmd/server)
+  ├── internal/api            # 领域路由、handler、中间件与响应封装
+  ├── internal/application    # 业务编排、授权、作用域处理与审计
+  ├── internal/policy         # RBAC、ABAC 与作用域计算
+  ├── internal/infrastructure # 配置、数据库、K8s、Agent、MCP 与日志
+  └── internal/repository     # PostgreSQL 持久化访问层
 ```
 
-### 后端
-
-- `cmd/server`: API 服务入口
-- `internal/api`: 领域路由注册文件、处理器、中间件、请求解析与响应封装
-- `internal/application`: 用例编排、授权、作用域处理、审计与视图模型
-- `internal/policy`: RBAC、ABAC 与作用域计算
-- `internal/infrastructure`: 配置、数据库、Kubernetes、informer、agent、日志、Swagger、MCP
-- `internal/repository`: 持久化访问层
-- `internal/bootstrap`: 依赖装配、迁移、初始化与启动生命周期
-
-当前公共架构和 API 行为以发布文档为准。
-
-### 前端
-
-- 源码目录：本仓库 `web/`
-- 公共协议与生成 SDK 源码：`contracts/`
-- 构建产物：`web/dist`
-- `soha` release staging 路径：`internal/staticassets/web/dist`
-- 运行模式：`embed`、`dir`、`proxy`
-
-### 文档
-
-- 源码仓库：`github.com/opensoha/soha-docs`
-- 发布文档地址：`https://docs.opensoha.dev/`
-- `soha` 默认将 `/docs/` 重定向到配置的外部文档地址
-
-### Agent 和 CLI
-
-- Agent 源码：`agent/`，独立二进制与镜像保持独立；Go module 为 `github.com/opensoha/soha/agent`。
-- CLI 源码：`cli/`，独立二进制与 npm launcher 保持独立；Go module 为 `github.com/opensoha/soha/cli`。
-- Core module 保持 `github.com/opensoha/soha`；SDK module 为 `github.com/opensoha/soha/contracts`。
-- Connectors 源码为 `connectors/`；Skills 与运行时资产为 `skills/`。
-- 新源码身份不代表已公开可获取；已有发布版本与下载地址保持不变，正式发布迁移另行验证。
-- `soha` core 暴露控制面 API；agent 和 CLI client 通过 contracts 与 HTTP 边界消费这些 API。
+- **同仓多组件**：Core（`github.com/opensoha/soha`）位于仓库根目录；`contracts/`、`web/`、`cli/`、`agent/`、`connectors/`、`skills/` 均在本仓库维护，按组件独立打标发布（`contracts/v*`、`cli/v*`、`agent/v*`、`connectors/v*`、`skills/v*`，Core 使用 `v*`）。原六个独立组件仓库仅作为只读历史归档保留，新 Issue 与 PR 统一提交至本仓库。
+- **Web 运行模式**：支持 `embed`（发行默认，产物暂存于 `internal/staticassets/web/dist`）、`dir` 和 `proxy`。
+- **文档站**：源码在 [`opensoha/soha-docs`](https://github.com/opensoha/soha-docs)，独立发布于 [`https://docs.opensoha.com/`](https://docs.opensoha.com/)（服务端 `/docs/` 默认重定向至该地址）。
 
 ## 技术栈
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.27.4、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.27.4、Gin、PostgreSQL 18.4（`pgvector` 0.8.5）、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
-| 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
-| 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
+| 文档 | Next.js 16 与 Nextra 4（`opensoha/soha-docs`） |
+| 打包部署 | Docker、Docker Compose、原生 Kubernetes / Kustomize、原生 Linux 安装包；Helm Chart 在 `opensoha/soha-helm` 维护 |
 
 ## 目录结构
 
 ```text
 .
-├── cmd/                 # server 入口
-├── configs/             # 后端配置
-├── internal/            # 后端分层与领域模块
-├── internal/staticassets # 用于内嵌 release 构建的 Web artifact
-├── migrations/          # PostgreSQL 初始化与迁移
-├── deploy/              # Docker、Compose 与原生 Kubernetes 部署资产
-├── Makefile             # 最小本地开发、构建命令
-└── .agents/skills/      # Core 与各源码组件共用的开发协作技能
+├── contracts/            # 公开契约 Schema 与生成的 Go/TypeScript SDK
+├── web/                  # React 控制台源码
+├── cli/                  # 独立 CLI 与 npm launcher
+├── agent/                # 独立 Agent、Outpost 与 DSH 运行时
+├── connectors/           # 官方连接器包
+├── skills/               # 官方运行时技能、预设与配置目录
+├── cmd/                  # Core、network-control、ingest 与 gateway 入口
+├── configs/              # 后端配置模板
+├── internal/             # 后端分层、领域模块与内嵌 Web 暂存产物
+├── migrations/           # PostgreSQL 初始化与迁移 SQL
+├── deploy/               # Docker、Compose、原生 Kubernetes 与实验资产
+├── Makefile              # 本地开发、构建与验证命令
+└── .agents/skills/       # Core 与各源码组件共用的开发协作技能
 ```
 
 ## 快速开始
 
-### 环境要求
+### 1. 使用 Docker Compose 快速体验
 
-- Go 1.27.4+
-- Node.js 22.23.4（Agent DSH 使用独立的 Node.js 24 runtime）
-- 只有运行本机容器栈时才需要 Docker 与 Docker Compose
-- 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
+使用已发布的 Core 镜像（同时提供 API 与内嵌 Web 控制台）在本机启动体验栈：
 
-### 准备本机配置与依赖
+```bash
+git clone --branch v0.1.13 --depth 1 https://github.com/opensoha/soha.git
+cd soha
+SOHA_IMAGE=ghcr.io/opensoha/soha:v0.1.13 \
+  docker compose -f deploy/docker-compose.yaml up -d --no-build --wait soha
+```
 
-先复制版本库中的默认配置，再填写本机环境参数：
+打开 `http://localhost:8080/`，使用默认本地初始化账号 `opensoha` / `opensoha` 登录。
+
+> **安全提示：** 本地进程、Docker、Kubernetes 与 Helm 部署默认共用标准初始凭据（`pgsql`、`opensoha`）及四项公开默认系统密钥，以便开箱启动。**对回环地址以外开放访问前，必须替换初始凭据与全部四项系统密钥。** 详见[第一次部署](https://docs.opensoha.com/zh/docs/tutorials/first-deploy)与[配置指南](https://docs.opensoha.com/zh/docs/operations/configuration)。
+
+### 2. 本地源码开发
+
+环境要求：**Go 1.27.4+**、**Node.js 22.23.4**（Agent DSH 使用 `agent/runtimes/dsh/` 下独立的 Node.js 24 运行时），以及带 `pgvector` 0.8.5 的 **PostgreSQL 18.4**（或使用 Docker 启动本机 PostgreSQL）。
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml
+npm ci
+make init          # 或：make init DEV_DB_MODE=local（拉起 Compose PostgreSQL）
+make               # 同时启动 Go API (:8080) 与 Vite 前端 (:5173)
 ```
 
-`configs/config.yaml` 已被 Git 和 Docker 构建上下文忽略。
-主服务、network-control 与 ingest 的数据库地址在本机配置中分别设置，
-也可以通过对应环境变量覆盖。
+- 控制台：`http://localhost:5173` · API：`http://localhost:8080`
+- 分别启动：`make dev-api` / `make dev-web`（启动 Agent 运行时：`cd agent && go run ./cmd/agent`）
+- 完整开发环境与数据库说明：[本地开发指南](https://docs.opensoha.com/zh/docs/development/local-development)
 
-Soha 标准部署默认使用 PostgreSQL 密码 `pgsql`，初始化的 `opensoha` 管理员密码为 `opensoha`：
-
-```bash
-make init
-```
-
-本地进程、Docker、Compose、Kubernetes 与 Helm 使用相同的标准初始凭据。
-只有安装需要不同的数据库或管理员凭据时，才覆盖
-`SOHA_DATABASE_PASSWORD` 与 `SOHA_AUTH_DEV_PRINCIPAL_PASSWORD`。
-
-该命令会安装 Go 依赖并准备配置，不会启动 Docker。默认的 `DEV_DB_MODE=external`
-使用配置中的外部 PostgreSQL；只有 `make init DEV_DB_MODE=local` 才会从
-`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端和 SDK 依赖从本仓根目录执行 `npm ci`，唯一根锁文件管理 `contracts/`、`web/`、`connectors/` 和 `cli/npm/cli/`，不使用旧 sibling 检出。
-
-MinIO 的 S3 API 为 `http://127.0.0.1:9000`，控制台为 `http://127.0.0.1:9001`，数据持久化到 `opensoha-minio-data`。本地默认凭据为 `minioadmin` / `minioadmin`；通过环境变量或不提交 Git 的 `deploy/.env` 设置 `SOHA_MINIO_ROOT_USER`、`SOHA_MINIO_ROOT_PASSWORD`，可沿用已有凭据。暴露到回环地址以外前必须更换默认凭据。使用 `docker compose -f deploy/docker-compose.yaml up -d minio` 单独启动；`make init` 和 `make dev` 不启动 MinIO。
-
-Compose 栈使用 `pgvector/pgvector:0.8.5-pg18-trixie`，当前基于 PostgreSQL 18.4，并与标准 PostgreSQL 18.4 镜像使用相同 Debian 代际；默认启用 `vector`、`pg_trgm` 并 preload `pg_stat_statements`。命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。只有同样提供这些扩展且 libc collation 版本兼容的 PostgreSQL 18 镜像才能通过 `SOHA_POSTGRES_IMAGE` 覆盖。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
-
-### 启动 API 和控制台
+### 常用命令
 
 ```bash
-make
-```
-
-默认目标会在开发机上同时启动 Go API 与 Vite 前端，连接配置中的外部数据库，
-不要求本机 Docker 运行。`make dev-remote` 显式使用该模式；`make dev-local`
-会先启动本机 Compose PostgreSQL，使用该模式时需把本机配置中的数据库地址设为
-`localhost`。远端数据库服务在其所在主机管理。
-
-- 控制台：`http://localhost:5173`
-- API：`http://localhost:8080`
-- 配置覆盖：`SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
-
-- 默认参数在 `configs/config.example.yaml`，复制到 Git 忽略的 `configs/config.yaml` 后使用。`make init-config` 只补齐缺失配置，不覆盖现有文件；运行时路径可通过 `SOHA_CONFIG_FILE` 指定。
-
-个人 VM guest 的登记/心跳通道由 `personal_guest` 显式启用，默认关闭；启用时必须配置独立地址以及 `tls.cert_file`、`tls.key_file`、`tls.client_ca_file`，私钥文件只能由服务账号读取。通道使用 TLS 1.3 和受验证的 guest 客户端证书，重验当前账号、个人 Agent 授权与 VM/独立数据盘身份，不接受转发证书头。登记仅证明存活；个人 VM 模板/绑定、凭证签发安装、数据初始化和工具就绪尚未接通，因此当前不能以打开此监听替代完整 VM 开通。
-
-### 分别启动服务
-
-```bash
-make dev-api
-make dev-web
-```
-
-如果不通过 Make 直接启动 server：
-
-```bash
-go run ./cmd/server
-```
-
-### 启动 Agent Runtime
-
-```bash
-cd agent
-go run ./cmd/agent
-```
-
-默认 agent 配置文件位于本仓 `agent/` 的 `configs/agent.config.yaml`。可以通过以下方式覆盖：
-
-```bash
-SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
-```
-
-同一个 agent 二进制也可以暴露 Docker 主机运行时 API，供 Docker 工作台读取项目日志、打开交互式 Shell、浏览卷文件。Docker 主机记录需要配置 agent runtime endpoint 与 bearer token；浏览器侧 WebSocket 流仍先经过控制面，并使用短期 stream ticket，而不是在 query 中暴露 access token。
-
-## 常用命令
-
-```bash
-make
-make init
-make dev-api
-make dev-web
-make build
-make test
-make deploy-image
+make                        # 同时启动本地 API 与 Web 开发服务
+make build                  # 构建 Web、暂存内嵌产物并编译服务端二进制
+make test                   # 运行 Core Go 单元测试
+make test-cli               # 运行 CLI 测试
+make test-agent             # 运行 Agent 测试
+make check-connectors       # 校验 Connectors 包与 manifest
+make check-skills           # 校验运行时 Skills 与目录资产
+make deploy-image           # 从当前工作树构建本地 Core 镜像
 ```
 
 ## 部署
 
-Soha 每个容器只运行一个进程。默认进程提供管理 API 和内嵌 SPA；独立的 `network-control`、`ingest` 与特权隔离的 `network-gateway` 工作负载，使实时授权、高频遥测和 WireGuard 数据面都不与管理服务共用进程。文档由 `soha-docs` 独立发布，并通过配置的文档 URL 链接。
+完整的安装、升级、密钥轮换与多进程运行时拓扑说明统一维护在[公开部署文档](https://docs.opensoha.com/zh/docs/operations/deployment)，不在本 README 重复维护具体参数：
 
-- [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL、MinIO 与可选 Hermes runner 服务的本地栈
-- [configs/config.example.yaml](./configs/config.example.yaml): 公开默认应用配置
-- [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
-- [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): 独立的 network-control、ingest、ingest PostgreSQL 与 WireGuard gateway 工作负载
-- [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
+| 部署方式 | 适用场景 | 文档与资产入口 |
+| --- | --- | --- |
+| **Docker Compose** | 本地开发与单机试跑 | [第一次部署](https://docs.opensoha.com/zh/docs/tutorials/first-deploy) · [deploy/docker-compose.yaml](./deploy/docker-compose.yaml) |
+| **单容器 `docker run`** | 已有外部 PostgreSQL 18 的单容器部署 | [部署指南](https://docs.opensoha.com/zh/docs/operations/deployment) · [deploy/Dockerfile](./deploy/Dockerfile) |
+| **Helm Chart** *（推荐）* | 生产 Kubernetes 主交付路径（`soha`、`soha-agent`、`soha-operator`） | [部署指南](https://docs.opensoha.com/zh/docs/operations/deployment) · [`opensoha/soha-helm`](https://github.com/opensoha/soha-helm) |
+| **原生 Kubernetes / Kustomize** | 不引入 Helm 时的轻量原生清单定制 | [部署指南](https://docs.opensoha.com/zh/docs/operations/deployment) · [deploy/kustomization.yaml](./deploy/kustomization.yaml) |
+| **原生 Linux 安装包** | 含二进制与迁移 SQL 的归档包（`soha-linux-amd64.tar.gz`） | [deploy/native/README.md](./deploy/native/README.md) |
+| **Agent、Outpost 与 DSH** | 远程集群 Agent、Identity Outpost、Chat/Heya DSH 切换 | [Agent Runtime](https://docs.opensoha.com/zh/docs/operations/agent-runtime) · [deploy/dsh-hindsight/README-cn.md](./deploy/dsh-hindsight/README-cn.md) |
+| **内网接入运行时** | `network-control`、`ingest`、WireGuard `network-gateway`、FreeRADIUS | [网络访问工作台运维指南](https://docs.opensoha.com/zh/docs/operations/network-access) · [deploy/network-runtime.yaml](./deploy/network-runtime.yaml) |
 
-### 原生 Linux 安装
-
-使用提供安装包的 release 中的 `soha-linux-amd64.tar.gz`，核对对应 `.sha256`
-后解压到新目录。安装包包含二进制、全部 PostgreSQL 迁移 SQL 和公开配置示例，
-按[原生安装说明](deploy/native/README.md)配置数据库并从解压目录启动。
-原 `soha-linux-amd64` 附件继续保留，供已具备匹配迁移文件的安装使用；
-单独下载该文件不足以完成全新安装。
-
-原生 Kubernetes 与 Helm 使用 TCP liveness、`/readyz` startup/readiness。
-数据库故障会使 Core 退出就绪状态，不会仅因该依赖故障而反复重启。
-启动窗口为五分钟；已有库迁移耗时更长时，需要按环境增大该窗口。
-
-### 远程 Kubernetes 开发
-
-`ops.popicorns.com` 直接作为共享开发环境，不再使用独立的
-`dev.ops.popicorns.com`。远程开发工作负载复用 `opensoha` 命名空间里现有的
-PostgreSQL、`soha-config` Secret 和 `soha-data` PVC。
-
-如需使用已经推送的分支或 ref 进行开发：
-
-```bash
-make remote-dev-up \
-  REMOTE_DEV_SOHA_REF=my-branch \
-  REMOTE_DEV_WEB_REF=my-branch \
-  REMOTE_DEV_CONTRACTS_REF=my-branch
-```
-
-工作负载会在集群内轮询这些 ref。后端源码变化后自动重编译，前端使用 Vite HMR。
-该流程会调整 Helm Deployment 的副本数和现有 Service selector，因此执行
-Helm upgrade 前要先恢复 Helm 工作负载：
-
-```bash
-make remote-dev-status
-make remote-dev-logs
-make remote-dev-down
-```
-
-这是共享数据的开发环境，迁移和应用写操作会直接影响现有 `soha` 数据库。
-
-### Docker Compose
-
-```bash
-make deploy-image
-docker compose -f deploy/docker-compose.yaml up -d --no-build
-```
-
-Compose 默认使用仓库中的 `configs/config.example.yaml`。如需沿用私有的
-`configs/config.yaml`，请在 shell 或 Compose 环境文件中设置
-`SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`。相对路径以 `deploy/` 为基准。
-
-`make deploy-image` 从 Core 的 `v*` 标签推导插件兼容版本。直接使用 Compose
-构建时默认 `SOHA_BUILD_VERSION=0.1.13`，构建其他 Core 版本时请显式设置，
-例如 `SOHA_BUILD_VERSION=0.1.13 docker compose -f deploy/docker-compose.yaml build soha`。
-可选 Hermes 镜像使用同一主仓的 `agent/` 和 `contracts/`，不依赖旧仓目录。
-
-使用支持 dsh 的 Core 运行新 Chat 和 Heya 时，部署配套的 dsh 镜像并启用受保护的检查点存储。
-已有安装升级前请按 [运行时部署与切换说明](deploy/dsh-hindsight/README-cn.md) 执行。
-Core readiness 只检查 PostgreSQL，开放流量前分别验证 Chat 和 Heya。
-
-网络运行时在 Compose 中通过 profile 显式开启，因为 mTLS 私钥不能提交到仓库。
-分别准备包含 `tls.crt`、`tls.key` 和 `ca.crt` 的服务端与客户端身份目录，将私钥权限设为 `0440` 或 `0600`，然后启动：
-
-```bash
-SOHA_NETWORK_CONTROL_TLS_DIR=/绝对路径/network-control-tls \
-SOHA_INGEST_TLS_DIR=/绝对路径/ingest-tls \
-SOHA_NETWORK_INGEST_QUERY_TLS_DIR=/绝对路径/core-ingest-query-tls \
-SOHA_NETWORK_INGEST_QUERY_URL=https://ingest:8083 \
-SOHA_NETWORK_INGEST_QUERY_CA_FILE=/run/soha-network-ingest-query/ca.crt \
-SOHA_NETWORK_INGEST_QUERY_CERT_FILE=/run/soha-network-ingest-query/tls.crt \
-SOHA_NETWORK_INGEST_QUERY_KEY_FILE=/run/soha-network-ingest-query/tls.key \
-SOHA_NETWORK_INGEST_QUERY_SERVER_NAME=ingest \
-SOHA_NETWORK_GATEWAY_CONTROL_CLIENT_TLS_DIR=/绝对路径/gateway-control-tls \
-SOHA_NETWORK_GATEWAY_INGEST_CLIENT_TLS_DIR=/绝对路径/gateway-ingest-tls \
-docker compose -f deploy/docker-compose.yaml --profile network-access up -d --build
-```
-
-该 profile 会启动 8082 端口的 `network-control`、8083 端口的 `ingest`，以及
-独立的 ingest PostgreSQL 和监听 UDP 51820 的 WireGuard gateway。`/healthz`
-表示进程存活；只有发布所需策略或配置后，network-control 与 gateway 的
-`/readyz` 才会就绪。
-core 的 ingest 查询客户端证书必须使用精确 URI SAN
-`spiffe://opensoha.local/network-ingest/core/soha-server`，不得复用 gateway
-ingest 身份；只有有界的聚合摘要会回到 core。
-
-组件测试容器也在同一个 Compose 文件中，并且默认不启动。`network-test`
-提供 mihomo、`radclient`、一次性 EAP-TLS `eapol_test` 客户端，以及仅授予
-NET_ADMIN 的 WireGuard/HTTP 测试客户端：
-
-```bash
-docker compose -f deploy/docker-compose.yaml --profile network-test up -d --build \
-  mihomo-test network-test-client radius-test-client
-docker compose -f deploy/docker-compose.yaml --profile network-test exec -T network-test-client \
-  sh -c 'curl -fsS --proxy http://mihomo-test:7890 -H "Authorization: Bearer soha-network-test" http://mihomo-test:9090/version >/dev/null && ip link add wg-smoke type wireguard && wg show interfaces && ip link del wg-smoke'
-docker compose -f deploy/docker-compose.yaml --profile network-test exec -T radius-test-client radclient -v
-```
-
-要执行真实 EAP-TLS 握手，先在已忽略的运行时目录生成有效期七天的一次性
-实验 CA，以及相互匹配的 network-control、NAS、FreeRADIUS 和 endpoint 身份。
-endpoint 证书会同时用于 EAP 客户端，使其 serial 和 authority key ID 与端点
-注册产生的 credential 一致：
-
-```bash
-sh deploy/network-test/generate-eap-test-pki.sh \
-  deploy/network-runtime-tls/eap-lab <soha-subject-id>
-```
-
-使用生成目录启动 network-control 与 FreeRADIUS，为运行时
-`endpoint-eap-test` 创建 enrollment，并通过 `eap-test-client/tls.crt` 与
-`tls.key` 消费该 enrollment；不要直接写入证书绑定。随后让测试客户端共享
-FreeRADIUS 网络命名空间，loopback-only 实验 NAS 不会因此向其他容器开放：
-
-```bash
-SOHA_NETWORK_CONTROL_TLS_DIR=./network-runtime-tls/eap-lab/network-control \
-SOHA_RADIUS_CONTROL_CLIENT_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-control \
-SOHA_RADIUS_EAP_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-eap \
-SOHA_RADIUS_EAP_TEST_TLS_DIR=./network-runtime-tls/eap-lab/eap-test-client \
-docker compose -f deploy/docker-compose.yaml --profile network-access \
-  --profile network-test run --rm --build radius-eap-test-client
-```
-
-成功必须同时出现 `CTRL-EVENT-EAP-SUCCESS` 和 `Access-Accept`；TLS 失败、未知或
-已吊销的证书绑定、策略拒绝都必须以非零状态退出。`eapol_test` 只接受命令行
-形式的 shared secret，因此该一次性实验 secret 会出现在测试容器自己的进程参数中；
-这里绝不能使用生产 NAS secret。`issuer/ca.key` 不得挂载到任何容器，验证后应
-删除整个实验目录。
-
-A/B/C 实验环境同时启用 `network-access` 与 `network-multisite-test`。
-现有 `network-gateway` 作为 A；该 profile 增加监听 UDP 51821 的 B 和 UDP
-51822 的 C，三者使用独立密钥、注册身份和数据卷。工作台中 A 的
-`hubGatewayId` 留空，B/C 都填写 A 的网关 ID，并且每个站点只声明自己拥有、
-互不重叠的 `advertisedCidrs`。当前采用静态路由 Hub/Spoke，B 到 C 经 A 转发。
-
-```bash
-docker compose -f deploy/docker-compose.yaml --profile network-access \
-  --profile network-multisite-test up -d --build \
-  network-gateway network-gateway-b network-gateway-c
-```
-
-原生 Kubernetes 使用同样的进程拆分。原始清单固定应用和网络网关镜像为
-`v0.1.11`，其中包含网络运行时。本地开发可以从当前工作树构建两种镜像：
-
-```bash
-make deploy-image
-docker build \
-  --target network-gateway-runtime -f deploy/Dockerfile \
-  -t ghcr.io/opensoha/soha-network-gateway:local .
-```
-
-默认镜像构建使用 `GOWORK=off` 解析 `go.mod` 中的不可变 contracts 依赖，不需要相邻 contracts checkout。正式分发使用已公开的 `github.com/opensoha/soha/contracts@v0.2.0`；日常联合开发使用本仓根 `go.work`，两种验证分别记录。
-
-
-本地构建后，将镜像导入每个目标集群节点并将 `deploy/kustomization.yaml`
-中两个 tag 改为 `local`，或推送到自有镜像仓库后替换两种镜像引用。server、network-control 和 ingest
-必须使用同一应用镜像。执行 `kubectl apply -k deploy` 前，需在
-`soha` namespace 创建 `soha-network-runtime-tls`，并提供
-`deploy/network-runtime.yaml` 顶部列出的全部 key。证书必须覆盖实际 Service/
-LoadBalancer 名称并由挂载的客户端 CA 签发；私钥不得写入本仓库。
-core 查询身份使用上述 URI SAN，并使用独立的
-`network-core-ingest-query.*` Secret key。
-
-当 PostgreSQL 已经可访问、且不使用 Compose 时，可以直接启动应用容器。
-下面显式写出所有标准默认值，部署前可分别替换：
-
-外部 PostgreSQL 必须使用 PostgreSQL 18 并提供 pgvector 与 `pg_trgm`。应用迁移账号会自动创建扩展；
-如果该账号没有扩展安装权限，需要数据库管理员先执行：
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-```
-
-外部 PostgreSQL 的 `pg_stat_statements` 保持可选。启用时由数据库管理员将其加入
-`shared_preload_libraries`，开启 `compute_query_id`，重启 PostgreSQL 后在 Soha 数据库中
-创建扩展；未启用不会阻止 Soha 启动。
-
-```bash
-docker run -d \
-  --name soha \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  --mount source=soha-data,target=/app/data \
-  --add-host host.docker.internal:host-gateway \
-  -e SOHA_DATABASE_HOST=host.docker.internal \
-  -e SOHA_DATABASE_PASSWORD=pgsql \
-  -e SOHA_AUTH_DEV_PRINCIPAL_PASSWORD=opensoha \
-  -e SOHA_AUTH_JWT_SECRET=soha-123456789012345678901234567890 \
-  -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
-  -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
-  -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.7
-```
-
-`soha-data` 卷仅用于持久化 companion 数据。软件包必须使用已启用的 S3 兼容系统集成，不再存入应用本地卷。
-
-请在**内网工作台 → 软件库**中配置对象存储。S3 兼容连接通过 `endpoint`、`bucket`、`region`、Path-style 和可选对象前缀支持 AWS S3、MinIO、阿里云 OSS、腾讯云 COS 与自定义兼容端点。私网或集群内端点必须显式开启**允许私网 Endpoint**，HTTP 端点还必须开启**允许 HTTP**。Access Key 使用 `security.credential_encryption_key` 加密保存，API 永不返回明文；上传软件包前可点击**测试连接**。可以同时启用多个地域或供应商的存储连接；上传时选择目标连接，已有软件包仍通过原连接下载和删除。连接创建后 endpoint 与 bucket 不可原地修改，凭据可以轮换，如需迁移存储应新建连接。
-
-升级过程不会静默忽略旧文件系统目录。如果仍检测到 `data/software/index.json`（或旧的 `SOHA_SOFTWARE_STORAGE_DIR`），新版本会停止启动并报告迁移错误。升级前先停止旧版本，把完整 legacy 目录移到备份位置；启动新版本并配置、测试 S3 兼容存储后，按照 `index.json` 中的原始元数据和文件名逐个重新上传 blob。只有在包数量、总字节数、SHA-256 和下载都验证完成后才能删除备份。
-
-JWT、runner、webhook 与凭据加密设置统一默认使用公开值
-`soha-123456789012345678901234567890`。这让本地进程、raw Docker、Compose、
-Kubernetes 与 Helm 都能直接启动，但不适合公网部署。对公网暴露 Soha 前必须覆盖
-这四项，建议分别使用高熵值；所有 Soha 副本必须使用完全一致的配置。更换凭据加密
-key 不会自动重加密已有记录，必须先把全部已有密文迁移到新 key，再使用新配置重启，
-否则旧凭据将无法解密。
-
-Soha 启动不依赖 SecretStore 卷、secret bundle、writer lease 或 secrets CLI。
-多个 API 实例可在配置一致时连接同一数据库；raw Docker 并行启动时使用不同宿主机端口，
-常规多副本部署则通过共享负载均衡入口访问。
-
-推荐边界：
-
-- Docker 镜像：使用 `ghcr.io/opensoha/soha`，本地默认 tag 为 `local`。
-- Agent 镜像：由本仓 `agent/` 维护 `ghcr.io/opensoha/soha-agent`、`ghcr.io/opensoha/soha-dsh` 和 Buildpacks 变体；Hermes 仅保留旧镜像和可选入口，停止新镜像发布。
-- CLI 工具镜像：使用本仓 `cli/` 维护的 `ghcr.io/opensoha/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
-- Docker Compose：面向本地开发和单机试跑，不作为生产编排主路径。
-- Helm：面向线上 Kubernetes 的主交付方式；`soha-helm` 发布 `soha`、`soha-agent`、`soha-hermes-agent` 三个 chart。
-- Kustomize：保留轻量 raw YAML 定制入口，避免维护第二套完整 Kubernetes 模板。
-
-构建镜像：
-
-```bash
-make deploy-image IMAGE_TAG=v0.1.7
-
-# 网络访问 proxy.golang.org 不稳定时：
-make deploy-image IMAGE_TAG=v0.1.7 GOPROXY=https://goproxy.cn,direct
-```
-
-使用 Helm 安装：
-
-```bash
-helm repo add opensoha https://raw.githubusercontent.com/opensoha/soha-helm/gh-pages
-helm repo update
-helm install soha opensoha/soha --namespace soha --create-namespace
-helm install soha-agent opensoha/soha-agent \
-  --namespace soha-agent \
-  --create-namespace \
-  --set-string secrets.agentBearerToken="$SOHA_AGENT_BEARER_TOKEN" \
-  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
-  --set-string config.controlPlane.baseUrl="https://soha.example.com"
-helm install soha-hermes-agent opensoha/soha-hermes-agent \
-  --namespace soha-agent \
-  --create-namespace \
-  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
-  --set-string controlPlane.baseUrl="https://soha.example.com"
-```
-
-如果需要把 CLI 打进其他镜像，可以直接从工具镜像复制：
-
-```Dockerfile
-COPY --from=ghcr.io/opensoha/soha-cli:v0.2.1 /usr/local/bin/soha /usr/local/bin/soha
-```
-
-Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维护。
-
-应用 raw Kubernetes 基线：
-
-```bash
-cd deploy
-kustomize edit set image ghcr.io/opensoha/soha=ghcr.io/opensoha/soha:vX.Y.Z
-cd ..
-kubectl apply -k deploy
-```
-
-raw manifest 的 `soha-app-config` 包含 `pgsql`/`opensoha` 标准初始凭据和四项
-公开 system key 默认值。公网发布前请通过 overlay 或外部 Secret 集成覆盖它们。
-
-Identity Outpost 从本仓 `agent/` 部署，也可以使用 `soha-agent`
-Helm Chart 的 `mode=outpost`。必须固定到支持 Identity Outpost `v1` 协议的 Agent
-发布镜像；Server 与 Agent 的 SemVer 可以不同，兼容边界是协议版本与签名配置公钥。
-NGINX Ingress 和 Traefik ForwardAuth 示例位于
-`agent/deploy/kubernetes/outpost/examples`。
+内部实验网拓扑与共享集群远程联调脚本随部署目录维护，见 [deploy/network-test/README.md](./deploy/network-test/README.md) 与 [deploy/remote-dev/README.md](./deploy/remote-dev/README.md)。
 
 ## 文档
 
+- [发布文档站](https://docs.opensoha.com/)（[文档源码](https://github.com/opensoha/soha-docs)）
+- [配置与系统密钥说明](https://docs.opensoha.com/zh/docs/operations/configuration)
 - [后端工程规则](./.agents/skills/soha-backend/SKILL.md)
 - [部署规则](./.agents/skills/soha-deploy/SKILL.md)
-- [发布文档](https://docs.opensoha.dev/)
-- [文档源码](https://github.com/opensoha/soha-docs)
 
 ## 开发原则
 
-- 后端 handler 保持轻量。应用服务负责业务编排、授权、作用域语义、审计、操作日志与前端视图模型。
-- 保持中心启动和路由文件轻量。新增领域路由放在 `internal/api/routes` 的领域文件中，新增启动职责放在 `internal/bootstrap` 的关注点文件中，避免继续膨胀单个大文件。
-- Go 大文件先按稳定行为域拆分。平台 handler、平台资源 service 和 AI Gateway 已按同包聚焦文件组织，并用单元测试保护执行任务状态流转。
-- 长耗时工作必须任务化。构建、发布、Docker、Compose、虚拟机控制和 provider 执行都通过持久化任务与 callback 路径完成。
-- 前端实现进入本仓 `web/`，公开契约和生成 SDK 进入 `contracts/`；路由、元数据、权限、后端菜单和测试在同一提交中保持一致。
-- 平台 API 返回 Soha DTO，不直接返回原始 Kubernetes 对象，YAML 或明确透传接口除外。
-- 模块可见性、菜单可见性和后端授权是不同边界。
-- 不手改生成产物。应修改源文件后重新构建。
-
-## 唯一开发入口
-
-Core 在仓库根目录，其余组件分别位于 `contracts/`、`web/`、`cli/`、`agent/`、`connectors/`、`skills/`。旧六仓只保留历史、旧版本和固定兼容引用；新 Issue、PR 和源码修改统一进入 `opensoha/soha`。组件保持独立版本/产物，SDK 0.2.0、CLI 0.2.1、Agent 0.2.0 已从主仓公开；历史 tag/附件不覆盖。Hermes 旧镜像和可选入口保留，停止发布新镜像，Buildpacks 两变体继续维护。
+- **轻量 Handler、富应用服务**：handler 只负责协议解析与响应封装；业务编排、授权、作用域语义、审计与视图模型归属 `internal/application`。
+- **启动与路由按域拆分**：新增路由放入 `internal/api/routes` 领域文件，新增装配放入 `internal/bootstrap` 关注点文件。
+- **长耗时操作任务化**：构建、发布、Docker、Compose、虚拟机控制与 provider 执行统一走持久化任务与 callback 路径。
+- **契约先行**：公开 Schema 与生成 SDK 统一维护在 `contracts/`；除 YAML 或显式透传接口外，平台 API 返回 Soha DTO。
+- **权限边界分层对齐**：模块可见性、菜单可见性与后端 API 授权彼此独立、同步演进。
+- **禁止手改生成物**：修改源 Schema 或前端源码后，通过生成与构建脚本（如 `npm run build:web`）更新产物。
 
 ## 贡献
 
-欢迎提交 issue 与 pull request。较大改动请先阅读相关的
-[后端](./.agents/skills/soha-backend/SKILL.md)或
-[部署](./.agents/skills/soha-deploy/SKILL.md)规则。
+欢迎提交 Issue 与 Pull Request。进行较大后端或部署改动前，请先阅读[后端](./.agents/skills/soha-backend/SKILL.md)与[部署](./.agents/skills/soha-deploy/SKILL.md)规则。
 
-常用验证命令：
+提交前常用验证命令：
 
 ```bash
-make test
 npm ci
+make test
 npm run typecheck --workspace web
 npm run build:web
+npm run check:internal-consumers
 ```
 
 ## 项目状态
 
-Soha 目前处于持续开发中。平台管理、交付、可观测性、AI、虚拟化与 Docker 工作台仍在一起演进，不同模块成熟度并不完全一致。
+Soha 处于持续演进中。平台运维、应用交付、可观测性、AI、内网接入、虚拟化与 Docker 工作台共同迭代，各模块成熟度与部署前提以对应文档说明为准。
 
 ## 许可
 
-Soha 采用 Apache License 2.0 许可。完整许可文本见
-[LICENSE](./LICENSE)。
+Soha 采用 Apache License 2.0 许可。完整许可文本见 [LICENSE](./LICENSE)。

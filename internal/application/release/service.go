@@ -117,32 +117,49 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		return nil, err
 	}
 
+	type appLookup struct {
+		app domainapp.App
+		err error
+	}
+	type connLookup struct {
+		conn domaincluster.Connection
+		err  error
+	}
+	appCache := make(map[string]appLookup)
+	connCache := make(map[string]connLookup)
+
 	allowed := make([]domainrelease.Record, 0, len(items))
 	staleIDs := make([]string, 0)
 	for _, item := range items {
-		if strings.TrimSpace(item.ClusterID) == "" {
+		if strings.TrimSpace(item.ClusterID) == "" || strings.TrimSpace(item.ApplicationID) == "" {
 			staleIDs = append(staleIDs, item.ID)
 			continue
 		}
-		exists, checkErr := s.applicationExists(ctx, item.ApplicationID)
-		if checkErr != nil {
-			continue
+		cachedApp, ok := appCache[item.ApplicationID]
+		if !ok {
+			app, appErr := s.apps.Get(ctx, item.ApplicationID)
+			cachedApp = appLookup{app: app, err: normalizeApplicationError(appErr)}
+			appCache[item.ApplicationID] = cachedApp
 		}
-		if !exists {
-			staleIDs = append(staleIDs, item.ID)
-			continue
-		}
-		if _, checkErr := s.loadConnection(ctx, item.ClusterID); checkErr != nil {
-			if errors.Is(checkErr, apperrors.ErrNotFound) {
+		if cachedApp.err != nil {
+			if errors.Is(cachedApp.err, apperrors.ErrNotFound) {
 				staleIDs = append(staleIDs, item.ID)
 			}
 			continue
 		}
-		app, appErr := s.apps.Get(ctx, item.ApplicationID)
-		if appErr != nil {
+		cachedConn, ok := connCache[item.ClusterID]
+		if !ok {
+			conn, connErr := s.loadConnection(ctx, item.ClusterID)
+			cachedConn = connLookup{conn: conn, err: connErr}
+			connCache[item.ClusterID] = cachedConn
+		}
+		if cachedConn.err != nil {
+			if errors.Is(cachedConn.err, apperrors.ErrNotFound) {
+				staleIDs = append(staleIDs, item.ID)
+			}
 			continue
 		}
-		if err := s.authorize(ctx, principal, item.ClusterID, item.Namespace, "Release", item.DeploymentName, app.BusinessLineID, app.Group, item.ApplicationID, domainaccess.ActionList); err != nil {
+		if err := s.authorizeWithConnection(ctx, principal, cachedConn.conn, item.Namespace, "Release", item.DeploymentName, cachedApp.app.BusinessLineID, cachedApp.app.Group, item.ApplicationID, domainaccess.ActionList); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -194,11 +211,21 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
-	bundleID := strings.TrimSpace(input.ReleaseBundleID)
-	bundleID, taskID := s.startReleaseExecution(ctx, app, input, target, resolvedImage, bundleID, providerKind, targetKind)
-	if !shouldApplyReleaseDirectly(target) {
-		return s.createQueuedRelease(ctx, principal, app, connection, target, input, resolvedImage, bundleID, taskID, providerKind, targetKind)
+	plan := execution.ReleasePlan{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
+		ReleaseBundleID:          strings.TrimSpace(input.ReleaseBundleID),
+		Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
+		SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
+		ProviderKind:             providerKind,
+		TargetKind:               targetKind,
+		ArtifactRef:              resolvedImage,
+		Metadata:                 buildReleaseExecutionMetadata(app, input, target, resolvedImage),
 	}
+	if !shouldApplyReleaseDirectly(target) {
+		return s.createQueuedRelease(ctx, principal, prepared, input, plan)
+	}
+	bundleID, taskID := s.startReleaseExecution(ctx, plan)
 	applied, err := s.applyAndPersistDirectRelease(ctx, app, connection, input, resolvedImage, bundleID, taskID)
 	if err != nil {
 		return domainrelease.Record{}, err
@@ -370,28 +397,22 @@ func validateReleaseTriggerInput(input domainrelease.TriggerInput) error {
 	}
 }
 
-func (s *Service) startReleaseExecution(ctx context.Context, app domainapp.App, input domainrelease.TriggerInput, target domaincatalog.ReleaseTarget, image, bundleID, providerKind, targetKind string) (string, string) {
+func (s *Service) startReleaseExecution(ctx context.Context, plan execution.ReleasePlan) (string, string) {
 	if s.execution == nil {
-		return bundleID, ""
+		return plan.ReleaseBundleID, ""
 	}
-	bundle, task, err := s.execution.StartReleaseExecution(ctx, execution.ReleasePlan{
-		ApplicationID:            app.ID,
-		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
-		ReleaseBundleID:          bundleID,
-		Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
-		SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
-		ProviderKind:             providerKind,
-		TargetKind:               targetKind,
-		ArtifactRef:              image,
-		Metadata:                 buildReleaseExecutionMetadata(app, input, target, image),
-	})
+	bundle, task, err := s.execution.StartReleaseExecution(ctx, plan)
 	if err != nil {
-		return bundleID, ""
+		return plan.ReleaseBundleID, ""
 	}
 	return bundle.ID, task.ID
 }
 
-func (s *Service) createQueuedRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, connection domaincluster.Connection, target domaincatalog.ReleaseTarget, input domainrelease.TriggerInput, image, bundleID, taskID, providerKind, targetKind string) (domainrelease.Record, error) {
+func (s *Service) createQueuedRelease(ctx context.Context, principal domainidentity.Principal, prepared preparedReleaseTrigger, input domainrelease.TriggerInput, plan execution.ReleasePlan) (domainrelease.Record, error) {
+	if s.execution == nil {
+		return domainrelease.Record{}, fmt.Errorf("%w: execution plane is not configured", apperrors.ErrUnsupportedOperation)
+	}
+	app, connection, target := prepared.app, prepared.connection, prepared.target
 	now := time.Now().UTC()
 	record := domainrelease.Record{
 		ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
@@ -403,25 +424,33 @@ func (s *Service) createQueuedRelease(ctx context.Context, principal domainident
 		Metadata: map[string]any{
 			"applicationName":          app.Name,
 			"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
-			"releaseBundleId":          bundleID,
-			"executionTaskId":          taskID,
 			"clusterId":                input.ClusterID,
 			"namespace":                input.Namespace,
-			"targetKind":               targetKind,
-			"executorKind":             providerKind,
+			"targetKind":               plan.TargetKind,
+			"executorKind":             plan.ProviderKind,
 			"deploymentName":           input.DeploymentName,
 			"workloadKind":             target.WorkloadKind,
 			"workloadName":             target.WorkloadName,
 			"containerName":            input.ContainerName,
 			"releaseName":              input.ReleaseName,
 			"imageTag":                 strings.TrimSpace(input.ImageTag),
-			"image":                    image,
+			"image":                    plan.ArtifactRef,
 		},
 		CreatedAt: now,
 	}
-	record, err := s.repo.Create(ctx, record)
+	plan.AssociateProjection = func(ctx context.Context, bundle domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask) error {
+		record.Metadata["releaseBundleId"] = bundle.ID
+		record.Metadata["executionTaskId"] = task.ID
+		var err error
+		record, err = s.repo.Create(ctx, record)
+		return err
+	}
+	bundle, task, err := s.execution.StartReleaseExecution(ctx, plan)
 	if err != nil {
 		return domainrelease.Record{}, err
+	}
+	if current, err := s.repo.Get(ctx, record.ID); err == nil {
+		record = current
 	}
 	if s.events != nil {
 		_ = s.events.Create(ctx, domainevent.Envelope{
@@ -435,12 +464,12 @@ func (s *Service) createQueuedRelease(ctx context.Context, principal domainident
 			Payload: map[string]any{
 				"releaseId":       record.ID,
 				"applicationId":   record.ApplicationID,
-				"executionTaskId": taskID,
-				"releaseBundleId": bundleID,
+				"executionTaskId": task.ID,
+				"releaseBundleId": bundle.ID,
 			},
 		})
 	}
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": image})
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": plan.ArtifactRef})
 	return record, nil
 }
 
@@ -838,21 +867,6 @@ func (s *Service) loadConnection(ctx context.Context, clusterID string) (domainc
 	return domaincluster.Connection{Summary: summary}, nil
 }
 
-func (s *Service) applicationExists(ctx context.Context, applicationID string) (bool, error) {
-	if strings.TrimSpace(applicationID) == "" {
-		return false, nil
-	}
-	_, err := s.apps.Get(ctx, applicationID)
-	if err == nil {
-		return true, nil
-	}
-	normalized := normalizeApplicationError(err)
-	if errors.Is(normalized, apperrors.ErrNotFound) {
-		return false, nil
-	}
-	return false, normalized
-}
-
 func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string) {
 	if s.apps == nil || strings.TrimSpace(applicationID) == "" {
 		return "", ""
@@ -919,6 +933,13 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	connection, err := s.loadConnection(ctx, clusterID)
 	if err != nil {
 		return err
+	}
+	return s.authorizeWithConnection(ctx, principal, connection, namespace, kind, name, businessLineID, applicationGroup, applicationID, action)
+}
+
+func (s *Service) authorizeWithConnection(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind, name, businessLineID, applicationGroup, applicationID string, action domainaccess.Action) error {
+	if s.authorizer == nil {
+		return nil
 	}
 	permissionKey := ""
 	if kind == "Release" && (action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch) {

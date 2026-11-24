@@ -339,7 +339,7 @@ export function ResourceGraphPanel({
 
   if (graphQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )
@@ -413,10 +413,10 @@ export function ResourceGraphPanel({
           <Typography.Text id="resource-evidence-title" strong>
             {localeCode === 'zh_CN' ? '最近证据' : 'Recent evidence'}
           </Typography.Text>
-          <ul className="m-0 mt-2 list-none p-0">
+          <ul className="soha-evidence-list">
             {graph.evidence.slice(0, 20).map((item, index) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-2 border-0 border-b border-solid border-[var(--ant-color-split)] py-2 last:border-b-0"
+                className="soha-evidence-item"
                 key={`${item.observedAt}-${item.summary}-${index}`}
               >
                 <Space>

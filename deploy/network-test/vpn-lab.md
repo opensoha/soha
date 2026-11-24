@@ -2,7 +2,7 @@
 
 这个本地实验网运行独立的 Core、Network Control、Ingest、两个 PostgreSQL、一个 WireGuard 网关和两个 HTTP 资源。所有宿主监听端口绑定 `127.0.0.1`，不会复用现有 Soha 容器或数据库。
 
-实验网验证 Mac → 原生 utun → WireGuard 网关 → 私有 HTTP/DNS 的真实路径。单网关足以验证原生组件；跨站点 A/B/C hub-spoke 仍使用主 README 的多站点测试部署。
+实验网验证 Mac → 原生 utun → WireGuard 网关 → 私有 HTTP/DNS 的真实路径。单网关足以验证原生组件；跨站点 A/B/C hub-spoke 仍使用 [network-test README](./README.md) 的多站点测试部署。
 
 ## 构建和启动
 

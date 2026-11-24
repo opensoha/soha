@@ -35,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  vi.restoreAllMocks()
   localStorage.clear()
   vi.unstubAllGlobals()
 })
@@ -122,4 +123,59 @@ describe('YAML draft lifecycle', () => {
     render('edited')
     expect(draft).toMatchObject({ value: 'edited', original: 'edited', serverChanged: false })
   })
+
+  it('saves the current edit only when a persistence key is configured', () => {
+    render('server baseline')
+    act(() => draft.setValue('without storage'))
+    expect(draft.save()).toBe(false)
+    expect(localStorage.length).toBe(0)
+    render('server baseline', 'deployment-b', 'draft-b')
+    act(() => draft.setValue('saved edit'))
+    expect(draft.save()).toBe(true)
+    expect(localStorage.getItem('draft-b')).toBe('saved edit')
+    expect(draft).toMatchObject({ value: 'saved edit', original: 'server baseline' })
+  })
+
+  it.each(['access', 'read', 'write', 'remove'] as const)(
+    'keeps editing, resetting and applying usable when storage %s throws',
+    (failure) => {
+      if (failure === 'remove') localStorage.setItem('draft-a', 'saved draft')
+      const unavailable = () => {
+        throw new DOMException('Storage unavailable', 'SecurityError')
+      }
+      if (failure === 'access') {
+        vi.spyOn(window, 'localStorage', 'get').mockImplementation(unavailable)
+      } else {
+        const method =
+          failure === 'read' ? 'getItem' : failure === 'write' ? 'setItem' : 'removeItem'
+        vi.spyOn(Storage.prototype, method).mockImplementation(unavailable)
+      }
+
+      render('server baseline', 'deployment-a', 'draft-a')
+      expect(draft.value).toBe(failure === 'remove' ? 'saved draft' : 'server baseline')
+      act(() => draft.setValue('edited'))
+      expect(draft.save()).toBe(failure !== 'access' && failure !== 'write')
+      render('updated baseline', 'deployment-a', 'draft-a')
+      expect(draft).toMatchObject({
+        value: 'edited',
+        original: 'server baseline',
+        serverChanged: true,
+      })
+      act(() => draft.reset())
+      expect(draft).toMatchObject({
+        value: 'updated baseline',
+        original: 'updated baseline',
+        serverChanged: false,
+      })
+      act(() => draft.setValue('next edit'))
+      act(() => draft.applied())
+      expect(draft.value).toBe('next edit')
+      act(() => draft.applied('accepted response'))
+      expect(draft).toMatchObject({
+        value: 'accepted response',
+        original: 'accepted response',
+        serverChanged: false,
+      })
+    },
+  )
 })

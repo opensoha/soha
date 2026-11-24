@@ -72,6 +72,21 @@ export const feishuManifest: ConnectorManifest = {
       env: "SOHA_FEISHU_ACTION_RATE_LIMIT_PER_MINUTE",
       default: 120,
       description: "Fixed-window outbound action limit per connector process."
+    },
+    {
+      name: "reliabilityDir",
+      type: "string",
+      required: false,
+      env: "SOHA_FEISHU_RELIABILITY_DIR",
+      description: "Optional writable directory for file-backed idempotency and dead-letter persistence."
+    },
+    {
+      name: "retryQueueMax",
+      type: "number",
+      required: false,
+      env: "SOHA_FEISHU_RETRY_QUEUE_MAX",
+      default: 1000,
+      description: "Maximum file-backed retry queue entries retained when reliabilityDir is enabled."
     }
   ],
   secrets: [
@@ -116,6 +131,16 @@ export const feishuManifest: ConnectorManifest = {
       name: "runtime.reliability.memory",
       direction: "bidirectional",
       description: "Provides in-memory webhook idempotency, action rate limiting, retry, and dead-letter state."
+    },
+    {
+      name: "runtime.reliability.file",
+      direction: "bidirectional",
+      description: "Provides optional file-backed retry queue, idempotency, and dead-letter persistence when SOHA_FEISHU_RELIABILITY_DIR is set."
+    },
+    {
+      name: "runtime.metrics",
+      direction: "bidirectional",
+      description: "Exposes webhook, duplicate, action, retry, and dead-letter counters through the HTTP runtime."
     }
   ],
   permissions: [

@@ -324,7 +324,7 @@ export function OverviewPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )
@@ -563,7 +563,7 @@ export function OverviewPage() {
               title={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'}
             />
           ) : workloadOverviewLoading ? (
-            <div className="flex items-center justify-center h-56">
+            <div className="soha-section-center">
               <Spin size="large" />
             </div>
           ) : workloadOverviewQuery.isError && !workloadOverview ? null : !workloadOverview ? (
@@ -928,7 +928,7 @@ export function OverviewPage() {
           className="soha-overview-panel-card"
           title={localeCode === 'zh_CN' ? '集群目录' : 'Cluster directory'}
           extra={
-            <Text type="secondary" className="text-xs">
+            <Text type="secondary">
               {localeCode === 'zh_CN' ? '健康 / 总数' : 'Healthy / Total'}: {healthyClusters}/
               {clusters.length}
             </Text>

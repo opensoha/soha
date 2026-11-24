@@ -36,15 +36,18 @@ func registerResourceYAMLRoutes(platform *gin.RouterGroup, client *k8sagent.Clie
 		defer unsubscribe()
 		c.Header("Content-Type", "application/x-ndjson")
 		c.Status(http.StatusOK)
+		rc := http.NewResponseController(c.Writer)
+		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
 		encoder := json.NewEncoder(c.Writer)
 		status := "warming"
 		if client.ResourceEventsReady() {
 			status = "live"
 		}
-		if err := encoder.Encode(map[string]any{"type": "status", "clusterId": client.Summary(c.Request.Context()).ID, "observedAt": time.Now().UTC().Format(time.RFC3339Nano), "source": "agent-informer", "cacheStatus": status}); err != nil {
+		if err := encoder.Encode(map[string]any{"type": "status", "clusterId": client.ClusterID(), "observedAt": time.Now().UTC().Format(time.RFC3339Nano), "source": "agent-informer", "cacheStatus": status}); err != nil {
 			return
 		}
 		c.Writer.Flush()
+		_ = rc.SetWriteDeadline(time.Time{})
 		for {
 			select {
 			case <-c.Request.Context().Done():
@@ -53,10 +56,12 @@ func registerResourceYAMLRoutes(platform *gin.RouterGroup, client *k8sagent.Clie
 				if !ok {
 					return
 				}
+				_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				if err := encoder.Encode(event); err != nil {
 					return
 				}
 				c.Writer.Flush()
+				_ = rc.SetWriteDeadline(time.Time{})
 			}
 		}
 	})

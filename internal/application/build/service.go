@@ -2,8 +2,8 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	appaccess "github.com/opensoha/soha/internal/application/access"
 	"path"
 	"slices"
 	"sort"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	execution "github.com/opensoha/soha/internal/application/execution"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -21,6 +22,7 @@ import (
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -31,6 +33,7 @@ type BuildRepository interface {
 	Get(context.Context, string) (domainbuild.Record, error)
 	Create(context.Context, domainbuild.TriggerInput, map[string]any) (domainbuild.Record, error)
 	Update(context.Context, domainbuild.Record) (domainbuild.Record, error)
+	UpdateUnlinked(context.Context, domainbuild.Record) (domainbuild.Record, error)
 }
 
 type ApplicationReader interface {
@@ -195,31 +198,55 @@ func (s *Service) triggerPrepared(ctx context.Context, principal domainidentity.
 		return s.failRecord(ctx, record, "execution plane is not configured")
 	}
 	metadata["buildRecordId"] = record.ID
-	bundle, task, execErr := s.execution.StartBuildExecution(ctx, execution.BuildPlan{
+	var linked domainbuild.Record
+	_, _, execErr := s.execution.StartBuildExecution(ctx, execution.BuildPlan{
 		ApplicationID: input.ApplicationID, ApplicationEnvironmentID: input.ApplicationEnvironmentID,
 		Version: prepared.ImageTag, SourceType: prepared.SourceType, ProviderKind: prepared.ProviderKind,
 		TargetKind: "k8s_workload", ArtifactRef: prepared.ImageRef, Metadata: metadata,
+		AssociateProjection: func(ctx context.Context, bundle domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask) error {
+			var err error
+			linked, err = s.linkBuildRecord(ctx, record.ID, bundle.ID, task)
+			return err
+		},
 	})
 	if execErr != nil {
+		_, scoped := domainworkflow.NodeExecutionFrom(ctx)
+		if metadataString(record.Metadata, "executionTaskId") != "" || (scoped && errors.Is(execErr, apperrors.ErrConflict)) {
+			return record, execErr
+		}
 		failed, _ := s.failRecord(ctx, record, execErr.Error())
 		return failed, execErr
 	}
-	metadata = mergeBuildMetadata(record.Metadata, task.Result)
+	if current, err := s.repo.Get(ctx, record.ID); err == nil {
+		linked = current
+	}
+	s.recordTriggeredBuild(ctx, principal, app, input, linked)
+	return linked, nil
+}
+
+func (s *Service) linkBuildRecord(ctx context.Context, recordID, bundleID string, task domaindelivery.ExecutionTask) (domainbuild.Record, error) {
+	record, err := s.repo.Get(ctx, recordID)
+	if err != nil || metadataString(record.Metadata, "executionTaskId") == task.ID {
+		return record, err
+	}
+	if record.Metadata["failureStage"] == "prepare" {
+		delete(record.Metadata, "failureStage")
+		delete(record.Metadata, "error")
+	}
+	metadata := mergeBuildMetadata(record.Metadata, task.Result)
 	metadata = mergeBuildMetadata(metadata, map[string]any{
-		"releaseBundleId":       bundle.ID,
+		"releaseBundleId":       bundleID,
 		"executionTaskId":       task.ID,
 		"executionProviderKind": task.ProviderKind,
 		"executionTaskStatus":   task.Status,
 	})
 	record.Metadata = metadata
 	record = applyExecutionTaskStatus(record, task)
-	updated, updateErr := s.repo.Update(ctx, record)
-	if updateErr != nil {
-		return domainbuild.Record{}, fmt.Errorf("link build record to execution task: %w", updateErr)
+	updated, err := s.repo.Update(ctx, record)
+	if err != nil {
+		return domainbuild.Record{}, fmt.Errorf("link build record to execution task: %w", err)
 	}
-	record = updated
-	s.recordTriggeredBuild(ctx, principal, app, input, record)
-	return record, nil
+	return updated, nil
 }
 
 func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, buildSource *domainapp.BuildSource, input domainbuild.TriggerInput, effectiveImageTag, imageRef string) (map[string]any, error) {
@@ -413,29 +440,6 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 			"source": meta.Source,
 		},
 	})
-}
-
-func resolveBuildImageRef(metadata map[string]any, imageTag string) string {
-	if len(metadata) == 0 {
-		return strings.TrimSpace(imageTag)
-	}
-	if artifacts, ok := metadata["artifacts"].([]map[string]any); ok {
-		for _, item := range artifacts {
-			if ref := strings.TrimSpace(fmt.Sprint(item["ref"])); ref != "" {
-				return ref
-			}
-		}
-	}
-	if artifacts, ok := metadata["artifacts"].([]any); ok {
-		for _, item := range artifacts {
-			if value, ok := item.(map[string]any); ok {
-				if ref := strings.TrimSpace(fmt.Sprint(value["ref"])); ref != "" {
-					return ref
-				}
-			}
-		}
-	}
-	return strings.TrimSpace(imageTag)
 }
 
 func resolveBuildSource(app domainapp.App, sourceID string) *domainapp.BuildSource {
@@ -852,7 +856,7 @@ func (s *Service) failRecord(ctx context.Context, record domainbuild.Record, rea
 		"failureStage":        "prepare",
 		"error":               strings.TrimSpace(reason),
 	})
-	updated, err := s.repo.Update(ctx, record)
+	updated, err := s.repo.UpdateUnlinked(ctx, record)
 	if err != nil {
 		return record, err
 	}
@@ -860,20 +864,16 @@ func (s *Service) failRecord(ctx context.Context, record domainbuild.Record, rea
 }
 
 func applyExecutionTaskStatus(record domainbuild.Record, task domaindelivery.ExecutionTask) domainbuild.Record {
+	record.StartedAt, record.FinishedAt = task.StartedAt, task.FinishedAt
 	switch task.Status {
 	case "running", "dispatching":
 		record.Status = "running"
-		if task.StartedAt != nil {
-			record.StartedAt = task.StartedAt
-		}
 	case "completed":
 		record.Status = "completed"
-		record.StartedAt = task.StartedAt
-		record.FinishedAt = task.FinishedAt
 	case "failed", "canceled", "callback_timeout":
 		record.Status = "failed"
-		record.StartedAt = task.StartedAt
-		record.FinishedAt = task.FinishedAt
+	default:
+		record.Status = "queued"
 	}
 	return record
 }

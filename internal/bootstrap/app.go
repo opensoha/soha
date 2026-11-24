@@ -71,9 +71,9 @@ func New(ctx context.Context) (*App, error) {
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 	startPrivateExecutionMonitors(infra.lifecycleCtx, cfg.Runtime, core.executionService)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
-	startCLIAuthCleanup(infra.lifecycleCtx, core.identityService, infra.logger)
+	startCLIAuthCleanup(infra.lifecycleCtx, cfg.Auth.CLI.Enabled, core.identityService, infra.logger)
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podExecutionRepository, infra.logger, "platform.pod.execution.cleanup.failed")
-	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podTerminalRepository, infra.logger, "platform.pod.execution.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podTerminalRepository, infra.logger, "platform.pod.terminal.cleanup.failed")
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.dockerTerminalRepository, infra.logger, "docker.native.terminal.cleanup.failed")
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.conditionalMutationRepository, infra.logger, "platform.resource.mutation.cleanup.failed")
 	go core.networkEndpointResponseService.Run(infra.lifecycleCtx, func(err error) {
@@ -83,6 +83,9 @@ func New(ctx context.Context) (*App, error) {
 		infra.logger.Named("network-endpoint-response").Warn("endpoint notification delivery failed", zap.Error(err))
 	})
 
+	if core.runtimeConfigService.ModuleEnabled("virtualization") {
+		delivery.virtualizationService.Start(infra.lifecycleCtx)
+	}
 	if core.runtimeConfigService.ModuleEnabled("ai") {
 		delivery.copilotService.Start(infra.lifecycleCtx)
 	}

@@ -15,7 +15,6 @@ const trackedAllowlist = new Set([
   'index.html',
   'package-lock.json',
   'package.json',
-  'postcss.config.js',
   'scripts/analyze-route-baseline.mjs',
   'scripts/check-bundle-budget.mjs',
   'scripts/check-frontend-boundaries.mjs',
@@ -41,7 +40,6 @@ const trackedAllowlist = new Set([
   'src/styles/globals.css',
   'src/types/scope.test.ts',
   'src/types/scope.ts',
-  'tailwind.config.ts',
   'tsconfig.json',
   'vite.config.ts',
 ])

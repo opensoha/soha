@@ -116,10 +116,15 @@
     "./network/proxy-adapter.schema.json": "./network/proxy-adapter.schema.json",
     "./network/radius-password-verifier.schema.json": "./network/radius-password-verifier.schema.json",
     "./network/radius-runtime.schema.json": "./network/radius-runtime.schema.json",
-    "./agent/dsh-runtime.schema.json": "./agent/dsh-runtime.schema.json"
+    "./agent/dsh-runtime.schema.json": "./agent/dsh-runtime.schema.json",
+    "./agent/personal-environment-export.schema.json": "./agent/personal-environment-export.schema.json",
+    "./knowledge/source-import-policy.schema.json": "./knowledge/source-import-policy.schema.json",
+    "./plugins/observability-log-query-v1.schema.json": "./plugins/observability-log-query-v1.schema.json",
+    "./projects/project-manifest.schema.json": "./projects/project-manifest.schema.json"
   },
   "files": [
     "delivery",
+    "projects",
     "COMPATIBILITY.md",
     "go.mod",
     "go.sum",

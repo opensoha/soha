@@ -144,7 +144,7 @@ Structured results are written to stdout. Diagnostics and prompts are written to
 | `secret update` | `soha secret update <secret-id> [options]` | Update secret metadata and bindings. | `soha secret update registry-token --binding capability=docker.projects.deploy.trigger` |
 | `secret disable` | `soha secret disable <secret-id> [options]` | Disable a secret. | `soha secret disable registry-token` |
 | `secret versions` | `soha secret versions <secret-id> [options]` | List immutable secret versions. | `soha secret versions registry-token` |
-| `secret rotate` | `soha secret rotate <secret-id> [options]` | Create a typed local or Vault KV v2 secret; import SSH keys with --input file\|- version. | `printf '%s\n' "$REGISTRY_TOKEN" \| soha secret rotate registry-token`<br>`soha secret rotate registry-token --vault-mount secret --vault-path demo/app --vault-key token --vault-version 4` |
+| `secret rotate` | `soha secret rotate <secret-id> [options]` | Rotate a secret with a new immutable local or Vault KV v2 version. | `printf '%s\n' "$REGISTRY_TOKEN" \| soha secret rotate registry-token`<br>`soha secret rotate registry-token --vault-mount secret --vault-path demo/app --vault-key token --vault-version 4` |
 | `secret revoke-version` | `soha secret revoke-version <secret-id> <version> [options]` | Revoke a secret version. | `soha secret revoke-version registry-token 1` |
 | `token` | `soha token <list\|create\|revoke\|rotate\|rotation-status> [options]` | Manage personal access tokens. |  |
 | `token list` | `soha token list [options]` | List personal access tokens. | `soha token list` |

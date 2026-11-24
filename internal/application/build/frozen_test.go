@@ -27,9 +27,9 @@ func (r *buildRefFake) ResolveRepositoryCommit(_ context.Context, id, kind, name
 
 type frozenExecutionFake struct{ plan appexecution.BuildPlan }
 
-func (e *frozenExecutionFake) StartBuildExecution(_ context.Context, plan appexecution.BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+func (e *frozenExecutionFake) StartBuildExecution(ctx context.Context, plan appexecution.BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
 	e.plan = plan
-	return executionFake{}.StartBuildExecution(context.Background(), plan)
+	return executionFake{}.StartBuildExecution(ctx, plan)
 }
 
 func TestFrozenBuildPinsRepositoriesAndSurvivesSourceEdits(t *testing.T) {

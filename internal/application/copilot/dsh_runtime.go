@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"maps"
 	"slices"
 	"strings"
@@ -1111,8 +1112,9 @@ func (s *Service) refreshWaitingDSHTool(ctx context.Context, claim domaincopilot
 }
 
 func (s *Service) dshLock(id string) *sync.Mutex {
-	v, _ := s.dshLocks.LoadOrStore(id, &sync.Mutex{})
-	return v.(*sync.Mutex)
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	return &s.dshLocks[h.Sum32()%uint32(len(s.dshLocks))]
 }
 
 func (s *Service) persistDSHEvents(ctx context.Context, lease domaincopilot.NativeLease, cp dshCheckpoint) error {

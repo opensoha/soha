@@ -181,7 +181,11 @@ func (s *Service) CompleteRun(ctx context.Context, id string, outputs []SampleOu
 	for _, sample := range dataset.Samples {
 		output, exists := byID[sample.ID]
 		if !exists {
-			run.Results = append(run.Results, Result{SchemaVersion: "opensoha.dev/evaluation-result/v1", SampleID: sample.ID, Scores: map[string]float64{"completeness": 0}, Passed: false, FailureReasons: []string{"missing_output"}})
+			run.Results = append(run.Results, Result{
+				SchemaVersion: "opensoha.dev/evaluation-result/v1", SampleID: sample.ID,
+				Scores: map[string]float64{"completeness": 0, "source_recall": 0, "fact_recall": 0, "action_safety": 0},
+				Passed: false, FailureReasons: []string{"missing_output"},
+			})
 			continue
 		}
 		run.Results = append(run.Results, EvaluateSample(sample, output))
@@ -315,20 +319,36 @@ func ReciprocalRank(expected, ranked []string) float64 {
 }
 
 func NDCG(expected, ranked []string, limit int) float64 {
-	if limit <= 0 || limit > len(ranked) {
-		limit = len(ranked)
-	}
 	want := make(map[string]struct{}, len(expected))
 	for _, item := range expected {
-		want[strings.TrimSpace(item)] = struct{}{}
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			want[trimmed] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return 1
+	}
+	idealLimit := limit
+	if idealLimit <= 0 {
+		idealLimit = len(want)
+	}
+	rankLimit := len(ranked)
+	if limit > 0 && limit < rankLimit {
+		rankLimit = limit
 	}
 	dcg := 0.0
-	for index, item := range ranked[:limit] {
-		if _, ok := want[strings.TrimSpace(item)]; ok {
+	seen := make(map[string]struct{}, rankLimit)
+	for index, item := range ranked[:rankLimit] {
+		item = strings.TrimSpace(item)
+		if _, duplicate := seen[item]; duplicate {
+			continue
+		}
+		seen[item] = struct{}{}
+		if _, ok := want[item]; ok {
 			dcg += 1 / math.Log2(float64(index+2))
 		}
 	}
-	idealHits := min(len(want), limit)
+	idealHits := min(len(want), idealLimit)
 	idcg := 0.0
 	for index := 0; index < idealHits; index++ {
 		idcg += 1 / math.Log2(float64(index+2))
