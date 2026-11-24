@@ -169,12 +169,38 @@ func (r *memoryPluginRepo) GetInstalled(_ context.Context, pluginID string) (dom
 	return item, nil
 }
 
+func (r *memoryPluginRepo) CreateInstalled(ctx context.Context, item domainplugin.InstalledPlugin, onCreate func(context.Context) error) (domainplugin.InstalledPlugin, bool, error) {
+	if existing, found := r.items[item.ID]; found {
+		return existing, false, nil
+	}
+	if onCreate != nil {
+		if err := onCreate(ctx); err != nil {
+			return domainplugin.InstalledPlugin{}, false, err
+		}
+	}
+	stored, err := r.UpsertInstalled(ctx, item)
+	return stored, err == nil, err
+}
+
 func (r *memoryPluginRepo) UpsertInstalled(_ context.Context, item domainplugin.InstalledPlugin) (domainplugin.InstalledPlugin, error) {
 	if item.InstalledAt.IsZero() {
 		item.InstalledAt = time.Now().UTC()
 	}
 	r.items[item.ID] = item
 	return item, nil
+}
+
+func (r *memoryPluginRepo) UpdateInstalled(ctx context.Context, expected, item domainplugin.InstalledPlugin, beforeUpdate func(context.Context, *domainplugin.InstalledPlugin) error) (domainplugin.InstalledPlugin, error) {
+	current, err := r.GetInstalled(ctx, expected.ID)
+	if err != nil || !current.InstalledAt.Equal(expected.InstalledAt) || !current.UpdatedAt.Equal(expected.UpdatedAt) {
+		return domainplugin.InstalledPlugin{}, apperrors.ErrConflict
+	}
+	if beforeUpdate != nil {
+		if err := beforeUpdate(ctx, &item); err != nil {
+			return domainplugin.InstalledPlugin{}, err
+		}
+	}
+	return r.UpsertInstalled(ctx, item)
 }
 
 func (r *memoryPluginRepo) RemoveInstalled(ctx context.Context, pluginID string, retire func(context.Context, domainplugin.InstalledPlugin) error) (domainplugin.InstalledPlugin, error) {
@@ -399,8 +425,13 @@ func expectPlugin(t *testing.T, condition bool, format string, args ...any) {
 }
 
 func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(t *testing.T) {
-	manifestRaw := []byte(`{"id":"opensoha.remote-skill","name":"Remote Skill","version":"0.2.0","publisher":"community","type":"skill-pack","runtime":{"mode":"manifest-only"},"extensionPoints":{"ai":{"skillPacks":[{"id":"remote-skill","label":"Remote Skill","permissionKeys":["ai.gateway.view"]}]}}}`)
+	manifestRaw := []byte(`{
+  "id":"opensoha.remote-skill","name":"Remote Skill","version":"0.2.0","publisher":"community","type":"skill-pack",
+  "integrity":{"verified":true,"signature":"sig:unverified"},"runtime":{"mode":"manifest-only"},
+  "extensionPoints":{"ai":{"skillPacks":[{"id":"remote-skill","label":"Remote Skill","permissionKeys":["ai.gateway.view"]}]}}
+}`)
 	manifestChecksum := checksumBytes(manifestRaw)
+	commit := strings.Repeat("a", 40)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -409,8 +440,8 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 			_, _ = fmt.Fprintf(w, `{
 				"schemaVersion":"marketplace.opensoha.io/v1",
 				"generatedAt":"2026-06-28T00:00:00Z",
-				"sourceId":"community",
-				"sourceUrl":%q,
+				"sourceId":"opensoha-official",
+				"sourceUrl":"https://example.com/catalog.json",
 				"plugins":[{
 					"id":"opensoha.remote-skill",
 					"name":"Remote Skill",
@@ -418,12 +449,15 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 					"publisher":"community",
 					"type":"skill-pack",
 					"source":"marketplace:community/remote-skill",
+					"sourceId":"opensoha-official",
+					"verified":true,
+					"publisherInfo":{"id":"community","name":"Community","verified":true,"verificationLevel":"official"},
 					"riskLevel":"read",
 					"latestVersion":"0.2.0",
 					"manifest":{"id":"opensoha.remote-skill","name":"Remote Skill","version":"0.2.0","publisher":"community","type":"skill-pack"},
-					"versions":[{"version":"0.2.0","manifestUrl":%q,"checksum":%q,"signature":"sig:test"}]
+					"versions":[{"version":"0.2.0","manifestUrl":%q,"checksum":%q,"signature":"sig:test","metadata":{"commitSha":%q}}]
 				}]
-				}`, server.URL+"/index.json", server.URL+"/plugin.manifest.json", manifestChecksum)
+				}`, server.URL+"/plugin.manifest.json", manifestChecksum, commit)
 		case "/plugin.manifest.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(manifestRaw)
@@ -446,21 +480,44 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 		WithMarketplaceProvider(NewCompositeMarketplaceProvider(remoteProvider)),
 	)
 
+	listed, err := service.ListMarketplace(t.Context(), domainidentity.Principal{Roles: []string{"installer"}}, domainplugin.MarketplaceFilter{})
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("ListMarketplace = %#v, %v", listed, err)
+	}
+	if listed[0].SourceID != "community" || listed[0].SourceURL != server.URL+"/index.json" || listed[0].Verified ||
+		listed[0].PublisherInfo == nil || listed[0].PublisherInfo.Verified || listed[0].PublisherInfo.VerificationLevel != "community" {
+		t.Fatalf("catalog-supplied trust claims survived source normalization: %#v", listed[0])
+	}
 	item, err := service.Install(context.Background(), domainidentity.Principal{Roles: []string{"installer"}}, domainplugin.PluginInstallRequest{
-		PluginID:       "opensoha.remote-skill",
-		SourceID:       "community",
-		MarketplaceURL: server.URL + "/index.json",
-		Version:        "0.2.0",
-		Enable:         true,
+		PluginID:         "opensoha.remote-skill",
+		SourceID:         "community",
+		MarketplaceURL:   server.URL + "/index.json",
+		Version:          "0.2.0",
+		ExpectedChecksum: manifestChecksum,
+		Enable:           true,
 	})
 	if err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
-	if item.Status != statusEnabled || item.ChecksumStatus != "verified" || item.SignatureStatus != "verified" {
+	if item.Status != statusEnabled || item.ChecksumStatus != "verified" || item.SignatureStatus != "declared" {
 		t.Fatalf("unexpected remote install state: status=%q checksum=%q signature=%q", item.Status, item.ChecksumStatus, item.SignatureStatus)
+	}
+	if item.Manifest.Integrity == nil || item.Manifest.Integrity.Verified || item.Metadata["manifestChecksum"] != manifestChecksum {
+		t.Fatalf("install must preserve the raw digest without trusting a signature claim: %#v", item)
 	}
 	if item.Metadata["sourceId"] != "community" || item.Metadata["marketplaceUrl"] != server.URL+"/index.json" {
 		t.Fatalf("source metadata not recorded: %#v", item.Metadata)
+	}
+	if item.SourceInfo == nil || item.SourceInfo.CommitSha != "" {
+		t.Fatalf("community release metadata was used as official provenance: %#v", item.SourceInfo)
+	}
+	official, err := NewRemoteMarketplaceProvider(MarketplaceSource{ID: "opensoha-official", URL: server.URL + "/index.json", Official: true}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := official.FetchManifest(t.Context(), domainplugin.PluginVersionRef{PluginID: "opensoha.remote-skill"})
+	if err != nil || release.SourceInfo.CommitSha != commit || release.SourceInfo.RawManifestChecksum != manifestChecksum {
+		t.Fatalf("official commit metadata or checksum missing: %#v, %v", release.SourceInfo, err)
 	}
 	extensions, err := service.ListExtensions(context.Background(), domainidentity.Principal{Roles: []string{"installer"}}, "ai")
 	if err != nil {
@@ -471,7 +528,7 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 	}
 }
 
-func TestAdHocMarketplaceRejectsPrivateURLs(t *testing.T) {
+func TestUnconfiguredMarketplaceRejectsClientSuppliedURLs(t *testing.T) {
 	service := New(newMemoryPluginRepo(), appaccess.NewPermissionResolver(stubRolePermissions{
 		"viewer": {appaccess.PermPluginView},
 	}), nil)
@@ -486,6 +543,7 @@ func TestAdHocMarketplaceRejectsPrivateURLs(t *testing.T) {
 		{name: "carrier grade nat", url: "http://100.64.0.10/marketplace/index.json"},
 		{name: "documentation network", url: "https://192.0.2.10/marketplace/index.json"},
 		{name: "ipv6 unique local", url: "https://[fc00::1]/marketplace/index.json"},
+		{name: "unregistered public catalog", url: "https://example.com/marketplace/index.json"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

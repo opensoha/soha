@@ -21,7 +21,9 @@ import (
 const (
 	defaultDevPrincipalUserID  = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
 	defaultSystemSecret        = "soha-123456789012345678901234567890"
-	DefaultMarketplaceURL      = "https://marketplace.opensoha.com/marketplace/index.json"
+	DefaultMarketplaceURL      = "https://marketplace.opensoha.com/marketplace/repositories.json"
+	LegacyMarketplaceURL       = "https://marketplace.opensoha.com/marketplace/index.json"
+	LegacyPagesMarketplaceURL  = "https://opensoha.github.io/soha-marketplace/marketplace/index.json"
 	DefaultMarketplaceSourceID = "opensoha-official"
 	jwtKeyID                   = "config-jwt-v1"
 	runnerKeyID                = "config-runner-v1"
@@ -231,6 +233,12 @@ type AIGatewayConnectorEventSinkConfig struct {
 type PluginsConfig struct {
 	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
 	Companion   PluginCompanionConfig   `mapstructure:"companion"`
+	Repository  PluginRepositoryConfig  `mapstructure:"repository"`
+}
+
+type PluginRepositoryConfig struct {
+	GitHubToken       string `mapstructure:"github_token"`
+	PreviewSigningKey string `mapstructure:"preview_signing_key"`
 }
 
 type PluginCompanionConfig struct {
@@ -425,6 +433,8 @@ func (c *Config) expandEnv() {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
 	}
 	c.Plugins.Companion.StorageDir = os.ExpandEnv(c.Plugins.Companion.StorageDir)
+	c.Plugins.Repository.GitHubToken = os.ExpandEnv(c.Plugins.Repository.GitHubToken)
+	c.Plugins.Repository.PreviewSigningKey = os.ExpandEnv(c.Plugins.Repository.PreviewSigningKey)
 	for keyID, encoded := range c.Plugins.Companion.TrustedPublicKeys {
 		c.Plugins.Companion.TrustedPublicKeys[keyID] = os.ExpandEnv(encoded)
 	}
@@ -500,6 +510,9 @@ func (c Config) staticProblems() []string {
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
 	problems = append(problems, validateSecretProvider(c.Security)...)
 	problems = append(problems, validateCompanionConfig(c.Plugins.Companion)...)
+	if key := c.Plugins.Repository.PreviewSigningKey; key != "" && len(key) < 32 {
+		problems = append(problems, "plugins.repository.preview_signing_key must contain at least 32 bytes")
+	}
 	problems = append(problems, validateOutpostRuntimeConfig(c.Runtime)...)
 	problems = append(problems, validateProxyRuntimeConfig(c.Runtime)...)
 	problems = append(problems, validateRadiusRuntimeConfig(c.Runtime)...)
@@ -911,6 +924,8 @@ var configDefaults = []struct {
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
+	{"plugins.repository.github_token", ""},
+	{"plugins.repository.preview_signing_key", ""},
 	{"plugins.companion.storage_dir", ".data/companion"},
 	{"plugins.companion.max_package_bytes", 268435456},
 	{"plugins.companion.allow_live2d", false},

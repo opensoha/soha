@@ -1,4 +1,4 @@
-import { memo, useEffect, type MouseEventHandler } from 'react'
+import { memo, useCallback, useEffect, type MouseEventHandler } from 'react'
 import { useDeferredOverlay } from './use-deferred-overlay'
 import { Button, Tooltip } from 'antd'
 import type { TooltipProps } from 'antd'
@@ -27,10 +27,26 @@ export const TableCellText = memo(function TableCellText({
     setOpen,
     activate,
   } = useDeferredOverlay<HTMLSpanElement>()
-  const hasOverflow = () => {
+  const hasOverflow = useCallback(() => {
     const text = textRef.current
     return display !== '-' && Boolean(text && text.scrollWidth > text.clientWidth)
-  }
+  }, [display, textRef])
+  useEffect(() => {
+    // Keep the existing link or button as the focus target and measure only on focus.
+    const focusTarget = textRef.current?.closest<HTMLElement>('a[href], button')
+    if (!focusTarget) return
+    const showOnFocus = () => {
+      // A pointer click must reach the original text while the tooltip is still deferred.
+      if (focusTarget.matches(':focus-visible') && hasOverflow()) activate()
+    }
+    const hideOnBlur = () => setOpen(false)
+    focusTarget.addEventListener('focus', showOnFocus)
+    focusTarget.addEventListener('blur', hideOnBlur)
+    return () => {
+      focusTarget.removeEventListener('focus', showOnFocus)
+      focusTarget.removeEventListener('blur', hideOnBlur)
+    }
+  }, [activate, hasOverflow, setOpen, textRef])
   useEffect(() => {
     if (!open) return
     const text = textRef.current
@@ -45,9 +61,17 @@ export const TableCellText = memo(function TableCellText({
         : new ResizeObserver(() => {
             if (!hasOverflow()) setOpen(false)
           })
+    const focusTarget = text?.closest<HTMLElement>('a[href], button')
+    const hideOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    focusTarget?.addEventListener('keydown', hideOnEscape)
     if (text) observer?.observe(text)
-    return () => observer?.disconnect()
-  }, [display, open])
+    return () => {
+      focusTarget?.removeEventListener('keydown', hideOnEscape)
+      observer?.disconnect()
+    }
+  }, [hasOverflow, open, setOpen, textRef])
   const text = (
     <span
       ref={textRef}

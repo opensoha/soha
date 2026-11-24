@@ -71,7 +71,7 @@ func (r *Repository) Create(ctx context.Context, record domainrelease.Record) (d
 	if err != nil {
 		return domainrelease.Record{}, fmt.Errorf("marshal release metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO deploy_records (id, project_id, cluster_id, namespace, release_name, status, metadata, deployed_at, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, record.ID, record.ApplicationID, record.ClusterID, record.Namespace, record.DeploymentName, record.Status, string(payload), record.DeployedAt, record.CreatedAt).Error; err != nil {

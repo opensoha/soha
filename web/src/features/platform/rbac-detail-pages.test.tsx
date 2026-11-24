@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { App as AntdApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { act } from 'react'
@@ -112,9 +113,11 @@ async function renderWithProviders(node: ReactNode) {
     root.render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/platform-access-control/roles/demo?namespace=default']}>
-          <Routes>
-            <Route path="/platform-access-control/roles/:name" element={node} />
-          </Routes>
+          <AntdApp>
+            <Routes>
+              <Route path="/platform-access-control/roles/:name" element={node} />
+            </Routes>
+          </AntdApp>
         </MemoryRouter>
       </QueryClientProvider>,
     )

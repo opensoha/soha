@@ -1,0 +1,21 @@
+{
+  "manifest": {
+    "id": "example.plugins",
+    "name": "Example Plugins",
+    "version": "0.1.0",
+    "publisher": "example",
+    "type": "skill-pack"
+  },
+  "sourceInfo": {
+    "kind": "github-repo",
+    "canonicalSource": "https://github.com/example/plugins",
+    "official": false,
+    "commitSha": "0123456789abcdef0123456789abcdef01234567",
+    "rawManifestChecksum": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "checksumStatus": "verified",
+  "signatureStatus": "not_provided",
+  "previewToken": "preview-only",
+  "expiresAt": "2026-11-21T12:00:00Z",
+  "installEligibility": "signed-release-required"
+}

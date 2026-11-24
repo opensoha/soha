@@ -341,7 +341,9 @@ for (const theme of ['light', 'dark']) {
       await page.goto(route)
       if (route === '/ai-workbench/memory')
         await page.getByRole('tab', { name: /^Records/ }).click()
-      await expect(page.locator('.soha-read-feedback').first()).toBeVisible({ timeout: 12000 })
+      await expect(page.locator('.soha-read-feedback-notification').first()).toBeVisible({
+        timeout: 12000,
+      })
       state.status = 200
       await page
         .getByRole('button', { name: /重试读取/ })
@@ -385,11 +387,20 @@ for (const mode of ['light-desktop', 'dark-narrow']) {
       timeout: 12000,
     })
     await expect(page.getByText('知识库样板', { exact: true }).first()).toBeVisible()
+    await page
+      .locator('.soha-read-feedback-notification')
+      .getByRole('button', { name: '关闭', exact: true })
+      .click()
+    await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
     await page.getByRole('button', { name: /新建知识库$/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('名称', { exact: true }).fill('保留原输入')
     await dialog.getByRole('button', { name: /^创\s*建$/ }).click()
-    await expect(dialog.getByText('创建知识库：请求结果不明', { exact: true })).toBeVisible()
+    await expect(
+      page
+        .locator('.soha-operation-feedback')
+        .getByText('创建知识库：请求结果不明', { exact: true }),
+    ).toBeVisible()
     await expect(dialog.getByLabel('名称', { exact: true })).toHaveValue('保留原输入')
     await expect(dialog.getByRole('button', { name: /^创\s*建$/ })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: /^取\s*消$/ })).toBeDisabled()
@@ -453,12 +464,12 @@ test('Task52 topology keyboard selection, relation highlight and viewport surviv
   state.failedPath = '/clusters/cluster-a/network/topology'
   state.status = 503
   await page.getByRole('button', { name: '刷新网络拓扑', exact: true }).click()
-  await expect(page.locator('.soha-read-feedback')).toBeVisible()
+  await expect(page.locator('.soha-read-feedback-notification')).toBeVisible()
   await expect(node).toHaveClass(/selected/)
   await expect(viewport).toHaveAttribute('style', zoomed || '')
   state.status = 200
   await page.getByRole('button', { name: /重试读取网络拓扑/ }).click()
-  await expect(page.locator('.soha-read-feedback')).toHaveCount(0)
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   await expect(node).toHaveClass(/selected/)
   await expect(viewport).toHaveAttribute('style', zoomed || '')
   const escapeEvidence = await page.evaluateHandle(() => {
@@ -537,13 +548,15 @@ test('Task52 login uses compact Antd controls, readable option failures and redu
   state.status = 503
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/login')
-  const optionsError = page.getByRole('alert').filter({ hasText: '登录选项读取失败' })
+  const optionsError = page.locator('.soha-read-feedback-notification')
+  await expect(optionsError).toContainText('登录选项读取失败')
+  await optionsError.getByText('查看详情', { exact: true }).click()
   await expect(optionsError).toContainText('本次验证请求失败')
   await expect(page.getByLabel('用户名', { exact: true })).toBeDisabled()
   await expect(page.getByLabel('密码', { exact: true })).toBeDisabled()
   state.status = 200
   await optionsError.getByRole('button', { name: '重试读取登录选项', exact: true }).click()
-  await expect(page.locator('.soha-read-feedback')).toHaveCount(0)
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   await expect(page.getByLabel('用户名', { exact: true })).toBeEnabled()
   await expect(page.getByLabel('密码', { exact: true })).toBeEnabled()
   await page.getByLabel('用户名', { exact: true }).focus()
@@ -561,7 +574,7 @@ test('Task52 handoff reads and retries without consuming the one-time login', as
   state.failedPath = '/auth/browser-handoffs/qa-handoff'
   state.status = 503
   await page.goto('/auth/browser-handoff/qa-handoff')
-  await expect(page.locator('.soha-read-feedback')).toBeVisible()
+  await expect(page.locator('.soha-read-feedback-notification')).toBeVisible()
   state.status = 200
   await page.getByRole('button', { name: /重试读取登录交接/ }).click()
   await expect(page.getByText('交接样板', { exact: true })).toBeVisible()
@@ -572,8 +585,8 @@ test('Task52 handoff reads and retries without consuming the one-time login', as
 
 for (const [route, target, label] of [
   ['/account/settings', '/account/profile', '资料样板'],
-  ['/settings/about', '/about', '关于 OpenSoha'],
-  ['/about', '/about', '关于 OpenSoha'],
+  ['/settings/about', '/about', '关于 Soha'],
+  ['/about', '/about', '关于 Soha'],
 ])
   test(`Task52 final utility route: ${route}`, async ({ page, context }) => {
     const { evidence } = await mocks(context, page)

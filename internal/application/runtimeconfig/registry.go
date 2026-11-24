@@ -4,17 +4,19 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	"github.com/opensoha/soha/internal/networkprotocol"
 )
 
 const (
-	DefaultMarketplaceURL      = "https://marketplace.opensoha.com/marketplace/index.json"
+	DefaultMarketplaceURL      = "https://marketplace.opensoha.com/marketplace/repositories.json"
 	DefaultMarketplaceSourceID = "opensoha-official"
 )
 
@@ -32,6 +34,7 @@ type RegistryOptions struct {
 	ModuleCMDB                    bool
 	MarketplaceURL                string
 	MarketplaceSourceID           string
+	MarketplaceSources            []appplugin.MarketplaceSource
 	WorkflowWorkers               int
 	WorkflowQueueSize             int
 	WorkflowNodeParallelism       int
@@ -70,6 +73,7 @@ const (
 	KeyModuleCMDB                    = "modules.cmdb.enabled"
 	KeyMarketplaceURL                = "plugins.marketplace.url"
 	KeyMarketplaceSourceID           = "plugins.marketplace.source_id"
+	KeyMarketplaceThirdPartyURLs     = "plugins.marketplace.third_party_urls"
 	KeyWorkflowWorkers               = "runtime.workflow_workers"
 	KeyWorkflowQueueSize             = "runtime.workflow_queue_size"
 	KeyWorkflowNodeParallelism       = "runtime.workflow_node_parallelism"
@@ -109,11 +113,13 @@ type Definition struct {
 	Editable            bool
 	Sensitive           bool
 	Validate            func(any) error
+	normalize           func(any) (any, error)
 }
 
 type Registry struct {
-	definitions map[string]Definition
-	keys        []string
+	definitions        map[string]Definition
+	keys               []string
+	marketplaceSources []appplugin.MarketplaceSource
 }
 
 func NewRegistry(options RegistryOptions) *Registry {
@@ -155,6 +161,7 @@ func NewRegistry(options RegistryOptions) *Registry {
 				return nil
 			},
 		},
+		marketplaceThirdPartyURLsDefinition(),
 		integerDefinition(KeyWorkflowWorkers, "任务调度", "工作流 Worker 数", "并行处理工作流任务的 Worker 数量", sohaapi.RuntimeConfigApplyModeRestart, 4, options.WorkflowWorkers, 1, 256),
 		integerDefinition(KeyWorkflowQueueSize, "任务调度", "工作流队列容量", "等待执行的工作流任务队列容量", sohaapi.RuntimeConfigApplyModeRestart, 64, options.WorkflowQueueSize, 1, 65536),
 		integerDefinition(KeyWorkflowNodeParallelism, "任务调度", "工作流节点并行度", "单个工作流内可并行执行的节点数量", sohaapi.RuntimeConfigApplyModeHot, 4, options.WorkflowNodeParallelism, 1, 256),
@@ -187,7 +194,7 @@ func NewRegistry(options RegistryOptions) *Registry {
 		keys = append(keys, definition.Key)
 	}
 	sort.Strings(keys)
-	return &Registry{definitions: items, keys: keys}
+	return &Registry{definitions: items, keys: keys, marketplaceSources: slices.Clone(options.MarketplaceSources)}
 }
 
 func networkIntervalDefinition(key, label, description string) Definition {

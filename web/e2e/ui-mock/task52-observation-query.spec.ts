@@ -436,19 +436,29 @@ test('service drawer keeps independently readable dependencies and hides refused
   state.failedPath = '/observability/services/checkout/topology'
   state.status = 503
   await drawer.getByRole('button', { name: '刷新服务详情' }).click()
-  await expect(drawer.getByText(/服务依赖未更新/)).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText(/服务依赖未更新/),
+  ).toBeVisible()
   await expect(drawer.getByText('inventory-qa', { exact: true })).toBeVisible()
   state.status = 403
-  await drawer.getByRole('button', { name: '重试读取' }).click()
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /重试读取/ })
+    .click()
   await expect(drawer.getByText('服务依赖无访问权限')).toBeVisible()
   await expect(drawer.getByText('inventory-qa', { exact: true })).toBeHidden()
   state.failedPath = '/observability/services/checkout'
   state.status = 503
   await drawer.getByRole('button', { name: '刷新服务详情' }).click()
-  await expect(drawer.getByText(/服务详情未更新/)).toBeVisible()
+  await expect(
+    page.locator('.soha-read-feedback-notification').getByText(/服务详情未更新/),
+  ).toBeVisible()
   await expect(drawer.getByText('Checkout QA', { exact: true })).toBeVisible()
   state.status = 403
-  await drawer.getByRole('button', { name: '重试读取' }).click()
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /重试读取/ })
+    .click()
   await expect(drawer.getByText('服务详情无访问权限')).toBeVisible()
   await expect(drawer.getByText('Checkout QA', { exact: true })).toBeHidden()
   verifyBrowserEvidence(evidence)
@@ -492,7 +502,7 @@ test('unknown data source update preserves its reviewed form and prevents replay
   state.writeStatus = 503
   await page.getByRole('button', { name: /保\s*存/, exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: /保\s*存/, exact: true })).toBeDisabled()
@@ -527,7 +537,7 @@ test('unknown dashboard import locks its inputs and close without retrying', asy
   state.writeStatus = 503
   await page.getByRole('dialog').getByRole('button', { name: '添加仪表盘', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog.getByText(/请求结果不明/)).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: '添加仪表盘', exact: true })).toBeDisabled()
@@ -547,8 +557,13 @@ test('successful dashboard import carries the receipt to the saved record', asyn
   await page.goto('/monitoring-workbench/dashboards')
   await page.getByRole('button', { name: '导入仪表盘', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '添加仪表盘', exact: true }).click()
-  await expect(page).toHaveURL(/dashboards\/dash-qa/)
-  await expect(page.getByText('已导入 1 个面板')).toBeVisible()
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname.endsWith('/dashboards/dash-qa') &&
+      ['from', 'to', 'range'].every((key) => url.searchParams.has(key)),
+  )
+  const receipt = page.locator('.soha-operation-feedback').filter({ hasText: '仪表盘记录已保存' })
+  await expect(receipt.getByText('已导入 1 个面板')).toBeVisible()
   expect(state.writes.filter((r) => r.path.endsWith('/imports'))).toHaveLength(1)
   verifyBrowserEvidence(evidence)
 })

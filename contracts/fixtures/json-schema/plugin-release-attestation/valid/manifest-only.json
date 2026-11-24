@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "pluginId": "example.distribution-smoke",
+  "version": "0.1.0",
+  "repository": "https://github.com/example/distribution-smoke",
+  "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rawManifestSha256": "2152e97127a9fbbc7f6f3663a78196fdbd68d006d438dc0ee0b23816cd668ecb",
+  "components": {}
+}

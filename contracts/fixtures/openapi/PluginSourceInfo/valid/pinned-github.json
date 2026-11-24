@@ -1,0 +1,8 @@
+{
+  "kind": "github-repo",
+  "canonicalSource": "https://github.com/example/soha-plugin",
+  "pinnedRef": "v1.0.0",
+  "commitSha": "0123456789abcdef0123456789abcdef01234567",
+  "rawManifestChecksum": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "official": false
+}

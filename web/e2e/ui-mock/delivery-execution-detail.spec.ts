@@ -284,7 +284,8 @@ test.describe('sample interaction', () => {
     })
     state.refreshFails = true
     await page.getByRole('button', { name: /刷新证据/ }).click()
-    await expect(page.getByText('证据未更新，正在展示上次记录')).toBeVisible()
+    const notice = page.locator('.soha-read-feedback-notification')
+    await expect(notice).toContainText('执行证据未更新，正在展示上次读取结果')
     await page.waitForTimeout(900)
     await expect(page.getByRole('button', { name: '更新服务，执行失败' })).toHaveAttribute(
       'aria-pressed',
@@ -292,10 +293,10 @@ test.describe('sample interaction', () => {
     )
     state.refreshFails = false
     state.status = 'completed'
-    await page.getByRole('button', { name: /^重\s*试$/ }).click()
+    await notice.getByRole('button', { name: '重试读取执行证据', exact: true }).click()
     await expect(page.locator('.soha-execution-feedback')).toContainText('5 / 5 节点成功')
     await expect(page.locator('.soha-execution-live-dot')).toHaveCount(0)
-    await expect(page.getByText('证据未更新，正在展示上次记录')).toHaveCount(0)
+    await expect(notice).toHaveCount(0)
     await page.screenshot({
       path: info.outputPath('execution-completed.png'),
       fullPage: true,
@@ -370,8 +371,13 @@ test('approval with an unknown POST outcome cannot be repeated after a successfu
     .getByRole('dialog')
     .getByRole('button', { name: /^返\s*回$/ })
     .click()
+  const notice = page.locator('.soha-operation-feedback')
+  await expect(notice).toContainText('审批执行：请求结果不明')
+  await notice.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(notice).toHaveCount(0)
   await page.getByRole('button', { name: /刷新证据/ }).click()
   await expect(page.getByRole('button', { name: '批准执行', exact: true })).toBeDisabled()
+  await expect(notice).toHaveCount(0)
   expect(state.decisions).toEqual(['approve'])
   verifyBrowserEvidence(evidence)
 })
@@ -476,9 +482,10 @@ test('global table feedback preserves an empty cached result and removes denied 
   await expect(page.getByText('当前筛选条件下没有可展示的记录。')).toBeVisible()
   state.taskListStatus = 503
   await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
+  const notice = page.locator('.soha-read-feedback-notification')
+  await expect(notice).toContainText('列表未更新，正在展示上次读取结果')
   await expect(page.getByText('当前筛选条件下没有可展示的记录。')).toBeVisible()
-  await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
+  await expect(page.locator('.ant-notification-notice')).toHaveCount(1)
   await page.screenshot({ path: info.outputPath('global-table-cached-empty.png'), fullPage: true })
   state.taskListStatus = 403
   await page.getByRole('button', { name: '重试读取列表', exact: true }).click()

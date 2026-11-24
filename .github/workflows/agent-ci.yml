@@ -76,6 +76,7 @@ jobs:
         run: |
           patch_path="${RUNNER_TEMP}/soha-pr-lint.patch"
           bash ../scripts/prepare-pr-lint-patch.sh "$LINT_BASE_SHA" "$patch_path"
+          bash ../scripts/check-pr-go-format.sh "$LINT_BASE_SHA"
           printf 'args=--new-from-patch="%s"\n' "$patch_path" >> "$GITHUB_OUTPUT"
       - name: Golangci-lint
         uses: golangci/golangci-lint-action@v9

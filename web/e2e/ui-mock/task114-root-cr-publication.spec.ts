@@ -243,7 +243,9 @@ for (const width of [1440, 390]) {
     await expect(drawer.getByRole('button', { name: '保存草稿', exact: true })).toBeEnabled()
     await drawer.getByRole('button', { name: '保存草稿', exact: true }).click()
     await drawer.getByRole('button', { name: '保存配置版本', exact: true }).click()
-    await expect(drawer).toContainText('配置版本 v1 已保存')
+    await expect(
+      page.locator('.soha-operation-feedback').filter({ hasText: '配置版本 v1 已保存' }),
+    ).toBeVisible()
     await drawer.getByRole('button', { name: '允许 Soha 发布根配置', exact: true }).click()
     await expect(drawer).toContainText('Soha 发布根配置 · Operator 协调子资源')
     expect(writes).toHaveLength(3)

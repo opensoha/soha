@@ -564,12 +564,18 @@ describe('network access page', () => {
       })
       await vi.waitFor(async () => {
         await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
-        expect(container.textContent).toContain('admission-choices-request')
+        expect(
+          status === 503
+            ? document.querySelector('.soha-read-feedback-notification')?.textContent
+            : container.textContent,
+        ).toContain('admission-choices-request')
       })
       if (status === 503) {
         expect(document.body.textContent).toContain('Cached endpoint')
         expect(input.getAttribute('aria-expanded')).toBe('true')
-        expect(container.textContent).toContain('终端选项未更新')
+        expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+          '终端选项未更新',
+        )
       } else {
         await act(async () => {
           input.dispatchEvent(

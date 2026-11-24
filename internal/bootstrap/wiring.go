@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
@@ -83,6 +84,7 @@ import (
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 	feishudirectory "github.com/opensoha/soha/internal/infrastructure/directoryconnector/feishu"
 	executionbackendinfra "github.com/opensoha/soha/internal/infrastructure/executionbackend"
+	"github.com/opensoha/soha/internal/infrastructure/githubplugin"
 	gitlabinfra "github.com/opensoha/soha/internal/infrastructure/gitlab"
 	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
 	knowledgeconnectors "github.com/opensoha/soha/internal/infrastructure/knowledge/connectors"
@@ -519,6 +521,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		ModuleCMDB:                    cfg.Modules.CMDB.Enabled,
 		MarketplaceURL:                cfg.Plugins.Marketplace.URL,
 		MarketplaceSourceID:           cfg.Plugins.Marketplace.SourceID,
+		MarketplaceSources:            deploymentMarketplaceSources(cfg.Plugins.Marketplace.Sources),
 		WorkflowWorkers:               cfg.Runtime.WorkflowWorkers,
 		WorkflowQueueSize:             cfg.Runtime.WorkflowQueueSize,
 		WorkflowNodeParallelism:       cfg.Runtime.WorkflowNodeParallelism,
@@ -548,7 +551,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	runtimeConfigService.SetInstrumentation(infra.logger.Named("runtime_config").With(
 		zap.String("event", "runtime_config.audit.record_failed"),
 	))
-	cfg = runtimeEffectiveConfig(cfg, runtimeConfigService.Current())
+	runtimeSnapshot := runtimeConfigService.Current()
+	cfg = runtimeEffectiveConfig(cfg, runtimeSnapshot)
 	repos.alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	infra.agentRegistry.SetDefaultTimeout(cfg.MCP.DefaultTimeout)
 	announcementService := appannouncement.New(repos.announcementRepository, permissionResolver, auditService, operationService)
@@ -651,7 +655,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		return nil, fmt.Errorf("build endpoint response service: %w", err)
 	}
 
-	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService, platformCore.resources.Helm())
+	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService, platformCore.resources.Helm(), runtimeSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +670,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		return nil, fmt.Errorf("build companion service: %w", err)
 	}
-	runtimeConfigService.RegisterApplier(marketplaceConfigApplier{base: cfg, plugins: deliveryCore.plugins})
+	runtimeConfigService.RegisterApplier(marketplaceConfigApplier{base: cfg.Plugins.Marketplace, plugins: deliveryCore.plugins})
 	runtimeConfigService.RegisterApplier(runtimeValueApplier{handlers: map[string]func(context.Context, appruntimeconfig.Snapshot) error{
 		appruntimeconfig.KeyClusterSyncParallelism: func(_ context.Context, next appruntimeconfig.Snapshot) error {
 			platformCore.cluster.SetSyncLimit(next.Int(appruntimeconfig.KeyClusterSyncParallelism, 4))
@@ -894,7 +898,7 @@ type deliveryCoreServices struct {
 	providerPortal   *appproviderportal.Service
 }
 
-func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service, secretService *appsecret.Service, helm apprelease.HelmReleaseRuntime) (*deliveryCoreServices, error) {
+func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service, secretService *appsecret.Service, helm apprelease.HelmReleaseRuntime, runtimeSnapshot appruntimeconfig.Snapshot) (*deliveryCoreServices, error) {
 	applications := appregistry.New(repos.applicationRepository, sources, access, audit, operations)
 	applications.SetPermissionResolver(permissions)
 	applications.SetBuildTemplateReader(repos.catalogRepository)
@@ -916,7 +920,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		},
 		helm,
 	)
-	marketplaceProvider, err := newMarketplaceProvider(cfg)
+	marketplaceProvider, err := startupMarketplaceProvider(cfg.Plugins.Marketplace, runtimeSnapshot, infra.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -941,6 +945,13 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	if err != nil {
 		return nil, fmt.Errorf("build companion artifact service: %w", err)
 	}
+	previewKey := []byte(cfg.Plugins.Repository.PreviewSigningKey)
+	if len(previewKey) == 0 {
+		previewKey = make([]byte, 32)
+		if _, err := rand.Read(previewKey); err != nil {
+			return nil, fmt.Errorf("generate repository preview signing key: %w", err)
+		}
+	}
 	plugins := appplugin.NewWithOptions(
 		repos.pluginRepository,
 		permissions,
@@ -948,6 +959,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		appplugin.WithMarketplaceProvider(marketplaceProvider),
 		appplugin.WithExtensionRegistry(pluginExtensions),
 		appplugin.WithCompanionArtifacts(companionArtifacts),
+		appplugin.WithRepositoryDistribution(githubplugin.New(cfg.Plugins.Repository.GitHubToken), previewKey),
 	)
 	if err := plugins.Reconcile(infra.lifecycleCtx); err != nil {
 		return nil, err
@@ -989,15 +1001,16 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	}, nil
 }
 
-func newMarketplaceProvider(cfg cfgpkg.Config) (appplugin.MarketplaceProvider, error) {
-	providers := make([]appplugin.MarketplaceProvider, 0, 1+len(cfg.Plugins.Marketplace.Sources))
-	addRemote := func(id, rawURL string) error {
+func newMarketplaceProvider(cfg cfgpkg.PluginMarketplaceConfig, managed []appplugin.MarketplaceSource) (appplugin.MarketplaceProvider, error) {
+	providers := make([]appplugin.MarketplaceProvider, 0, 1+len(cfg.Sources)+len(managed))
+	addRemote := func(id, rawURL string, official bool) error {
 		if strings.TrimSpace(rawURL) == "" {
 			return nil
 		}
 		provider, err := appplugin.NewRemoteMarketplaceProvider(appplugin.MarketplaceSource{
-			ID:  firstNonEmpty(id, cfg.Plugins.Marketplace.SourceID, cfgpkg.DefaultMarketplaceSourceID),
-			URL: rawURL,
+			ID:       firstNonEmpty(id, cfg.SourceID, cfgpkg.DefaultMarketplaceSourceID),
+			URL:      rawURL,
+			Official: official,
 		}, nil)
 		if err != nil {
 			return err
@@ -1006,15 +1019,34 @@ func newMarketplaceProvider(cfg cfgpkg.Config) (appplugin.MarketplaceProvider, e
 		return nil
 	}
 	if err := addRemote(
-		cfg.Plugins.Marketplace.SourceID,
-		firstNonEmpty(cfg.Plugins.Marketplace.URL, cfgpkg.DefaultMarketplaceURL),
+		cfg.SourceID,
+		firstNonEmpty(cfg.URL, cfgpkg.DefaultMarketplaceURL),
+		firstNonEmpty(cfg.SourceID, cfgpkg.DefaultMarketplaceSourceID) == cfgpkg.DefaultMarketplaceSourceID,
 	); err != nil {
 		return nil, err
 	}
-	for _, source := range cfg.Plugins.Marketplace.Sources {
-		if err := addRemote(source.ID, source.URL); err != nil {
+	if cfg.URL == cfgpkg.DefaultMarketplaceURL && firstNonEmpty(cfg.SourceID, cfgpkg.DefaultMarketplaceSourceID) == cfgpkg.DefaultMarketplaceSourceID {
+		for _, url := range []string{cfgpkg.LegacyMarketplaceURL, cfgpkg.LegacyPagesMarketplaceURL} {
+			legacy, err := appplugin.NewRemoteMarketplaceProvider(appplugin.MarketplaceSource{
+				ID: cfgpkg.DefaultMarketplaceSourceID, URL: url, Official: true, Legacy: true,
+			}, nil)
+			if err != nil {
+				return nil, err
+			}
+			providers = append(providers, legacy)
+		}
+	}
+	for _, source := range cfg.Sources {
+		if err := addRemote(source.ID, source.URL, false); err != nil {
 			return nil, err
 		}
+	}
+	for _, source := range managed {
+		provider, err := appplugin.NewManagedMarketplaceProvider(source)
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, provider)
 	}
 	return appplugin.NewCompositeMarketplaceProvider(providers...), nil
 }

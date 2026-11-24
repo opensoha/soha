@@ -822,6 +822,18 @@ func (r *executionRepoFake) GetExecutionTaskByCallbackToken(_ context.Context, t
 	return domaindelivery.ExecutionTask{}, fmt.Errorf("execution task callback token not found")
 }
 
+func (r *executionRepoFake) WithExecutionCreation(ctx context.Context, apply func(context.Context) error) error {
+	return apply(ctx)
+}
+
+func (r *executionRepoFake) WithExecutionTaskForUpdate(ctx context.Context, id string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
+	task, err := r.GetExecutionTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	return apply(ctx, task)
+}
+
 func (r *executionRepoFake) WithExecutionCallback(ctx context.Context, token string, apply func(context.Context, domaindelivery.ExecutionTask) error) error {
 	task, err := r.GetExecutionTaskByCallbackToken(ctx, token)
 	if err != nil {

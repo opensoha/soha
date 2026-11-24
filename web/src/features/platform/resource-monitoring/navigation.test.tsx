@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { App as AntdApp } from 'antd'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -64,10 +65,12 @@ async function renderEntry(kind: 'monitoring' | 'network' | 'routing', permissio
   await act(async () => {
     root!.render(
       <MemoryRouter initialEntries={[path + '?node=node-a&rangeMinutes=360']}>
-        <Routes>
-          <Route path={path} element={entry} />
-          <Route path="*" element={<Target />} />
-        </Routes>
+        <AntdApp>
+          <Routes>
+            <Route path={path} element={entry} />
+            <Route path="*" element={<Target />} />
+          </Routes>
+        </AntdApp>
       </MemoryRouter>,
     )
   })
@@ -77,9 +80,11 @@ describe('Kubernetes workbench navigation', () => {
   it('reports a failed permission read with retry instead of claiming access was denied', async () => {
     state.error = new Error('permission network unavailable')
     const container = await renderEntry('monitoring', [])
-    expect(container.textContent).toContain('权限读取失败')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      '权限读取失败',
+    )
     expect(container.textContent).not.toContain('没有资源监控查看权限')
-    const retry = container.querySelector<HTMLButtonElement>('button[aria-label="重试读取权限"]')
+    const retry = document.querySelector<HTMLButtonElement>('button[aria-label="重试读取权限"]')
     expect(retry).not.toBeNull()
     await act(async () => retry!.click())
     expect(state.refetch).toHaveBeenCalledOnce()
