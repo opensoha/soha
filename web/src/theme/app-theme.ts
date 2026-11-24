@@ -90,7 +90,10 @@ function normalizeHexColor(input?: string, fallback: string = DEFAULT_ACCENT_COL
   return fallback.toLowerCase()
 }
 
-function hexToRgbTuple(hex: string, fallback: string = DEFAULT_ACCENT_COLOR): [number, number, number] {
+function hexToRgbTuple(
+  hex: string,
+  fallback: string = DEFAULT_ACCENT_COLOR,
+): [number, number, number] {
   const clean = normalizeHexColor(hex, fallback).slice(1)
   return [
     Number.parseInt(clean.slice(0, 2), 16),
@@ -133,9 +136,7 @@ export function deriveAccentTokens(accentHex: string | undefined, mode: Resolved
     primary: effectiveHex,
     primaryRgb: rgbString,
     primaryHover:
-      mode === 'dark'
-        ? mixRgb(rgb, [255, 255, 255], 0.16)
-        : mixRgb(rgb, [255, 255, 255], 0.14),
+      mode === 'dark' ? mixRgb(rgb, [255, 255, 255], 0.16) : mixRgb(rgb, [255, 255, 255], 0.14),
     primaryActive: mixRgb(rgb, [0, 0, 0], 0.16),
     primaryLightDefault:
       mode === 'dark' ? `rgba(${rgbString}, 0.14)` : mixRgb(rgb, [255, 255, 255], 0.91),
@@ -251,11 +252,10 @@ export const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
 ]
 
 const APP_FONT_FAMILY =
-  "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', sans-serif"
-const APP_SERIF_FONT_FAMILY =
-  "'Newsreader', 'Songti SC', 'STSong', 'Noto Serif SC', Georgia, serif"
+  "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', sans-serif"
+const APP_SERIF_FONT_FAMILY = "'Songti SC', 'STSong', 'Noto Serif SC', Georgia, serif"
 const APP_MONO_FONT_FAMILY =
-  "'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
+  "'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
 const APP_FONT_SIZE = 14
 const APP_LINE_HEIGHT_PX = 22
 const APP_LINE_HEIGHT = APP_LINE_HEIGHT_PX / APP_FONT_SIZE
@@ -787,7 +787,7 @@ export function getAntdTheme(
         cellFontSizeMD: APP_FONT_SIZE,
         cellFontSizeSM: APP_SUPPORTING_FONT_SIZE,
         borderColor: palette.colorBorder,
-        headerBg: palette.colorBgContainer,
+        headerBg: palette.colorBgMuted,
         headerColor: palette.colorText,
         headerSplitColor: palette.colorBorder,
         cellPaddingBlockSM: 8,

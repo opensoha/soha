@@ -216,7 +216,7 @@
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
-  background: var(--soha-capsule-head-bg, var(--soha-bg-surface)) !important;
+  background: var(--soha-capsule-head-bg, var(--soha-bg-surface-muted)) !important;
 }
 
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,

@@ -38,8 +38,9 @@ body,
   --soha-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.92);
   --soha-ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
   --soha-ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --soha-font-serif: 'Newsreader', 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
-  --soha-font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --soha-font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
+  --soha-font-mono:
+    'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   --soha-accent-blue: #1f4735;
   --soha-accent-blue-rgb: 31, 71, 53;
   --soha-accent-cyan: #2b7a56;
@@ -84,8 +85,10 @@ body,
   --soha-terminal-muted: rgba(156, 167, 159, 0.88);
   --soha-terminal-row-divider: rgba(255, 255, 255, 0.06);
   --soha-terminal-overlay-bg: rgba(16, 24, 20, 0.92);
-  --soha-shadow-soft: 0 20px 44px -16px rgba(23, 33, 28, 0.08), 0 2px 6px -1px rgba(23, 33, 28, 0.035);
-  --soha-shadow-strong: 0 1px 2px 0 rgba(23, 33, 28, 0.045), 0 1px 1px -0.5px rgba(23, 33, 28, 0.03);
+  --soha-shadow-soft:
+    0 20px 44px -16px rgba(23, 33, 28, 0.08), 0 2px 6px -1px rgba(23, 33, 28, 0.035);
+  --soha-shadow-strong:
+    0 1px 2px 0 rgba(23, 33, 28, 0.045), 0 1px 1px -0.5px rgba(23, 33, 28, 0.03);
   --soha-shadow-panel: var(--soha-shadow-soft);
   --soha-table-header-bg: var(--soha-bg-surface);
   --soha-table-header-sort-bg: var(--soha-fill-weak);
@@ -132,7 +135,7 @@ body,
   --soha-data-row-selected-bg: rgba(31, 71, 53, 0.07);
   --soha-list-item-active-bg: rgba(31, 71, 53, 0.07);
   --soha-list-item-active-border: rgba(31, 71, 53, 0.22);
-  --soha-app-chrome-height: 52px;
+  --soha-app-chrome-height: 56px;
 }
 
 :root[data-theme-mode='dark'] {
@@ -715,12 +718,14 @@ a {
 }
 
 .soha-nav-menu.ant-menu .ant-menu-item-selected,
-.soha-nav-menu.ant-menu-inline-collapsed
-  .ant-menu-submenu-selected
-  > .ant-menu-submenu-title {
+.soha-nav-menu.ant-menu-inline-collapsed .ant-menu-submenu-selected > .ant-menu-submenu-title {
   font-weight: 600;
   color: #f8fafc !important;
-  background: linear-gradient(135deg, var(--soha-primary) 0%, var(--soha-primary-hover) 100%) !important;
+  background: linear-gradient(
+    135deg,
+    var(--soha-primary) 0%,
+    var(--soha-primary-hover) 100%
+  ) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
     0 8px 18px -6px rgba(var(--soha-primary-rgb), 0.34);
@@ -768,9 +773,7 @@ a {
   border-inline-start: 1px solid var(--soha-hairline-strong) !important;
 }
 
-.soha-nav-menu:not(.ant-menu-inline-collapsed)
-  .ant-menu-sub.ant-menu-inline
-  .ant-menu-item {
+.soha-nav-menu:not(.ant-menu-inline-collapsed) .ant-menu-sub.ant-menu-inline .ant-menu-item {
   height: 29px !important;
   min-height: 29px !important;
   line-height: 29px !important;
@@ -800,7 +803,9 @@ a {
   font-size: 14px;
   line-height: 1 !important;
   opacity: 0.78;
-  transition: opacity 0.2s var(--soha-ease-fluid), color 0.2s var(--soha-ease-fluid);
+  transition:
+    opacity 0.2s var(--soha-ease-fluid),
+    color 0.2s var(--soha-ease-fluid);
 }
 
 .soha-nav-menu .ant-menu-item-selected :is(.ant-menu-item-icon, .soha-animated-icon),
@@ -1172,13 +1177,14 @@ a {
 .soha-header-right {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   justify-content: flex-end;
   min-width: 0;
-  min-height: 40px;
-  padding: 4px 6px 4px 10px;
+  min-height: 34px;
+  margin-inline-start: auto;
+  padding: 1px 6px 1px 10px;
   border-radius: 999px;
   background: var(--soha-glass-bg);
   backdrop-filter: blur(20px) saturate(1.25);
@@ -1758,6 +1764,7 @@ a {
 
   .soha-header-right {
     flex-wrap: wrap;
+    margin-inline-start: 0;
   }
 
   .soha-platform-scope-inline {
@@ -1927,9 +1934,7 @@ a {
   color: #ffffff !important;
 }
 
-.soha-palette-segmented.ant-segmented
-  .ant-segmented-item-selected
-  .ant-segmented-item-label {
+.soha-palette-segmented.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
   color: #ffffff !important;
 }
 
@@ -2005,7 +2010,9 @@ a {
   border-radius: 999px;
   color: #ffffff;
   font-size: 9.5px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 6px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .soha-palette-swatch-copy {

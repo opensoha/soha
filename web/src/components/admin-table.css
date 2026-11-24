@@ -228,8 +228,8 @@
   overflow-x: auto;
 }
 
-/* ─── Modern Editorial Ledger Header (De-banded, Non-Antd) ─── */
-.soha-admin-table .ant-table-thead > tr > th {
+/* The virtual-table header uses the Antd background token. */
+.soha-admin-table-shell:where(:not(.is-virtual)) .soha-admin-table .ant-table-thead > tr > th {
   padding-top: 10px !important;
   padding-bottom: 10px !important;
   font-size: 11px !important;
@@ -475,7 +475,7 @@
 .soha-admin-table th.ant-table-cell-fix-left,
 .soha-admin-table th.ant-table-cell-fix-end,
 .soha-admin-table th.ant-table-cell-fix-right {
-  background: var(--soha-bg-surface) !important;
+  background: var(--soha-bg-surface-muted) !important;
 }
 
 .soha-admin-table .ant-table-cell-fix-end-shadow::before,
@@ -530,7 +530,7 @@
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
-  background: var(--soha-bg-surface) !important;
+  background: var(--soha-bg-surface-muted) !important;
 }
 
 .soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
@@ -643,9 +643,14 @@
   gap: 8px;
 }
 
-/* ─── Official Soha Panel Table Architecture: Concentric Slate Capsule Header + Sticky-Cap Row Islands ─── */
-.soha-admin-table-shell.is-panel {
-  --soha-stage-well-bg: color-mix(in srgb, var(--soha-bg-surface-muted) 68%, var(--soha-bg-surface));
+/* Capsule surfaces apply to standard tables. Antd's virtual engine owns its
+   viewport, spacer and row geometry for reliable scrolling and focus. */
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) {
+  --soha-stage-well-bg: color-mix(
+    in srgb,
+    var(--soha-bg-surface-muted) 68%,
+    var(--soha-bg-surface)
+  );
   --soha-capsule-head-bg: color-mix(in srgb, var(--soha-primary) 11%, #dce1ea);
   --soha-capsule-head-border: color-mix(in srgb, var(--soha-primary) 20%, rgba(29, 29, 31, 0.12));
   --soha-row-island-bg: var(--soha-bg-surface);
@@ -654,37 +659,33 @@
   --soha-row-island-hover-border: rgba(var(--soha-primary-rgb), 0.38);
 }
 
-:root[data-theme-mode='dark'] .soha-admin-table-shell.is-panel {
+:root[data-theme-mode='dark'] .soha-admin-table-shell.is-panel:where(:not(.is-virtual)) {
   --soha-stage-well-bg: color-mix(in srgb, var(--soha-bg-base) 62%, var(--soha-bg-surface));
   --soha-capsule-head-bg: color-mix(in srgb, var(--soha-primary) 16%, #1b2231);
-  --soha-capsule-head-border: color-mix(
-    in srgb,
-    var(--soha-primary) 32%,
-    rgba(148, 163, 184, 0.2)
-  );
+  --soha-capsule-head-border: color-mix(in srgb, var(--soha-primary) 32%, rgba(148, 163, 184, 0.2));
   --soha-row-island-bg: color-mix(in srgb, var(--soha-bg-surface) 88%, #ffffff 12%);
   --soha-row-island-hover-bg: color-mix(in srgb, var(--soha-primary) 10%, var(--soha-bg-surface));
   --soha-row-island-border: rgba(148, 163, 184, 0.15);
   --soha-row-island-hover-border: rgba(var(--soha-primary-rgb), 0.48);
 }
 
-.soha-admin-table-shell.is-panel > .soha-admin-table.ant-table-wrapper {
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table.ant-table-wrapper {
   padding: 10px 12px 12px !important;
   background: var(--soha-stage-well-bg) !important;
 }
 
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-container,
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-content,
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-body {
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table .ant-table-container,
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table .ant-table-content,
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table .ant-table-body {
   border-radius: 12px !important;
 }
 
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-container {
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table .ant-table-container {
   overflow: visible !important;
 }
 
 /* 1. Concentric Slate Header Capsule (40px Height, 12px Concentric Radius) */
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-header {
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual)) > .soha-admin-table .ant-table-header {
   margin: 0 0 8px !important;
   border-radius: 12px !important;
   background: var(--soha-capsule-head-bg) !important;
@@ -695,7 +696,7 @@
 }
 
 :root[data-theme-mode='dark']
-  .soha-admin-table-shell.is-panel
+  .soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table-header {
   box-shadow:
@@ -703,7 +704,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr
@@ -723,7 +724,7 @@
 }
 
 :root[data-theme-mode='dark']
-  .soha-admin-table-shell.is-panel
+  .soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr
@@ -731,7 +732,7 @@
   color: #f1f5f9 !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr
@@ -739,7 +740,7 @@
   background: color-mix(in srgb, var(--soha-primary) 16%, var(--soha-capsule-head-bg)) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr
@@ -753,7 +754,7 @@
   background: var(--soha-capsule-head-bg) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -768,7 +769,7 @@
   border-end-start-radius: 12px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -783,7 +784,7 @@
   border-end-end-radius: 12px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -792,7 +793,7 @@
   z-index: 4 !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -802,7 +803,7 @@
   z-index: 4 !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -818,13 +819,13 @@
   box-shadow: none !important;
   pointer-events: none !important;
   background:
-    radial-gradient(circle at 13px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      top left / 14px 14px no-repeat,
-    radial-gradient(circle at 13px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      bottom left / 14px 14px no-repeat !important;
+    radial-gradient(circle at 13px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) top
+      left / 14px 14px no-repeat,
+    radial-gradient(circle at 13px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) bottom
+      left / 14px 14px no-repeat !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-thead
   > tr:first-child
@@ -840,57 +841,14 @@
   box-shadow: none !important;
   pointer-events: none !important;
   background:
-    radial-gradient(circle at 1px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      top right / 14px 14px no-repeat,
-    radial-gradient(circle at 1px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      bottom right / 14px 14px no-repeat !important;
+    radial-gradient(circle at 1px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) top
+      right / 14px 14px no-repeat,
+    radial-gradient(circle at 1px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) bottom
+      right / 14px 14px no-repeat !important;
 }
 
-/* 2A. Virtual Table Row Islands (`rc-virtual-list` Flexbox Engine) */
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-tbody-virtual-holder {
-  height: auto !important;
-  max-height: calc(100vh - 250px) !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-}
-
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-tbody-virtual-holder > div {
-  height: auto !important;
-}
-
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-tbody-virtual-holder-inner {
-  position: relative !important;
-  gap: 6px !important;
-  padding: 1px 0 4px !important;
-}
-
-.soha-admin-table-shell.is-panel > .soha-admin-table .ant-table-tbody-virtual .ant-table-row {
-  min-height: 46px !important;
-  height: 46px !important;
-  align-items: center;
-  background: transparent !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-  transform: none !important;
-}
-
-.soha-admin-table-shell.is-panel
-  > .soha-admin-table
-  .ant-table-small
-  .ant-table-tbody-virtual
-  .ant-table-row,
-.soha-admin-table-shell.is-panel
-  > .soha-admin-table
-  .ant-table-small
-  .ant-table-tbody-virtual
-  .ant-table-row
-  .ant-table-cell {
-  min-height: 40px !important;
-  height: 40px !important;
-}
-
-/* 2B. Standard Paginated HTML Table Row Islands (`<table>/<tr>/<td>` Engine) */
-.soha-admin-table-shell.is-panel
+/* 2. Standard table row spacing */
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table:not(.ant-table-virtual)
   .ant-table-header
@@ -899,12 +857,12 @@
   border-spacing: 0 !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table:not(.ant-table-virtual)
   .ant-table-content
   > table,
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table:not(.ant-table-virtual)
   .ant-table-body
@@ -913,7 +871,7 @@
   border-spacing: 0 6px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table:not(.ant-table-virtual)
   .ant-table-content
@@ -921,7 +879,7 @@
   margin-top: -6px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table:not(.ant-table-virtual)
   .ant-table-body
@@ -929,7 +887,7 @@
   margin-top: -6px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table
   .ant-table-tbody
   > tr.ant-table-measure-row
@@ -942,13 +900,12 @@
   box-shadow: none !important;
 }
 
-/* 3. Shared Card Island Cell Surface + Sticky 12px End-Caps (Both Virtual & Standard Engines) */
-.soha-admin-table-shell.is-panel
+/* 3. Row surfaces */
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell,
-    .ant-table-tbody > tr:not(.ant-table-measure-row):not(.ant-table-placeholder) > td
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td {
   position: relative;
   height: 46px;
   padding-top: 7px !important;
@@ -965,7 +922,7 @@
     box-shadow 0.2s var(--soha-ease-fluid);
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-small
   .ant-table-tbody
@@ -977,24 +934,20 @@
 }
 
 :root[data-theme-mode='dark']
-  .soha-admin-table-shell.is-panel
+  .soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell,
-    .ant-table-tbody > tr:not(.ant-table-measure-row):not(.ant-table-placeholder) > td
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
 }
 
 /* Left End-Cap: 12px Left Radius + Unclipped Inverse-Corner Mask */
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell:first-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:first-child
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:first-child {
   overflow: visible !important;
   clip-path: inset(-2px 0 -2px -2px);
   padding-left: 12px !important;
@@ -1005,24 +958,11 @@
   border-end-start-radius: 12px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  .ant-table-tbody-virtual
-  .ant-table-row
-  .ant-table-cell:first-child {
-  position: sticky !important;
-  left: 0 !important;
-  z-index: 4 !important;
-}
-
-.soha-admin-table-shell.is-panel
-  > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell:first-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:first-child:is(.ant-table-cell-fix-start, .ant-table-cell-fix-left)
-  )::before {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:first-child:is(.ant-table-cell-fix-start, .ant-table-cell-fix-left)::before {
   content: '' !important;
   display: block !important;
   opacity: 1 !important;
@@ -1034,45 +974,36 @@
   box-shadow: none !important;
   pointer-events: none !important;
   background:
-    radial-gradient(circle at 13px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      top left / 14px 14px no-repeat,
-    radial-gradient(circle at 13px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      bottom left / 14px 14px no-repeat !important;
+    radial-gradient(circle at 13px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) top
+      left / 14px 14px no-repeat,
+    radial-gradient(circle at 13px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) bottom
+      left / 14px 14px no-repeat !important;
 }
 
 /* Pinned Left Columns (e.g. Resource Name) */
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell.ant-table-cell-fix-start,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:is(.ant-table-cell-fix-start, .ant-table-cell-fix-left)
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:is(.ant-table-cell-fix-start, .ant-table-cell-fix-left) {
   position: sticky !important;
   z-index: 3 !important;
   background: var(--soha-row-island-bg) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   :is(.ant-table-ping-start, .ant-table-ping-left)
-  :is(
-    .ant-table-cell-fix-start-shadow,
-    .ant-table-cell-fix-left-last
-  ) {
+  :is(.ant-table-cell-fix-start-shadow, .ant-table-cell-fix-left-last) {
   border-right: 1px solid var(--soha-hairline-strong) !important;
 }
 
 /* Right End-Cap (`...` Action Column or Last Cell): 12px Right Radius + Unclipped Inverse-Corner Mask */
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell:last-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:last-child
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:last-child {
   overflow: visible !important;
   clip-path: inset(-2px -2px -2px 0);
   padding-right: 10px !important;
@@ -1083,35 +1014,29 @@
   border-end-end-radius: 12px !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .soha-table-actions-column {
   padding-inline: 8px !important;
   text-overflow: clip !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell:last-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:last-child:is(.ant-table-cell-fix-end, .ant-table-cell-fix-right)
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:last-child:is(.ant-table-cell-fix-end, .ant-table-cell-fix-right) {
   position: sticky !important;
   right: 0 !important;
   z-index: 4 !important;
   border-left: 1px solid var(--soha-hairline) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row .ant-table-cell:last-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
-      > td:last-child:is(.ant-table-cell-fix-end, .ant-table-cell-fix-right)
-  )::after {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder)
+  > td:last-child:is(.ant-table-cell-fix-end, .ant-table-cell-fix-right)::after {
   content: '' !important;
   display: block !important;
   opacity: 1 !important;
@@ -1123,14 +1048,14 @@
   box-shadow: none !important;
   pointer-events: none !important;
   background:
-    radial-gradient(circle at 1px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      top right / 14px 14px no-repeat,
-    radial-gradient(circle at 1px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px)
-      bottom right / 14px 14px no-repeat !important;
+    radial-gradient(circle at 1px 13px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) top
+      right / 14px 14px no-repeat,
+    radial-gradient(circle at 1px 1px, transparent 11.9px, var(--soha-stage-well-bg) 12.4px) bottom
+      right / 14px 14px no-repeat !important;
 }
 
 /* Empty Placeholder Card & Pagination Footer Inside Stage */
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-tbody
   > tr.ant-table-placeholder
@@ -1140,55 +1065,45 @@
   background: var(--soha-row-island-bg) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
   .ant-table-pagination.ant-pagination {
   margin: 8px 4px 2px !important;
 }
 
-/* Hover & Selected States Unified Across Virtual & Standard Tables */
-.soha-admin-table-shell.is-panel
+/* Hover and selected row surfaces */
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row:hover .ant-table-cell,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
-      > td
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
+  > td {
   background: var(--soha-row-island-hover-bg) !important;
   border-top-color: var(--soha-row-island-hover-border) !important;
   border-bottom-color: var(--soha-row-island-hover-border) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row:hover .ant-table-cell:first-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
-      > td:first-child
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
+  > td:first-child {
   border-left-color: var(--soha-primary) !important;
   box-shadow: inset 3px 0 0 var(--soha-primary) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row:hover .ant-table-cell:last-child,
-    .ant-table-tbody
-      > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
-      > td:last-child
-  ) {
+  .ant-table-tbody
+  > tr:not(.ant-table-measure-row):not(.ant-table-placeholder):hover
+  > td:last-child {
   border-right-color: var(--soha-row-island-hover-border) !important;
 }
 
-.soha-admin-table-shell.is-panel
+.soha-admin-table-shell.is-panel:where(:not(.is-virtual))
   > .soha-admin-table.ant-table-wrapper
-  :is(
-    .ant-table-tbody-virtual .ant-table-row.ant-table-row-selected .ant-table-cell,
-    .ant-table-tbody > tr.ant-table-row-selected > td
-  ) {
+  .ant-table-tbody
+  > tr.ant-table-row-selected
+  > td {
   background: var(--soha-table-row-selected-bg) !important;
   border-top-color: var(--soha-row-island-hover-border) !important;
   border-bottom-color: var(--soha-row-island-hover-border) !important;
