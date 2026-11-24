@@ -95,10 +95,10 @@
         {
           "scope": {
             "deploymentId": "lab",
-            "sessionId": "session-u30",
+            "sessionId": "session-0001",
             "pairId": "pair-u30",
             "peerRuntimeId": "gateway-site-a",
-            "leaseId": "lease-u30",
+            "leaseId": "network-lease-0001",
             "policyEpoch": 2,
             "validUntil": "2026-09-03T08:05:00Z"
           },

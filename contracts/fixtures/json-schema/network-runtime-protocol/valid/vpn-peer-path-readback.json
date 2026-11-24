@@ -1,6 +1,6 @@
 {
   "schemaVersion": "network-runtime/v1alpha1",
-  "producerId": "network-control",
+  "producerId": "endpoint-alice",
   "runtimeId": "endpoint-alice",
   "runtimeKind": "endpoint",
   "occurredAt": "2026-09-03T08:00:00Z",

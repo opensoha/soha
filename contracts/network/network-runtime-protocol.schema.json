@@ -367,6 +367,57 @@
     {
       "if": {
         "properties": {
+          "payload": {
+            "required": [
+              "vpnConnectivity"
+            ]
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "properties": {
+              "runtimeKind": {
+                "const": "endpoint"
+              },
+              "payload": {
+                "properties": {
+                  "wireguard": {
+                    "properties": {
+                      "role": {
+                        "const": "endpoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "runtimeKind": {
+                "const": "gateway"
+              },
+              "payload": {
+                "properties": {
+                  "wireguard": {
+                    "properties": {
+                      "role": {
+                        "const": "gateway"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "messageType": {
             "const": "lease.renew.request"
           }
