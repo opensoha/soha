@@ -82,7 +82,7 @@ func runDriverProgram() int {
 		return childExecFailed
 	}
 	_ = os.Stdin.Close()
-	defer cmd.Process.Release()
+	defer func() { _ = cmd.Process.Release() }()
 	for {
 		if reapNamespaceChildren(cmd.Process.Pid) {
 			// The guard's exit destroys the namespace and all other processes.
@@ -123,7 +123,7 @@ func verifyChildPrivileges() error {
 }
 
 func checkParentProcess() error {
-	defer unix.Close(parentProcessFD)
+	defer func() { _ = unix.Close(parentProcessFD) }()
 	fds := []unix.PollFd{{Fd: parentProcessFD, Events: unix.POLLIN}}
 	for {
 		n, err := unix.Poll(fds, 0)
@@ -156,7 +156,7 @@ func startProcess(ctx, owner context.Context, work string, binary *os.File, driv
 	if err != nil {
 		return nil, err
 	}
-	defer bootstrap.Close()
+	defer func() { _ = bootstrap.Close() }()
 	running := &launch{owner: owner, work: work, exited: make(chan struct{}), drained: make(chan struct{})}
 	if err := running.start(cmd, closeInherited); err != nil {
 		return nil, err

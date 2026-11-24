@@ -37,7 +37,53 @@ func TestExecutableRepositoryTrustAndOfflineLifecycle(t *testing.T) {
 	service.SetExecutablePlugins(store, runtime, references, nil)
 	operator := domainidentity.Principal{UserID: "operator", Roles: []string{"operator"}}
 	manager := domainidentity.Principal{UserID: "manager", Roles: []string{"operator", "manager"}}
-	request := domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: upstream.source, Ref: "refs/heads/main"}
+	installed := installTrustedExecutable(t, service, history, store, runtime, operator, manager, upstream.source)
+
+	upstream.manifest, upstream.commit = executableTestManifest(t, "2.0.0", true), strings.Repeat("b", 40)
+	request := domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: upstream.source, Ref: "refs/tags/v2.0.0"}
+	preview, err := service.PreviewRepository(ctx, operator, request)
+	require.NoError(t, err)
+	require.EqualValues(t, "confirmable", preview.InstallEligibility)
+	upgrade := domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: preview.PreviewToken}
+	_, err = service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
+	require.ErrorIs(t, err, apperrors.ErrConflict)
+	require.Equal(t, "1.0.0", runtime.active)
+	upgrade.ConfirmPermissionIncrease = true
+	runtime.fail = true
+	_, err = service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
+	require.ErrorIs(t, err, apperrors.ErrServiceUnavailable)
+	require.Equal(t, "1.0.0", runtime.active)
+	require.Empty(t, history.previous.ID)
+
+	runtime.fail = false
+	type changeResult struct {
+		item domainplugin.InstalledPlugin
+		err  error
+	}
+	upgrades := make(chan changeResult, 2)
+	for range 2 {
+		go func() {
+			item, err := service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
+			upgrades <- changeResult{item: item, err: err}
+		}()
+	}
+	first, duplicate := <-upgrades, <-upgrades
+	require.NoError(t, first.err)
+	require.NoError(t, duplicate.err)
+	upgraded := first.item
+	require.Equal(t, "2.0.0", runtime.active)
+	require.Equal(t, "1.0.0", upgraded.RollbackVersion)
+	require.Equal(t, upgraded.UpdatedAt, duplicate.item.UpdatedAt)
+
+	assertOfflineExecutableRollback(t, service, store, runtime, references, operator, installed.ID, upgraded)
+}
+
+func installTrustedExecutable(t *testing.T, service *Service, history *testExecutableRepository,
+	store *testExecutableStore, runtime *testExecutableRuntime, operator, manager domainidentity.Principal, repositoryURL string,
+) domainplugin.InstalledPlugin {
+	t.Helper()
+	ctx := t.Context()
+	request := domainplugin.PluginRepositoryPreviewRequest{RepositoryURL: repositoryURL, Ref: "refs/heads/main"}
 
 	preview, err := service.PreviewRepository(ctx, operator, request)
 	require.NoError(t, err)
@@ -74,54 +120,26 @@ func TestExecutableRepositoryTrustAndOfflineLifecycle(t *testing.T) {
 	require.Equal(t, "1.0.0", runtime.active)
 	require.True(t, *installed.RuntimeReady)
 
-	upstream.manifest, upstream.commit = executableTestManifest(t, "2.0.0", true), strings.Repeat("b", 40)
-	request.Ref, request.TrustPublisherFingerprint = "refs/tags/v2.0.0", ""
-	preview, err = service.PreviewRepository(ctx, operator, request)
-	require.NoError(t, err)
-	require.EqualValues(t, "confirmable", preview.InstallEligibility)
-	upgrade := domainplugin.PluginRepositoryUpgradeRequest{PreviewToken: preview.PreviewToken}
-	_, err = service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
-	require.ErrorIs(t, err, apperrors.ErrConflict)
-	require.Equal(t, "1.0.0", runtime.active)
-	upgrade.ConfirmPermissionIncrease = true
-	runtime.fail = true
-	_, err = service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
-	require.ErrorIs(t, err, apperrors.ErrServiceUnavailable)
-	require.Equal(t, "1.0.0", runtime.active)
-	require.Empty(t, history.previous.ID)
+	return installed
+}
 
-	runtime.fail = false
-	type changeResult struct {
-		item domainplugin.InstalledPlugin
-		err  error
-	}
-	upgrades := make(chan changeResult, 2)
-	for range 2 {
-		go func() {
-			item, err := service.UpgradeRepository(ctx, operator, installed.ID, upgrade)
-			upgrades <- changeResult{item: item, err: err}
-		}()
-	}
-	first, duplicate := <-upgrades, <-upgrades
-	require.NoError(t, first.err)
-	require.NoError(t, duplicate.err)
-	upgraded := first.item
-	require.Equal(t, "2.0.0", runtime.active)
-	require.Equal(t, "1.0.0", upgraded.RollbackVersion)
-	require.Equal(t, upgraded.UpdatedAt, duplicate.item.UpdatedAt)
-
+func assertOfflineExecutableRollback(t *testing.T, service *Service, store *testExecutableStore,
+	runtime *testExecutableRuntime, references *testDriverReferences, operator domainidentity.Principal, id string, upgraded domainplugin.InstalledPlugin,
+) {
+	t.Helper()
+	ctx := t.Context()
 	// Neither confirmation nor the release source can be used for offline rollback.
 	service.repositories.source = nil
 	rollback := domainplugin.PluginRepositoryRollbackRequest{ExpectedVersion: "2.0.0", ExpectedUpdatedAt: upgraded.UpdatedAt, Version: "1.0.0"}
-	reverted, err := service.RollbackRepository(ctx, operator, installed.ID, rollback)
+	reverted, err := service.RollbackRepository(ctx, operator, id, rollback)
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", runtime.active)
 	require.Equal(t, "2.0.0", reverted.RollbackVersion)
 	require.True(t, reverted.RollbackRequiresPermissionConfirmation)
-	repeated, err := service.RollbackRepository(ctx, operator, installed.ID, rollback)
+	repeated, err := service.RollbackRepository(ctx, operator, id, rollback)
 	require.NoError(t, err)
 	require.Equal(t, reverted.UpdatedAt, repeated.UpdatedAt)
-	_, err = service.RollbackRepository(ctx, operator, installed.ID,
+	_, err = service.RollbackRepository(ctx, operator, id,
 		domainplugin.PluginRepositoryRollbackRequest{ExpectedVersion: "1.0.0", ExpectedUpdatedAt: reverted.UpdatedAt, Version: "2.0.0"})
 	require.ErrorIs(t, err, apperrors.ErrConflict)
 
@@ -131,12 +149,12 @@ func TestExecutableRepositoryTrustAndOfflineLifecycle(t *testing.T) {
 	require.NoError(t, service.RestoreExecutablePlugins(ctx))
 	require.Equal(t, reverted.Version, replacement.active)
 	references.count = 1
-	_, err = service.Disable(ctx, operator, installed.ID)
+	_, err = service.Disable(ctx, operator, id)
 	require.ErrorIs(t, err, apperrors.ErrConflict)
-	require.ErrorIs(t, service.Remove(ctx, operator, installed.ID), apperrors.ErrConflict)
+	require.ErrorIs(t, service.Remove(ctx, operator, id), apperrors.ErrConflict)
 	require.Equal(t, reverted.Version, replacement.active)
 	references.count = 0
-	require.NoError(t, service.Remove(ctx, operator, installed.ID))
+	require.NoError(t, service.Remove(ctx, operator, id))
 	require.Empty(t, replacement.active)
 }
 
@@ -171,19 +189,7 @@ func TestExecutableRepositoryOfficialPublisherAndImmutableConfirmation(t *testin
 		}
 		require.EqualValues(t, "confirmable", preview.InstallEligibility)
 		require.Equal(t, rawKey, store.inspectedKey)
-		install := domainplugin.PluginRepositoryInstallRequest{PreviewToken: preview.PreviewToken}
-		service.repositories.now = func() time.Time { return preview.ExpiresAt }
-		_, err = service.InstallRepository(ctx, operator, install)
-		require.ErrorIs(t, err, apperrors.ErrConflict)
-		service.repositories.now = time.Now
-		store.attestationStamp = "changed"
-		_, err = service.InstallRepository(ctx, operator, install)
-		require.ErrorIs(t, err, apperrors.ErrConflict)
-		require.Empty(t, history.items)
-		store.attestationStamp = ""
-		item, err := service.InstallRepository(ctx, operator, install)
-		require.NoError(t, err)
-		require.True(t, item.SourceInfo.Official)
+		item := installOfficialExecutable(t, service, store, history, operator, preview.PreviewToken, preview.ExpiresAt)
 		upstream.manifest, upstream.commit = executableTestManifest(t, "2.0.0", false), strings.Repeat("b", 40)
 		preview, err = service.PreviewRepository(ctx, operator, request)
 		require.NoError(t, err)
@@ -213,6 +219,27 @@ func TestExecutableRepositoryOfficialPublisherAndImmutableConfirmation(t *testin
 		_, err = service.InstallRepository(ctx, operator, domainplugin.PluginRepositoryInstallRequest{PreviewToken: preview.PreviewToken})
 		require.ErrorIs(t, err, apperrors.ErrConflict)
 	}
+}
+
+func installOfficialExecutable(t *testing.T, service *Service, store *testExecutableStore,
+	history *testExecutableRepository, operator domainidentity.Principal, token string, expiry time.Time,
+) domainplugin.InstalledPlugin {
+	t.Helper()
+	ctx := t.Context()
+	install := domainplugin.PluginRepositoryInstallRequest{PreviewToken: token}
+	service.repositories.now = func() time.Time { return expiry }
+	_, err := service.InstallRepository(ctx, operator, install)
+	require.ErrorIs(t, err, apperrors.ErrConflict)
+	service.repositories.now = time.Now
+	store.attestationStamp = "changed"
+	_, err = service.InstallRepository(ctx, operator, install)
+	require.ErrorIs(t, err, apperrors.ErrConflict)
+	require.Empty(t, history.items)
+	store.attestationStamp = ""
+	item, err := service.InstallRepository(ctx, operator, install)
+	require.NoError(t, err)
+	require.True(t, item.SourceInfo.Official)
+	return item
 }
 
 func executableTestManifest(t *testing.T, version string, additionalPermissions bool) []byte {

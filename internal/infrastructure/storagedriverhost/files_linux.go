@@ -92,7 +92,7 @@ func openPackageDir(root string, selection DriverConfig) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer packageRoot.Close()
+	defer func() { _ = packageRoot.Close() }()
 	if err := requireMode(packageRoot, 0o700); err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func openPackageDir(root string, selection DriverConfig) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer plugin.Close()
+	defer func() { _ = plugin.Close() }()
 	if err := requireMode(plugin, 0o700); err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func readRegularAt(dir *os.File, name string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if st.Size <= 0 || st.Size > limit {
 		return nil, fmt.Errorf("invalid size at %s", file.Name())
 	}
@@ -151,7 +151,7 @@ func readPublisherKey(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	return readRegularAt(dir, filepath.Base(path), 4096)
 }
 
@@ -180,7 +180,7 @@ func takeRuntimeLock(root string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	if err := requireMode(dir, runtimeDirMode); err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func sealedBinary(ctx context.Context, dir *os.File, asset releaseArtifact) (*os
 	if err != nil {
 		return nil, err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	if st.Size != asset.ByteLength {
 		return nil, errors.New("storage driver artifact size does not match the signed inventory")
 	}
@@ -213,7 +213,7 @@ func sealedBinary(ctx context.Context, dir *os.File, asset releaseArtifact) (*os
 		return nil, fmt.Errorf("create isolated storage driver executable: %w", err)
 	}
 	target := os.NewFile(uintptr(fd), "soha-storage-driver")
-	defer target.Close()
+	defer func() { _ = target.Close() }()
 	if err := copyVerifiedBinary(ctx, target, source, asset); err != nil {
 		return nil, err
 	}

@@ -65,14 +65,14 @@ func TestLinuxSwitchSignedStorageBackends(t *testing.T) {
 	require.Equal(t, uint32(0), accounts[1].UID%2, "second test UID must be even")
 	base, err := os.MkdirTemp(root, "v17-")
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, os.RemoveAll(base)) })
-	require.NoError(t, os.Chmod(base, 0o711))
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(base)) }) // #nosec G703 -- Remove only the directory created with MkdirTemp above.
+	require.NoError(t, os.Chmod(base, 0o711))                    // #nosec G302 -- Both dedicated fixture accounts must traverse this directory.
 	cfg := Config{
 		PackageRoot: filepath.Join(base, "packages"), RuntimeRoot: filepath.Join(base, "run"),
 		Slots: map[string][2]Account{fixturePlugin: accounts},
 	}
 	require.NoError(t, os.Mkdir(cfg.RuntimeRoot, 0o700))
-	require.NoError(t, os.Chmod(cfg.RuntimeRoot, 0o711))
+	require.NoError(t, os.Chmod(cfg.RuntimeRoot, 0o711)) // #nosec G302 -- Both dedicated fixture accounts must traverse the runtime directory.
 	sign := nativeFixturePackages(t, base, cfg.PackageRoot)
 	v1, v2, bad := sign("1.0.0", "a"), sign("2.0.0", "b"), sign("3.0.0", "c")
 
@@ -92,7 +92,7 @@ func TestLinuxSwitchSignedStorageBackends(t *testing.T) {
 	require.True(t, m.Ready(fixturePlugin, v1.Version))
 
 	held := nativeOpen(t, ctx, m, "held")
-	defer held.Close()
+	defer func() { _ = held.Close() }()
 	require.NoError(t, switchTo(v2))
 	require.Equal(t, v2.Version, committed)
 	require.True(t, m.Ready(fixturePlugin, v2.Version))
@@ -109,7 +109,7 @@ func TestLinuxSwitchSignedStorageBackends(t *testing.T) {
 	work, err := filepath.Glob(pattern)
 	require.NoError(t, err)
 	require.Len(t, work, 1, "old process work directory must remain until the stream drains")
-	require.NoError(t, os.WriteFile(filepath.Join(work[0], streamReleaseMarker), nil, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(work[0], streamReleaseMarker), nil, 0o644)) // #nosec G306 -- An empty marker written by the test must be visible to the isolated driver account.
 	require.Equal(t, v1.Version, nativeRead(t, held))
 
 	require.NoError(t, switchTo(v1))
@@ -143,7 +143,7 @@ func nativeFixturePackages(t *testing.T, base, packageRoot string) func(string, 
 	der, err := x509.MarshalPKIXPublicKey(public)
 	require.NoError(t, err)
 	key := filepath.Join(base, "publisher.pem")
-	require.NoError(t, os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}), 0o600))
+	require.NoError(t, os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}), 0o600)) // #nosec G703 -- Write the fixed public-key name within the owned fixture directory.
 	const artifact = "fixture-driver"
 	inventory := map[string]any{"backend": map[string]any{
 		"driverId": fixtureDriver, "protocol": "object-storage/v1",
@@ -198,7 +198,7 @@ func nativeOpen(t *testing.T, ctx context.Context, m *Manager, key string) io.Re
 
 func nativeRead(t *testing.T, body io.ReadCloser) string {
 	t.Helper()
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	content, err := io.ReadAll(body)
 	require.NoError(t, err)
 	return string(content)

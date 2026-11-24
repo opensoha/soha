@@ -58,12 +58,12 @@ func TestS3DriverExactKeysAndOpen(t *testing.T) {
 				w.Header().Set("Content-Length", "3")
 				w.Header().Set("Content-Range", "bytes 7-9/10")
 				w.WriteHeader(http.StatusPartialContent)
-				fmt.Fprint(w, payload[7:])
+				_, _ = fmt.Fprint(w, payload[7:])
 			default:
 				assert.Empty(t, r.Header.Get("Range"))
 				w.Header().Set("Content-Length", "10")
 				if r.Method == http.MethodGet {
-					fmt.Fprint(w, payload)
+					_, _ = fmt.Fprint(w, payload)
 				}
 			}
 		case http.MethodDelete:
@@ -121,7 +121,7 @@ func TestS3DriverExactKeysAndOpen(t *testing.T) {
 
 func requireDriverBody(t *testing.T, body io.ReadCloser, want string) {
 	t.Helper()
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	got, err := io.ReadAll(body)
 	require.NoError(t, err)
 	require.Equal(t, want, string(got))
@@ -148,7 +148,7 @@ func TestS3DriverProbeProvesReadAndWriteAndCleansUp(t *testing.T) {
 		case http.MethodGet:
 			assert.Equal(t, key, r.URL.Path)
 			assert.Equal(t, `"probe"`, r.Header.Get("If-Match"))
-			fmt.Fprint(w, payload)
+			_, _ = fmt.Fprint(w, payload)
 		case http.MethodDelete:
 			assert.Equal(t, key, r.URL.Path)
 			assert.Equal(t, "probe-version", r.URL.Query().Get("versionId"))
@@ -176,15 +176,15 @@ func TestS3DriverListCursorScopesProviderPagination(t *testing.T) {
 		switch calls.Add(1) {
 		case 1:
 			assert.Empty(t, query.Get("continuation-token"))
-			fmt.Fprint(w, `<ListBucketResult><IsTruncated>true</IsTruncated>
+			_, _ = fmt.Fprint(w, `<ListBucketResult><IsTruncated>true</IsTruncated>
 				<NextContinuationToken>provider+/=token</NextContinuationToken>
 				<EncodingType>url</EncodingType><Contents><Key>scope/A%2B%252F</Key></Contents></ListBucketResult>`)
 		case 2:
 			assert.Equal(t, "provider+/=token", query.Get("continuation-token"))
-			fmt.Fprint(w, `<ListBucketResult><IsTruncated>false</IsTruncated>
+			_, _ = fmt.Fprint(w, `<ListBucketResult><IsTruncated>false</IsTruncated>
 				<Contents><Key>scope/A2</Key></Contents></ListBucketResult>`)
 		default:
-			fmt.Fprint(w, `<ListBucketResult><IsTruncated>false</IsTruncated>
+			_, _ = fmt.Fprint(w, `<ListBucketResult><IsTruncated>false</IsTruncated>
 				<Contents><Key>scope-sibling/A3</Key></Contents></ListBucketResult>`)
 		}
 	}))
@@ -224,11 +224,11 @@ func TestS3DriverReportsEarlyEOFAndRedactsProviderErrors(t *testing.T) {
 			w.Header().Set("ETag", `"valid"`)
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Length", "100")
-			fmt.Fprint(w, "partial")
+			_, _ = fmt.Fprint(w, "partial")
 			return
 		}
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `<Error><Code>AccessDenied</Code><Message>private provider detail</Message></Error>`)
+		_, _ = fmt.Fprint(w, `<Error><Code>AccessDenied</Code><Message>private provider detail</Message></Error>`)
 	}))
 	defer server.Close()
 
@@ -236,7 +236,7 @@ func TestS3DriverReportsEarlyEOFAndRedactsProviderErrors(t *testing.T) {
 	req := storagedriver.OpenObjectRequest{Binding: testDriverBinding(server.URL), Key: "truncated"}
 	result, err := driver.OpenObject(t.Context(), req)
 	require.NoError(t, err)
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	_, err = io.ReadAll(result.Body)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 
@@ -257,7 +257,7 @@ func TestS3DriverAbortsUnfinishedMultipartUpload(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			fmt.Fprint(w, `<InitiateMultipartUploadResult><UploadId>temporary</UploadId></InitiateMultipartUploadResult>`)
+			_, _ = fmt.Fprint(w, `<InitiateMultipartUploadResult><UploadId>temporary</UploadId></InitiateMultipartUploadResult>`)
 		case http.MethodPut:
 			assert.Equal(t, "temporary", r.URL.Query().Get("uploadId"))
 			n, err := io.Copy(io.Discard, r.Body)

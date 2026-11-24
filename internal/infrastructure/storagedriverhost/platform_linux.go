@@ -119,7 +119,7 @@ func readLocalAccounts() (localAccounts, error) {
 	if err != nil {
 		return localAccounts{}, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	passwd, err := readRegularAt(dir, "passwd", maxDocument)
 	if err != nil {
 		return localAccounts{}, err
@@ -228,7 +228,7 @@ func (r *ManagedRuntime) PrepareSlot(uid uint32) (string, func() error, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	name := managedSlotName(uid)
 	if err := unix.Mkdirat(int(root.Fd()), name, runtimeDirMode); err != nil {
 		return "", nil, fmt.Errorf("create managed storage driver runtime directory: %w", err)
@@ -246,7 +246,7 @@ func (r *ManagedRuntime) clearSlot(uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	name := managedSlotName(uid)
 	slot, err := trustedDirectoryAt(root, name, false)
 	if errors.Is(err, os.ErrNotExist) {
@@ -268,7 +268,7 @@ func (s *Supervisor) newDriver(selection DriverConfig) (*managedDriver, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	release, err := loadPackage(dir, selection)
 	if err != nil {
 		return nil, err
@@ -318,7 +318,7 @@ func (s *Supervisor) launch(owner context.Context, driver *managedDriver) (*laun
 	if err != nil {
 		return nil, err
 	}
-	defer binary.Close()
+	defer func() { _ = binary.Close() }()
 	work, err := makeWorkDirectory(s.config.RuntimeRoot, driver.selection)
 	if err != nil {
 		return nil, err
@@ -342,7 +342,7 @@ func (s *Supervisor) openLaunchBinary(ctx context.Context, driver *managedDriver
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	release, err := loadPackage(dir, driver.selection)
 	if err != nil {
 		return nil, err
@@ -358,7 +358,7 @@ func makeWorkDirectory(root string, driver DriverConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	if err := requireMode(dir, runtimeDirMode); err != nil {
 		return "", err
 	}
@@ -377,7 +377,7 @@ func initializeWorkDirectory(parent, work string, driver DriverConfig) error {
 	if err := os.Mkdir(work, 0o700); err != nil {
 		return err
 	}
-	if err := os.Chmod(work, 0o700); err != nil {
+	if err := os.Chmod(work, 0o700); err != nil { // #nosec G302 -- Only the driver account needs to traverse its private work directory.
 		return err
 	}
 	if err := os.Chown(work, int(driver.UID), int(driver.GID)); err != nil {
@@ -386,5 +386,5 @@ func initializeWorkDirectory(parent, work string, driver DriverConfig) error {
 	if err := os.Chown(parent, 0, int(driver.GID)); err != nil {
 		return err
 	}
-	return os.Chmod(parent, 0o710)
+	return os.Chmod(parent, 0o710) // #nosec G302 -- Only root and the assigned driver group may traverse this directory.
 }

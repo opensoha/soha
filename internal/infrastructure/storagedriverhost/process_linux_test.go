@@ -87,7 +87,7 @@ func makeLinuxTestFixture(t *testing.T) linuxTestFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(base); err != nil {
+		if err := os.RemoveAll(base); err != nil { // #nosec G703 -- Remove only the directory created by this fixture with MkdirTemp.
 			t.Error(err)
 		}
 	})
@@ -96,7 +96,7 @@ func makeLinuxTestFixture(t *testing.T) linuxTestFixture {
 	if binaryPath == "" {
 		binaryPath = "/proc/self/exe"
 	}
-	binary, err := os.ReadFile(binaryPath)
+	binary, err := os.ReadFile(binaryPath) // #nosec G304 -- The operator may supply a fixture executable for this opt-in Linux test.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func makeLinuxTestFixture(t *testing.T) linuxTestFixture {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(publicSecretPath, []byte("synthetic accidental public Core marker"), 0o600); err != nil {
+	if err := os.WriteFile(publicSecretPath, []byte("synthetic accidental public Core marker"), 0o600); err != nil { // #nosec G703 -- Write the fixed marker name within the owned fixture directory.
 		t.Fatal(err)
 	}
 	mustChmod(t, publicSecretPath, 0o644)
@@ -175,7 +175,7 @@ func TestLinuxSupervisorIsolationAndLifecycle(t *testing.T) {
 	binding := storagedriver.Binding{
 		ID: "test-1", Container: "probe", Credentials: map[string]string{"probe": "synthetic-per-call"},
 	}
-	binding.Settings, err = json.Marshal(testProbe{
+	binding.Settings, err = json.Marshal(testProbe{ // #nosec G117 -- The fixture fields contain local marker paths, never secret values.
 		Secret: fixture.secret, PublicSecret: fixture.publicSecret, Binary: fixture.binary, InheritableFD: leakTestFD,
 		UID: fixture.cfg.Drivers[0].UID, GID: fixture.cfg.Drivers[0].GID,
 	})
@@ -197,11 +197,11 @@ func TestLinuxSupervisorIsolationAndLifecycle(t *testing.T) {
 
 func testInheritableFD(t *testing.T, path string) int {
 	t.Helper()
-	secret, err := os.Open(path)
+	secret, err := os.Open(path) // #nosec G304 -- The caller supplies the synthetic Core marker created by this fixture.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer secret.Close()
+	defer func() { _ = secret.Close() }()
 	fd, err := unix.FcntlInt(secret.Fd(), unix.F_DUPFD, 512)
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func exerciseOrphanReaping(t *testing.T, ctx context.Context, s *Supervisor, dri
 	}
 	var orphan string
 	waitCondition(t, func() bool {
-		pid, err := os.ReadFile(filepath.Join(work, "orphan-pid"))
+		pid, err := os.ReadFile(filepath.Join(work, "orphan-pid")) // #nosec G304 -- Read the fixed fixture marker from the test driver's owned work directory.
 		_, conversion := strconv.Atoi(string(pid))
 		if err == nil && conversion == nil {
 			orphan = string(pid)
@@ -286,7 +286,7 @@ func exerciseDrain(t *testing.T, ctx context.Context, s *Supervisor, driver stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	closed := make(chan error, 1)
 	go func() { closed <- s.Close(ctx) }()
 	waitCondition(t, func() bool { return !s.Ready(fixtureDriver) })
@@ -381,7 +381,7 @@ func waitCondition(t *testing.T, condition func() bool) {
 
 func mustChmod(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
-	if err := os.Chmod(path, mode); err != nil {
+	if err := os.Chmod(path, mode); err != nil { // #nosec G703 -- Change modes on fixture-owned paths only, including deliberately world-readable markers.
 		t.Fatal(err)
 	}
 }
@@ -429,7 +429,7 @@ func runIsolationProbe(binding storagedriver.Binding) error {
 		os.Getenv("DATABASE_URL") != "" || os.Getenv("SOHA_JWT_SECRET") != "" || credentials["probe"] != "synthetic-per-call" {
 		return errors.New("unexpected effective account or inherited environment")
 	}
-	if _, err := os.ReadFile(probe.Secret); !errors.Is(err, os.ErrPermission) {
+	if _, err := os.ReadFile(probe.Secret); !errors.Is(err, os.ErrPermission) { // #nosec G304 -- Deliberately probe whether Landlock blocks the test marker.
 		return errors.New("Core-only secret was accessible")
 	}
 	var inherited unix.Stat_t
@@ -437,12 +437,12 @@ func runIsolationProbe(binding storagedriver.Binding) error {
 		return errors.New("storage driver received an unrelated Core file descriptor")
 	}
 	for _, path := range []string{probe.PublicSecret, "/proc/self/root" + probe.PublicSecret} {
-		if _, err := os.ReadFile(path); !errors.Is(err, os.ErrPermission) {
+		if _, err := os.ReadFile(path); !errors.Is(err, os.ErrPermission) { // #nosec G304 -- Deliberately try the fixture marker through both access paths.
 			return errors.New("world-readable Core secret was accessible through the storage sandbox")
 		}
 	}
 	for _, path := range []string{probe.Binary, "/proc/self/exe"} {
-		if file, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		if file, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil { // #nosec G304 -- Deliberately check that the signed fixture executable is not writable.
 			_ = file.Close()
 			return fmt.Errorf("write access to driver executable: %s", path)
 		}

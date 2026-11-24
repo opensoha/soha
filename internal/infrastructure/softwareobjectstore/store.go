@@ -276,12 +276,16 @@ func (s *Store) cleanup(ctx context.Context, objectKey string) error {
 }
 
 func storageHTTPClient(allowPrivate bool) *http.Client {
+	return &http.Client{Transport: storageHTTPTransport(allowPrivate)}
+}
+
+func storageHTTPTransport(allowPrivate bool) *http.Transport {
 	transport := cloneHTTPTransport(http.DefaultTransport)
 	transport.Proxy = nil
 	if !allowPrivate {
 		transport.DialContext = dialPublicAddress
 	}
-	return &http.Client{Transport: transport}
+	return transport
 }
 
 func dialPublicAddress(ctx context.Context, network, address string) (net.Conn, error) {

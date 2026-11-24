@@ -104,12 +104,14 @@ func validDriverEndpoint(endpoint string) bool {
 }
 
 func newS3DriverBinding(config Config) s3DriverBinding {
-	httpClient := storageHTTPClient(config.AllowPrivate)
-	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	transport := httpClient.Transport.(*http.Transport)
+	transport := storageHTTPTransport(config.AllowPrivate)
 	// A stored object's bytes and range offsets refer to its encoded form.
 	transport.DisableCompression = true
 	transport.ResponseHeaderTimeout = 30 * time.Second
+	httpClient := &http.Client{
+		Transport:     transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 
 	client := newS3Client(config, httpClient, func(o *s3.Options) {
 		o.DisableS3ExpressSessionAuth = aws.Bool(true)

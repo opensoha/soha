@@ -44,11 +44,11 @@ func restrictDriverFilesystem() error {
 		Access_fs: handledFiles,
 		Scoped:    unix.LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | unix.LANDLOCK_SCOPE_SIGNAL,
 	}
-	fd, _, err := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
+	fd, _, err := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0) // #nosec G103 -- The syscall takes a pointer to the fixed Linux Landlock ruleset ABI.
 	if err != 0 {
 		return err
 	}
-	defer unix.Close(int(fd))
+	defer func() { _ = unix.Close(int(fd)) }()
 	if err := addFileRule(fd, ".", workAccess, false); err != nil {
 		return err
 	}
@@ -69,9 +69,9 @@ func addFileRule(ruleset uintptr, path string, access uint64, optional bool) err
 	if err != nil {
 		return err
 	}
-	defer unix.Close(fd)
-	attr := unix.LandlockPathBeneathAttr{Allowed_access: access, Parent_fd: int32(fd)}
-	if _, _, err := unix.Syscall6(unix.SYS_LANDLOCK_ADD_RULE, ruleset, unix.LANDLOCK_RULE_PATH_BENEATH, uintptr(unsafe.Pointer(&attr)), 0, 0, 0); err != 0 {
+	defer func() { _ = unix.Close(fd) }()
+	attr := unix.LandlockPathBeneathAttr{Allowed_access: access, Parent_fd: int32(fd)}                                                                       // #nosec G115 -- Linux file descriptors returned by open are signed 32-bit values.
+	if _, _, err := unix.Syscall6(unix.SYS_LANDLOCK_ADD_RULE, ruleset, unix.LANDLOCK_RULE_PATH_BENEATH, uintptr(unsafe.Pointer(&attr)), 0, 0, 0); err != 0 { // #nosec G103 -- The syscall takes a pointer to the fixed Linux path rule ABI.
 		return err
 	}
 	return nil

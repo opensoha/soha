@@ -117,15 +117,17 @@ func (u s3DriverUpload) putMultipart(ctx context.Context, body *driverUploadBody
 	}()
 
 	parts := make([]types.CompletedPart, 0)
+	var number int32 = 1
 	for part := first; len(part) > 0; {
 		if len(parts) >= maxDriverParts {
 			return "", driverError(storagedriver.CodeTooLarge)
 		}
-		completed, err := u.uploadPart(ctx, create.UploadId, int32(len(parts)+1), part)
+		completed, err := u.uploadPart(ctx, create.UploadId, number, part)
 		if err != nil {
 			return "", err
 		}
 		parts = append(parts, completed)
+		number++
 		if body.eof {
 			break
 		}

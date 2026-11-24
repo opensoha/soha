@@ -33,9 +33,10 @@ func (d *s3Driver) ListPrefix(ctx context.Context, req storagedriver.ListPrefixR
 	b := newS3DriverBinding(config)
 	defer b.http.CloseIdleConnections()
 	fullPrefix := b.config.Prefix + req.Prefix
+	limit := int32(req.Limit) // #nosec G115 -- Request validation above constrains the limit to the protocol's MaxPageSize.
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(b.config.Bucket), Prefix: aws.String(fullPrefix),
-		MaxKeys: aws.Int32(int32(req.Limit)), EncodingType: types.EncodingTypeUrl,
+		MaxKeys: aws.Int32(limit), EncodingType: types.EncodingTypeUrl,
 	}
 	if token != "" {
 		input.ContinuationToken = aws.String(token)
