@@ -8,6 +8,13 @@ export { appHostingKeys } from './keys'
 export { appHostingMutations, invalidateHostedAppChange } from './mutations'
 export { appHostingQueries } from './queries'
 export {
+  HostedAppRevisionLogs,
+  HostedAppRuntimeEnvironment,
+  HostedAppRuntimeUsage,
+  HostedAppSensitivePublisherConsent,
+  HostedAppVisitorAttributes,
+} from './runtime-controls'
+export {
   formatApprovalInvalidationReason,
   formatHostedAppBytes,
   hostedAppKindLabel,

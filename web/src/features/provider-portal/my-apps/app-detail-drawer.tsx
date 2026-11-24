@@ -5,6 +5,11 @@ import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import {
   AudienceSelector,
+  HostedAppRevisionLogs,
+  HostedAppRuntimeEnvironment,
+  HostedAppRuntimeUsage,
+  HostedAppSensitivePublisherConsent,
+  HostedAppVisitorAttributes,
   appHostingMutations,
   appHostingQueries,
   formatApprovalInvalidationReason,
@@ -20,13 +25,6 @@ import {
   type HostedAppRevision,
   type HostedAppVisibilityInput,
 } from '@/features/app-hosting'
-import {
-  HostedAppRevisionLogs,
-  HostedAppRuntimeEnvironment,
-  HostedAppRuntimeUsage,
-  HostedAppSensitivePublisherConsent,
-  HostedAppVisitorAttributes,
-} from '@/features/app-hosting/runtime-controls'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { CopyOutlined, ExportOutlined } from '@ant-design/icons'

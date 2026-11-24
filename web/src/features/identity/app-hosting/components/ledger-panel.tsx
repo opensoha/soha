@@ -18,7 +18,7 @@ import {
   HostedAppRevisionLogs,
   HostedAppRuntimeUsage,
   HostedAppVisitorAttributes,
-} from '@/features/app-hosting/runtime-controls'
+} from '@/features/app-hosting'
 import { useAuthStore } from '@/stores/auth-store'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
