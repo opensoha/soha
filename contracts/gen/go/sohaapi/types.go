@@ -797,6 +797,24 @@ func (e AppHostingOrganizationVisibilityPolicy) Valid() bool {
 	}
 }
 
+// Defines values for AppHostingQuotaOverrideScope.
+const (
+	AppHostingQuotaOverrideScopeRole AppHostingQuotaOverrideScope = "role"
+	AppHostingQuotaOverrideScopeTeam AppHostingQuotaOverrideScope = "team"
+)
+
+// Valid indicates whether the value is a known member of the AppHostingQuotaOverrideScope enum.
+func (e AppHostingQuotaOverrideScope) Valid() bool {
+	switch e {
+	case AppHostingQuotaOverrideScopeRole:
+		return true
+	case AppHostingQuotaOverrideScopeTeam:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApplicationDeliveryActionKind.
 const (
 	ApplicationDeliveryActionKindBuild       ApplicationDeliveryActionKind = "build"
@@ -12415,19 +12433,19 @@ func (e PersonalVMEnvironmentPolicyProvider) Valid() bool {
 
 // Defines values for PersonalWorkspaceRuntimeBrowserControlOwner.
 const (
-	Agent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
-	Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
-	User     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+	PersonalWorkspaceRuntimeBrowserControlOwnerAgent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+	PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+	PersonalWorkspaceRuntimeBrowserControlOwnerUser     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
 )
 
 // Valid indicates whether the value is a known member of the PersonalWorkspaceRuntimeBrowserControlOwner enum.
 func (e PersonalWorkspaceRuntimeBrowserControlOwner) Valid() bool {
 	switch e {
-	case Agent:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerAgent:
 		return true
-	case Released:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerReleased:
 		return true
-	case User:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerUser:
 		return true
 	default:
 		return false
@@ -18118,8 +18136,36 @@ type AppHostingGatewayTokenSecret struct {
 	Token     string    `json:"token"`
 }
 
+// AppHostingGovernance defines model for AppHostingGovernance.
+type AppHostingGovernance struct {
+	// DataCapacityWarningMiB Administrative alert threshold per managed application database in MiB.
+	DataCapacityWarningMiB int32                     `json:"dataCapacityWarningMiB"`
+	MaxDynamicAppsPerOwner int32                     `json:"maxDynamicAppsPerOwner"`
+	QuotaOverrides         []AppHostingQuotaOverride `json:"quotaOverrides"`
+	RuntimeLimits          AppHostingRuntimeLimits   `json:"runtimeLimits"`
+}
+
 // AppHostingOrganizationVisibilityPolicy defines model for AppHostingOrganizationVisibilityPolicy.
 type AppHostingOrganizationVisibilityPolicy string
+
+// AppHostingQuotaOverride defines model for AppHostingQuotaOverride.
+type AppHostingQuotaOverride struct {
+	ID             string                       `json:"id"`
+	MaxDynamicApps int32                        `json:"maxDynamicApps,omitempty"`
+	MaxStaticApps  int32                        `json:"maxStaticApps,omitempty"`
+	Scope          AppHostingQuotaOverrideScope `json:"scope"`
+}
+
+// AppHostingQuotaOverrideScope defines model for AppHostingQuotaOverride.Scope.
+type AppHostingQuotaOverrideScope string
+
+// AppHostingRuntimeLimits defines model for AppHostingRuntimeLimits.
+type AppHostingRuntimeLimits struct {
+	CPUMilli         int32 `json:"cpuMilli"`
+	MaxReplicas      int32 `json:"maxReplicas"`
+	MemoryMiB        int32 `json:"memoryMiB"`
+	ScaleDownSeconds int32 `json:"scaleDownSeconds"`
+}
 
 // AppHostingSettings defines model for AppHostingSettings.
 type AppHostingSettings struct {
@@ -18127,6 +18173,7 @@ type AppHostingSettings struct {
 	AppsDomain                   string                                 `json:"appsDomain"`
 	Enabled                      bool                                   `json:"enabled"`
 	GatewayTokenConfigured       bool                                   `json:"gatewayTokenConfigured"`
+	Governance                   *AppHostingGovernance                  `json:"governance,omitempty"`
 	MaxAppsPerOwner              int32                                  `json:"maxAppsPerOwner"`
 	MaxBundleCompressedBytes     int64                                  `json:"maxBundleCompressedBytes"`
 	MaxBundleFileCount           int32                                  `json:"maxBundleFileCount"`
@@ -18151,6 +18198,7 @@ type AppHostingSettingsUpdateRequest struct {
 	AllowOrganizationVisibility  *bool                                  `json:"allowOrganizationVisibility,omitempty"`
 	AppsDomain                   string                                 `json:"appsDomain,omitempty"`
 	Enabled                      bool                                   `json:"enabled"`
+	Governance                   *AppHostingGovernance                  `json:"governance,omitempty"`
 	MaxAppsPerOwner              int32                                  `json:"maxAppsPerOwner,omitempty"`
 	MaxBundleCompressedBytes     int64                                  `json:"maxBundleCompressedBytes,omitempty"`
 	MaxBundleFileCount           int32                                  `json:"maxBundleFileCount,omitempty"`
@@ -53858,13 +53906,13 @@ const Container PersonalEnvironmentTemplateBackend = "container"
 const VM PersonalEnvironmentTemplateBackend = "vm"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerAgent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+const Agent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+const Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerUser PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+const User PersonalWorkspaceRuntimeBrowserControlOwner = "user"
 
 // Retained for Go SDK source compatibility.
 const Active ListAIGatewayRelayUpstreamsParamsStatus = "active"

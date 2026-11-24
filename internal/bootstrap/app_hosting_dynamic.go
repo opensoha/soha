@@ -11,11 +11,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apphosting "github.com/opensoha/soha/internal/application/apphosting"
+	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	domain "github.com/opensoha/soha/internal/domain/apphosting"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/infrastructure/hostedappdata"
@@ -68,7 +70,9 @@ func assembleHostedDynamic(ctx context.Context, config *rest.Config, coreDB cfgp
 	if err != nil {
 		return nil, err
 	}
-	builder, err := hostedbuild.New(kube, buildCfg)
+	builder, err := hostedbuild.New(kube, buildCfg, hostedbuild.WithRegistryImageCleanup(
+		os.Getenv("SOHA_APP_HOSTING_REGISTRY_CLEANUP_AUTHORIZATION"),
+	))
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +142,18 @@ func verifyHostedDataPool(ctx context.Context, dsn string, coreDB cfgpkg.Databas
 	return nil
 }
 
+func (h *hostedDynamic) IsManagedImage(revisionID, imageRef string) bool {
+	return h.builder.IsManagedImage(revisionID, imageRef)
+}
+
+func (h *hostedDynamic) ManagedImageForCleanup(ctx context.Context, revisionID string) (string, error) {
+	return h.builder.ManagedImageForCleanup(ctx, revisionID)
+}
+
+func (h *hostedDynamic) DeleteManagedImage(ctx context.Context, revisionID, imageRef string) error {
+	return h.builder.DeleteManagedImage(ctx, revisionID, imageRef)
+}
+
 func (h *hostedDynamic) StartBuild(ctx context.Context, rev domain.Revision) error {
 	url, err := h.objects.PresignHostedSource(ctx, rev.StorageIntegrationID, rev.SourceKey)
 	if err != nil {
@@ -155,7 +171,7 @@ func (h *hostedDynamic) BuildResult(ctx context.Context, rev domain.Revision) (s
 }
 
 func (h *hostedDynamic) PrepareRuntime(ctx context.Context, rev domain.Revision) error {
-	spec := hostedruntime.Spec{RevisionID: rev.ID, Image: rev.ImageRef}
+	spec := hostedruntime.Spec{RevisionID: rev.ID, Image: rev.ImageRef, Limits: rev.RuntimeLimits}
 	data, err := apphosting.OpenRuntimeEnvironment(h.dataKey, rev)
 	if err != nil {
 		return errors.Join(apphosting.ErrDynamicRevisionFailed, err)
@@ -376,16 +392,32 @@ func hostedRuntimeSecretMatches(secret *corev1.Secret, rev domain.Revision, data
 		maps.EqualFunc(secret.Data, data, bytes.Equal)
 }
 
-func startHostedDynamicWorker(ctx context.Context, service *apphosting.Service, logger *zap.Logger) <-chan struct{} {
-	if !service.DynamicEnabled() {
+func startHostedDynamicWorker(ctx context.Context, service *apphosting.Service, monitoring *appmonitoring.Service, logger *zap.Logger) <-chan struct{} {
+	if !service.DynamicEnabled() && !service.StaticCleanupEnabled() {
 		return nil
 	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		service.RunDynamic(ctx, func(_ error) {
-			logger.Named("app-hosting").Warn("dynamic revision reconciliation will retry")
+		var workers sync.WaitGroup
+		workers.Go(func() {
+			service.RunDynamic(ctx, func(_ error) {
+				logger.Named("app-hosting").Warn("dynamic revision reconciliation will retry")
+			})
 		})
+		workers.Go(func() {
+			service.RunStaticArtifactCleanup(ctx, func(_ error) {
+				logger.Named("app-hosting").Warn("static artifact cleanup will retry")
+			})
+		})
+		if monitoring != nil {
+			workers.Go(func() {
+				service.RunDataCapacityWarnings(ctx, monitoring, func(_ error) {
+					logger.Named("app-hosting").Warn("app data capacity checks will retry")
+				})
+			})
+		}
+		workers.Wait()
 	}()
 	return done
 }

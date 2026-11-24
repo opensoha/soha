@@ -32,6 +32,13 @@ import type {
   AppHostingOrganizationVisibilityPolicy,
   AppHostingSettings,
 } from '../types'
+import {
+  buildGovernanceDraft,
+  buildGovernancePayload,
+  GovernanceSettingsFields,
+  type GovernanceDraft,
+  governanceDraftError,
+} from './governance-fields'
 
 const { Text } = Typography
 
@@ -47,6 +54,7 @@ interface SettingsFormDraft {
   maxBundleFileCount: number
   maxAppsPerOwner: number
   retainedRevisionsPerApp: number
+  governance: GovernanceDraft
 }
 
 const POLICY_OPTIONS: Array<{
@@ -85,6 +93,7 @@ function buildDraftFromSettings(settings: AppHostingSettings): SettingsFormDraft
     maxBundleFileCount: settings.maxBundleFileCount || 2000,
     maxAppsPerOwner: settings.maxAppsPerOwner || 20,
     retainedRevisionsPerApp: settings.retainedRevisionsPerApp || 10,
+    governance: buildGovernanceDraft(settings),
   }
 }
 
@@ -205,14 +214,24 @@ export function GovernanceSettingsPanel({
   const policyChanged = Boolean(
     draft && visibleSettings && draft.organizationVisibilityPolicy !== savedPolicy,
   )
+  const governanceError = dirty && draft ? governanceDraftError(draft.governance) : undefined
 
   const updateField = <K extends keyof SettingsFormDraft>(key: K, value: SettingsFormDraft[K]) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current))
     setDirty(true)
   }
 
+  const updateGovernance = (governance: GovernanceDraft) => {
+    updateField('governance', governance)
+  }
+
   const handleSaveSettings = () => {
     if (!draft || !canManage || operationBlocked) return
+    const error = governanceDraftError(draft.governance)
+    if (error) {
+      message.error(error)
+      return
+    }
     updateSettingsMutation.mutate(
       {
         enabled: draft.enabled,
@@ -227,6 +246,7 @@ export function GovernanceSettingsPanel({
         maxBundleFileCount: Math.max(1, Math.round(draft.maxBundleFileCount)),
         maxAppsPerOwner: Math.max(1, Math.round(draft.maxAppsPerOwner)),
         retainedRevisionsPerApp: Math.max(1, Math.round(draft.retainedRevisionsPerApp)),
+        governance: buildGovernancePayload(draft.governance),
       },
       {
         onSuccess: (updated) => {
@@ -468,9 +488,9 @@ export function GovernanceSettingsPanel({
                   />
                 </Form.Item>
 
-                <Form.Item label="每作者应用配额上限">
+                <Form.Item label="每作者静态应用配额上限">
                   <InputNumber
-                    aria-label="每作者应用配额上限"
+                    aria-label="每作者静态应用配额上限"
                     disabled={!canManage || operationBlocked}
                     min={1}
                     max={10000}
@@ -494,6 +514,13 @@ export function GovernanceSettingsPanel({
                   />
                 </Form.Item>
               </div>
+
+              <GovernanceSettingsFields
+                disabled={!canManage || operationBlocked}
+                draft={draft.governance}
+                error={governanceError}
+                onChange={updateGovernance}
+              />
 
               <div className="soha-identity-app-hosting-settings-footer">
                 <Text type="secondary" className="soha-identity-app-hosting-subtext">

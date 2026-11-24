@@ -73,6 +73,10 @@ ENTRYPOINT ["python", "app.py"]
 
 func (b *Builder) job(revisionID, template, dockerfile, sourcePath string) *batchv1.Job {
 	name := jobName(revisionID)
+	repository := b.cfg.RegistryRepository
+	if b.registryCleanup != nil {
+		repository = b.managedImageRepository(revisionID)
+	}
 	labels := map[string]string{managedByLabel: managedBy, revisionLabel: revisionID}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -81,7 +85,7 @@ func (b *Builder) job(revisionID, template, dockerfile, sourcePath string) *batc
 			Labels:    labels,
 			Annotations: map[string]string{
 				inputAnnotation: buildInputHash(b.cfg, template, dockerfile, sourcePath),
-				repoAnnotation:  b.cfg.RegistryRepository,
+				repoAnnotation:  repository,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -92,13 +96,13 @@ func (b *Builder) job(revisionID, template, dockerfile, sourcePath string) *batc
 			ActiveDeadlineSeconds: new(int64(600)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec:       b.pod(name, template, dockerfile),
+				Spec:       b.pod(name, template, dockerfile, repository),
 			},
 		},
 	}
 }
 
-func (b *Builder) pod(name, template, dockerfile string) corev1.PodSpec {
+func (b *Builder) pod(name, template, dockerfile, repository string) corev1.PodSpec {
 	pod := corev1.PodSpec{
 		AutomountServiceAccountToken:  new(false),
 		EnableServiceLinks:            new(false),
@@ -119,7 +123,7 @@ func (b *Builder) pod(name, template, dockerfile string) corev1.PodSpec {
 			secretVolume("buildkit-tls", b.cfg.BuildKitTLSSecret, "ca.crt", "tls.crt", "tls.key"),
 		},
 		InitContainers: []corev1.Container{b.sourceContainer(template)},
-		Containers:     []corev1.Container{b.buildContainer(name, dockerfile)},
+		Containers:     []corev1.Container{b.buildContainer(name, dockerfile, repository)},
 	}
 	if b.cfg.RuntimeClassName != "" {
 		pod.RuntimeClassName = &b.cfg.RuntimeClassName
@@ -139,10 +143,10 @@ func (b *Builder) sourceContainer(template string) corev1.Container {
 	return container
 }
 
-func (b *Builder) buildContainer(name, dockerfile string) corev1.Container {
+func (b *Builder) buildContainer(name, dockerfile, repository string) corev1.Container {
 	container := b.container(buildContainer)
 	container.Command = []string{"/bin/sh", "-eu", "-c"}
-	container.Args = []string{buildScript, buildContainer, dockerfile, b.cfg.BuildKitAddress, b.cfg.RegistryRepository + ":" + name}
+	container.Args = []string{buildScript, buildContainer, dockerfile, b.cfg.BuildKitAddress, repository + ":" + name}
 	container.Env = []corev1.EnvVar{
 		{Name: "DOCKER_CONFIG", Value: "/registry"},
 		{Name: "HOME", Value: "/scratch"},

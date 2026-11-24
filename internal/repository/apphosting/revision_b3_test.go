@@ -107,6 +107,9 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 	applyMigration("0156_app_hosting_b3.sql")
 	applyMigration("0157_app_hosting_runtime_controls.sql")
 	applyMigration("0158_app_hosting_publication_visibility.sql")
+	applyMigration("0159_app_hosting_static_artifact_cleanup.sql")
+	applyMigration("0160_app_hosting_managed_images.sql")
+	applyMigration("0161_app_hosting_governance.sql")
 	repo, err := NewPostgresRepository(db)
 	if err != nil {
 		t.Fatal(err)
@@ -115,8 +118,11 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 	if err != nil || legacy.Kind != sohaapi.HostedAppKindStatic || legacy.BuildPhase != "" || legacy.ImageRef != "" || legacy.Database || legacy.DataSchema != 0 || legacy.RuntimeEnvironment != nil || legacy.PublishVisibility != nil {
 		t.Fatalf("legacy static revision after migration = %#v, %v", legacy, err)
 	}
+	t.Run("governance", func(t *testing.T) { testPostgresGovernance(t, repo) })
 	testDynamicRevisionLifecycle(t, repo)
 	t.Run("publication-visibility", func(t *testing.T) { testPostgresPublicationVisibility(t, repo) })
+	t.Run("static-artifact-cleanup", func(t *testing.T) { testPostgresStaticArtifactCleanup(t, repo) })
+	t.Run("managed-image-cleanup", func(t *testing.T) { testPostgresManagedImageCleanup(t, repo) })
 	t.Run("deleted-runtime-cleanup", func(t *testing.T) { testDeletedDynamicRuntimeCleanup(t, repo) })
 	t.Run("runtime-config", func(t *testing.T) { testRuntimeConfig(t, repo) })
 	t.Run("runtime-authority-with-one-connection", func(t *testing.T) {

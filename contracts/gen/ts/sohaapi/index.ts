@@ -36228,7 +36228,38 @@ export interface components {
         };
         /** @enum {string} */
         AppHostingOrganizationVisibilityPolicy: "allow_direct" | "require_approval" | "disabled";
+        AppHostingQuotaOverride: {
+            /** @enum {string} */
+            scope: "team" | "role";
+            id: string;
+            /** Format: int32 */
+            maxStaticApps?: number;
+            /** Format: int32 */
+            maxDynamicApps?: number;
+        };
+        AppHostingRuntimeLimits: {
+            /** Format: int32 */
+            cpuMilli: number;
+            /** Format: int32 */
+            memoryMiB: number;
+            /** Format: int32 */
+            maxReplicas: number;
+            /** Format: int32 */
+            scaleDownSeconds: number;
+        };
+        AppHostingGovernance: {
+            /** Format: int32 */
+            maxDynamicAppsPerOwner: number;
+            quotaOverrides: components["schemas"]["AppHostingQuotaOverride"][];
+            runtimeLimits: components["schemas"]["AppHostingRuntimeLimits"];
+            /**
+             * Format: int32
+             * @description Administrative alert threshold per managed application database in MiB.
+             */
+            dataCapacityWarningMiB: number;
+        };
         AppHostingSettings: {
+            governance?: components["schemas"]["AppHostingGovernance"];
             enabled: boolean;
             appsDomain: string;
             publicScheme: string;
@@ -36257,6 +36288,7 @@ export interface components {
             data: components["schemas"]["AppHostingSettings"];
         };
         AppHostingSettingsUpdateRequest: {
+            governance?: components["schemas"]["AppHostingGovernance"];
             enabled: boolean;
             appsDomain?: string;
             publicScheme?: string;
@@ -39311,6 +39343,9 @@ export type NetworkProxyIngressCheckInput = components['schemas']['NetworkProxyI
 export type NetworkProxyIngressCheckResult = components['schemas']['NetworkProxyIngressCheckResult'];
 export type NetworkProxyDirectProjection = components['schemas']['NetworkProxyDirectProjection'];
 export type AppHostingOrganizationVisibilityPolicy = components['schemas']['AppHostingOrganizationVisibilityPolicy'];
+export type AppHostingQuotaOverride = components['schemas']['AppHostingQuotaOverride'];
+export type AppHostingRuntimeLimits = components['schemas']['AppHostingRuntimeLimits'];
+export type AppHostingGovernance = components['schemas']['AppHostingGovernance'];
 export type AppHostingSettings = components['schemas']['AppHostingSettings'];
 export type AppHostingSettingsResponse = components['schemas']['AppHostingSettingsResponse'];
 export type AppHostingSettingsUpdateRequest = components['schemas']['AppHostingSettingsUpdateRequest'];

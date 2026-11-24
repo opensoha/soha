@@ -557,6 +557,8 @@ func (r *PostgresRepository) DeleteApp(ctx context.Context, appID string, verify
 			if err := enqueueDeletedDynamicRevisionsTx(tx, app.ID); err != nil {
 				return err
 			}
+		} else if err := enqueueDeletedStaticRevisionsTx(tx, revs, time.Now().UTC()); err != nil {
+			return err
 		}
 		if err := tx.Exec(`DELETE FROM public.hosted_apps WHERE id = ?`, app.ID).Error; err != nil {
 			return err

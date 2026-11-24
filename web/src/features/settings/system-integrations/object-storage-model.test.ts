@@ -3,6 +3,7 @@ import type { SystemIntegration } from './types'
 import {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  isValidS3StorageEndpoint,
   s3StorageFormValues,
   updateS3StorageIntegration,
 } from './object-storage-model'
@@ -46,9 +47,9 @@ describe('S3 object storage integration model', () => {
         { key: 'bucket', value: 'soha-software' },
       ]),
     )
-    expect(input.configuration?.map((field) => field.key)).not.toEqual(
-      expect.arrayContaining(['preset', 'access_key_id', 'secret_access_key']),
-    )
+    for (const key of ['preset', 'access_key_id', 'secret_access_key']) {
+      expect(input.configuration?.map((field) => field.key)).not.toContain(key)
+    }
     expect(input.credentials).toEqual([
       { key: 'access_key_id', value: 'access' },
       { key: 'secret_access_key', value: 'secret' },
@@ -68,6 +69,46 @@ describe('S3 object storage integration model', () => {
         configuration: [{ key: 'endpoint', value: 'https://cos.ap-shanghai.myqcloud.com' }],
       }),
     ).toBe('cos')
+  })
+
+  it.each([
+    {
+      preset: 'oss',
+      endpoint: 'https://s3.oss-ap-southeast-1.aliyuncs.com',
+      region: 'ap-southeast-1',
+      bucket: 'oss-apps',
+    },
+    {
+      preset: 'cos',
+      endpoint: 'https://cos.ap-shanghai.myqcloud.com',
+      region: 'ap-shanghai',
+      bucket: 'cos-apps-1250000000',
+    },
+  ] as const)('stores $preset using providerType s3 and only connection fields', (values) => {
+    const input = createS3StorageIntegration({
+      ...s3StorageFormValues(),
+      ...values,
+      pathStyle: false,
+    })
+    expect(input).toMatchObject({ category: 'storage', providerType: 's3' })
+    expect(input.configuration).toEqual(
+      expect.arrayContaining([
+        { key: 'endpoint', value: values.endpoint },
+        { key: 'region', value: values.region },
+        { key: 'bucket', value: values.bucket },
+        { key: 'path_style', value: 'false' },
+      ]),
+    )
+    expect(input.configuration?.some(({ key }) => key === 'preset')).toBe(false)
+  })
+
+  it('allows an omitted optional endpoint but rejects empty required or malformed explicit endpoints', () => {
+    expect(isValidS3StorageEndpoint('', false)).toBe(true)
+    expect(isValidS3StorageEndpoint(undefined, true)).toBe(false)
+    expect(isValidS3StorageEndpoint('   ', true)).toBe(false)
+    expect(isValidS3StorageEndpoint('///', false)).toBe(false)
+    expect(isValidS3StorageEndpoint('https:///', true)).toBe(false)
+    expect(isValidS3StorageEndpoint(' https://objects.example.test/ ', true)).toBe(true)
   })
 
   it('persists a bucket-bound endpoint through S3 configuration', () => {

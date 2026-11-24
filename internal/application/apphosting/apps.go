@@ -149,10 +149,7 @@ func (s *Service) createAppWithReason(ctx context.Context, principal domainident
 	if err != nil {
 		return sohaapi.HostedApp{}, false, err
 	}
-	maxApps := settings.MaxAppsPerOwner
-	if candidate.Kind == sohaapi.HostedAppKindDynamic {
-		maxApps = min(maxApps, 5)
-	}
+	maxApps := settings.OwnerQuota(candidate.Kind, principal.Teams, principal.Roles)
 
 	for attempt := 0; attempt < 5; attempt++ {
 		dnsLabel, err := domainapphosting.AllocateDNSLabel(req.Slug, candidate.Name)

@@ -46,6 +46,7 @@ type Settings struct {
 	MaxBundleUncompressedBytes   int64
 	MaxBundleFileCount           int32
 	MaxAppsPerOwner              int32
+	Governance                   *sohaapi.AppHostingGovernance
 	RetainedRevisionsPerApp      int32
 	GatewayTokenSHA256           string
 	GatewayTokenRotatedAt        *time.Time
@@ -143,7 +144,10 @@ func (s Settings) Validate() error {
 	if len(s.StorageIntegrationID) > 128 {
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_storage_integration", "storageIntegrationId exceeds maximum length", "对象存储集成标识过长")
 	}
-	return s.validateGovernanceQuotas()
+	if err := s.validateGovernanceQuotas(); err != nil {
+		return err
+	}
+	return s.validateGovernance()
 }
 
 func (s Settings) validateGovernanceQuotas() error {
@@ -166,7 +170,9 @@ func (s Settings) ToAPI(hasFallbackGatewayToken bool) sohaapi.AppHostingSettings
 		copied := normalized.UpdatedAt.UTC()
 		updatedAt = &copied
 	}
+	governance := normalized.EffectiveGovernance()
 	return sohaapi.AppHostingSettings{
+		Governance:                   &governance,
 		Enabled:                      normalized.Enabled,
 		AppsDomain:                   normalized.AppsDomain,
 		PublicScheme:                 normalized.PublicScheme,
@@ -300,8 +306,9 @@ type Revision struct {
 	ClaimID              string
 	NextCheckAt          time.Time
 	ClaimExpiresAt       time.Time
-	RuntimeEnvironment   map[string]string   `json:"-"`
-	PublishVisibility    *RevisionVisibility `json:"-"`
+	RuntimeLimits        *sohaapi.AppHostingRuntimeLimits `json:"-"`
+	RuntimeEnvironment   map[string]string                `json:"-"`
+	PublishVisibility    *RevisionVisibility              `json:"-"`
 	// Older revisions have no record of the author's separate visibility request.
 	PublicationVisibilityRecorded bool `json:"-"`
 }

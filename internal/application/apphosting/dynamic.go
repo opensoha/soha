@@ -87,7 +87,7 @@ func (s *Service) ReconcileDynamicRevision(ctx context.Context) error {
 		return nil
 	}
 	repo := s.repo.(dynamicRepository)
-	return errors.Join(s.reconcileDeletedDynamicRevision(ctx, repo), s.reconcileDynamicRevision(ctx, repo))
+	return errors.Join(s.reconcileDeletedDynamicRevision(ctx, repo), s.reconcileDynamicRevision(ctx, repo), s.reconcileManagedImageCleanup(ctx))
 }
 
 func (s *Service) reconcileDeletedDynamicRevision(ctx context.Context, repo deletedDynamicRepository) error {
@@ -102,6 +102,9 @@ func (s *Service) reconcileDeletedDynamicRevision(ctx context.Context, repo dele
 	}
 	if rev.SourceKey == "" && rev.StorageIntegrationID != "" {
 		rev.SourceKey = dynamicSourceKey(rev)
+	}
+	if err := s.recordTerminalManagedImage(step, rev, true); err != nil {
+		return err
 	}
 	if err := s.cleanupDynamicRevision(step, rev); err != nil {
 		return fmt.Errorf("clean up deleted hosted app %s revision %s: %w", rev.AppID, rev.ID, err)
@@ -125,6 +128,10 @@ func (s *Service) reconcileDynamicRevision(ctx context.Context, repo dynamicRepo
 	err = s.reconcileDynamicStep(step, repo, rev)
 	if errors.Is(err, apperrors.ErrNotFound) {
 		if _, readErr := s.repo.GetRevision(step, rev.AppID, rev.ID); errors.Is(readErr, apperrors.ErrNotFound) {
+			if _, _, managed := s.managedImageCleanup(); managed {
+				// The durable deletion worker captures any verified build result before removing the Job.
+				return nil
+			}
 			return s.cleanupDynamicRevision(step, rev)
 		}
 	}
@@ -200,6 +207,9 @@ func (s *Service) observeDynamicBuild(ctx context.Context, repo dynamicRepositor
 	if !ready {
 		return repo.AdvanceDynamicRevision(ctx, rev.ID, rev.ClaimID, "building", "", s.now().Add(3*time.Second))
 	}
+	if repository, backend, supported := s.managedImageCleanup(); supported && backend.IsManagedImage(rev.ID, image) {
+		return repository.AdvanceManagedDynamicBuild(ctx, rev.ID, rev.ClaimID, image, s.now())
+	}
 	return repo.AdvanceDynamicRevision(ctx, rev.ID, rev.ClaimID, "starting", image, s.now())
 }
 
@@ -229,7 +239,7 @@ func (s *Service) observeDynamicRuntime(ctx context.Context, repo dynamicReposit
 		return err
 	}
 	if !ready {
-		return repo.AdvanceDynamicRevision(ctx, rev.ID, rev.ClaimID, "starting", rev.ImageRef, s.now().Add(3*time.Second))
+		return repo.AdvanceDynamicRevision(ctx, rev.ID, rev.ClaimID, "starting", "", s.now().Add(3*time.Second))
 	}
 	grantAttempted := false
 	activated, err := s.repo.ActivateRevision(ctx, ActivateRevisionInput{
@@ -269,6 +279,9 @@ func (s *Service) restoreCandidateAccess(ctx context.Context, rev domain.Revisio
 }
 
 func (s *Service) completeDynamicCleanup(ctx context.Context, repo dynamicRepository, rev domain.Revision) error {
+	if err := s.recordTerminalManagedImage(ctx, rev, false); err != nil {
+		return err
+	}
 	if err := s.cleanupDynamicRevision(ctx, rev); err != nil {
 		return err
 	}

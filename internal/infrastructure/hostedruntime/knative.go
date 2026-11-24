@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/distribution/reference"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -42,6 +44,7 @@ type Spec struct {
 	RevisionID        string
 	Image             string
 	EnvironmentSecret string
+	Limits            *sohaapi.AppHostingRuntimeLimits
 }
 
 // Runtime owns Knative Services in one configured namespace.
@@ -228,6 +231,13 @@ func (r *Runtime) desiredService(spec Spec) (*unstructured.Unstructured, error) 
 		revisionIDLabel: spec.RevisionID,
 		visibilityLabel: clusterLocal,
 	}
+	cpu, memory, replicas, delay := "500m", "512Mi", "2", "10m"
+	if limits := spec.Limits; limits != nil {
+		cpu = strconv.Itoa(int(limits.CPUMilli)) + "m"
+		memory = strconv.Itoa(int(limits.MemoryMiB)) + "Mi"
+		replicas = strconv.Itoa(int(limits.MaxReplicas))
+		delay = strconv.Itoa(int(limits.ScaleDownSeconds)) + "s"
+	}
 	container := map[string]any{
 		"name":            "app",
 		"image":           image,
@@ -259,7 +269,7 @@ func (r *Runtime) desiredService(spec Spec) (*unstructured.Unstructured, error) 
 		},
 		"resources": map[string]any{
 			"requests": map[string]any{"cpu": "50m", "memory": "64Mi"},
-			"limits":   map[string]any{"cpu": "500m", "memory": "512Mi"},
+			"limits":   map[string]any{"cpu": cpu, "memory": memory},
 		},
 		"terminationMessagePath":   "/dev/termination-log",
 		"terminationMessagePolicy": "File",
@@ -286,8 +296,8 @@ func (r *Runtime) desiredService(spec Spec) (*unstructured.Unstructured, error) 
 					"labels": labels,
 					"annotations": map[string]any{
 						"autoscaling.knative.dev/min-scale":        "0",
-						"autoscaling.knative.dev/max-scale":        "2",
-						"autoscaling.knative.dev/scale-down-delay": "10m",
+						"autoscaling.knative.dev/max-scale":        replicas,
+						"autoscaling.knative.dev/scale-down-delay": delay,
 					},
 				},
 				"spec": map[string]any{

@@ -122,8 +122,10 @@ async function renderColleagueRoutes(initialEntry = '/portal/colleague-works') {
 
 describe('Portal Colleague Works pages', () => {
   it('supports unified search, author cards with department tags, author drill-down, and safe links', async () => {
+    let authorRevoked = false
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('authorUserId=usr-alice-fin')) {
+        if (authorRevoked) return { data: { items: [], authors: [], myAppsCount: 2, total: 0 } }
         return {
           data: {
             items: [
@@ -254,6 +256,15 @@ describe('Portal Colleague Works pages', () => {
     expect(container.textContent).toContain('王敏公开的作品')
     expect(container.textContent).toContain('当前对您开放 1 个在线作品')
 
+    authorRevoked = true
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="刷新同事作品"]')?.click()
+    })
+    await flushAsync()
+    expect(container.textContent).not.toContain('王敏公开的作品')
+    expect(container.textContent).not.toContain('当前对您开放 1 个在线作品')
+    expect(container.textContent).not.toContain('财务月度核销表')
+
     const backButton = Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('返回全部同事作品'),
     )
@@ -290,5 +301,75 @@ describe('Portal Colleague Works pages', () => {
       b.textContent?.includes('清空筛选条件'),
     )
     expect(clearBtn).toBeDefined()
+  })
+
+  it('paginates with offset, resets on search, and recovers an out-of-range page', async () => {
+    let total = 130
+    apiMocks.get.mockImplementation(async () => ({
+      data: {
+        items:
+          total > 0
+            ? [
+                {
+                  id: `app-${total}`,
+                  name: '分页作品',
+                  description: '',
+                  kind: 'static',
+                  dnsLabel: 'paged-app',
+                  host: 'paged-app.apps.soha.internal',
+                  url: 'https://paged-app.apps.soha.internal',
+                  author: {
+                    userId: 'usr-alice-fin',
+                    displayName: '王敏',
+                    teamNames: ['财务部'],
+                  },
+                  updatedAt: '2026-11-21T03:00:00Z',
+                },
+              ]
+            : [],
+        authors: [],
+        myAppsCount: 0,
+        total,
+      },
+    }))
+
+    const container = await renderColleagueRoutes()
+    expect(apiMocks.get).toHaveBeenCalledWith('/app-hosting/portal/apps?limit=60')
+
+    await act(async () => {
+      container.querySelector<HTMLElement>('.ant-pagination-item-2')?.click()
+    })
+    await flushAsync()
+    expect(apiMocks.get).toHaveBeenCalledWith('/app-hosting/portal/apps?limit=60&offset=60')
+
+    const searchInput = container.querySelector<HTMLInputElement>('input[aria-label="搜索同事作品"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        searchInput,
+        '王敏',
+      )
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushAsync()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/app-hosting/portal/apps?query=%E7%8E%8B%E6%95%8F&limit=60',
+    )
+
+    await act(async () => {
+      container.querySelector<HTMLElement>('.ant-pagination-item-3')?.click()
+    })
+    await flushAsync()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/app-hosting/portal/apps?query=%E7%8E%8B%E6%95%8F&limit=60&offset=120',
+    )
+
+    total = 61
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="刷新同事作品"]')?.click()
+    })
+    await flushAsync()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/app-hosting/portal/apps?query=%E7%8E%8B%E6%95%8F&limit=60&offset=60',
+    )
   })
 })

@@ -27,6 +27,7 @@ type MemoryRepository struct {
 	appIDByDNS          map[string]string
 	revisions           map[string][]domainapphosting.Revision
 	deletedRuntimeWork  map[string]domainapphosting.Revision
+	staticCleanup       map[string]domainapphosting.Revision
 	authTickets         map[string]domainapphosting.AuthTicket
 	rollbackIdempotency map[string]domainapphosting.RollbackIdempotencyRecord
 	approvals           map[string]domainapphosting.VisibilityApproval
@@ -40,6 +41,7 @@ func NewMemoryRepository() *MemoryRepository {
 		appIDByDNS:          make(map[string]string),
 		revisions:           make(map[string][]domainapphosting.Revision),
 		deletedRuntimeWork:  make(map[string]domainapphosting.Revision),
+		staticCleanup:       make(map[string]domainapphosting.Revision),
 		authTickets:         make(map[string]domainapphosting.AuthTicket),
 		rollbackIdempotency: make(map[string]domainapphosting.RollbackIdempotencyRecord),
 		approvals:           make(map[string]domainapphosting.VisibilityApproval),
@@ -281,13 +283,8 @@ func (r *MemoryRepository) FailRevision(_ context.Context, appID, revisionID, st
 
 	list := r.revisions[appID]
 	for i := range list {
-		if list[i].ID == revisionID {
-			if list[i].Kind == sohaapi.HostedAppKindDynamic && list[i].Status != sohaapi.HostedAppRevisionStatusUploading {
-				return apperrors.ErrNotFound
-			}
-			list[i].Status = sohaapi.HostedAppRevisionStatusFailed
-			list[i].FailureStage = stage
-			list[i].FailureReason = truncateString(reason, 1024)
+		if list[i].ID == revisionID && list[i].Status == sohaapi.HostedAppRevisionStatusUploading {
+			r.markRevisionFailedLocked(&list[i], stage, reason)
 			return nil
 		}
 	}
@@ -319,13 +316,7 @@ func (r *MemoryRepository) ActivateRevision(ctx context.Context, input appapphos
 		failureReason, err = revisionSuperseded()
 	}
 	if err != nil {
-		rev.Status = sohaapi.HostedAppRevisionStatusFailed
-		rev.FailureStage = "activate"
-		rev.FailureReason = failureReason
-		clearDynamicRevisionWork(rev)
-		if dynamicCleanupStatus(*rev) {
-			rev.NextCheckAt = input.Now.UTC()
-		}
+		r.failRejectedRevisionActivationLocked(rev, failureReason, input.Now.UTC())
 		return appapphosting.ActivateRevisionOutput{}, err
 	}
 	if input.BeforeActivate != nil {
@@ -369,6 +360,9 @@ func (r *MemoryRepository) ActivateRevision(ctx context.Context, input appapphos
 	}
 
 	evicted := evictExcessMemoryRevisions(list, app.ActiveRevisionID, input.RetainedRevisionsMax, nowUTC)
+	for _, item := range evicted {
+		r.queueStaticArtifactCleanupLocked(item)
+	}
 	return appapphosting.ActivateRevisionOutput{
 		App:              cloneApp(app),
 		Revision:         cloneRevision(*rev),
@@ -711,6 +705,10 @@ func findRevisionIndex(list []domainapphosting.Revision, id string) int {
 
 func cloneSettings(s domainapphosting.Settings) domainapphosting.Settings {
 	out := s
+	if s.Governance != nil {
+		governance := s.EffectiveGovernance()
+		out.Governance = &governance
+	}
 	if s.GatewayTokenRotatedAt != nil {
 		t := s.GatewayTokenRotatedAt.UTC()
 		out.GatewayTokenRotatedAt = &t
@@ -733,6 +731,10 @@ func cloneRevision(r domainapphosting.Revision) domainapphosting.Revision {
 	out := r
 	out.Files = slices.Clone(r.Files)
 	out.RuntimeEnvironment = maps.Clone(r.RuntimeEnvironment)
+	if r.RuntimeLimits != nil {
+		limits := *r.RuntimeLimits
+		out.RuntimeLimits = &limits
+	}
 	if r.PublishVisibility != nil {
 		visibility := *r.PublishVisibility
 		visibility.Scope = domainapphosting.CloneVisibilityScope(visibility.Scope)

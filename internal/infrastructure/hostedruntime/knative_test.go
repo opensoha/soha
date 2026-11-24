@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -302,5 +304,28 @@ func TestDeleteRejectsForeignService(t *testing.T) {
 	}
 	if err := adapter.Delete(t.Context(), testRevision); err == nil {
 		t.Fatal("foreign service was deleted")
+	}
+}
+
+func TestKnativeUsesRevisionRuntimeLimits(t *testing.T) {
+	adapter, err := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), "team-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := adapter.desiredService(Spec{
+		RevisionID: testRevision, Image: testImage,
+		Limits: &sohaapi.AppHostingRuntimeLimits{CPUMilli: 950, MemoryMiB: 768, MaxReplicas: 3, ScaleDownSeconds: 120},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	annotations, _, _ := unstructured.NestedStringMap(service.Object, "spec", "template", "metadata", "annotations")
+	if annotations["autoscaling.knative.dev/max-scale"] != "3" || annotations["autoscaling.knative.dev/scale-down-delay"] != "120s" {
+		t.Fatalf("unexpected autoscaling limits: %v", annotations)
+	}
+	containers, _, _ := unstructured.NestedSlice(service.Object, "spec", "template", "spec", "containers")
+	limits, _, _ := unstructured.NestedStringMap(containers[0].(map[string]any), "resources", "limits")
+	if limits["cpu"] != "950m" || limits["memory"] != "768Mi" {
+		t.Fatalf("unexpected container limits: %v", limits)
 	}
 }

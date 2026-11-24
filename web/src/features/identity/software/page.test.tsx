@@ -299,6 +299,45 @@ describe('SoftwareLibraryPage', () => {
     )
   })
 
+  it.each([
+    ['阿里云 OSS（S3 兼容）', 'https://s3.oss-ap-southeast-1.aliyuncs.com', '例如 ap-southeast-1'],
+    ['腾讯云 COS（S3 兼容）', 'https://cos.ap-shanghai.myqcloud.com', '包含 APPID'],
+  ])(
+    'offers %s without a plugin and requires an explicit endpoint',
+    async (label, endpoint, hint) => {
+      const container = await renderPage()
+      await openObjectStorageDrawer(container)
+      const configure = Array.from(document.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('新增存储'),
+      )
+      await act(async () => configure?.click())
+      await flush()
+      const modal = document.querySelector('.ant-modal-container')
+      const select = modal?.querySelector('[role="combobox"]')
+      expect(select).not.toBeNull()
+      await act(async () => select?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      const option = Array.from(
+        document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      ).find((item) => item.textContent === label)
+      expect(option).toBeDefined()
+      await act(async () => option?.click())
+      expect(modal?.textContent).toContain(hint)
+      const endpointInput = modal?.querySelector<HTMLInputElement>('input[id$="endpoint"]')
+      expect(endpointInput?.placeholder).toBe(endpoint)
+      expect(endpointInput?.value).toBe('')
+      expect(modal?.querySelector<HTMLInputElement>('input[id$="region"]')?.value).toBe('')
+      expect(modal?.querySelector('[id$="pathStyle"]')?.getAttribute('aria-checked')).toBe('false')
+
+      const save = Array.from(modal?.querySelectorAll('button') ?? []).find((button) =>
+        button.textContent?.includes('保存并测试'),
+      )
+      await act(async () => save?.click())
+      await flush()
+      expect(modal?.textContent).toContain('请填写该存储服务的有效 HTTP 或 HTTPS Endpoint。')
+      expect(apiMocks.post).not.toHaveBeenCalled()
+    },
+  )
+
   it('opens stored file metadata in a detail drawer', async () => {
     apiMocks.getEnvelope.mockImplementation((path: string) =>
       path.startsWith('/software/storage')
@@ -456,7 +495,9 @@ describe('SoftwareLibraryPage', () => {
 
     const container = await renderPage()
     await openObjectStorageDrawer(container)
-    expect(document.body.textContent).toContain('对象存储读取失败')
+    const feedback = document.querySelector('.soha-read-feedback-notification')
+    expect(feedback?.textContent).toContain('身份数据读取失败')
+    expect(feedback?.textContent).toContain('unavailable')
     expect(document.body.textContent).not.toContain('配置对象存储')
   })
 

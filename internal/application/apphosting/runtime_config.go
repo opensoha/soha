@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultDataWarningBytes = 200 << 20
+	defaultDataWarningBytes = domain.DefaultAppDataWarningMiB << 20
 	maxEnvironmentEntries   = 32
 )
 

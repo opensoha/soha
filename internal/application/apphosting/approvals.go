@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
@@ -184,7 +183,7 @@ func (s *Service) DeleteApp(
 		return sohaapi.DeleteHostedAppResult{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "invalid_reason", "reason must not exceed 500 characters", "删除原因长度不能超过 500 个字符")
 	}
 
-	deletedApp, revisions, err := s.repo.DeleteApp(ctx, trimmedAppID, func(current domainapphosting.App) error {
+	deletedApp, _, err := s.repo.DeleteApp(ctx, trimmedAppID, func(current domainapphosting.App) error {
 		if !isAdmin && !current.IsOwner(principal.UserID) {
 			return apperrors.ErrAccessDenied
 		}
@@ -206,42 +205,10 @@ func (s *Service) DeleteApp(
 	if deletedApp.Kind == sohaapi.HostedAppKindDynamic {
 		meta["runtimeCleanupMode"] = "background"
 	} else {
-		purgedObjects, cleanupErr := s.purgeDeletedAppRevisions(ctx, revisions)
-		meta["purgedObjectCount"] = purgedObjects
-		if cleanupErr != nil {
-			meta["storageCleanupError"] = cleanupErr.Error()
-		}
+		meta["storageCleanupMode"] = "background"
 	}
 	s.recordAudit(ctx, principal, "app.delete", "success", deletedApp.ID, "Permanently deleted hosted application", meta)
 	return sohaapi.DeleteHostedAppResult{AppID: deletedApp.ID, Deleted: true}, nil
-}
-
-func (s *Service) purgeDeletedAppRevisions(ctx context.Context, revisions []domainapphosting.Revision) (int, error) {
-	if s.objectStore == nil || len(revisions) == 0 {
-		return 0, nil
-	}
-	byIntegration := make(map[string][]string)
-	totalKeys := 0
-	for _, rev := range revisions {
-		integrationID := strings.TrimSpace(rev.StorageIntegrationID)
-		if integrationID == "" {
-			continue
-		}
-		keys := buildRevisionStoreKeys(rev)
-		if len(keys) > 0 {
-			byIntegration[integrationID] = append(byIntegration[integrationID], keys...)
-			totalKeys += len(keys)
-		}
-	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	var firstErr error
-	for integrationID, keys := range byIntegration {
-		if err := s.objectStore.DeleteKeys(cleanupCtx, integrationID, keys); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return totalKeys, firstErr
 }
 
 func (s *Service) WithdrawVisibilityApproval(

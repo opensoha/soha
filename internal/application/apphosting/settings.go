@@ -60,6 +60,8 @@ func (s *Service) UpdateSettings(ctx context.Context, principal domainidentity.P
 		"allowOrganizationVisibility":  updated.AllowOrganizationVisibility,
 		"organizationVisibilityPolicy": updated.OrganizationVisibilityPolicy,
 		"policyVersion":                updated.PolicyVersion,
+		"maxStaticAppsPerOwner":        updated.MaxAppsPerOwner,
+		"governance":                   updated.EffectiveGovernance(),
 	})
 	return updated.ToAPI(s.fallbackGatewayTokenSHA256 != ""), nil
 }
@@ -139,6 +141,9 @@ func mergeSettingsUpdate(base domainapphosting.Settings, req sohaapi.AppHostingS
 		return domainapphosting.Settings{}, err
 	}
 	applyQuotaLimitsUpdate(&next, req)
+	if req.Governance != nil {
+		next.Governance = req.Governance
+	}
 	return next.WithDefaults(), nil
 }
 

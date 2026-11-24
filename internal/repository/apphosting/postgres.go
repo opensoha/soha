@@ -60,13 +60,14 @@ func (r *PostgresRepository) GetSettings(ctx context.Context) (domainapphosting.
 func loadSettingsRow(ctx context.Context, db *gorm.DB) (domainapphosting.Settings, error) {
 	settings := domainapphosting.DefaultSettings()
 	var orgPolicyStr string
+	var governanceRaw []byte
 	var rotatedAt, updatedAt sql.NullTime
 	err := db.WithContext(ctx).Raw(`
 		SELECT enabled, apps_domain, public_scheme, storage_integration_id, storage_prefix,
 		       allow_organization_visibility, organization_visibility_policy, policy_version,
 		       max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
 		       max_bundle_file_count, max_apps_per_owner, retained_revisions_per_app,
-		       gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at
+		       gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at, governance
 		FROM public.app_hosting_settings
 		WHERE scope_key = 'default'
 		LIMIT 1
@@ -87,13 +88,18 @@ func loadSettingsRow(ctx context.Context, db *gorm.DB) (domainapphosting.Setting
 		&settings.GatewayTokenSHA256,
 		&rotatedAt,
 		&settings.UpdatedBy,
-		&updatedAt,
+		&updatedAt, &governanceRaw,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return settings.WithDefaults(), nil
 	}
 	if err != nil {
 		return domainapphosting.Settings{}, fmt.Errorf("load app hosting settings: %w", err)
+	}
+	if len(governanceRaw) > 0 {
+		if err := json.Unmarshal(governanceRaw, &settings.Governance); err != nil {
+			return domainapphosting.Settings{}, fmt.Errorf("read app hosting governance: %w", err)
+		}
 	}
 	settings.OrganizationVisibilityPolicy = sohaapi.AppHostingOrganizationVisibilityPolicy(orgPolicyStr)
 	if rotatedAt.Valid {
@@ -149,14 +155,18 @@ func (r *PostgresRepository) SaveSettings(ctx context.Context, mutate func(curre
 }
 
 func upsertPostgresSettingsRow(tx *gorm.DB, next domainapphosting.Settings) error {
-	err := tx.Exec(`
+	governanceJSON, err := json.Marshal(next.Governance)
+	if err != nil {
+		return err
+	}
+	err = tx.Exec(`
 		INSERT INTO public.app_hosting_settings (
 			scope_key, enabled, apps_domain, public_scheme, storage_integration_id, storage_prefix,
 			allow_organization_visibility, organization_visibility_policy, policy_version,
 			max_bundle_compressed_bytes, max_bundle_uncompressed_bytes,
 			max_bundle_file_count, max_apps_per_owner, retained_revisions_per_app,
-			gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at
-		) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			gateway_token_sha256, gateway_token_rotated_at, updated_by, updated_at, governance
+		) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?::jsonb, 'null'::jsonb))
 		ON CONFLICT (scope_key) DO UPDATE SET
 			enabled = EXCLUDED.enabled,
 			apps_domain = EXCLUDED.apps_domain,
@@ -174,13 +184,14 @@ func upsertPostgresSettingsRow(tx *gorm.DB, next domainapphosting.Settings) erro
 			gateway_token_sha256 = EXCLUDED.gateway_token_sha256,
 			gateway_token_rotated_at = EXCLUDED.gateway_token_rotated_at,
 			updated_by = EXCLUDED.updated_by,
-			updated_at = EXCLUDED.updated_at
+			updated_at = EXCLUDED.updated_at,
+			governance = EXCLUDED.governance
 	`,
 		next.Enabled, next.AppsDomain, next.PublicScheme, next.StorageIntegrationID, next.StoragePrefix,
 		next.AllowOrganizationVisibility, string(next.OrganizationVisibilityPolicy), next.PolicyVersion,
 		next.MaxBundleCompressedBytes, next.MaxBundleUncompressedBytes,
 		next.MaxBundleFileCount, next.MaxAppsPerOwner, next.RetainedRevisionsPerApp,
-		next.GatewayTokenSHA256, nullableTime(next.GatewayTokenRotatedAt), next.UpdatedBy, nullableTime(next.UpdatedAt),
+		next.GatewayTokenSHA256, nullableTime(next.GatewayTokenRotatedAt), next.UpdatedBy, nullableTime(next.UpdatedAt), string(governanceJSON),
 	).Error
 	if err != nil {
 		return fmt.Errorf("upsert app hosting settings: %w", err)
@@ -499,7 +510,7 @@ const hostedRevisionColumns = `id, app_id, revision_number, description, kind, s
 	storage_prefix, manifest_json, failure_stage, failure_reason,
 	idempotency_key, created_by, created_at, activated_at,
 	source_key, build_template, image_ref, build_phase, database_enabled, data_schema, claim_id,
-	next_check_at, claim_expires_at, runtime_environment, publish_visibility`
+	next_check_at, claim_expires_at, runtime_environment, publish_visibility, runtime_limits`
 
 func (r *PostgresRepository) FindRevisionByIdempotencyKey(ctx context.Context, appID, idempotencyKey string) (domainapphosting.Revision, error) {
 	rev, err := scanHostedRevision(r.db.WithContext(ctx).Raw(`
@@ -542,18 +553,22 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 		if err != nil {
 			return err
 		}
+		runtimeLimitsJSON, err := json.Marshal(stored.RuntimeLimits)
+		if err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO public.hosted_app_revisions (
 				id, app_id, revision_number, description, kind, status, bundle_sha256,
 				file_count, total_bytes, spa_fallback, storage_integration_id, storage_prefix,
-				manifest_json, failure_stage, failure_reason, idempotency_key, created_by, created_at, publish_visibility
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, '', '', ?, ?, ?, ?::jsonb)
+				manifest_json, failure_stage, failure_reason, idempotency_key, created_by, created_at, publish_visibility, runtime_limits
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, '', '', ?, ?, ?, ?::jsonb, NULLIF(?::jsonb, 'null'::jsonb))
 		`,
 			stored.ID, stored.AppID, stored.RevisionNumber, stored.Description,
 			string(stored.Kind), string(stored.Status), stored.BundleSha256,
 			stored.FileCount, stored.TotalBytes, stored.SpaFallback,
 			stored.StorageIntegrationID, stored.StoragePrefix, string(manifestBytes),
-			stored.IdempotencyKey, stored.CreatedBy, stored.CreatedAt.UTC(), string(visibilityJSON),
+			stored.IdempotencyKey, stored.CreatedBy, stored.CreatedAt.UTC(), string(visibilityJSON), string(runtimeLimitsJSON),
 		).Error; err != nil {
 			return mapPostgresRevisionWriteError(err)
 		}
@@ -567,18 +582,14 @@ func (r *PostgresRepository) CreateUploadingRevision(ctx context.Context, appID 
 }
 
 func (r *PostgresRepository) FailRevision(ctx context.Context, appID, revisionID, stage, reason string) error {
-	res := r.db.WithContext(ctx).Exec(`
-		UPDATE public.hosted_app_revisions
-		SET status = 'failed', failure_stage = ?, failure_reason = ?
-		WHERE app_id = ? AND id = ? AND (kind <> 'dynamic' OR status = 'uploading')
-	`, stage, truncateString(reason, 1024), appID, revisionID)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return apperrors.ErrNotFound
-	}
-	return nil
+	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		tx := dbtx.DB(ctx, r.db)
+		rev, err := getRevisionTx(ctx, tx, appID, revisionID, true)
+		if err != nil {
+			return err
+		}
+		return failUploadingRevisionTx(tx, rev, stage, reason, time.Now().UTC())
+	})
 }
 
 func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapphosting.ActivateRevisionInput) (appapphosting.ActivateRevisionOutput, error) {
@@ -608,7 +619,7 @@ func (r *PostgresRepository) ActivateRevision(ctx context.Context, input appapph
 		}
 		if rejection != nil {
 			rejectedConflict = rejection
-			return markRevisionActivationFailedTx(tx, input, failureReason)
+			return failRejectedRevisionActivationTx(tx, rev, input, failureReason)
 		}
 		if input.BeforeActivate != nil {
 			if err := input.BeforeActivate(ctx); err != nil {
@@ -710,6 +721,9 @@ func evictExcessPostgresRevisions(ctx context.Context, tx *gorm.DB, appID, activ
 			cleanupDue = &now
 		}
 		if err := tx.Exec(`UPDATE public.hosted_app_revisions SET status = 'evicted', next_check_at = ? WHERE app_id = ? AND id = ?`, cleanupDue, appID, item.ID).Error; err != nil {
+			return nil, err
+		}
+		if err := queueStaticArtifactCleanup(tx, item, now); err != nil {
 			return nil, err
 		}
 		evicted = append(evicted, item)
@@ -1115,7 +1129,7 @@ func scanHostedApp(scanner rowScanner) (domainapphosting.App, error) {
 func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 	var rev domainapphosting.Revision
 	var kindStr, statusStr string
-	var manifestRaw, environmentRaw, visibilityRaw []byte
+	var manifestRaw, environmentRaw, visibilityRaw, runtimeLimitsRaw []byte
 	var activatedAt, nextCheckAt, claimExpiresAt sql.NullTime
 	err := scanner.Scan(
 		&rev.ID, &rev.AppID, &rev.RevisionNumber, &rev.Description, &kindStr, &statusStr,
@@ -1124,7 +1138,7 @@ func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 		&rev.FailureStage, &rev.FailureReason, &rev.IdempotencyKey,
 		&rev.CreatedBy, &rev.CreatedAt, &activatedAt,
 		&rev.SourceKey, &rev.BuildTemplate, &rev.ImageRef, &rev.BuildPhase, &rev.Database, &rev.DataSchema, &rev.ClaimID,
-		&nextCheckAt, &claimExpiresAt, &environmentRaw, &visibilityRaw,
+		&nextCheckAt, &claimExpiresAt, &environmentRaw, &visibilityRaw, &runtimeLimitsRaw,
 	)
 	if err != nil {
 		return domainapphosting.Revision{}, err
@@ -1138,6 +1152,11 @@ func scanHostedRevision(scanner rowScanner) (domainapphosting.Revision, error) {
 	}
 	if len(environmentRaw) > 0 {
 		if err := json.Unmarshal(environmentRaw, &rev.RuntimeEnvironment); err != nil {
+			return domainapphosting.Revision{}, err
+		}
+	}
+	if len(runtimeLimitsRaw) > 0 {
+		if err := json.Unmarshal(runtimeLimitsRaw, &rev.RuntimeLimits); err != nil {
 			return domainapphosting.Revision{}, err
 		}
 	}

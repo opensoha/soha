@@ -70045,6 +70045,75 @@ components:
         - AppHostingOrganizationVisibilityPolicyAllowDirect
         - AppHostingOrganizationVisibilityPolicyRequireApproval
         - AppHostingOrganizationVisibilityPolicyDisabled
+    AppHostingQuotaOverride:
+      type: object
+      required:
+        - scope
+        - id
+      properties:
+        scope:
+          type: string
+          enum: [team, role]
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        maxStaticApps:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+        maxDynamicApps:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+    AppHostingRuntimeLimits:
+      type: object
+      required: [cpuMilli, memoryMiB, maxReplicas, scaleDownSeconds]
+      properties:
+        cpuMilli:
+          type: integer
+          format: int32
+          minimum: 50
+          maximum: 4000
+        memoryMiB:
+          type: integer
+          format: int32
+          minimum: 64
+          maximum: 4096
+        maxReplicas:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 10
+        scaleDownSeconds:
+          type: integer
+          format: int32
+          minimum: 60
+          maximum: 3600
+    AppHostingGovernance:
+      type: object
+      required: [maxDynamicAppsPerOwner, quotaOverrides, runtimeLimits, dataCapacityWarningMiB]
+      properties:
+        maxDynamicAppsPerOwner:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+        quotaOverrides:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AppHostingQuotaOverride"
+        runtimeLimits:
+          $ref: "#/components/schemas/AppHostingRuntimeLimits"
+        dataCapacityWarningMiB:
+          description: Administrative alert threshold per managed application database in MiB.
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1048576
     AppHostingSettings:
       type: object
       additionalProperties: false
@@ -70062,6 +70131,9 @@ components:
         - maxAppsPerOwner
         - retainedRevisionsPerApp
       properties:
+        governance:
+          $ref: "#/components/schemas/AppHostingGovernance"
+          x-go-type-skip-optional-pointer: false
         enabled:
           type: boolean
         appsDomain:
@@ -70126,6 +70198,9 @@ components:
       required:
         - enabled
       properties:
+        governance:
+          $ref: "#/components/schemas/AppHostingGovernance"
+          x-go-type-skip-optional-pointer: false
         enabled:
           type: boolean
         appsDomain:

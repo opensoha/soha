@@ -59,9 +59,24 @@ export function inferS3StoragePreset(item?: SystemIntegration): S3StoragePreset 
   return 'custom'
 }
 
+function normalizeS3StorageEndpoint(value?: string) {
+  return (value ?? '').trim().replace(/\/+$/, '')
+}
+
+export function isValidS3StorageEndpoint(value: string | undefined, required: boolean) {
+  if (!value?.trim()) return !required
+  const endpoint = normalizeS3StorageEndpoint(value)
+  if (!/^https?:\/\//.test(endpoint)) return false
+  try {
+    return Boolean(new URL(endpoint).hostname)
+  } catch {
+    return false
+  }
+}
+
 function configuration(values: S3StorageFormValues) {
   return [
-    { key: 'endpoint', value: values.endpoint.trim().replace(/\/+$/, '') },
+    { key: 'endpoint', value: normalizeS3StorageEndpoint(values.endpoint) },
     { key: 'bucket', value: values.bucket.trim() },
     { key: 'region', value: values.region.trim() },
     { key: 'prefix', value: values.prefix?.trim().replace(/^\/+|\/+$/g, '') ?? '' },

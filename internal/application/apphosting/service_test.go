@@ -50,6 +50,7 @@ type stubObjectStore struct {
 	contentType map[string]string
 	deletedKeys []string
 	onPut       func(key string) error
+	onDelete    func() error
 }
 
 func newStubObjectStore() *stubObjectStore {
@@ -78,6 +79,11 @@ func (s *stubObjectStore) PutObject(_ context.Context, _, key, contentType strin
 }
 
 func (s *stubObjectStore) DeleteKeys(_ context.Context, _ string, keys []string) error {
+	if s.onDelete != nil {
+		if err := s.onDelete(); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, k := range keys {
@@ -377,6 +383,9 @@ func assertV1EvictedAndRollbackToV2(t *testing.T, ctx context.Context, h *testHa
 	rev1After, err := h.svc.GetRevision(ctx, h.alice, appID, rev1ID)
 	if err != nil || rev1After.Status != sohaapi.HostedAppRevisionStatusEvicted {
 		t.Fatalf("expected v1 evicted, got %#v (%v)", rev1After, err)
+	}
+	if err := h.svc.ReconcileStaticArtifactCleanup(ctx); err != nil {
+		t.Fatalf("clean up evicted static objects: %v", err)
 	}
 	if _, exists := h.store.objects["hosted/"+appID+"/"+rev1ID+"/index.html"]; exists {
 		t.Fatal("expected evicted v1 S3 object to be deleted")

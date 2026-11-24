@@ -100,3 +100,8 @@ User asks: "Publish the built dashboard in `./dist` as `Q4 Ops Dashboard`, add B
 - Reuse the original `--idempotency-key` (`idempotencyKey`) and `--app-id` (`appId`) when recovering from an interrupted `soha host deploy`, `apphosting.workspace.publish`, or `soha host rollback` request.
 - When `pendingVisibilityApproval` is returned with `status: "pending"`, report the approval ID and the unchanged effective visibility mode (`private` or `selected`) clearly.
 - When narrowing visibility to `private` or `selected`, explicitly inform the user that removed colleagues lose access immediately even if they already opened the link.
+
+## Deployable Starters
+
+- [Node + TypeScript + Express](examples/node-express/README.md): copy, compile with `npm run build`, and deploy as `--kind dynamic`.
+- [Python + FastAPI](examples/python-fastapi/README.md): copy, install the fully pinned requirements, and deploy as `--kind dynamic`.

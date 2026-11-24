@@ -67,12 +67,15 @@ type Spec struct {
 }
 
 type Builder struct {
-	client     kubernetes.Interface
-	cfg        Config
-	sourceHost string
+	client          kubernetes.Interface
+	cfg             Config
+	sourceHost      string
+	registryCleanup *registryImageCleanup
 }
 
-func New(client kubernetes.Interface, cfg Config) (*Builder, error) {
+type Option func(*Builder) error
+
+func New(client kubernetes.Interface, cfg Config, options ...Option) (*Builder, error) {
 	if client == nil || (reflect.ValueOf(client).Kind() == reflect.Pointer && reflect.ValueOf(client).IsNil()) {
 		return nil, errors.New("hosted build Kubernetes client is required")
 	}
@@ -99,7 +102,13 @@ func New(client kubernetes.Interface, cfg Config) (*Builder, error) {
 	if host == "" {
 		return nil, errors.New("hosted build requires an HTTPS source origin")
 	}
-	return &Builder{client: client, cfg: cfg, sourceHost: host}, nil
+	b := &Builder{client: client, cfg: cfg, sourceHost: host}
+	for _, option := range options {
+		if err := option(b); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
 }
 
 func validSecretNames(cfg Config) bool {
@@ -172,7 +181,8 @@ func (b *Builder) Prepare(ctx context.Context, spec Spec) error {
 		if err != nil {
 			return fmt.Errorf("read hosted build Job: %w", err)
 		}
-		if !b.ownsJob(job, spec.RevisionID) || job.DeletionTimestamp != nil || job.Annotations[inputAnnotation] != expected.Annotations[inputAnnotation] {
+		if !b.ownsJob(job, spec.RevisionID) || job.DeletionTimestamp != nil || job.Annotations[inputAnnotation] != expected.Annotations[inputAnnotation] ||
+			!b.validBuildRepository(spec.RevisionID, job.Annotations[repoAnnotation]) {
 			return errors.New("hosted build Job identity or inputs changed")
 		}
 		if job.Spec.Suspend == nil || !*job.Spec.Suspend {
@@ -231,7 +241,8 @@ func (b *Builder) Result(ctx context.Context, revisionID string) (string, bool, 
 	if err != nil {
 		return "", false, fmt.Errorf("read hosted build Job: %w", err)
 	}
-	if !b.ownsJob(job, revisionID) || job.DeletionTimestamp != nil || job.Annotations[repoAnnotation] != b.cfg.RegistryRepository {
+	repository := job.Annotations[repoAnnotation]
+	if !b.ownsJob(job, revisionID) || job.DeletionTimestamp != nil || !b.validBuildRepository(revisionID, repository) {
 		return "", false, errors.New("hosted build Job identity or registry changed")
 	}
 	if jobCondition(job, batchv1.JobFailed) {
@@ -244,7 +255,7 @@ func (b *Builder) Result(ctx context.Context, revisionID string) (string, bool, 
 	if err != nil {
 		return "", false, err
 	}
-	return b.cfg.RegistryRepository + "@" + digest, true, nil
+	return repository + "@" + digest, true, nil
 }
 
 func (b *Builder) resultDigest(ctx context.Context, job *batchv1.Job) (string, error) {
@@ -260,7 +271,7 @@ func (b *Builder) resultDigest(ctx context.Context, job *batchv1.Job) (string, e
 		if !controlledBy(pod, job) || pod.Status.Phase != corev1.PodSucceeded {
 			continue
 		}
-		if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != buildContainer || pod.Spec.Containers[0].Image != b.cfg.BuildClientImage {
+		if !b.matchesResultContainer(pod, job) {
 			return "", fmt.Errorf("%w: unexpected build container", ErrBuildFailed)
 		}
 		emitted := podDigest(pod)

@@ -122,7 +122,20 @@ func (r *PostgresRepository) AdvanceDynamicRevision(ctx context.Context, revID, 
 	if err != nil {
 		return err
 	}
-	return dynamicRevisionWriteResult(r.db.WithContext(ctx).Exec(`
+	if imageRef == "" {
+		return advanceDynamicRevisionTx(r.db.WithContext(ctx), revID, claimID, phase, previous, imageRef, next)
+	}
+	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		tx := dbtx.DB(ctx, r.db)
+		if err := lockAvailableImageReference(tx, imageReferenceKey(imageRef)); err != nil {
+			return err
+		}
+		return advanceDynamicRevisionTx(tx, revID, claimID, phase, previous, imageRef, next)
+	})
+}
+
+func advanceDynamicRevisionTx(tx *gorm.DB, revID, claimID, phase, previous, imageRef string, next time.Time) error {
+	return dynamicRevisionWriteResult(tx.Exec(`
 		UPDATE public.hosted_app_revisions
 		SET build_phase = ?, image_ref = COALESCE(NULLIF(?, ''), image_ref), next_check_at = ?,
 			claim_id = '', claim_expires_at = NULL
@@ -144,21 +157,21 @@ func (r *PostgresRepository) FailDynamicRevision(ctx context.Context, revID, cla
 }
 
 func (r *PostgresRepository) CompleteDynamicCleanup(ctx context.Context, revID, claimID string) error {
-	return dynamicRevisionWriteResult(r.db.WithContext(ctx).Exec(`
+	return r.completeTerminalDynamicRuntimeCleanup(ctx, revID, claimID, `
 		UPDATE public.hosted_app_revisions
 		SET claim_id = '', claim_expires_at = NULL, next_check_at = NULL
 		WHERE id = ? AND claim_id = ? AND kind = 'dynamic' AND status IN ('failed', 'evicted')
 			AND claim_expires_at > pg_catalog.clock_timestamp()
-	`, revID, claimID))
+	`)
 }
 
 func enqueueDeletedDynamicRevisionsTx(tx *gorm.DB, appID string) error {
 	// DeleteApp locks revisions first, so cleanup can wait for an in-flight worker's lease to expire.
 	return tx.Exec(`
 		INSERT INTO public.hosted_app_deleted_runtime_cleanup (
-			revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, next_check_at
+			revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, image_ref, next_check_at
 		)
-		SELECT id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled,
+		SELECT id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, image_ref,
 			GREATEST(pg_catalog.statement_timestamp(), claim_expires_at, created_at + (?::bigint * INTERVAL '1 second'))
 		FROM public.hosted_app_revisions
 		WHERE app_id = ? AND kind = 'dynamic'
@@ -178,9 +191,9 @@ func (r *PostgresRepository) ClaimDeletedDynamicRevision(ctx context.Context, cl
 			WHERE next_check_at <= ? AND (claim_expires_at IS NULL OR claim_expires_at <= ?)
 			ORDER BY next_check_at, revision_id LIMIT 1 FOR UPDATE SKIP LOCKED
 		)
-		RETURNING revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled
+		RETURNING revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, image_ref
 	`, claimID, now.Add(ttl).UTC(), now.UTC(), now.UTC()).Row().Scan(&rev.ID, &rev.AppID, &rev.StorageIntegrationID,
-		&rev.StoragePrefix, &rev.SourceKey, &rev.Database)
+		&rev.StoragePrefix, &rev.SourceKey, &rev.Database, &rev.ImageRef)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainapphosting.Revision{}, apperrors.ErrNotFound
 	}
@@ -188,22 +201,22 @@ func (r *PostgresRepository) ClaimDeletedDynamicRevision(ctx context.Context, cl
 }
 
 func (r *PostgresRepository) CompleteDeletedDynamicCleanup(ctx context.Context, revID, claimID string) error {
-	return dynamicRevisionWriteResult(r.db.WithContext(ctx).Exec(`
+	return r.completeTerminalDynamicRuntimeCleanup(ctx, revID, claimID, `
 		DELETE FROM public.hosted_app_deleted_runtime_cleanup
 		WHERE revision_id = ? AND claim_id = ? AND claim_expires_at > pg_catalog.clock_timestamp()
-	`, revID, claimID))
+	`)
 }
 
 func (r *PostgresRepository) RequeueDeletedDynamicCleanup(ctx context.Context, rev domainapphosting.Revision) error {
 	return r.db.WithContext(ctx).Exec(`
 		INSERT INTO public.hosted_app_deleted_runtime_cleanup AS cleanup (
-			revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, next_check_at
+			revision_id, app_id, storage_integration_id, storage_prefix, source_key, database_enabled, image_ref, next_check_at
 		)
-		SELECT ?, ?, ?, ?, ?, ?, GREATEST(pg_catalog.statement_timestamp(), ?::timestamptz, ?::timestamptz)
+		SELECT ?, ?, ?, ?, ?, ?, ?, GREATEST(pg_catalog.statement_timestamp(), ?::timestamptz, ?::timestamptz)
 		WHERE NOT EXISTS (SELECT 1 FROM public.hosted_apps WHERE id = ?)
 		ON CONFLICT (revision_id) DO UPDATE SET claim_id = '', claim_expires_at = NULL,
 			source_key = COALESCE(NULLIF(EXCLUDED.source_key, ''), cleanup.source_key)
-	`, rev.ID, rev.AppID, rev.StorageIntegrationID, rev.StoragePrefix, rev.SourceKey, rev.Database,
+	`, rev.ID, rev.AppID, rev.StorageIntegrationID, rev.StoragePrefix, rev.SourceKey, rev.Database, rev.ImageRef,
 		rev.ClaimExpiresAt.UTC(), rev.CreatedAt.Add(appapphosting.DynamicSourceCleanupDelay).UTC(), rev.AppID).Error
 }
 

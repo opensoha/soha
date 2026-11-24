@@ -20,8 +20,19 @@ import {
   UserOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Avatar, Button, Card, Empty, Input, Segmented, Skeleton, Space, Typography } from 'antd'
-import { useState } from 'react'
+import {
+  Avatar,
+  Button,
+  Card,
+  Empty,
+  Input,
+  Pagination,
+  Segmented,
+  Skeleton,
+  Space,
+  Typography,
+} from 'antd'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import '../provider-portal-pages.css'
 import { PortalAccountMenu } from '../shared/account-menu'
@@ -29,6 +40,7 @@ import { formatPortalDateTime } from '../shared/formatters'
 import { PortalViewNav } from '../shared/portal-view-nav'
 
 const { Paragraph, Text, Title } = Typography
+const COLLEAGUE_WORKS_PAGE_SIZE = 60
 
 type ColleagueKindFilter = 'all' | HostedAppKind
 
@@ -160,6 +172,7 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
 
   const [keyword, setKeyword] = useState('')
   const [kindFilter, setKindFilter] = useState<ColleagueKindFilter>('all')
+  const [offset, setOffset] = useState(0)
 
   const normalizedAuthorId = authorId.trim()
   const catalogQuery = useQuery(
@@ -167,7 +180,8 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
       query: keyword.trim() || undefined,
       kind: kindFilter === 'all' ? undefined : kindFilter,
       authorUserId: normalizedAuthorId || undefined,
-      limit: 60,
+      limit: COLLEAGUE_WORKS_PAGE_SIZE,
+      offset,
     }),
   )
 
@@ -177,6 +191,23 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
   const authors = catalog?.authors ?? []
   const selectedAuthor = catalog?.selectedAuthor
   const hasActiveFilter = Boolean(keyword.trim() || kindFilter !== 'all')
+  const total = catalog?.total ?? 0
+  const currentPage = Math.floor(offset / COLLEAGUE_WORKS_PAGE_SIZE) + 1
+
+  useEffect(() => {
+    setOffset(0)
+  }, [normalizedAuthorId])
+
+  useEffect(() => {
+    if (!catalog) return
+    if (total > 0 && offset < total) return
+    if (total === 0 && offset === 0) return
+    const lastOffset =
+      total > 0
+        ? Math.floor((total - 1) / COLLEAGUE_WORKS_PAGE_SIZE) * COLLEAGUE_WORKS_PAGE_SIZE
+        : 0
+    setOffset(lastOffset)
+  }, [catalog, offset, total])
 
   const openAuthorPage = (targetAuthorId: string) => {
     const trimmed = targetAuthorId.trim()
@@ -255,7 +286,10 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
                 prefix={<SearchOutlined />}
                 value={keyword}
                 variant="filled"
-                onChange={(event) => setKeyword(event.target.value)}
+                onChange={(event) => {
+                  setKeyword(event.target.value)
+                  setOffset(0)
+                }}
               />
               <div className="soha-portal-colleague-filters">
                 <Segmented
@@ -266,7 +300,10 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
                     { label: '交互工具', value: 'dynamic' },
                   ]}
                   value={kindFilter}
-                  onChange={(next) => setKindFilter(next as ColleagueKindFilter)}
+                  onChange={(next) => {
+                    setKindFilter(next as ColleagueKindFilter)
+                    setOffset(0)
+                  }}
                 />
                 <Button
                   aria-label="刷新同事作品"
@@ -341,6 +378,7 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
                         onClick={() => {
                           setKeyword('')
                           setKindFilter('all')
+                          setOffset(0)
                         }}
                       >
                         清空筛选条件
@@ -383,6 +421,18 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
                     </Empty>
                   </div>
                 )}
+
+                {total > COLLEAGUE_WORKS_PAGE_SIZE ? (
+                  <Pagination
+                    align="end"
+                    current={currentPage}
+                    pageSize={COLLEAGUE_WORKS_PAGE_SIZE}
+                    total={total}
+                    showSizeChanger={false}
+                    showTotal={(count) => `共 ${count} 个作品`}
+                    onChange={(page) => setOffset((page - 1) * COLLEAGUE_WORKS_PAGE_SIZE)}
+                  />
+                ) : null}
               </>
             )}
           </section>

@@ -383,6 +383,7 @@ func (r *MemoryRepository) DeleteApp(_ context.Context, appID string, verify fun
 		if app.Kind == sohaapi.HostedAppKindDynamic && rev.Kind == sohaapi.HostedAppKindDynamic {
 			r.deletedRuntimeWork[rev.ID] = deletedRuntimeWork(rev, now)
 		}
+		r.queueStaticArtifactCleanupLocked(rev)
 	}
 	delete(r.appsByID, trimmedID)
 	delete(r.appIDByDNS, strings.ToLower(app.DNSLabel))

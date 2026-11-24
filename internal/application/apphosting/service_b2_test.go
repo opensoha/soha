@@ -400,11 +400,13 @@ func assertRequesterEligibilityAndApprovalSuccess(t *testing.T, ctx context.Cont
 }
 
 func TestMaintainersOwnershipTransferMidUploadRevocationAndDelete(t *testing.T) {
-	h := newB2TestHarness(t)
+	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+	h := newB2TestHarness(t, appapphosting.WithClock(func() time.Time { return now }))
 	ctx := t.Context()
 
 	appID, rev1ID := assertMaintainerValidationAndGatewayIsolation(t, ctx, h)
 	rev2ID := assertMidUploadActorRevocationAndOwnershipTransfer(t, ctx, h, appID, rev1ID)
+	now = now.Add(appapphosting.StaticArtifactCleanupDelay)
 	assertConfirmedDeleteAndObjectCleanup(t, ctx, h, appID, rev2ID)
 }
 
@@ -481,7 +483,7 @@ func assertMaintainerValidationAndGatewayIsolation(t *testing.T, ctx context.Con
 
 func assertMidUploadActorRevocationAndOwnershipTransfer(t *testing.T, ctx context.Context, h *b2TestHarness, appID, rev1ID string) string {
 	t.Helper()
-	// 1) Mid-upload collaborator removal prevents ActivateRevision from overwriting activeRevisionId and cleans S3 keys.
+	// Mid-upload collaborator removal prevents activation and queues the uploaded keys for cleanup.
 	h.store.onPut = func(_ string) error {
 		_, err := h.svc.UpdateMaintainers(ctx, h.alice, appID, sohaapi.UpdateHostedAppMaintainersRequest{
 			MaintainerUserIDs: []string{},
@@ -568,6 +570,11 @@ func assertConfirmedDeleteAndObjectCleanup(t *testing.T, ctx context.Context, h 
 	if err != nil || !res.Deleted || res.AppID != appID {
 		t.Fatalf("DeleteApp = %#v, %v", res, err)
 	}
+	for range 3 { // Two ready revisions and the revoked candidate.
+		if err := h.svc.ReconcileStaticArtifactCleanup(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, exists := h.store.objects["hosted/"+appID+"/"+rev2ID+"/index.html"]; exists {
 		t.Fatal("expected DeleteApp to purge revision S3 objects")
 	}
@@ -609,10 +616,15 @@ func assertDeleteAppPurgesFailedRevisionManifestKeys(t *testing.T, ctx context.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = h.repo.FailRevision(ctx, orphanApp.ID, uploadingRev.ID, "upload", "transient error")
+	if err := h.repo.FailRevision(ctx, orphanApp.ID, uploadingRev.ID, "upload", "transient error"); err != nil {
+		t.Fatal(err)
+	}
 	orphanKey := "hosted/" + orphanApp.ID + "/rev_failed_orphan/index.html"
 	h.store.objects[orphanKey] = []byte("orphan")
 	if _, err := h.svc.DeleteApp(ctx, h.bob, orphanApp.ID, sohaapi.DeleteHostedAppRequest{ConfirmationName: orphanApp.Name}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.ReconcileStaticArtifactCleanup(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := h.store.objects[orphanKey]; exists {

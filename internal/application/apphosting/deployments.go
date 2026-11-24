@@ -8,7 +8,6 @@ import (
 	"io"
 	"path"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -298,11 +297,9 @@ func (s *Service) persistAndActivateBundle(
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
 
-	manifestFiles, storeKeys, err := s.uploadRevisionObjects(ctx, createdRev, validated.Files)
+	manifestFiles, err := s.uploadRevisionObjects(ctx, createdRev, validated.Files)
 	if err != nil {
-		_ = s.repo.FailRevision(context.WithoutCancel(ctx), app.ID, createdRev.ID, "upload", err.Error())
-		s.bestEffortDeleteKeys(ctx, createdRev.StorageIntegrationID, storeKeys)
-		return sohaapi.HostedAppDeploymentReceipt{}, err
+		return sohaapi.HostedAppDeploymentReceipt{}, s.failStaticUpload(ctx, createdRev, "upload", "object upload failed", err)
 	}
 
 	activated, err := s.repo.ActivateRevision(ctx, ActivateRevisionInput{
@@ -318,17 +315,14 @@ func (s *Service) persistAndActivateBundle(
 		},
 	})
 	if err != nil {
+		reason := "revision activation failed"
 		if errors.Is(err, apperrors.ErrAccessDenied) {
-			_ = s.repo.FailRevision(context.WithoutCancel(ctx), app.ID, createdRev.ID, "activate", "publisher permission revoked")
+			reason = "publisher permission revoked"
 		}
-		s.bestEffortDeleteKeys(ctx, createdRev.StorageIntegrationID, storeKeys)
-		return sohaapi.HostedAppDeploymentReceipt{}, err
+		return sohaapi.HostedAppDeploymentReceipt{}, s.failStaticUpload(ctx, createdRev, "activate", reason, err)
 	}
 
 	s.recordVisibilityUpdate(ctx, principal, activated.Visibility)
-	for _, evicted := range activated.EvictedRevisions {
-		s.bestEffortDeleteKeys(ctx, evicted.StorageIntegrationID, buildRevisionStoreKeys(evicted))
-	}
 	s.recordAudit(ctx, principal, "revision.upload", "success", app.ID, "Uploaded and activated hosted application revision", map[string]any{
 		"appId":           app.ID,
 		"revisionId":      activated.Revision.ID,
@@ -349,16 +343,19 @@ func (s *Service) persistAndActivateBundle(
 	}, nil
 }
 
-func (s *Service) uploadRevisionObjects(ctx context.Context, rev domainapphosting.Revision, files []extractedBundleFile) ([]sohaapi.HostedAppManifestFile, []string, error) {
+func (s *Service) uploadRevisionObjects(ctx context.Context, rev domainapphosting.Revision, files []extractedBundleFile) ([]sohaapi.HostedAppManifestFile, error) {
+	upload, cancel := context.WithTimeout(ctx, rev.CreatedAt.Add(staticArtifactUploadTimeout).Sub(s.now()))
+	defer cancel()
 	manifest := make([]sohaapi.HostedAppManifestFile, 0, len(files))
-	uploadedKeys := make([]string, 0, len(files))
 	for _, file := range files {
+		if err := upload.Err(); err != nil {
+			return nil, err
+		}
 		objectKey := rev.AppID + "/" + rev.ID + "/" + file.Path
 		storeKey := joinStoragePrefixKey(rev.StoragePrefix, objectKey)
-		uploadedKeys = append(uploadedKeys, storeKey)
-		size, sha256Hex, etag, err := s.objectStore.PutObject(ctx, rev.StorageIntegrationID, storeKey, file.ContentType, bytes.NewReader(file.Data))
+		size, sha256Hex, etag, err := s.objectStore.PutObject(upload, rev.StorageIntegrationID, storeKey, file.ContentType, bytes.NewReader(file.Data))
 		if err != nil {
-			return nil, uploadedKeys, err
+			return nil, err
 		}
 		manifest = append(manifest, sohaapi.HostedAppManifestFile{
 			Path:        file.Path,
@@ -369,16 +366,7 @@ func (s *Service) uploadRevisionObjects(ctx context.Context, rev domainapphostin
 			ObjectKey:   objectKey,
 		})
 	}
-	return manifest, uploadedKeys, nil
-}
-
-func (s *Service) bestEffortDeleteKeys(ctx context.Context, integrationID string, keys []string) {
-	if s.objectStore == nil || strings.TrimSpace(integrationID) == "" || len(keys) == 0 {
-		return
-	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-	_ = s.objectStore.DeleteKeys(cleanupCtx, integrationID, keys)
+	return manifest, upload.Err()
 }
 
 func plannedManifestFiles(appID, revisionID string, files []extractedBundleFile) []sohaapi.HostedAppManifestFile {
@@ -393,19 +381,6 @@ func plannedManifestFiles(appID, revisionID string, files []extractedBundleFile)
 		})
 	}
 	return out
-}
-
-func buildRevisionStoreKeys(rev domainapphosting.Revision) []string {
-	keys := make([]string, 0, len(rev.Files))
-	if rev.SourceKey != "" {
-		keys = append(keys, rev.SourceKey)
-	} else if rev.Kind == sohaapi.HostedAppKindDynamic {
-		keys = append(keys, dynamicSourceKey(rev))
-	}
-	for _, file := range rev.Files {
-		keys = append(keys, joinStoragePrefixKey(rev.StoragePrefix, file.ObjectKey))
-	}
-	return keys
 }
 
 func joinStoragePrefixKey(storagePrefix, objectKey string) string {

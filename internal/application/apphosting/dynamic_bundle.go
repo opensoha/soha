@@ -142,9 +142,11 @@ func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Princip
 	if err != nil {
 		return sohaapi.HostedAppDeploymentReceipt{}, err
 	}
+	limits := settings.EffectiveGovernance().RuntimeLimits
 	revision := domain.Revision{
-		ID:    "rev_" + uuid.New().String(),
-		AppID: app.ID, Kind: app.Kind, Description: input.Description, BundleSha256: spooled.sha256Hex,
+		RuntimeLimits: &limits,
+		ID:            "rev_" + uuid.New().String(),
+		AppID:         app.ID, Kind: app.Kind, Description: input.Description, BundleSha256: spooled.sha256Hex,
 		FileCount: boundedFileCount(len(bundle.Files)), TotalBytes: bundle.TotalBytes,
 		StorageIntegrationID: settings.StorageIntegrationID, StoragePrefix: settings.StoragePrefix,
 		IdempotencyKey: input.IdempotencyKey, CreatedAt: s.now(), CreatedBy: actor.UserID,

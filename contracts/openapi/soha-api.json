@@ -5712,6 +5712,40 @@
         ],
         "type": "object"
       },
+      "AppHostingGovernance": {
+        "properties": {
+          "dataCapacityWarningMiB": {
+            "description": "Administrative alert threshold per managed application database in MiB.",
+            "format": "int32",
+            "maximum": 1048576,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxDynamicAppsPerOwner": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "quotaOverrides": {
+            "items": {
+              "$ref": "#/components/schemas/AppHostingQuotaOverride"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "runtimeLimits": {
+            "$ref": "#/components/schemas/AppHostingRuntimeLimits"
+          }
+        },
+        "required": [
+          "maxDynamicAppsPerOwner",
+          "quotaOverrides",
+          "runtimeLimits",
+          "dataCapacityWarningMiB"
+        ],
+        "type": "object"
+      },
       "AppHostingOrganizationVisibilityPolicy": {
         "enum": [
           "allow_direct",
@@ -5724,6 +5758,74 @@
           "AppHostingOrganizationVisibilityPolicyRequireApproval",
           "AppHostingOrganizationVisibilityPolicyDisabled"
         ]
+      },
+      "AppHostingQuotaOverride": {
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxDynamicApps": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxStaticApps": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "team",
+              "role"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "id"
+        ],
+        "type": "object"
+      },
+      "AppHostingRuntimeLimits": {
+        "properties": {
+          "cpuMilli": {
+            "format": "int32",
+            "maximum": 4000,
+            "minimum": 50,
+            "type": "integer"
+          },
+          "maxReplicas": {
+            "format": "int32",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "memoryMiB": {
+            "format": "int32",
+            "maximum": 4096,
+            "minimum": 64,
+            "type": "integer"
+          },
+          "scaleDownSeconds": {
+            "format": "int32",
+            "maximum": 3600,
+            "minimum": 60,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpuMilli",
+          "memoryMiB",
+          "maxReplicas",
+          "scaleDownSeconds"
+        ],
+        "type": "object"
       },
       "AppHostingSettings": {
         "additionalProperties": false,
@@ -5740,6 +5842,10 @@
           },
           "gatewayTokenConfigured": {
             "type": "boolean"
+          },
+          "governance": {
+            "$ref": "#/components/schemas/AppHostingGovernance",
+            "x-go-type-skip-optional-pointer": false
           },
           "maxAppsPerOwner": {
             "format": "int32",
@@ -5836,6 +5942,10 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "governance": {
+            "$ref": "#/components/schemas/AppHostingGovernance",
+            "x-go-type-skip-optional-pointer": false
           },
           "maxAppsPerOwner": {
             "format": "int32",

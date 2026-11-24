@@ -60,7 +60,7 @@ func checkRevisionActivation(app domainapphosting.App, rev domainapphosting.Revi
 		return apperrors.ErrConflict
 	}
 	if rev.Kind != sohaapi.HostedAppKindDynamic {
-		if input.DynamicClaimID != "" {
+		if input.DynamicClaimID != "" || rev.Status != sohaapi.HostedAppRevisionStatusUploading {
 			return apperrors.ErrConflict
 		}
 		return nil
