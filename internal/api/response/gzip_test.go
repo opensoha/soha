@@ -30,7 +30,7 @@ func TestGzipItemPreservesJSON(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer decoded.Close()
+			defer func() { _ = decoded.Close() }()
 			body = decoded
 		} else if result.Header().Get("Content-Encoding") != "" {
 			t.Fatal("expected identity response")

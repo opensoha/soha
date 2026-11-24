@@ -47,7 +47,11 @@ func TestDeliveryDeploymentPodsUseSelectorAndBothOwnerUIDs(t *testing.T) {
 		t.Fatalf("projection=%+v, err=%v", pods, err)
 	}
 	for _, action := range typed.Actions() {
-		if action.Matches("list", "pods") && action.(clienttesting.ListAction).GetListRestrictions().Labels.Empty() {
+		if !action.Matches("list", "pods") {
+			continue
+		}
+		list, ok := action.(clienttesting.ListAction)
+		if !ok || list.GetListRestrictions().Labels.Empty() {
 			t.Fatal("pod list used an unbounded namespace scan")
 		}
 	}

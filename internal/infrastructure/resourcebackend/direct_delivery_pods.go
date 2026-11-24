@@ -158,7 +158,11 @@ func readDeliverySelectedPods(ctx context.Context, client kubernetes.Interface, 
 	}
 	key := deliveryPodListKey{client: typed, namespace: namespace, selector: selector}
 	result, _ := cache.LoadOrStore(key, sync.OnceValues(read))
-	pods, err := result.(func() (*corev1.PodList, error))()
+	load, valid := result.(func() (*corev1.PodList, error))
+	if !valid {
+		return read()
+	}
+	pods, err := load()
 	if canceled := ctx.Err(); canceled != nil {
 		return nil, canceled
 	}

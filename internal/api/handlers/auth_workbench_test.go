@@ -105,7 +105,10 @@ func workbenchRefreshRequest(cookied bool, body string) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept-Encoding", "gzip")
 	if cookied {
-		req.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "existing-refresh"})
+		req.AddCookie(&http.Cookie{
+			Name: refreshCookieName, Value: "existing-refresh",
+			Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		})
 	}
 	return req
 }
@@ -158,26 +161,7 @@ func TestRefreshApplicationWorkbenchUsesFreshSessionAndScopedReads(t *testing.T)
 
 			handler.RefreshApplicationWorkbench(c)
 
-			if recorder.Code != http.StatusOK || identity.refreshToken != "existing-refresh" {
-				t.Fatalf("refresh status %d, cookie refresh called = %v", recorder.Code, identity.refreshToken != "")
-			}
-			headers := recorder.Result().Header
-			if headers.Get("Cache-Control") != "no-store" || headers.Get("Content-Encoding") != "" {
-				t.Fatalf("unexpected cache or compression headers: %s, %s", headers.Get("Cache-Control"), headers.Get("Content-Encoding"))
-			}
-			for _, name := range []string{refreshCookieName, apiMiddleware.ProtocolAccessCookieName} {
-				cookie := responseCookie(recorder, name)
-				if cookie == nil || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
-					t.Fatalf("cookie %s did not retain secure refresh policy", name)
-				}
-			}
-			var envelope struct {
-				Data applicationWorkbenchRefreshResponse `json:"data"`
-			}
-			if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil || envelope.Data.Session.Tokens.AccessToken != "fresh-access" {
-				t.Fatal("the refreshed session was not returned in the response")
-			}
-			got := envelope.Data
+			got := assertWorkbenchRefreshResponse(t, recorder, identity.refreshToken)
 			if (got.PermissionSnapshot != nil) != tc.wantSnapshot || (got.Entry != nil) != tc.wantEntry {
 				t.Fatalf("snapshot present = %v, entry present = %v", got.PermissionSnapshot != nil, got.Entry != nil)
 			}
@@ -190,6 +174,30 @@ func TestRefreshApplicationWorkbenchUsesFreshSessionAndScopedReads(t *testing.T)
 			}
 		})
 	}
+}
+
+func assertWorkbenchRefreshResponse(t *testing.T, recorder *httptest.ResponseRecorder, refreshToken string) applicationWorkbenchRefreshResponse {
+	t.Helper()
+	if recorder.Code != http.StatusOK || refreshToken != "existing-refresh" {
+		t.Fatalf("refresh status %d, cookie refresh called = %v", recorder.Code, refreshToken != "")
+	}
+	headers := recorder.Result().Header
+	if headers.Get("Cache-Control") != "no-store" || headers.Get("Content-Encoding") != "" {
+		t.Fatalf("unexpected cache or compression headers: %s, %s", headers.Get("Cache-Control"), headers.Get("Content-Encoding"))
+	}
+	for _, name := range []string{refreshCookieName, apiMiddleware.ProtocolAccessCookieName} {
+		cookie := responseCookie(recorder, name)
+		if cookie == nil || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
+			t.Fatalf("cookie %s did not retain secure refresh policy", name)
+		}
+	}
+	var envelope struct {
+		Data applicationWorkbenchRefreshResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil || envelope.Data.Session.Tokens.AccessToken != "fresh-access" {
+		t.Fatal("the refreshed session was not returned in the response")
+	}
+	return envelope.Data
 }
 
 func TestRefreshApplicationWorkbenchRequiresBrowserCookieAndOrigin(t *testing.T) {

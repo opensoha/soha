@@ -2348,6 +2348,7 @@ describe('ApplicationDetailPage workbench', () => {
         .filter((path) => /application|cluster|repositor|workflow|environment/.test(path))
         .sort(),
     ).toEqual([
+      '/application-environments/binding-test/service-references?limit=100',
       '/applications/app-1',
       '/applications/app-1/application-environments',
       '/applications/app-1/application-environments/binding-test/runtime-summary',
@@ -2677,6 +2678,7 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services',
     )
     await openSection(container, '环境配置')
+    await vi.waitFor(() => expect(document.querySelector('[aria-label="编辑绑定"]')).not.toBeNull())
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[aria-label="编辑绑定"]')!.click()
       await new Promise((resolve) => setTimeout(resolve, 0))

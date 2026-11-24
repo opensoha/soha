@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { workloadKeys } from '../shared/keys'
+import { podKeys } from './keys'
 import { podQueries } from './queries'
 
 const apiMocks = vi.hoisted(() => ({
@@ -37,10 +38,25 @@ describe('pod query options', () => {
     await expect(queryClient.fetchQuery(podQueries.metrics(scope, 'api-pod', 30))).resolves.toEqual(
       { rangeMinutes: 30 },
     )
-    expect(apiMocks.getPodMetrics).toHaveBeenCalledWith({ scope, name: 'api-pod' }, 30)
+    expect(apiMocks.getPodMetrics).toHaveBeenCalledWith(
+      { scope, name: 'api-pod', uid: undefined },
+      30,
+      undefined,
+    )
     expect(podQueries.metrics(scope, 'api-pod', 30).queryKey).toEqual(
       workloadKeys.metrics('pods', scope, 'api-pod', 30),
     )
+
+    apiMocks.getPodMetrics.mockResolvedValueOnce({ rangeMinutes: 30 })
+    const scopedQuery = podQueries.metrics(scope, 'api-pod', 30, 'pod-uid', 'app')
+    await queryClient.fetchQuery(scopedQuery)
+    expect(apiMocks.getPodMetrics).toHaveBeenLastCalledWith(
+      { scope, name: 'api-pod', uid: 'pod-uid' },
+      30,
+      'app',
+    )
+    expect(scopedQuery.queryKey).toEqual(podKeys.metrics(scope, 'api-pod', 30, 'pod-uid', 'app'))
+    expect(scopedQuery.queryKey).not.toEqual(podQueries.metrics(scope, 'api-pod', 30).queryKey)
   })
 
   it('binds events to the pod target', async () => {

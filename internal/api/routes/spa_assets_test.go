@@ -64,7 +64,7 @@ func TestSPAAssetEncoding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer body.Close()
+			defer func() { _ = body.Close() }()
 			decoded, err := io.ReadAll(body)
 			if err != nil || string(decoded) != script {
 				t.Fatalf("invalid compressed asset: %s, %v", decoded, err)
