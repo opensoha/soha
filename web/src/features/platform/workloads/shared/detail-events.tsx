@@ -2,7 +2,7 @@ import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import {
-  InfoCircleOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
   WarningOutlined,
@@ -94,7 +94,7 @@ export function WorkloadDetailEvents({
               <Button
                 type="text"
                 size="small"
-                icon={<InfoCircleOutlined />}
+                icon={<QuestionCircleOutlined />}
                 aria-label={zh ? '事件范围说明' : 'Event scope information'}
               />
             </Tooltip>
