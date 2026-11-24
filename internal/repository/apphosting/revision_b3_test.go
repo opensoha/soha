@@ -258,47 +258,7 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 	if _, _, err := repo.CreateApp(ctx, app, 10); err != nil {
 		t.Fatal(err)
 	}
-	setEnvironment := func(value string, extra ...string) {
-		t.Helper()
-		_, err := repo.MutateRuntimeConfig(ctx, app.ID, func(_ domainapphosting.App, cfg domainapphosting.RuntimeConfig) (domainapphosting.RuntimeConfig, error) {
-			cfg.Environment = map[string]string{"APP_TOKEN": value}
-			if len(extra) > 0 {
-				cfg.Environment["EXTRA_TOKEN"] = extra[0]
-			}
-			return cfg, nil
-		})
-		require.NoError(t, err)
-	}
-	setEnvironment("ciphertext-one")
-	createQueued := func(id string, kind sohaapi.HostedAppKind, due time.Time) {
-		t.Helper()
-		_, err := repo.CreateUploadingRevision(ctx, app.ID, domainapphosting.Revision{
-			ID: id, AppID: app.ID, Kind: kind, CreatedBy: app.OwnerUserID, CreatedAt: now,
-		})
-		assertRevisionError(t, err, nil)
-		var want error
-		if kind == sohaapi.HostedAppKindStatic {
-			want = apperrors.ErrConflict
-		}
-		if id == "older" {
-			assertRevisionError(t, repo.QueueDynamicRevision(ctx, app.ID, id, "source/"+id, "node", true, 0, due), apperrors.ErrInvalidArgument)
-		}
-		assertRevisionError(t, repo.QueueDynamicRevision(ctx, app.ID, id, "source/"+id, "node", true, 2, due), want)
-	}
-	createQueued("static", sohaapi.HostedAppKindStatic, now)
-	createQueued("older", sohaapi.HostedAppKindDynamic, now.Add(-time.Minute))
-	setEnvironment("ciphertext-one", "ciphertext-two")
-	require.ErrorIs(t, repo.QueueDynamicRevision(ctx, app.ID, "older", "source/older", "node", true, 2, now), apperrors.ErrConflict)
-	static, err := repo.GetRevision(ctx, app.ID, "static")
-	require.NoError(t, err)
-	require.Empty(t, static.RuntimeEnvironment)
-	_, err = repo.ClaimDynamicRevision(ctx, "premature", now.Add(-2*time.Minute), time.Minute)
-	assertRevisionError(t, err, apperrors.ErrNotFound)
-	_, err = repo.ClaimDynamicRevision(ctx, "expired", now.Add(-time.Minute), 30*time.Second)
-	assertRevisionError(t, err, nil)
-	assertRevisionError(t, repo.FailDynamicRevision(ctx, "older", "expired", "queued", "expired lease"), apperrors.ErrConflict)
-	first := claimRevisionConcurrently(t, repo, now)
-	assertClaimedRevisionSnapshot(t, repo, app.ID, first)
+	first := claimOlderDynamicRevision(t, repo, app, now)
 	assertRevisionError(t, repo.AdvanceDynamicRevision(ctx, first.ID, "expired", "building", "", now), apperrors.ErrConflict)
 	image := "registry.example.com/app@sha256:" + strings.Repeat("a", 64)
 	assertRevisionError(t, repo.AdvanceDynamicRevision(ctx, first.ID, first.ClaimID, "starting", image, now), apperrors.ErrConflict)
@@ -307,10 +267,10 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 			AppID: app.ID, RevisionID: id, ActorUserID: app.OwnerUserID, DynamicClaimID: claim, Now: now,
 		})
 	}
-	_, err = activate(first.ID, first.ClaimID)
+	_, err := activate(first.ID, first.ClaimID)
 	assertRevisionError(t, err, apperrors.ErrConflict)
 
-	createQueued("newer", sohaapi.HostedAppKindDynamic, now)
+	createQueuedDynamicRevision(t, repo, app, "newer", sohaapi.HostedAppKindDynamic, now)
 	advanceToStarting(t, repo, "newer", now, image)
 	result, err := activate("newer", "ready-newer")
 	assertRevisionError(t, err, nil)
@@ -328,7 +288,50 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 	}
 	require.Equal(t, "a newer revision was already activated", older.FailureReason)
 	claimAndCompleteDynamicCleanup(t, repo, "older", sohaapi.HostedAppRevisionStatusFailed, now)
-	_, _, _, err = repo.RollbackRevision(ctx, app.ID, "newer", "", now)
+	checkDynamicRevisionEnvironmentRevocation(t, repo, app, now, image)
+	createQueuedDynamicRevision(t, repo, app, "retained", sohaapi.HostedAppKindDynamic, now)
+	advanceToStarting(t, repo, "retained", now, image)
+	result, err = repo.ActivateRevision(ctx, appapphosting.ActivateRevisionInput{
+		AppID: app.ID, RevisionID: "retained", ActorUserID: app.OwnerUserID, DynamicClaimID: "ready-retained", Now: now, RetainedRevisionsMax: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "retained", result.App.ActiveRevisionID)
+	claimAndCompleteDynamicCleanup(t, repo, "newer", sohaapi.HostedAppRevisionStatusEvicted, now)
+
+	createQueuedDynamicRevision(t, repo, app, "failed", sohaapi.HostedAppKindDynamic, now)
+	rev, err := repo.ClaimDynamicRevision(ctx, "fail", now, time.Minute)
+	assertRevisionError(t, err, nil)
+	assertRevisionError(t, repo.FailDynamicRevision(ctx, rev.ID, rev.ClaimID, "queued", "build rejected"), nil)
+	_, err = repo.ClaimDynamicRevision(ctx, "finished", now, time.Minute)
+	assertRevisionError(t, err, apperrors.ErrNotFound)
+	claimAndCompleteDynamicCleanup(t, repo, "failed", sohaapi.HostedAppRevisionStatusFailed, now.Add(time.Minute))
+}
+
+func claimOlderDynamicRevision(t *testing.T, repo dynamicTestRepository, app domainapphosting.App, now time.Time) domainapphosting.Revision {
+	t.Helper()
+	ctx := t.Context()
+	setDynamicRevisionTestEnvironment(t, repo, app.ID, "ciphertext-one")
+	createQueuedDynamicRevision(t, repo, app, "static", sohaapi.HostedAppKindStatic, now)
+	createQueuedDynamicRevision(t, repo, app, "older", sohaapi.HostedAppKindDynamic, now.Add(-time.Minute))
+	setDynamicRevisionTestEnvironment(t, repo, app.ID, "ciphertext-one", "ciphertext-two")
+	require.ErrorIs(t, repo.QueueDynamicRevision(ctx, app.ID, "older", "source/older", "node", true, 2, now), apperrors.ErrConflict)
+	static, err := repo.GetRevision(ctx, app.ID, "static")
+	require.NoError(t, err)
+	require.Empty(t, static.RuntimeEnvironment)
+	_, err = repo.ClaimDynamicRevision(ctx, "premature", now.Add(-2*time.Minute), time.Minute)
+	assertRevisionError(t, err, apperrors.ErrNotFound)
+	_, err = repo.ClaimDynamicRevision(ctx, "expired", now.Add(-time.Minute), 30*time.Second)
+	assertRevisionError(t, err, nil)
+	assertRevisionError(t, repo.FailDynamicRevision(ctx, "older", "expired", "queued", "expired lease"), apperrors.ErrConflict)
+	first := claimRevisionConcurrently(t, repo, now)
+	assertClaimedRevisionSnapshot(t, repo, app.ID, first)
+	return first
+}
+
+func checkDynamicRevisionEnvironmentRevocation(t *testing.T, repo dynamicTestRepository, app domainapphosting.App, now time.Time, image string) {
+	t.Helper()
+	ctx := t.Context()
+	_, _, _, err := repo.RollbackRevision(ctx, app.ID, "newer", "", now)
 	assertRevisionError(t, err, apperrors.ErrAccessDenied)
 	_, _, _, err = repo.RollbackRevisionAs(ctx, app.ID, "newer", "", "former-author", now)
 	assertRevisionError(t, err, apperrors.ErrAccessDenied)
@@ -343,10 +346,12 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 		t.Fatalf("rollback target metadata = %#v", target)
 	}
 	require.Equal(t, "ciphertext-two", target.RuntimeEnvironment["EXTRA_TOKEN"])
-	createQueued("revoked", sohaapi.HostedAppKindDynamic, now)
+	createQueuedDynamicRevision(t, repo, app, "revoked", sohaapi.HostedAppKindDynamic, now)
 	advanceToStarting(t, repo, "revoked", now, image)
-	setEnvironment("ciphertext-one", "ciphertext-three")
-	_, err = activate("revoked", "ready-revoked")
+	setDynamicRevisionTestEnvironment(t, repo, app.ID, "ciphertext-one", "ciphertext-three")
+	_, err = repo.ActivateRevision(ctx, appapphosting.ActivateRevisionInput{
+		AppID: app.ID, RevisionID: "revoked", ActorUserID: app.OwnerUserID, DynamicClaimID: "ready-revoked", Now: now,
+	})
 	require.ErrorAs(t, err, &businessErr)
 	require.Equal(t, "revision_environment_revoked", businessErr.Code())
 	revoked, err := repo.GetRevision(ctx, app.ID, "revoked")
@@ -362,22 +367,35 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 	unchanged, err := repo.GetAppByID(ctx, app.ID)
 	require.NoError(t, err)
 	require.Equal(t, beforeRevoke.RouteGeneration, unchanged.RouteGeneration)
-	createQueued("retained", sohaapi.HostedAppKindDynamic, now)
-	advanceToStarting(t, repo, "retained", now, image)
-	result, err = repo.ActivateRevision(ctx, appapphosting.ActivateRevisionInput{
-		AppID: app.ID, RevisionID: "retained", ActorUserID: app.OwnerUserID, DynamicClaimID: "ready-retained", Now: now, RetainedRevisionsMax: 1,
+}
+
+func setDynamicRevisionTestEnvironment(t *testing.T, repo dynamicTestRepository, appID, value string, extra ...string) {
+	t.Helper()
+	_, err := repo.MutateRuntimeConfig(t.Context(), appID, func(_ domainapphosting.App, cfg domainapphosting.RuntimeConfig) (domainapphosting.RuntimeConfig, error) {
+		cfg.Environment = map[string]string{"APP_TOKEN": value}
+		if len(extra) > 0 {
+			cfg.Environment["EXTRA_TOKEN"] = extra[0]
+		}
+		return cfg, nil
 	})
 	require.NoError(t, err)
-	require.Equal(t, "retained", result.App.ActiveRevisionID)
-	claimAndCompleteDynamicCleanup(t, repo, "newer", sohaapi.HostedAppRevisionStatusEvicted, now)
+}
 
-	createQueued("failed", sohaapi.HostedAppKindDynamic, now)
-	rev, err := repo.ClaimDynamicRevision(ctx, "fail", now, time.Minute)
+func createQueuedDynamicRevision(t *testing.T, repo dynamicTestRepository, app domainapphosting.App, id string, kind sohaapi.HostedAppKind, due time.Time) {
+	t.Helper()
+	ctx := t.Context()
+	_, err := repo.CreateUploadingRevision(ctx, app.ID, domainapphosting.Revision{
+		ID: id, AppID: app.ID, Kind: kind, CreatedBy: app.OwnerUserID, CreatedAt: app.CreatedAt,
+	})
 	assertRevisionError(t, err, nil)
-	assertRevisionError(t, repo.FailDynamicRevision(ctx, rev.ID, rev.ClaimID, "queued", "build rejected"), nil)
-	_, err = repo.ClaimDynamicRevision(ctx, "finished", now, time.Minute)
-	assertRevisionError(t, err, apperrors.ErrNotFound)
-	claimAndCompleteDynamicCleanup(t, repo, "failed", sohaapi.HostedAppRevisionStatusFailed, now.Add(time.Minute))
+	var want error
+	if kind == sohaapi.HostedAppKindStatic {
+		want = apperrors.ErrConflict
+	}
+	if id == "older" {
+		assertRevisionError(t, repo.QueueDynamicRevision(ctx, app.ID, id, "source/"+id, "node", true, 0, due), apperrors.ErrInvalidArgument)
+	}
+	assertRevisionError(t, repo.QueueDynamicRevision(ctx, app.ID, id, "source/"+id, "node", true, 2, due), want)
 }
 
 func assertClaimedRevisionSnapshot(t *testing.T, repo dynamicTestRepository, appID string, claimed domainapphosting.Revision) {
