@@ -3,6 +3,7 @@ export { systemIntegrationQueries } from './queries'
 export {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  isValidS3StorageEndpoint,
   s3StorageFormValues,
   updateS3StorageIntegration,
 } from './object-storage-model'
