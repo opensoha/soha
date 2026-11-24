@@ -6,6 +6,7 @@ export { systemIntegrationMutations, systemIntegrationQueries } from './system-i
 export {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  isValidS3StorageEndpoint,
   s3StorageFormValues,
   updateS3StorageIntegration,
 } from './system-integrations'
