@@ -21,7 +21,7 @@ import { AnnouncementBell } from '@/features/announcements/announcement-center'
 import { logoutAuthSession } from '@/features/auth/auth-api'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { AssistantCompanionOverlay } from '@/features/companion'
-import { deliveryQueries } from '@/features/delivery/queries'
+import { applicationEnvironmentNavigationQuery } from '@/features/delivery/application-environment-navigation-query'
 import {
   isComputeWorkbenchMenuGroup,
   normalizeComputeWorkbenchNav,
@@ -668,7 +668,7 @@ export function AppLayout() {
     isApplicationWorkspace && hasPermission(snapshot, 'delivery.applications.view')
   const applicationId = applicationMatch?.params.applicationId ?? ''
   const sessionEnvironmentQuery = useQuery(
-    deliveryQueries.applications.environmentNavigation(applicationId, canReadApplicationSessions),
+    applicationEnvironmentNavigationQuery(applicationId, canReadApplicationSessions),
   )
   const sessionEnvironment = sessionEnvironmentId
     ? sessionEnvironmentQuery.data?.find(
