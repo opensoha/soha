@@ -135,7 +135,7 @@ func containerStatusSignals(pod *corev1.Pod, status corev1.ContainerStatus) []do
 		if code == "" {
 			return nil
 		}
-		return []domain.RuntimeSignal{{Code: code, At: pod.CreationTimestamp.Time.UTC()}}
+		return []domain.RuntimeSignal{{Code: code, At: pod.CreationTimestamp.UTC()}}
 	case status.State.Terminated != nil:
 		terminated := status.State.Terminated
 		code := runtimeSignalExitError

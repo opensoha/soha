@@ -70,33 +70,7 @@ func TestProvisionWithPostgres(t *testing.T) {
 	}
 	var runtimeURL string
 	t.Run("reconcile_partial_create_across_replicas", func(t *testing.T) {
-		db := resourcePrefix + appA
-		if err := reserveRole(ctx, admin, db+"_runtime", managedRole, appConnections); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := admin.Exec(ctx, "CREATE DATABASE "+quoteIdentifier(db)+" TEMPLATE template0 ALLOW_CONNECTIONS false"); err != nil {
-			t.Fatal("could not stage the interrupted app database creation")
-		}
-		replica := mustProvisioner(t, dsn, 1<<30)
-		type result struct {
-			dsn string
-			err error
-		}
-		results := make(chan result, 2)
-		for _, provisioner := range []*Provisioner{p, replica} {
-			go func() {
-				value, err := provisioner.Provision(ctx, appA, password)
-				results <- result{dsn: value, err: err}
-			}()
-		}
-		first, second := <-results, <-results
-		if first.err != nil || second.err != nil {
-			t.Fatalf("reconciliation failed: %v / %v", first.err, second.err)
-		}
-		if first.dsn == "" || first.dsn != second.dsn {
-			t.Fatal("reconciling replicas did not return the same runtime connection URL")
-		}
-		runtimeURL = first.dsn
+		runtimeURL = testReconcilePartialCreate(t, ctx, p, admin, dsn, appA, password)
 	})
 	if runtimeURL == "" {
 		t.Fatal("remaining cases require provisioned app data")
@@ -133,21 +107,7 @@ func TestProvisionWithPostgres(t *testing.T) {
 		assertConnectionDenied(t, ctx, runtimeURL, "53300")
 	})
 	t.Run("capacity_rejects_new_database_and_preserves_existing_data", func(t *testing.T) {
-		full := mustProvisioner(t, dsn, 1)
-		if _, err := full.Provision(ctx, appC, password); !errors.Is(err, ErrCapacity) {
-			t.Fatalf("expected capacity failure, got %v", err)
-		}
-		assertUnallocated(t, ctx, admin, appC)
-		reconciled, err := full.Provision(ctx, appA, password)
-		if err != nil || reconciled != runtimeURL {
-			t.Fatalf("reconciliation at capacity failed: %v", err)
-		}
-		conn := connect(t, ctx, runtimeURL)
-		var value string
-		err = conn.QueryRow(ctx, "SELECT data->>'status' FROM entries WHERE id = 'retained'").Scan(&value)
-		if err != nil || value != "updated" {
-			t.Fatal("existing application data did not survive reconciliation")
-		}
+		testProvisionAtCapacity(t, ctx, admin, dsn, appA, appC, password, runtimeURL)
 	})
 	t.Run("reject_unbound_runtime_role", func(t *testing.T) {
 		if _, err := admin.Exec(ctx, "CREATE ROLE "+quoteIdentifier(resourcePrefix+appC+"_runtime")); err != nil {
@@ -163,6 +123,56 @@ func TestProvisionWithPostgres(t *testing.T) {
 	t.Run("compatible_schema_upgrade_preserves_versions_and_data", func(t *testing.T) {
 		testSchemaUpgrade(t, ctx, p, appA, appB, password)
 	})
+}
+
+func testReconcilePartialCreate(t *testing.T, ctx context.Context, p *Provisioner, admin *pgx.Conn, dsn, appID, password string) string {
+	t.Helper()
+	db := resourcePrefix + appID
+	if err := reserveRole(ctx, admin, db+"_runtime", managedRole, appConnections); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+quoteIdentifier(db)+" TEMPLATE template0 ALLOW_CONNECTIONS false"); err != nil {
+		t.Fatal("could not stage the interrupted app database creation")
+	}
+	replica := mustProvisioner(t, dsn, 1<<30)
+	type result struct {
+		dsn string
+		err error
+	}
+	results := make(chan result, 2)
+	for _, provisioner := range []*Provisioner{p, replica} {
+		go func() {
+			value, err := provisioner.Provision(ctx, appID, password)
+			results <- result{dsn: value, err: err}
+		}()
+	}
+	first, second := <-results, <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("reconciliation failed: %v / %v", first.err, second.err)
+	}
+	if first.dsn == "" || first.dsn != second.dsn {
+		t.Fatal("reconciling replicas did not return the same runtime connection URL")
+	}
+	return first.dsn
+}
+
+func testProvisionAtCapacity(t *testing.T, ctx context.Context, admin *pgx.Conn, dsn, existingAppID, newAppID, password, runtimeURL string) {
+	t.Helper()
+	full := mustProvisioner(t, dsn, 1)
+	if _, err := full.Provision(ctx, newAppID, password); !errors.Is(err, ErrCapacity) {
+		t.Fatalf("expected capacity failure, got %v", err)
+	}
+	assertUnallocated(t, ctx, admin, newAppID)
+	reconciled, err := full.Provision(ctx, existingAppID, password)
+	if err != nil || reconciled != runtimeURL {
+		t.Fatalf("reconciliation at capacity failed: %v", err)
+	}
+	conn := connect(t, ctx, runtimeURL)
+	var value string
+	err = conn.QueryRow(ctx, "SELECT data->>'status' FROM entries WHERE id = 'retained'").Scan(&value)
+	if err != nil || value != "updated" {
+		t.Fatal("existing application data did not survive reconciliation")
+	}
 }
 
 func testRuntimeAccess(t *testing.T, ctx context.Context, runtimeURL string) {
@@ -313,6 +323,11 @@ func testSchemaUpgrade(t *testing.T, ctx context.Context, p *Provisioner, appID,
 	}
 
 	newRuntime := connectWritableRevision(t, ctx, p, appID, newRevision, password)
+	assertCompatibleRevisionWrites(t, ctx, p, appID, oldRuntime, newRuntime)
+}
+
+func assertCompatibleRevisionWrites(t *testing.T, ctx context.Context, p *Provisioner, appID string, oldRuntime, newRuntime *pgx.Conn) {
+	t.Helper()
 	var value string
 	var timestampMissing bool
 	err := newRuntime.QueryRow(ctx, "SELECT data->>'value', updated_at IS NULL FROM entries WHERE id = 'migration'").Scan(&value, &timestampMissing)
@@ -344,7 +359,11 @@ func assertBusyMigrationKeepsV1(t *testing.T, ctx context.Context, p *Provisione
 	if err != nil {
 		t.Fatal("v1 could not open a read transaction")
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			t.Error(operationError("roll back integration transaction", err))
+		}
+	}()
 	if _, err := tx.Exec(ctx, "SELECT id, data FROM entries"); err != nil {
 		t.Fatal("v1 could not read its data")
 	}

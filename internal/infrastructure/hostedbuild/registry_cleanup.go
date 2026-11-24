@@ -156,7 +156,7 @@ func (c *registryImageCleanup) deleteManifest(ctx context.Context, repository, d
 	if err != nil {
 		return errors.New("hosted registry deletion request failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusAccepted || (resp.StatusCode == http.StatusNotFound && unknownManifest(resp.Body)) {
 		return nil
 	}

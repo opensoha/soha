@@ -69,10 +69,7 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 	if socketDir == "" {
 		t.Skip("assign a disposable local PostgreSQL instance through SOHA_APP_HOSTING_TEST_POSTGRES_SOCKET_DIR")
 	}
-	socket, err := os.Stat(filepath.Join(socketDir, ".s.PGSQL.5432"))
-	if err != nil || !filepath.IsAbs(socketDir) || socket.Mode()&os.ModeSocket == 0 {
-		t.Fatalf("expected a disposable PostgreSQL Unix socket at %q", socketDir)
-	}
+	requirePostgresTestSocket(t, socketDir)
 	conn := url.URL{Scheme: "postgres", Path: "/apphosting_test", RawQuery: url.Values{
 		"host": {socketDir}, "port": {"5432"}, "user": {"apphosting_test"}, "sslmode": {"disable"},
 	}.Encode()}
@@ -85,9 +82,12 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+	migrations, err := os.OpenRoot("../../../migrations/postgres")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = migrations.Close() })
 	applyMigration := func(name string) {
 		t.Helper()
-		ddl, err := os.ReadFile("../../../migrations/postgres/" + name)
+		ddl, err := migrations.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,6 +130,17 @@ func TestPostgresDynamicRevisionLifecycle(t *testing.T) {
 		defer sqlDB.SetMaxOpenConns(0)
 		testTransactionBoundRuntimeAuthority(t, db, repo)
 	})
+}
+
+func requirePostgresTestSocket(t *testing.T, socketDir string) {
+	t.Helper()
+	require.True(t, filepath.IsAbs(socketDir), "expected an absolute PostgreSQL socket directory")
+	root, err := os.OpenRoot(socketDir)
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	socket, err := root.Stat(".s.PGSQL.5432")
+	require.NoError(t, err)
+	require.NotZero(t, socket.Mode()&os.ModeSocket, "expected a disposable PostgreSQL Unix socket at %q", socketDir)
 }
 
 func testDeletedDynamicRuntimeCleanup(t *testing.T, repo dynamicTestRepository) {
@@ -186,6 +197,26 @@ func testDeletedDynamicRuntimeCleanup(t *testing.T, repo dynamicTestRepository) 
 	require.ErrorIs(t, err, apperrors.ErrNotFound)
 	_, err = repo.GetRevision(ctx, app.ID, rev.ID)
 	require.ErrorIs(t, err, apperrors.ErrNotFound)
+	assertDeletedDynamicCleanupRetry(t, repo, app.ID, active, now)
+
+	lateUploadDue := now.Add(appapphosting.DynamicSourceCleanupDelay)
+	_, err = repo.ClaimDeletedDynamicRevision(ctx, "upload-still-possible", lateUploadDue.Add(-time.Second), time.Minute)
+	require.ErrorIs(t, err, apperrors.ErrNotFound)
+	work, err := repo.ClaimDeletedDynamicRevision(ctx, "upload-expired", lateUploadDue, time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, "upload-in-flight", work.ID)
+	require.Empty(t, work.SourceKey)
+	require.NoError(t, repo.CompleteDeletedDynamicCleanup(ctx, work.ID, work.ClaimID))
+	work, err = repo.ClaimDeletedDynamicRevision(ctx, "queued-upload-expired", lateUploadDue, time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, "young-queued", work.ID)
+	require.Equal(t, "prefix/queued-source", work.SourceKey)
+	require.NoError(t, repo.CompleteDeletedDynamicCleanup(ctx, work.ID, work.ClaimID))
+}
+
+func assertDeletedDynamicCleanupRetry(t *testing.T, repo dynamicTestRepository, appID string, active domainapphosting.Revision, now time.Time) {
+	t.Helper()
+	ctx := t.Context()
 	oldDue := now.Add(30 * time.Second)
 	old, err := repo.ClaimDeletedDynamicRevision(ctx, "older-terminal-even-after-cleanup", oldDue, time.Minute)
 	require.NoError(t, err)
@@ -197,34 +228,21 @@ func testDeletedDynamicRuntimeCleanup(t *testing.T, repo dynamicTestRepository) 
 	claimTime := now.Add(time.Minute)
 	work, err := repo.ClaimDeletedDynamicRevision(ctx, "cleanup", claimTime, time.Minute)
 	require.NoError(t, err)
-	require.Equal(t, rev.ID, work.ID)
-	require.Equal(t, app.ID, work.AppID)
+	require.Equal(t, active.ID, work.ID)
+	require.Equal(t, appID, work.AppID)
 	require.Equal(t, "store", work.StorageIntegrationID)
 	require.Equal(t, "prefix", work.StoragePrefix)
 	require.Equal(t, "prefix/source", work.SourceKey)
 	require.True(t, work.Database)
 	require.Empty(t, work.RuntimeEnvironment)
 	require.NoError(t, repo.RequeueDeletedDynamicCleanup(ctx, active))
-	require.ErrorIs(t, repo.CompleteDeletedDynamicCleanup(ctx, rev.ID, "cleanup"), apperrors.ErrConflict)
+	require.ErrorIs(t, repo.CompleteDeletedDynamicCleanup(ctx, active.ID, "cleanup"), apperrors.ErrConflict)
 	work, err = repo.ClaimDeletedDynamicRevision(ctx, "retry", claimTime, time.Minute)
 	require.NoError(t, err)
 	require.Empty(t, work.RuntimeEnvironment)
 	require.NoError(t, repo.CompleteDeletedDynamicCleanup(ctx, work.ID, work.ClaimID))
 	_, err = repo.ClaimDeletedDynamicRevision(ctx, "completed", claimTime, time.Minute)
 	require.ErrorIs(t, err, apperrors.ErrNotFound)
-	lateUploadDue := now.Add(appapphosting.DynamicSourceCleanupDelay)
-	_, err = repo.ClaimDeletedDynamicRevision(ctx, "upload-still-possible", lateUploadDue.Add(-time.Second), time.Minute)
-	require.ErrorIs(t, err, apperrors.ErrNotFound)
-	work, err = repo.ClaimDeletedDynamicRevision(ctx, "upload-expired", lateUploadDue, time.Minute)
-	require.NoError(t, err)
-	require.Equal(t, "upload-in-flight", work.ID)
-	require.Empty(t, work.SourceKey)
-	require.NoError(t, repo.CompleteDeletedDynamicCleanup(ctx, work.ID, work.ClaimID))
-	work, err = repo.ClaimDeletedDynamicRevision(ctx, "queued-upload-expired", lateUploadDue, time.Minute)
-	require.NoError(t, err)
-	require.Equal(t, "young-queued", work.ID)
-	require.Equal(t, "prefix/queued-source", work.SourceKey)
-	require.NoError(t, repo.CompleteDeletedDynamicCleanup(ctx, work.ID, work.ClaimID))
 }
 
 func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
@@ -280,15 +298,7 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 	assertRevisionError(t, err, nil)
 	assertRevisionError(t, repo.FailDynamicRevision(ctx, "older", "expired", "queued", "expired lease"), apperrors.ErrConflict)
 	first := claimRevisionConcurrently(t, repo, now)
-	if first.ID != "older" || first.SourceKey != "source/older" || first.BuildTemplate != "node" || !first.Database || first.DataSchema != 2 || first.BuildPhase != "queued" {
-		t.Fatalf("claimed revision = %#v", first)
-	}
-	require.Equal(t, "ciphertext-one", first.RuntimeEnvironment["APP_TOKEN"])
-	first.RuntimeEnvironment["APP_TOKEN"] = "caller-map-edit"
-	oldSnapshot, err := repo.GetRevision(ctx, app.ID, first.ID)
-	require.NoError(t, err)
-	require.Equal(t, "ciphertext-one", oldSnapshot.RuntimeEnvironment["APP_TOKEN"])
-	require.NotContains(t, oldSnapshot.RuntimeEnvironment, "EXTRA_TOKEN")
+	assertClaimedRevisionSnapshot(t, repo, app.ID, first)
 	assertRevisionError(t, repo.AdvanceDynamicRevision(ctx, first.ID, "expired", "building", "", now), apperrors.ErrConflict)
 	image := "registry.example.com/app@sha256:" + strings.Repeat("a", 64)
 	assertRevisionError(t, repo.AdvanceDynamicRevision(ctx, first.ID, first.ClaimID, "starting", image, now), apperrors.ErrConflict)
@@ -368,6 +378,22 @@ func testDynamicRevisionLifecycle(t *testing.T, repo dynamicTestRepository) {
 	_, err = repo.ClaimDynamicRevision(ctx, "finished", now, time.Minute)
 	assertRevisionError(t, err, apperrors.ErrNotFound)
 	claimAndCompleteDynamicCleanup(t, repo, "failed", sohaapi.HostedAppRevisionStatusFailed, now.Add(time.Minute))
+}
+
+func assertClaimedRevisionSnapshot(t *testing.T, repo dynamicTestRepository, appID string, claimed domainapphosting.Revision) {
+	t.Helper()
+	require.Equal(t, "older", claimed.ID)
+	require.Equal(t, "source/older", claimed.SourceKey)
+	require.Equal(t, "node", claimed.BuildTemplate)
+	require.True(t, claimed.Database)
+	require.Equal(t, 2, claimed.DataSchema)
+	require.Equal(t, "queued", claimed.BuildPhase)
+	require.Equal(t, "ciphertext-one", claimed.RuntimeEnvironment["APP_TOKEN"])
+	claimed.RuntimeEnvironment["APP_TOKEN"] = "caller-map-edit"
+	oldSnapshot, err := repo.GetRevision(t.Context(), appID, claimed.ID)
+	require.NoError(t, err)
+	require.Equal(t, "ciphertext-one", oldSnapshot.RuntimeEnvironment["APP_TOKEN"])
+	require.NotContains(t, oldSnapshot.RuntimeEnvironment, "EXTRA_TOKEN")
 }
 
 func enableDynamicHostingTest(t *testing.T, repo dynamicTestRepository) {

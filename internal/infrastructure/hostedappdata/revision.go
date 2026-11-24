@@ -101,7 +101,7 @@ func (p *Provisioner) ProvisionRevision(ctx context.Context, appID, revisionID, 
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	if err := p.prepareRevision(ctx, conn, target); err != nil {
 		return "", err
 	}
@@ -148,7 +148,7 @@ func (p *Provisioner) SetRevisionWritable(ctx context.Context, appID, revisionID
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	if err := requireManagedDatabase(ctx, conn, target.database); err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func (p *Provisioner) DeleteRevisionRole(ctx context.Context, appID, revisionID 
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	roleOID, _, err := existingRole(ctx, conn, target.role, target.marker, revisionConnections)
 	if err != nil || roleOID == 0 {
 		return err
@@ -250,6 +250,6 @@ func (p *Provisioner) revisionGrants(ctx context.Context, target revisionBinding
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	return executeTransaction(ctx, conn, operation, statements...)
 }

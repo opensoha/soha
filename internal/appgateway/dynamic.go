@@ -156,17 +156,13 @@ func dynamicUpstreamHeaders(in http.Header, cookies []*http.Cookie) http.Header 
 	for _, name := range []string{"Authorizer", "X-Authorizer", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port", "X-Forwarded-Prefix", "X-Real-IP"} {
 		out.Del(name)
 	}
-	pairs := make([]string, 0, len(cookies))
+	out.Del("Cookie")
+	upstream := http.Request{Header: out}
 	for _, cookie := range cookies {
 		if cookie == nil || isReservedCookieName(cookie.Name) {
 			continue
 		}
-		pairs = append(pairs, (&http.Cookie{Name: cookie.Name, Value: cookie.Value}).String())
-	}
-	if len(pairs) == 0 {
-		out.Del("Cookie")
-	} else {
-		out.Set("Cookie", strings.Join(pairs, "; "))
+		upstream.AddCookie(cookie)
 	}
 	return out
 }

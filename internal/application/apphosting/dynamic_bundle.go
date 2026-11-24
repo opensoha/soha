@@ -171,6 +171,10 @@ func (s *Service) queueDynamicBundle(ctx context.Context, actor identity.Princip
 }
 
 func (s *Service) commitDynamicSource(ctx context.Context, actor identity.Principal, app domain.App, settings domain.Settings, revision domain.Revision, project dynamicProject, archive []byte) (sohaapi.HostedAppDeploymentReceipt, error) {
+	repo, ok := s.repo.(dynamicRepository)
+	if !ok {
+		return sohaapi.HostedAppDeploymentReceipt{}, apperrors.ErrUnsupportedOperation
+	}
 	key := dynamicSourceKey(revision)
 	upload, cancelUpload := context.WithDeadline(ctx, revision.CreatedAt.Add(revisionDeadline))
 	defer cancelUpload()
@@ -179,14 +183,14 @@ func (s *Service) commitDynamicSource(ctx context.Context, actor identity.Princi
 	}
 	_, _, _, err := s.objectStore.PutObject(upload, revision.StorageIntegrationID, key, "application/gzip", bytes.NewReader(archive))
 	if err != nil {
-		_, cleanupErr := s.discardInactiveDynamicSource(ctx, revision, key)
+		_, cleanupErr := s.discardInactiveDynamicSource(ctx, repo, revision, key)
 		return sohaapi.HostedAppDeploymentReceipt{}, errors.Join(err, cleanupErr)
 	}
 	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revisionStepTimeout)
 	defer cancel()
-	err = s.repo.(dynamicRepository).QueueDynamicRevision(queueCtx, app.ID, revision.ID, key, project.Template, project.Database, project.SchemaVersion, s.now())
+	err = repo.QueueDynamicRevision(queueCtx, app.ID, revision.ID, key, project.Template, project.Database, project.SchemaVersion, s.now())
 	if err != nil {
-		if deleted, cleanupErr := s.discardInactiveDynamicSource(ctx, revision, key); deleted || cleanupErr != nil {
+		if deleted, cleanupErr := s.discardInactiveDynamicSource(ctx, repo, revision, key); deleted || cleanupErr != nil {
 			return sohaapi.HostedAppDeploymentReceipt{}, errors.Join(err, cleanupErr)
 		}
 		if receipt, handled, idemErr := s.checkUploadIdempotency(queueCtx, app, settings, revision.IdempotencyKey, revision.BundleSha256, revision.PublishVisibility); handled || idemErr != nil {
@@ -202,7 +206,7 @@ func (s *Service) commitDynamicSource(ctx context.Context, actor identity.Princi
 	return sohaapi.HostedAppDeploymentReceipt{App: dto, Revision: revision.ToAPI()}, err
 }
 
-func (s *Service) discardInactiveDynamicSource(ctx context.Context, revision domain.Revision, key string) (bool, error) {
+func (s *Service) discardInactiveDynamicSource(ctx context.Context, repo deletedDynamicRepository, revision domain.Revision, key string) (bool, error) {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), revisionStepTimeout)
 	defer cancel()
 	stored, err := s.repo.GetRevision(cleanup, revision.AppID, revision.ID)
@@ -221,7 +225,7 @@ func (s *Service) discardInactiveDynamicSource(ctx context.Context, revision dom
 	}
 	revision.SourceKey = key
 	// The original cleanup may have completed before the late object write finished.
-	queueErr := s.repo.(dynamicRepository).RequeueDeletedDynamicCleanup(cleanup, revision)
+	queueErr := repo.RequeueDeletedDynamicCleanup(cleanup, revision)
 	return true, errors.Join(queueErr, s.objectStore.DeleteKeys(cleanup, revision.StorageIntegrationID, []string{key}))
 }
 

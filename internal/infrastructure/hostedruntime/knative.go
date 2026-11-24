@@ -238,49 +238,7 @@ func (r *Runtime) desiredService(spec Spec) (*unstructured.Unstructured, error) 
 		replicas = strconv.Itoa(int(limits.MaxReplicas))
 		delay = strconv.Itoa(int(limits.ScaleDownSeconds)) + "s"
 	}
-	container := map[string]any{
-		"name":            "app",
-		"image":           image,
-		"imagePullPolicy": "IfNotPresent",
-		"ports": []any{map[string]any{
-			"containerPort": int64(8080),
-			"protocol":      "TCP",
-		}},
-		"readinessProbe": map[string]any{
-			"httpGet": map[string]any{
-				"path":   "/healthz",
-				"port":   int64(8080),
-				"scheme": "HTTP",
-			},
-			"initialDelaySeconds": int64(2),
-			"periodSeconds":       int64(5),
-			"timeoutSeconds":      int64(1),
-			"successThreshold":    int64(1),
-			"failureThreshold":    int64(3),
-		},
-		"securityContext": map[string]any{
-			"allowPrivilegeEscalation": false,
-			"capabilities":             map[string]any{"drop": []any{"ALL"}},
-			"readOnlyRootFilesystem":   true,
-			"runAsNonRoot":             true,
-			"runAsUser":                int64(65532),
-			"runAsGroup":               int64(65532),
-			"seccompProfile":           map[string]any{"type": "RuntimeDefault"},
-		},
-		"resources": map[string]any{
-			"requests": map[string]any{"cpu": "50m", "memory": "64Mi"},
-			"limits":   map[string]any{"cpu": cpu, "memory": memory},
-		},
-		"terminationMessagePath":   "/dev/termination-log",
-		"terminationMessagePolicy": "File",
-		"volumeMounts": []any{map[string]any{
-			"name":      "tmp",
-			"mountPath": "/tmp",
-		}},
-	}
-	if secret != "" {
-		container["envFrom"] = []any{map[string]any{"secretRef": map[string]any{"name": secret}}}
-	}
+	container := hostedContainer(image, secret, cpu, memory)
 	service := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "serving.knative.dev/v1",
 		"kind":       "Service",
@@ -326,6 +284,53 @@ func (r *Runtime) desiredService(spec Spec) (*unstructured.Unstructured, error) 
 		},
 	}}
 	return service, nil
+}
+
+func hostedContainer(image, secret, cpu, memory string) map[string]any {
+	container := map[string]any{
+		"name":            "app",
+		"image":           image,
+		"imagePullPolicy": "IfNotPresent",
+		"ports": []any{map[string]any{
+			"containerPort": int64(8080),
+			"protocol":      "TCP",
+		}},
+		"readinessProbe": map[string]any{
+			"httpGet": map[string]any{
+				"path":   "/healthz",
+				"port":   int64(8080),
+				"scheme": "HTTP",
+			},
+			"initialDelaySeconds": int64(2),
+			"periodSeconds":       int64(5),
+			"timeoutSeconds":      int64(1),
+			"successThreshold":    int64(1),
+			"failureThreshold":    int64(3),
+		},
+		"securityContext": map[string]any{
+			"allowPrivilegeEscalation": false,
+			"capabilities":             map[string]any{"drop": []any{"ALL"}},
+			"readOnlyRootFilesystem":   true,
+			"runAsNonRoot":             true,
+			"runAsUser":                int64(65532),
+			"runAsGroup":               int64(65532),
+			"seccompProfile":           map[string]any{"type": "RuntimeDefault"},
+		},
+		"resources": map[string]any{
+			"requests": map[string]any{"cpu": "50m", "memory": "64Mi"},
+			"limits":   map[string]any{"cpu": cpu, "memory": memory},
+		},
+		"terminationMessagePath":   "/dev/termination-log",
+		"terminationMessagePolicy": "File",
+		"volumeMounts": []any{map[string]any{
+			"name":      "tmp",
+			"mountPath": "/tmp",
+		}},
+	}
+	if secret != "" {
+		container["envFrom"] = []any{map[string]any{"secretRef": map[string]any{"name": secret}}}
+	}
+	return container
 }
 
 func pinnedImage(image string) (string, error) {

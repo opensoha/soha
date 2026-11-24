@@ -52,10 +52,7 @@ func TestBuildJobSeparatesCredentialsAndDisablesPrivileges(t *testing.T) {
 		t.Fatal("Job lacks suspension or pod privileges are insufficiently constrained")
 	}
 	fetch, builder := pod.InitContainers[0], pod.Containers[0]
-	if !mounts(fetch, "source-credential") || mounts(fetch, "docker-config") || mounts(fetch, "buildkit-tls") ||
-		mounts(builder, "source-credential") || !mounts(builder, "docker-config") || !mounts(builder, "buildkit-tls") {
-		t.Fatal("unexpected credential volume mounts")
-	}
+	assertBuildCredentialMounts(t, fetch, builder)
 	for _, container := range []corev1.Container{fetch, builder} {
 		if container.Image != b.cfg.BuildClientImage || (container.SecurityContext.AllowPrivilegeEscalation == nil || *container.SecurityContext.AllowPrivilegeEscalation) ||
 			(container.SecurityContext.ReadOnlyRootFilesystem == nil || !*container.SecurityContext.ReadOnlyRootFilesystem) || len(container.Resources.Limits) != 3 {
@@ -68,6 +65,14 @@ func TestBuildJobSeparatesCredentialsAndDisablesPrivileges(t *testing.T) {
 	}
 	if strings.Contains(string(body), "/private-object") || strings.Contains(string(body), "hostPath") {
 		t.Fatal("Job includes private source locator or host mount")
+	}
+}
+
+func assertBuildCredentialMounts(t *testing.T, fetch, builder corev1.Container) {
+	t.Helper()
+	if !mounts(fetch, "source-credential") || mounts(fetch, "docker-config") || mounts(fetch, "buildkit-tls") ||
+		mounts(builder, "source-credential") || !mounts(builder, "docker-config") || !mounts(builder, "buildkit-tls") {
+		t.Fatal("unexpected credential volume mounts")
 	}
 }
 

@@ -82,7 +82,7 @@ func clearDynamicRevisionWork(rev *domainapphosting.Revision) {
 }
 
 func canPublishDynamicRevision(app domainapphosting.App, config domainapphosting.RuntimeConfig, actor string, database, hasEnvironment bool) bool {
-	return app.IsOwnerOrMaintainer(actor) && (!(database || hasEnvironment) || config.AllowsSensitivePublisher(app, actor))
+	return app.IsOwnerOrMaintainer(actor) && ((!database && !hasEnvironment) || config.AllowsSensitivePublisher(app, actor))
 }
 
 func revisionActivationRejection(app domainapphosting.App, rev domainapphosting.Revision, input appapphosting.ActivateRevisionInput, config domainapphosting.RuntimeConfig) (string, error) {

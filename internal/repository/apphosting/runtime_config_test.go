@@ -42,41 +42,13 @@ func testRuntimeConfig(t *testing.T, repo dynamicTestRepository) {
 	createRevision("database-before-consent")
 	require.ErrorIs(t, repo.QueueDynamicRevision(ctx, app.ID, "database-before-consent", "source", "node", true, 1, now), apperrors.ErrAccessDenied)
 
-	initial := domain.RuntimeConfig{
-		Environment: map[string]string{"APP_TOKEN": "fake-ciphertext"}, DataWarningBytes: 200,
-		VisitorGrant:              domain.VisitorGrant{OwnerID: app.OwnerUserID, Fields: []string{"email"}},
-		VisitorRequest:            &domain.VisitorAttributeRequest{ID: "req", OwnerID: app.OwnerUserID, Reason: "Use the visitor department", Fields: []string{"department"}, RequestedAt: now},
-		SensitivePublisherIDs:     []string{"maintainer", "other"},
-		SensitivePublisherOwnerID: app.OwnerUserID,
-	}
-	saved, err := repo.MutateRuntimeConfig(ctx, app.ID, func(locked domain.App, _ domain.RuntimeConfig) (domain.RuntimeConfig, error) {
-		require.Equal(t, app.OwnerUserID, locked.OwnerUserID)
-		return initial, nil
-	})
-	require.NoError(t, err)
-	assertRuntimeConfigReadLock(t, repo, app.ID)
-	saved.Environment["APP_TOKEN"] = "edit-returned-map"
-	saved.VisitorGrant.Fields[0] = "edit-returned-grant"
-	saved.VisitorRequest.Fields[0] = "edit-returned-request"
-	saved.SensitivePublisherIDs[0] = "edit-returned-consent"
-	_, err = repo.MutateRuntimeConfig(ctx, app.ID, func(_ domain.App, cfg domain.RuntimeConfig) (domain.RuntimeConfig, error) {
-		cfg.Environment["APP_TOKEN"] = "edit-rejected-transaction"
-		return cfg, apperrors.ErrAccessDenied
-	})
-	require.ErrorIs(t, err, apperrors.ErrAccessDenied)
-	loaded, err = repo.GetRuntimeConfig(ctx, app.ID)
-	require.NoError(t, err)
-	require.Equal(t, initial, loaded)
-	initial.Environment["APP_TOKEN"] = "edit-input-map"
-	loaded.Environment["APP_TOKEN"] = "edit-read-map"
-	encoded, err := json.Marshal(loaded)
-	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "APP_TOKEN")
+	assertRuntimeConfigPersistence(t, repo, app, now)
+
 	require.NoError(t, repo.QueueDynamicRevision(ctx, app.ID, "database-before-consent", "source", "node", true, 1, now))
 	draft, err := repo.GetRevision(ctx, app.ID, "database-before-consent")
 	require.NoError(t, err)
 	require.Equal(t, "fake-ciphertext", draft.RuntimeEnvironment["APP_TOKEN"])
-	encoded, err = json.Marshal(draft)
+	encoded, err := json.Marshal(draft)
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "APP_TOKEN")
 	advanceToStarting(t, repo, draft.ID, now, "registry.example.com/app@sha256:"+strings.Repeat("a", 64))
@@ -120,6 +92,41 @@ func testRuntimeConfig(t *testing.T, repo dynamicTestRepository) {
 	loaded, err = repo.GetRuntimeConfig(ctx, app.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.RuntimeConfig{}, loaded)
+}
+
+func assertRuntimeConfigPersistence(t *testing.T, repo dynamicTestRepository, app domain.App, now time.Time) {
+	t.Helper()
+	ctx := t.Context()
+	initial := domain.RuntimeConfig{
+		Environment: map[string]string{"APP_TOKEN": "fake-ciphertext"}, DataWarningBytes: 200,
+		VisitorGrant:              domain.VisitorGrant{OwnerID: app.OwnerUserID, Fields: []string{"email"}},
+		VisitorRequest:            &domain.VisitorAttributeRequest{ID: "req", OwnerID: app.OwnerUserID, Reason: "Use the visitor department", Fields: []string{"department"}, RequestedAt: now},
+		SensitivePublisherIDs:     []string{"maintainer", "other"},
+		SensitivePublisherOwnerID: app.OwnerUserID,
+	}
+	saved, err := repo.MutateRuntimeConfig(ctx, app.ID, func(locked domain.App, _ domain.RuntimeConfig) (domain.RuntimeConfig, error) {
+		require.Equal(t, app.OwnerUserID, locked.OwnerUserID)
+		return initial, nil
+	})
+	require.NoError(t, err)
+	assertRuntimeConfigReadLock(t, repo, app.ID)
+	saved.Environment["APP_TOKEN"] = "edit-returned-map"
+	saved.VisitorGrant.Fields[0] = "edit-returned-grant"
+	saved.VisitorRequest.Fields[0] = "edit-returned-request"
+	saved.SensitivePublisherIDs[0] = "edit-returned-consent"
+	_, err = repo.MutateRuntimeConfig(ctx, app.ID, func(_ domain.App, cfg domain.RuntimeConfig) (domain.RuntimeConfig, error) {
+		cfg.Environment["APP_TOKEN"] = "edit-rejected-transaction"
+		return cfg, apperrors.ErrAccessDenied
+	})
+	require.ErrorIs(t, err, apperrors.ErrAccessDenied)
+	loaded, err := repo.GetRuntimeConfig(ctx, app.ID)
+	require.NoError(t, err)
+	require.Equal(t, initial, loaded)
+	initial.Environment["APP_TOKEN"] = "edit-input-map"
+	loaded.Environment["APP_TOKEN"] = "edit-read-map"
+	encoded, err := json.Marshal(loaded)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "APP_TOKEN")
 }
 
 func assertRuntimeConfigReadLock(t *testing.T, repo dynamicTestRepository, appID string) {

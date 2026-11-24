@@ -605,14 +605,17 @@ func TestAppHostingGatewayClientMethodsSupportClientAndOverrideBearerTokens(t *t
 		t.Fatalf("CheckHostedAppGatewayAccess = %#v, %v", decision, err)
 	}
 
-	var aliasCheck AppHostingGatewayAccessDecision
-	aliasCheck = decision
-	if aliasCheck.Host != "ops-report-a1b2c3.apps.soha.internal" {
-		t.Fatalf("alias check = %#v", aliasCheck)
-	}
+	assertGatewayDecisionHost(t, decision)
 
 	if len(seenAuthHeaders) != 2 || seenAuthHeaders[0] != "Bearer default-gateway-token" || seenAuthHeaders[1] != "Bearer override-gateway-token" {
 		t.Fatalf("seenAuthHeaders = %v", seenAuthHeaders)
+	}
+}
+
+func assertGatewayDecisionHost(t *testing.T, aliasCheck AppHostingGatewayAccessDecision) {
+	t.Helper()
+	if aliasCheck.Host != "ops-report-a1b2c3.apps.soha.internal" {
+		t.Fatalf("alias check = %#v", aliasCheck)
 	}
 }
 

@@ -43,7 +43,7 @@ func (p *Provisioner) UpgradeSchema(ctx context.Context, appID string, target in
 	if err != nil {
 		return err
 	}
-	defer admin.Close(ctx)
+	defer func() { _ = admin.Close(ctx) }()
 	database := resourcePrefix + appID
 	if err := requireManagedDatabase(ctx, admin, database); err != nil {
 		return err
@@ -52,7 +52,7 @@ func (p *Provisioner) UpgradeSchema(ctx context.Context, appID string, target in
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		return applySchemaUpgrade(ctx, tx, target)
@@ -94,7 +94,7 @@ func (p *Provisioner) SchemaVersion(ctx context.Context, appID string) (int, err
 	if err != nil {
 		return 0, err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	var marker string
 	err = conn.QueryRow(ctx, readSchemaVersion+`
 		AND EXISTS (
@@ -136,7 +136,7 @@ func (p *Provisioner) configureSchema(ctx context.Context, database, role string
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	dbIdentifier, roleIdentifier := quoteIdentifier(database), quoteIdentifier(role)
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {

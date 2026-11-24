@@ -65,7 +65,10 @@ func (s *Service) ReconcileStaticArtifactCleanup(ctx context.Context) error {
 	}
 	work, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	repo := s.repo.(staticCleanupRepository)
+	repo, ok := s.repo.(staticCleanupRepository)
+	if !ok {
+		return nil
+	}
 	claimID := uuid.NewString()
 	revision, err := repo.ClaimStaticArtifactCleanup(work, claimID, s.now(), revisionClaimTTL)
 	if errors.Is(err, apperrors.ErrNotFound) {

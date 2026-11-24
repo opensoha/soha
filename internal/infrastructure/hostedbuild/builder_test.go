@@ -20,7 +20,7 @@ const testRevision = "rev_a01b2345600000000000000000000000"
 var testDigest = "sha256:" + strings.Repeat("a", 64)
 
 func testConfig() Config {
-	return Config{
+	return Config{ //nolint:gosec // Secret fields contain synthetic Kubernetes resource names.
 		Namespace:          "builds",
 		BuildClientImage:   "registry.example/platform/client@" + testDigest,
 		NodeBase:           "docker.io/library/node@" + testDigest,
@@ -86,7 +86,7 @@ func TestPrepareRejectsRequestsBeforeKubernetesAccess(t *testing.T) {
 		"another host":       {RevisionID: testRevision, Template: "node", SourceURL: "https://elsewhere.example/source?token=x"},
 		"another port":       {RevisionID: testRevision, Template: "node", SourceURL: "https://objects.example/source?token=x"},
 		"insecure URL":       {RevisionID: testRevision, Template: "node", SourceURL: "http://objects.example:8443/source?token=x"},
-		"URL with userinfo":  {RevisionID: testRevision, Template: "node", SourceURL: "https://user:secret@objects.example:8443/source?token=x"},
+		"URL with userinfo":  {RevisionID: testRevision, Template: "node", SourceURL: "https://user:secret@objects.example:8443/source?token=x"}, //nolint:gosec // Synthetic URL exercises rejection of embedded credentials.
 	}
 	for name, spec := range cases {
 		t.Run(name, func(t *testing.T) {

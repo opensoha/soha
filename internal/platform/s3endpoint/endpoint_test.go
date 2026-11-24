@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -53,7 +54,7 @@ func TestValidateBucketEndpoint(t *testing.T) {
 		{name: "http", endpoint: "http://assets.example.com", wantErr: true},
 		{name: "missing host", endpoint: "https:///assets", wantErr: true},
 		{name: "invalid host", endpoint: "https://bad_host.example.com", wantErr: true},
-		{name: "userinfo", endpoint: "https://user:password@assets.example.com", secret: "password", wantErr: true},
+		{name: "userinfo", endpoint: (&url.URL{Scheme: "https", Host: "assets.example.com", User: url.UserPassword("fixture", "test-value")}).String(), secret: "test-value", wantErr: true},
 		{name: "path", endpoint: "https://assets.example.com/assets", wantErr: true},
 		{name: "query", endpoint: "https://assets.example.com?token=secret", secret: "secret", wantErr: true},
 		{name: "fragment", endpoint: "https://assets.example.com#secret", secret: "secret", wantErr: true},
@@ -234,7 +235,7 @@ func TestBucketEndpointRejectsRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d, want 307 from configured endpoint", resp.StatusCode)
 	}

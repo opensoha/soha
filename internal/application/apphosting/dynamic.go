@@ -86,7 +86,10 @@ func (s *Service) ReconcileDynamicRevision(ctx context.Context) error {
 	if !s.DynamicEnabled() {
 		return nil
 	}
-	repo := s.repo.(dynamicRepository)
+	repo, ok := s.repo.(dynamicRepository)
+	if !ok {
+		return apperrors.ErrUnsupportedOperation
+	}
 	return errors.Join(s.reconcileDeletedDynamicRevision(ctx, repo), s.reconcileDynamicRevision(ctx, repo), s.reconcileManagedImageCleanup(ctx))
 }
 

@@ -92,7 +92,7 @@ func (p *Provisioner) Provision(ctx context.Context, appID, password string) (st
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	database := resourcePrefix + appID
 	role := database + "_runtime"
@@ -141,7 +141,7 @@ func (p *Provisioner) Usage(ctx context.Context, appID string) (int64, error) {
 	if err != nil {
 		return 0, operationError("connect to administrator database", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	var size int64
 	err = conn.QueryRow(ctx, `
 		SELECT pg_catalog.pg_database_size(d.oid)

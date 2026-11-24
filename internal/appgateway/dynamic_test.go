@@ -86,8 +86,7 @@ func TestDynamicProxyTargetHeadersCookiesAndResponseFiltering(t *testing.T) {
 	req.Header.Set("X-Drop-Me", "hop-by-hop")
 	req.Header.Set("Proxy-Connection", "keep-alive")
 	req.AddCookie(mustTestSessionCookie(t, testCookieSecret, testAppHost, true, now))
-	req.AddCookie(&http.Cookie{Name: "theme", Value: "dark"})
-	req.AddCookie(&http.Cookie{Name: "soha_refresh_token", Value: "console-secret"})
+	req.Header.Add("Cookie", "theme=dark; soha_refresh_token=fixture-only")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 

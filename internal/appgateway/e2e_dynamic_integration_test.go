@@ -88,7 +88,7 @@ func assertDynamicHTTP(t *testing.T, browser *http.Client, link string, status i
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != status || strings.Contains(string(body), "hosted-form-response") != wantBody {
 		t.Fatalf("dynamic GET: status=%d err=%v body=%q", resp.StatusCode, err, body)

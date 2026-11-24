@@ -271,7 +271,7 @@ func validateWorkspaceBundleEntry(entryPath, relativePath string, typeFlag byte,
 			"workspace source path exceeds the hosting limit", "工作空间源码路径超出托管上限")
 	}
 	switch typeFlag {
-	case tar.TypeDir, tar.TypeReg, tar.TypeRegA:
+	case tar.TypeDir, tar.TypeReg:
 		return nil
 	default:
 		return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "unsupported_workspace_entry", fmt.Sprintf("workspace path %q uses a disallowed non-regular entry (such as a symlink)", entryPath), fmt.Sprintf("工作空间路径 %q 包含不允许的符号链接或特殊文件", entryPath))

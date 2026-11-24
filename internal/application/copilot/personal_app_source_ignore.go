@@ -102,7 +102,7 @@ func workspaceIgnoreFiles(raw io.ReadSeeker, sourcePath string) (map[string]work
 }
 
 func regularIgnoreTarEntry(header *tar.Header) bool {
-	if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+	if header.Typeflag != tar.TypeReg {
 		return false
 	}
 	// Sparse payloads are reconstructed by tar.Reader and cannot be read by offset.
