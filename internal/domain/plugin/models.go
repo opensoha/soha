@@ -22,6 +22,7 @@ type PluginRepositoryPreview = sohaapi.PluginRepositoryPreview
 type PluginRepositoryPreviewSource = sohaapi.PluginRepositoryPreviewSource
 type PluginRepositoryInstallRequest = sohaapi.PluginRepositoryInstallRequest
 type PluginRepositoryUpgradeRequest = sohaapi.PluginRepositoryUpgradeRequest
+type PluginRepositoryRollbackRequest = sohaapi.PluginRepositoryRollbackRequest
 type PluginRepositoryRefsRequest = sohaapi.PluginRepositoryRefsRequest
 type PluginRepositoryRef = sohaapi.PluginRepositoryRef
 type PluginRepositoryRefList = sohaapi.PluginRepositoryRefList

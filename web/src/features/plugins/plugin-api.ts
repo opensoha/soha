@@ -17,6 +17,7 @@ import type {
   PluginRepositoryPreviewRequest,
   PluginRepositoryRefList,
   PluginRepositoryRefsRequest,
+  PluginRepositoryRollbackRequest,
   PluginRepositoryUpgradeRequest,
 } from './plugin-model'
 import { normalizePluginMarketplaceFilters } from './plugin-model'
@@ -85,6 +86,13 @@ export const pluginApi = {
     unwrap(
       api.post<ApiResponse<InstalledPlugin>>(
         `/plugins/${encodeURIComponent(pluginId)}/repository/upgrade`,
+        input,
+      ),
+    ),
+  repositoryRollback: (pluginId: string, input: PluginRepositoryRollbackRequest) =>
+    unwrap(
+      api.post<ApiResponse<InstalledPlugin>>(
+        `/plugins/${encodeURIComponent(pluginId)}/repository/rollback`,
         input,
       ),
     ),

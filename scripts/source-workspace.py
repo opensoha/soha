@@ -112,11 +112,12 @@ def check_npm():
         "web": "soha-web",
         "connectors": "@opensoha/connectors",
         "cli/npm/cli": "@opensoha/cli",
+        "plugin-sdk/ui": "@opensoha/plugin-ui-sdk",
     }
     package = json.loads((ROOT / "package.json").read_text())
     lock = json.loads((ROOT / "package-lock.json").read_text())
     if not package.get("private") or set(package.get("workspaces", [])) != set(workspaces):
-        raise ValueError("the private root npm workspace must contain contracts, web, connectors and the CLI launcher")
+        raise ValueError("the private root npm workspace must match the declared source packages")
     if set(lock.get("packages", {}).get("", {}).get("workspaces", [])) != set(workspaces):
         raise ValueError("the root npm lockfile workspace set differs from source")
     for part, name in workspaces.items():

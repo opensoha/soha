@@ -8,6 +8,7 @@ func registerSystemIntegrationRoutes(protected gin.IRoutes, deps Dependencies) {
 	}
 	protected.GET("/system-integrations", deps.SystemIntegrations.List)
 	protected.POST("/system-integrations", deps.SystemIntegrations.Create)
+	protected.GET("/system-integrations/storage-drivers", deps.SystemIntegrations.ListStorageDrivers)
 	protected.GET("/system-integrations/:integrationID", deps.SystemIntegrations.Get)
 	protected.PATCH("/system-integrations/:integrationID", deps.SystemIntegrations.Update)
 	protected.DELETE("/system-integrations/:integrationID", deps.SystemIntegrations.Delete)

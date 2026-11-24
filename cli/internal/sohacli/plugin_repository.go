@@ -17,15 +17,17 @@ import (
 )
 
 type pluginRepositoryInstallOptions struct {
-	RepositoryURL string
-	Ref           string
-	Enable        bool
-	Yes           bool
-	JSON          bool
+	RepositoryURL  string
+	TrustPublisher string
+	Ref            string
+	Enable         bool
+	Yes            bool
+	JSON           bool
 }
 
 type pluginRepositoryUpgradeOptions struct {
 	Ref                       string
+	TrustPublisher            string
 	ConfirmPermissionIncrease bool
 	Yes                       bool
 	JSON                      bool
@@ -34,18 +36,19 @@ type pluginRepositoryUpgradeOptions struct {
 func runPluginRepositoryInstall(ctx context.Context, rt Runtime, profile ProfileConfig, options pluginRepositoryInstallOptions) error {
 	client := gatewayClient(rt, profile)
 	headers := gatewayHeaders(profile, "", "", "", "soha-cli")
-	preview, err := previewRepositoryPlugin(ctx, rt, client, PluginRepositoryPreviewRequest{
+	input := PluginRepositoryPreviewRequest{
 		RepositoryURL: strings.TrimSpace(options.RepositoryURL),
 		Ref:           strings.TrimSpace(options.Ref),
-	}, headers)
+	}
+	preview, err := previewWithPublisherTrust(ctx, rt, client, input, headers, options.TrustPublisher, options.JSON)
 	if err != nil {
 		return repositoryPluginEndpointError(err)
 	}
-	if strings.TrimSpace(preview.PreviewToken) == "" {
-		return fmt.Errorf("repository preview did not return a confirmation token")
-	}
-	if err := writePluginRepositoryPreview(rt, preview, options.JSON); err != nil {
+	if err := checkRepositoryPreview(rt, preview, options.JSON); err != nil {
 		return err
+	}
+	if options.Enable && preview.ReleaseAttestation != nil && preview.ReleaseAttestation.Components.Backend != nil {
+		return usageError{message: "signed executable plugins must be installed first; enable them separately with soha plugin enable"}
 	}
 	if err := confirmRepositoryAction(rt, options.Yes, "Install "+repositoryPreviewTarget(preview)+" from repository preview?"); err != nil {
 		return err
@@ -85,12 +88,12 @@ func runPluginRepositoryUpgrade(ctx context.Context, rt Runtime, profile Profile
 	if input.RepositoryURL == "" || (input.PluginID != "" && input.MarketplaceSourceID == "") {
 		return fmt.Errorf("plugin %s is not installed from a repository source; repository upgrade is unavailable and no legacy upgrade was attempted", terminalLabel(pluginID))
 	}
-	preview, err := previewRepositoryPlugin(ctx, rt, client, input, headers)
+	preview, err := previewWithPublisherTrust(ctx, rt, client, input, headers, options.TrustPublisher, options.JSON)
 	if err != nil {
 		return repositoryPluginEndpointError(err)
 	}
-	if strings.TrimSpace(preview.PreviewToken) == "" {
-		return fmt.Errorf("repository preview did not return a confirmation token")
+	if err := checkRepositoryPreview(rt, preview, options.JSON); err != nil {
+		return err
 	}
 	latest, err := client.GetInstalledPlugin(ctx, pluginID, headers)
 	if err != nil {
@@ -100,9 +103,6 @@ func runPluginRepositoryUpgrade(ctx context.Context, rt Runtime, profile Profile
 		input.RepositoryURL != preview.SourceInfo.CanonicalSource ||
 		preview.Manifest.ID != pluginID || !latest.InstalledAt.Equal(installed.InstalledAt) || !latest.UpdatedAt.Equal(installed.UpdatedAt) {
 		return fmt.Errorf("the installed plugin changed during repository preview; run the upgrade again")
-	}
-	if err := writePluginRepositoryPreview(rt, preview, options.JSON); err != nil {
-		return err
 	}
 	addedRequired, addedDomain := addedPluginPermissions(preview.Manifest.Permissions, installedPluginPermissions(installed))
 	if len(addedRequired) > 0 || len(addedDomain) > 0 {
@@ -143,6 +143,50 @@ func runPluginRepositoryUpgrade(ctx context.Context, rt Runtime, profile Profile
 	}
 	_, err = fmt.Fprintf(rt.Out, "Upgraded plugin %s to %s\n", pluginPreviewText(item.ID), pluginPreviewText(item.Version))
 	return err
+}
+
+func previewWithPublisherTrust(ctx context.Context, rt Runtime, client APIClient, input PluginRepositoryPreviewRequest, headers map[string]string, fingerprint string, jsonOutput bool) (PluginRepositoryPreview, error) {
+	preview, err := previewRepositoryPlugin(ctx, rt, client, input, headers)
+	if err != nil || strings.TrimSpace(fingerprint) == "" {
+		return preview, err
+	}
+	if err := writePluginRepositoryPreview(rt, preview, jsonOutput); err != nil {
+		return preview, err
+	}
+	if preview.InstallEligibility != sohaapi.PublisherTrustRequired || preview.PublisherKeyFingerprint == "" || strings.TrimSpace(fingerprint) != preview.PublisherKeyFingerprint {
+		return preview, fmt.Errorf("publisher fingerprint does not match the read-only preview requiring trust")
+	}
+	// Pin the second request to the immutable commit inspected above.
+	input.RepositoryURL = preview.SourceInfo.CanonicalSource
+	input.Ref = preview.SourceInfo.CommitSha
+	input.TrustPublisherFingerprint = fingerprint
+	trusted, err := client.PreviewRepositoryPlugin(ctx, input, headers)
+	if err != nil {
+		return trusted, err
+	}
+	if trusted.SourceInfo.CanonicalSource != preview.SourceInfo.CanonicalSource || trusted.SourceInfo.CommitSha != preview.SourceInfo.CommitSha || trusted.Manifest.ID != preview.Manifest.ID || trusted.PublisherKeyFingerprint != preview.PublisherKeyFingerprint {
+		return trusted, fmt.Errorf("repository or publisher changed during trust acknowledgement; retry preview")
+	}
+	return trusted, nil
+}
+
+func checkRepositoryPreview(rt Runtime, preview PluginRepositoryPreview, jsonOutput bool) error {
+	if err := writePluginRepositoryPreview(rt, preview, jsonOutput); err != nil {
+		return err
+	}
+	switch preview.InstallEligibility {
+	case sohaapi.SignedReleaseRequired:
+		return fmt.Errorf("signed release required; publish a signed release and preview again")
+	case sohaapi.PublisherTrustRequired:
+		return fmt.Errorf("publisher trust required; review the fingerprint and rerun with --trust-publisher <fingerprint>")
+	case "", sohaapi.Confirmable:
+	default:
+		return fmt.Errorf("unknown repository install eligibility %q", preview.InstallEligibility)
+	}
+	if strings.TrimSpace(preview.PreviewToken) == "" || preview.PreviewToken == "preview-only" {
+		return fmt.Errorf("repository preview did not return a confirmation token")
+	}
+	return nil
 }
 
 func previewRepositoryPlugin(ctx context.Context, rt Runtime, client APIClient, input PluginRepositoryPreviewRequest, headers map[string]string) (PluginRepositoryPreview, error) {
@@ -230,6 +274,7 @@ func writePluginRepositoryPreview(rt Runtime, preview PluginRepositoryPreview, j
 		pluginPreviewText(preview.SignatureStatus),
 		preview.ExpiresAt.UTC().Format(time.RFC3339),
 	)
+	out.Printf("publisher key fingerprint: %s\ninstall eligibility: %s\n", pluginPreviewText(preview.PublisherKeyFingerprint), pluginPreviewText(string(preview.InstallEligibility)))
 	out.Printf("plugin: %s %s (%s)\npublisher: %s\ntype: %s\nname: %s\n",
 		pluginPreviewText(manifest.ID),
 		pluginPreviewText(manifest.Version),
@@ -451,4 +496,55 @@ func rejectPluginFlags(fs *flag.FlagSet, names ...string) error {
 		return usageError{message: "--" + found + " is not valid with the selected plugin source"}
 	}
 	return nil
+}
+
+func runPluginRepositoryRollback(ctx context.Context, args []string, rt Runtime) error {
+	fs := newRuntimeFlagSet("plugin rollback", args, rt)
+	profileFlag := fs.String("profile", "", "profile name")
+	expected := fs.String("expected-version", "", "currently installed version")
+	version := fs.String("version", "", "retained version to restore")
+	permissions := fs.Bool("confirm-permission-increase", false, "acknowledge added permissions")
+	yes := fs.Bool("yes", false, "confirm rollback without prompting")
+	jsonOutput := fs.Bool("json", false, "print JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	id := strings.TrimSpace(fs.Arg(0))
+	if id == "" || fs.NArg() != 1 || strings.TrimSpace(*expected) == "" || strings.TrimSpace(*version) == "" || strings.TrimSpace(*expected) == strings.TrimSpace(*version) {
+		return usageError{message: "rollback requires a plugin id, distinct --expected-version and --version"}
+	}
+	_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
+	if err != nil {
+		return err
+	}
+	client := gatewayClient(rt, profile)
+	headers := gatewayHeaders(profile, "", "", "", "soha-cli")
+	installed, err := client.GetInstalledPlugin(ctx, id, headers)
+	if err != nil {
+		return repositoryPluginEndpointError(err)
+	}
+	if installed.Version != strings.TrimSpace(*expected) {
+		return fmt.Errorf("installed version %s does not match --expected-version %s; review the plugin and retry", pluginPreviewText(installed.Version), pluginPreviewText(*expected))
+	}
+	if installed.UpdatedAt.IsZero() {
+		return fmt.Errorf("installed plugin has no update timestamp; rollback cannot be safely confirmed")
+	}
+	updatedAt := installed.UpdatedAt.UTC()
+	out := newCheckedWriter(rt.Err)
+	out.Printf("rollback: %s from %s to %s; installed updated at: %s\n", pluginPreviewText(id), pluginPreviewText(*expected), pluginPreviewText(*version), updatedAt.Format(time.RFC3339Nano))
+	if err := out.Err(); err != nil {
+		return err
+	}
+	if err := confirmRepositoryAction(rt, *yes, "Roll back "+pluginPreviewText(id)+" from "+pluginPreviewText(*expected)+" to "+pluginPreviewText(*version)+"?"); err != nil {
+		return err
+	}
+	item, err := client.RollbackRepositoryPlugin(ctx, id, sohaapi.PluginRepositoryRollbackRequest{ExpectedVersion: strings.TrimSpace(*expected), ExpectedUpdatedAt: updatedAt, Version: strings.TrimSpace(*version), ConfirmPermissionIncrease: *permissions}, headers)
+	if err != nil {
+		return repositoryPluginEndpointError(err)
+	}
+	if *jsonOutput {
+		return writePrettyJSON(rt.Out, sanitizeCLIValue(item))
+	}
+	_, err = fmt.Fprintf(rt.Out, "Rolled back plugin %s to %s\n", pluginPreviewText(item.ID), pluginPreviewText(item.Version))
+	return err
 }

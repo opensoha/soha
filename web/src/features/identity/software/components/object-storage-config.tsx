@@ -6,6 +6,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  PluginStorageConnections,
   s3StorageFormValues,
   systemIntegrationMutations,
   systemIntegrationQueries,
@@ -15,6 +16,7 @@ import {
   type SystemIntegration,
   type SystemIntegrationCategory,
 } from '@/features/settings'
+import { localeText, useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import {
   DeleteOutlined,
@@ -65,6 +67,7 @@ const endpointPlaceholders: Record<S3StoragePreset, string> = {
 }
 export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) {
   const queryClient = useQueryClient()
+  const { localeCode } = useI18n()
   const [form] = Form.useForm<S3StorageFormValues>()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -244,7 +247,7 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
               setModalOpen(true)
             }}
           >
-            新增存储
+            {localeText(localeCode, '新增存储', 'Add S3 connection')}
           </Button>
         }
         onClose={() => {
@@ -261,6 +264,9 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
         {removeMutation.feedback}
         {testMutation.feedback}
 
+        <Typography.Title level={5}>
+          {localeText(localeCode, '软件包存储（S3 兼容）', 'Package storage (S3-compatible)')}
+        </Typography.Title>
         {integrationsQuery.isError && !visibleIntegrationsQueryData ? null : (
           <div className="soha-software-object-storage-config">
             <Descriptions
@@ -401,6 +407,15 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
               size="small"
             />
           </div>
+        )}
+        {drawerOpen && (
+          <PluginStorageConnections
+            canView={canView}
+            canCreate={canCreate}
+            canUpdate={canUpdate}
+            canDelete={canDelete}
+            canTest={canTest}
+          />
         )}
       </Drawer>
 

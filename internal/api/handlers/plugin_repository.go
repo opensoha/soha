@@ -18,7 +18,10 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-const pluginRepositoryRequestTimeout = 12 * time.Second
+const (
+	pluginRepositoryRequestTimeout = 12 * time.Second
+	pluginReleaseMutationTimeout   = 90 * time.Second
+)
 
 type PluginRepositoryService interface {
 	PreviewRepository(context.Context, domainidentity.Principal, domainplugin.PluginRepositoryPreviewRequest) (domainplugin.PluginRepositoryPreview, error)
@@ -90,7 +93,11 @@ func (h *PluginHandler) InstallRepository(c *gin.Context) {
 	if !h.readRepositoryRequest(c, &req) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), pluginRepositoryRequestTimeout)
+	if err := clearResponseWriteDeadline(c); err != nil {
+		writeError(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), pluginReleaseMutationTimeout)
 	defer cancel()
 	item, err := h.repository.InstallRepository(ctx, apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
@@ -105,9 +112,41 @@ func (h *PluginHandler) UpgradeRepository(c *gin.Context) {
 	if !h.readRepositoryRequest(c, &req) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), pluginRepositoryRequestTimeout)
+	if err := clearResponseWriteDeadline(c); err != nil {
+		writeError(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), pluginReleaseMutationTimeout)
 	defer cancel()
 	item, err := h.repository.UpgradeRepository(ctx, apiMiddleware.PrincipalFromContext(c), c.Param("pluginID"), req)
+	if err != nil {
+		writePluginRepositoryError(c, errors.Join(err, ctx.Err()))
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+type pluginRepositoryRollbackService interface {
+	RollbackRepository(context.Context, domainidentity.Principal, string, domainplugin.PluginRepositoryRollbackRequest) (domainplugin.InstalledPlugin, error)
+}
+
+func (h *PluginHandler) RollbackRepository(c *gin.Context) {
+	service, ok := h.repository.(pluginRepositoryRollbackService)
+	if !ok {
+		writeError(c, apperrors.ErrUnsupportedOperation)
+		return
+	}
+	var req domainplugin.PluginRepositoryRollbackRequest
+	if !h.readRepositoryRequest(c, &req) {
+		return
+	}
+	if err := clearResponseWriteDeadline(c); err != nil {
+		writeError(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), pluginReleaseMutationTimeout)
+	defer cancel()
+	item, err := service.RollbackRepository(ctx, apiMiddleware.PrincipalFromContext(c), c.Param("pluginID"), req)
 	if err != nil {
 		writePluginRepositoryError(c, errors.Join(err, ctx.Err()))
 		return

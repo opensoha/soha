@@ -12,6 +12,7 @@ import type {
   PluginRepositoryPreviewRequest,
   PluginRepositoryRefList,
   PluginRepositoryRefsRequest,
+  PluginRepositoryRollbackRequest,
   PluginRepositoryUpgradeRequest,
   PluginSecretRequirement,
   PluginSourceInfo,
@@ -32,6 +33,7 @@ export type {
   PluginRepositoryPreviewRequest,
   PluginRepositoryRefList,
   PluginRepositoryRefsRequest,
+  PluginRepositoryRollbackRequest,
   PluginRepositoryUpgradeRequest,
   PluginSecretRequirement,
   PluginSourceInfo,
@@ -103,6 +105,20 @@ export function normalizePluginMarketplaceFilters(
 export function pluginTypeLabel(type?: string) {
   const value = String(type ?? '').trim()
   return pluginTypeOptions.find((item) => item.value === value)?.label ?? (value || '-')
+}
+
+export function pluginPackageComponents(manifest: PluginManifest) {
+  const components = [
+    ...(manifest.components?.backend ? ['Go 对象存储驱动'] : []),
+    ...(manifest.components?.web ? ['沙箱自定义页'] : []),
+    ...(manifest.runtime?.mode === 'external-http' ? ['外部 HTTP 运行时'] : []),
+    ...(manifest.runtime?.mode === 'managed-container' ? ['托管容器'] : []),
+  ]
+  return components.length ? components.join('、') : '纯清单'
+}
+
+export function pluginRequiresSignedRelease(manifest: PluginManifest) {
+  return Boolean(manifest.components) || manifest.runtime?.mode === 'executable-package-v1'
 }
 
 export function requestedPermissionValues(permissions?: PluginPermissionRequest | null) {
