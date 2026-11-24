@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Descriptions, Space, Tabs, Typography } from 'antd'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined } from '@ant-design/icons'
 import { ManagementIconButton } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
@@ -92,7 +92,7 @@ export function ProviderDetailContent({ provider }: { provider: IdentityProvider
                           <ManagementIconButton
                             aria-label={t('identity.providers.configHelp')}
                             tooltip={t('identity.providers.configHint')}
-                            icon={<InfoCircleOutlined />}
+                            icon={<QuestionCircleOutlined />}
                           />
                         </Space>
                       ),

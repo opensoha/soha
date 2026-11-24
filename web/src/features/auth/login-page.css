@@ -67,7 +67,18 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.78;
+  opacity: 0.34;
+}
+
+.soha-auth-shell::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: '';
+  background:
+    radial-gradient(circle at 18% 22%, rgba(var(--soha-brand-teal-rgb), 0.08), transparent 44%),
+    radial-gradient(circle at 82% 76%, rgba(var(--soha-primary-rgb), 0.04), transparent 46%);
 }
 
 .soha-auth-layout {
@@ -75,9 +86,9 @@
   z-index: 1;
   display: grid;
   align-items: center;
-  grid-template-columns: minmax(0, 1fr) minmax(336px, 376px);
-  gap: clamp(24px, 6vw, 64px);
-  width: min(1180px, 100%);
+  grid-template-columns: minmax(0, 1fr) minmax(356px, 404px);
+  gap: clamp(32px, 6vw, 76px);
+  width: min(1140px, 100%);
   margin: 0 auto;
 }
 
@@ -92,24 +103,23 @@
   z-index: 2;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--soha-glass-border);
-  border-radius: 8px;
-  background: var(--soha-glass-bg);
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: 999px;
+  background: var(--soha-bg-surface);
   color: var(--soha-text-secondary);
-  box-shadow: var(--soha-glass-shadow);
-  backdrop-filter: blur(var(--soha-glass-blur));
+  box-shadow: var(--soha-inner-highlight), 0 2px 8px rgba(9, 9, 11, 0.05);
 }
 
 .soha-auth-theme-toggle.ant-btn:hover,
 .soha-auth-theme-toggle.ant-btn:focus {
-  border-color: color-mix(in srgb, var(--soha-accent-cyan) 42%, transparent);
-  background: var(--soha-glass-bg-strong) !important;
+  border-color: rgba(var(--soha-brand-teal-rgb), 0.42);
+  background: var(--soha-bg-surface) !important;
   color: var(--soha-text-primary) !important;
 }
 
 :root[data-theme-mode='dark'] .soha-auth-theme-toggle.ant-btn {
-  border-color: var(--soha-glass-border);
-  background: var(--soha-glass-bg);
+  border-color: var(--soha-hairline-strong);
+  background: var(--soha-bg-surface-elevated);
   color: var(--soha-text-secondary);
 }
 
@@ -117,96 +127,154 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  color: color-mix(in srgb, var(--soha-text-secondary) 78%, transparent);
+  color: var(--soha-text-tertiary);
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
 }
 
 :root[data-theme-mode='dark'] .soha-auth-copyright {
-  color: color-mix(in srgb, var(--soha-text-secondary) 62%, transparent);
+  color: var(--soha-text-tertiary);
 }
 
 .soha-auth-flow {
   display: grid;
-  gap: 36px;
+  gap: 32px;
   min-width: 0;
   padding-block: 24px;
 }
 
+.soha-auth-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--soha-brand-teal-soft);
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.18);
+  color: var(--soha-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+
+.soha-auth-eyebrow__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2b7a56;
+  box-shadow: 0 0 0 3px rgba(43, 122, 86, 0.18);
+}
+
+:root[data-theme-mode='dark'] .soha-auth-eyebrow__dot {
+  background: #6ee7b7;
+}
+
 .soha-auth-flow-copy {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   max-width: 560px;
 }
 
 .soha-auth-flow-title.ant-typography {
   margin: 0;
   color: var(--soha-text-primary);
-  font-size: clamp(30px, 3.4vw, 44px);
-  font-weight: 700;
-  line-height: 1.4;
+  font-family: var(--soha-font-serif);
+  font-size: clamp(46px, 5vw, 66px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
   overflow-wrap: anywhere;
   text-wrap: balance;
   white-space: pre-line;
 }
 
+.soha-auth-flow-kicker {
+  margin: -4px 0 2px;
+  color: var(--soha-primary);
+  font-family: var(--soha-font-serif);
+  font-size: clamp(20px, 2.2vw, 25px);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
 .soha-auth-flow-subtitle {
   white-space: pre-line;
-  max-width: 440px;
+  max-width: 468px;
   margin: 0;
   color: var(--soha-text-secondary);
-  font-size: 16px;
-  line-height: 1.8;
+  font-size: 15.5px;
+  line-height: 1.75;
 }
 
 .soha-auth-values {
+  counter-reset: soha-auth-spec;
   display: grid;
-  gap: 20px;
+  gap: 16px;
   max-width: 520px;
   margin: 0;
-  padding-top: 24px;
-  border-top: 1px solid var(--soha-border-color);
+  padding-top: 22px;
+  border-top: 1px solid var(--soha-hairline-strong);
 }
 
 .soha-auth-value {
+  counter-increment: soha-auth-spec;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
   align-items: baseline;
 }
 
 .soha-auth-value dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--soha-text-primary);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
+}
+
+.soha-auth-value dt::before {
+  content: '0' counter(soha-auth-spec);
+  color: var(--soha-brand-teal);
+  font-family: var(--soha-font-mono);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .soha-auth-value dd {
   margin: 0;
   color: var(--soha-text-secondary);
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 13.5px;
+  line-height: 1.65;
 }
 
+/* Double-Bezel Machined Botanical Login Stage */
 .soha-auth-panel {
   justify-self: end;
   width: 100%;
   min-height: 0;
   height: auto;
-  padding: 0;
-  border: 1px solid var(--soha-glass-border);
-  border-radius: 8px;
-  background: var(--soha-gradient-panel);
-  box-shadow: var(--soha-shadow-panel);
+  padding: 7px !important;
+  border: 1px solid var(--soha-hairline-strong) !important;
+  border-radius: 30px !important;
+  background: var(--soha-bezel-bg) !important;
+  box-shadow:
+    0 32px 72px -20px rgba(23, 33, 28, 0.14),
+    0 6px 20px -6px rgba(23, 33, 28, 0.06) !important;
   overflow: hidden;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(22px);
 }
 
 :root[data-theme-mode='dark'] .soha-auth-panel {
-  border-color: var(--soha-glass-border);
-  background: var(--soha-gradient-panel);
-  box-shadow: var(--soha-shadow-panel);
+  border-color: var(--soha-hairline-strong) !important;
+  background: var(--soha-bezel-bg) !important;
+  box-shadow:
+    0 34px 76px -18px rgba(0, 0, 0, 0.68),
+    0 6px 20px rgba(0, 0, 0, 0.42) !important;
 }
 
 .soha-auth-panel.ant-card .ant-card-body {
@@ -218,9 +286,14 @@
 .soha-auth-panel-inner {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
   min-height: 0;
-  padding: 20px;
+  padding: 30px 28px;
+  border-radius: 23px;
+  background: var(--soha-bg-surface);
+  box-shadow:
+    var(--soha-inner-highlight),
+    0 0 0 1px var(--soha-hairline);
 }
 
 .soha-auth-brand {
@@ -229,6 +302,13 @@
   gap: 12px;
   min-width: 0;
   margin-bottom: 2px;
+}
+
+.soha-auth-brand-name.ant-typography {
+  font-family: var(--soha-font-serif);
+  font-size: 21px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em;
 }
 
 .soha-auth-brand-copy .ant-typography {
@@ -246,18 +326,33 @@
 }
 
 .soha-auth-panel .ant-form-item-label {
-  padding-bottom: 4px;
+  padding-bottom: 5px;
 }
 
 .soha-auth-panel .ant-input-affix-wrapper,
 .soha-auth-panel .ant-input {
-  border-radius: 6px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.soha-auth-panel .ant-input-affix-wrapper {
+  padding-inline: 14px;
 }
 
 .soha-auth-submit.ant-btn {
-  height: 34px;
-  margin-top: 2px;
-  border-radius: 6px;
+  height: 42px;
+  margin-top: 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition:
+    transform 0.36s var(--soha-ease-fluid),
+    background-color 0.3s var(--soha-ease-fluid),
+    box-shadow 0.36s var(--soha-ease-fluid);
+}
+
+.soha-auth-submit.ant-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .soha-auth-session-restore {
@@ -476,8 +571,8 @@
 }
 
 .soha-auth-provider-button {
-  height: 36px;
-  border-radius: 6px;
+  height: 40px;
+  border-radius: 999px;
 }
 
 .soha-auth-provider-button__content {

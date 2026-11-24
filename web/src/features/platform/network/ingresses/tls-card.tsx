@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { ApiError } from '@/services/api-error'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined } from '@ant-design/icons'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Space, Tooltip, Typography } from 'antd'
 import type { ReactNode } from 'react'
@@ -45,7 +45,7 @@ export function IngressTLSCard({
               type="text"
               size="small"
               aria-label={zh ? '证书有效期说明' : 'Certificate validity information'}
-              icon={<InfoCircleOutlined />}
+              icon={<QuestionCircleOutlined />}
             />
           </Tooltip>
         </Space>

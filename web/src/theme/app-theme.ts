@@ -5,6 +5,150 @@ export type AppThemeId = 'soha'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedThemeMode = 'light' | 'dark'
+export type LightCanvasPreset = 'apple' | 'google' | 'anthropic' | 'mist'
+
+export interface AccentPresetOption {
+  id: string
+  labelZh: string
+  labelEn: string
+  descZh: string
+  lightHex: string
+  darkHex: string
+}
+
+export interface CanvasPresetOption {
+  id: string
+  labelZh: string
+  labelEn: string
+  hex: string
+}
+
+export const ACCENT_PRESETS: AccentPresetOption[] = [
+  {
+    id: 'indigo',
+    labelZh: '星际靛蓝',
+    labelEn: 'Astral Indigo',
+    descZh: '官方推荐 · K8s 云原生蓝与 AI 编排感，与健康绿零冲突',
+    lightHex: '#364fc7',
+    darkHex: '#6366f1',
+  },
+  {
+    id: 'obsidian',
+    labelZh: '曜石黑钛',
+    labelEn: 'Obsidian Pro',
+    descZh: 'Apple Pro / Vercel 极简金属黑，零色相干扰',
+    lightHex: '#1d1d1f',
+    darkHex: '#38bdf8',
+  },
+  {
+    id: 'sapphire',
+    labelZh: '峡湾深蓝',
+    labelEn: 'Fjord Sapphire',
+    descZh: 'Tailscale / Cloudflare 硬核基础设施深海蓝',
+    lightHex: '#0f5288',
+    darkHex: '#38bdf8',
+  },
+  {
+    id: 'violet',
+    labelZh: '极光紫罗兰',
+    labelEn: 'Copilot Violet',
+    descZh: '突出 Heya AI Agent 原生智能辨识度',
+    lightHex: '#5b3fd6',
+    darkHex: '#a78bfa',
+  },
+  {
+    id: 'teal',
+    labelZh: '翡翠青松',
+    labelEn: 'Botanical Teal',
+    descZh: '温润青松自然科技感',
+    lightHex: '#0f6a5c',
+    darkHex: '#2dd4bf',
+  },
+]
+
+export const LIGHT_CANVAS_PRESETS: CanvasPresetOption[] = [
+  { id: 'apple', labelZh: 'Apple 钛银', labelEn: 'Apple Mist', hex: '#f5f5f7' },
+  { id: 'google', labelZh: 'Google 冰雾', labelEn: 'Cloud Ice', hex: '#f0f4f9' },
+  { id: 'anthropic', labelZh: 'Anthropic 暖石', labelEn: 'Warm Stone', hex: '#f5f4ef' },
+  { id: 'mist', labelZh: '晨青雾白', labelEn: 'Botanical Mist', hex: '#eef4f2' },
+]
+
+export const DARK_CANVAS_PRESETS: CanvasPresetOption[] = [
+  { id: 'titanium', labelZh: '曜石冷钛', labelEn: 'Carbon Titanium', hex: '#0b0e13' },
+  { id: 'oled', labelZh: '纯黑 OLED', labelEn: 'Pure OLED', hex: '#050507' },
+  { id: 'navy', labelZh: '星夜深蓝', labelEn: 'Deep Space', hex: '#09101d' },
+  { id: 'graphite', labelZh: '暖碳石墨', labelEn: 'Warm Graphite', hex: '#121210' },
+]
+
+export const DEFAULT_ACCENT_COLOR = '#364fc7'
+export const DEFAULT_LIGHT_CANVAS_COLOR = '#f5f5f7'
+export const DEFAULT_DARK_CANVAS_COLOR = '#0b0e13'
+
+function normalizeHexColor(input?: string, fallback: string = DEFAULT_ACCENT_COLOR): string {
+  const value = (input || '').trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase()
+  return fallback.toLowerCase()
+}
+
+function hexToRgbTuple(hex: string, fallback: string = DEFAULT_ACCENT_COLOR): [number, number, number] {
+  const clean = normalizeHexColor(hex, fallback).slice(1)
+  return [
+    Number.parseInt(clean.slice(0, 2), 16),
+    Number.parseInt(clean.slice(2, 4), 16),
+    Number.parseInt(clean.slice(4, 6), 16),
+  ]
+}
+
+function mixRgb(
+  base: [number, number, number],
+  target: [number, number, number],
+  weight: number,
+): string {
+  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)))
+  const r = clamp(base[0] * (1 - weight) + target[0] * weight)
+  const g = clamp(base[1] * (1 - weight) + target[1] * weight)
+  const b = clamp(base[2] * (1 - weight) + target[2] * weight)
+  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`
+}
+
+export function deriveAccentTokens(accentHex: string | undefined, mode: ResolvedThemeMode) {
+  const normalized = normalizeHexColor(accentHex)
+  const preset = ACCENT_PRESETS.find((item) => item.lightHex.toLowerCase() === normalized)
+  const effectiveHex =
+    mode === 'dark'
+      ? preset
+        ? preset.darkHex
+        : mixRgb(hexToRgbTuple(normalized), [255, 255, 255], 0.28)
+      : normalized
+  const rgb = hexToRgbTuple(effectiveHex)
+  const rgbString = `${rgb[0]}, ${rgb[1]}, ${rgb[2]}`
+  const buttonPrimary =
+    mode === 'dark'
+      ? preset?.id === 'obsidian'
+        ? '#2563eb'
+        : mixRgb(hexToRgbTuple(normalized), [255, 255, 255], 0.12)
+      : normalized
+  const buttonRgb = hexToRgbTuple(buttonPrimary)
+  return {
+    primary: effectiveHex,
+    primaryRgb: rgbString,
+    primaryHover:
+      mode === 'dark'
+        ? mixRgb(rgb, [255, 255, 255], 0.16)
+        : mixRgb(rgb, [255, 255, 255], 0.14),
+    primaryActive: mixRgb(rgb, [0, 0, 0], 0.16),
+    primaryLightDefault:
+      mode === 'dark' ? `rgba(${rgbString}, 0.14)` : mixRgb(rgb, [255, 255, 255], 0.91),
+    primaryLightHover:
+      mode === 'dark' ? `rgba(${rgbString}, 0.20)` : mixRgb(rgb, [255, 255, 255], 0.85),
+    primaryLightActive:
+      mode === 'dark' ? `rgba(${rgbString}, 0.26)` : mixRgb(rgb, [255, 255, 255], 0.78),
+    buttonPrimary,
+    buttonHover: mixRgb(buttonRgb, [255, 255, 255], 0.13),
+    buttonActive: mixRgb(buttonRgb, [0, 0, 0], 0.15),
+    buttonRgbString: `${buttonRgb[0]}, ${buttonRgb[1]}, ${buttonRgb[2]}`,
+  }
+}
 
 export interface ThemePalette {
   primaryRgb: string
@@ -107,7 +251,11 @@ export const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
 ]
 
 const APP_FONT_FAMILY =
-  "'Inter', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif"
+  "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', sans-serif"
+const APP_SERIF_FONT_FAMILY =
+  "'Newsreader', 'Songti SC', 'STSong', 'Noto Serif SC', Georgia, serif"
+const APP_MONO_FONT_FAMILY =
+  "'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
 const APP_FONT_SIZE = 14
 const APP_LINE_HEIGHT_PX = 22
 const APP_LINE_HEIGHT = APP_LINE_HEIGHT_PX / APP_FONT_SIZE
@@ -122,189 +270,186 @@ const APP_CARD_PADDING = 20
 // Shared by the overview canvas and its CSS slot; not a global chart size.
 export const OVERVIEW_COMPACT_CHART_SIZE = 64
 const APP_CONTROL_HEIGHT = 32
-const APP_CONTROL_RADIUS = 6
-const APP_PANEL_RADIUS = 8
-const APP_LARGE_RADIUS = 14
+const APP_CONTROL_RADIUS = 10
+const APP_PANEL_RADIUS = 18
+const APP_LARGE_RADIUS = 24
 // The app sidebar is compact; other menus retain the component's standard height.
 const APP_SIDEBAR_ITEM_HEIGHT = 31
-const GLASS_BLUR = '16px'
+const GLASS_BLUR = '20px'
 
 const THEME_PALETTES: Record<ResolvedThemeMode, ThemePalette> = {
   light: {
-    primaryRgb: '22, 119, 255',
-    primary: '#1677ff',
-    primaryHover: '#4096ff',
-    primaryActive: '#0958d9',
-    primaryLightDefault: '#e6f4ff',
-    primaryLightHover: '#bae0ff',
-    primaryLightActive: '#91caff',
-    primaryDisabled: '#adc6ff',
-    colorSuccess: '#22c55e',
-    colorWarning: '#f97316',
-    colorDanger: '#ef4444',
-    colorInfo: '#0891b2',
-    controlOutline: 'rgba(22, 119, 255, 0.16)',
-    colorBgBase: '#ffffff',
-    colorBgLayout: '#f6f8fb',
+    primaryRgb: '15, 106, 92',
+    primary: '#0f6a5c',
+    primaryHover: '#14806f',
+    primaryActive: '#0b5247',
+    primaryLightDefault: '#e2f3ef',
+    primaryLightHover: '#cdebe4',
+    primaryLightActive: '#bce3da',
+    primaryDisabled: '#9dc2bb',
+    colorSuccess: '#128064',
+    colorWarning: '#b8741a',
+    colorDanger: '#c94f38',
+    colorInfo: '#0f6a5c',
+    controlOutline: 'rgba(15, 106, 92, 0.16)',
+    colorBgBase: '#f5f5f7',
+    colorBgLayout: '#f5f5f7',
     colorBgContainer: '#ffffff',
-    colorBgElevated: 'rgba(255, 255, 255, 0.94)',
-    colorBgMuted: '#f9f9fb',
-    colorBorder: '#e5e7eb',
-    colorBorderSecondary: '#f0f2f5',
-    colorFill: '#d1d5db',
-    colorFillSecondary: '#e5e7eb',
-    colorFillTertiary: '#f3f4f6',
-    colorFillQuaternary: '#f9f9fb',
-    colorText: '#111827',
-    colorTextSecondary: '#4b5563',
-    colorTextTertiary: '#6b7280',
-    colorTextQuaternary: '#9ca3af',
-    colorCodeBg: '#111827',
-    colorCodeText: '#fafafa',
-    terminalBg: '#0b1220',
-    terminalFg: '#e5edf5',
-    terminalCursor: '#4cbbff',
-    terminalBorder: 'rgba(22, 119, 255, 0.18)',
+    colorBgElevated: '#ffffff',
+    colorBgMuted: '#ebedf0',
+    colorBorder: '#dfe2e7',
+    colorBorderSecondary: '#e8eaee',
+    colorFill: '#c8cdd5',
+    colorFillSecondary: '#dadfe6',
+    colorFillTertiary: '#ebedf0',
+    colorFillQuaternary: 'rgba(29, 29, 31, 0.036)',
+    colorText: '#1d1d1f',
+    colorTextSecondary: '#515156',
+    colorTextTertiary: '#76767d',
+    colorTextQuaternary: '#9a9aa1',
+    colorCodeBg: '#0f171e',
+    colorCodeText: '#f1f5f9',
+    terminalBg: '#0c1218',
+    terminalFg: '#e2e8f0',
+    terminalCursor: '#2dd4bf',
+    terminalBorder: 'rgba(15, 35, 42, 0.14)',
     terminalMuted: 'rgba(148, 163, 184, 0.88)',
-    terminalRowDivider: 'rgba(148, 163, 184, 0.08)',
-    terminalOverlayBg: 'rgba(11, 18, 32, 0.92)',
-    colorPrimaryBg: '#e6f4ff',
-    colorPrimaryBgHover: '#bae0ff',
-    colorPrimaryBorder: '#91caff',
-    colorPrimaryBorderHover: '#69b1ff',
-    boxShadow: '0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.08)',
-    boxShadowSecondary: '0 14px 34px rgba(22, 119, 255, 0.08)',
-    accentBlue: '#1677ff',
-    accentBlueRgb: '22, 119, 255',
-    accentCyan: '#13c2c2',
-    accentCyanRgb: '19, 194, 194',
-    accentViolet: '#7c3aed',
-    accentTeal: '#52c41a',
-    accentTealRgb: '82, 196, 26',
-    gradientPrimary: 'linear-gradient(135deg, #1677ff 0%, #13c2c2 56%, #52c41a 100%)',
+    terminalRowDivider: 'rgba(255, 255, 255, 0.06)',
+    terminalOverlayBg: 'rgba(12, 18, 24, 0.92)',
+    colorPrimaryBg: '#e2f3ef',
+    colorPrimaryBgHover: '#cdebe4',
+    colorPrimaryBorder: 'rgba(15, 106, 92, 0.24)',
+    colorPrimaryBorderHover: 'rgba(15, 106, 92, 0.42)',
+    boxShadow: '0 24px 60px -18px rgba(15, 20, 28, 0.075), 0 4px 16px -4px rgba(15, 20, 28, 0.03)',
+    boxShadowSecondary:
+      '0 18px 42px -12px rgba(15, 20, 28, 0.09), 0 2px 8px -2px rgba(15, 20, 28, 0.035)',
+    accentBlue: '#0f6a5c',
+    accentBlueRgb: '15, 106, 92',
+    accentCyan: '#0d8a78',
+    accentCyanRgb: '13, 138, 120',
+    accentViolet: '#0284c7',
+    accentTeal: '#14806f',
+    accentTealRgb: '20, 128, 111',
+    gradientPrimary: 'linear-gradient(150deg, #127868 0%, #0b4f45 100%)',
     gradientSubtle:
-      'linear-gradient(135deg, rgba(22, 119, 255, 0.10) 0%, rgba(19, 194, 194, 0.08) 54%, rgba(82, 196, 26, 0.06) 100%)',
-    gradientPanel:
-      'linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(249, 249, 251, 0.94) 100%)',
-    glassBg: 'rgba(255, 255, 255, 0.72)',
-    glassBgStrong: 'rgba(255, 255, 255, 0.88)',
-    glassBorder: 'rgba(22, 119, 255, 0.24)',
-    glassShadow: '0 18px 48px rgba(22, 119, 255, 0.10)',
-    workflowCanvasBg:
-      'linear-gradient(180deg, rgba(249, 249, 251, 0.98) 0%, rgba(230, 244, 255, 0.72) 100%)',
-    workflowCanvasGrid: 'rgba(22, 119, 255, 0.14)',
+      'linear-gradient(135deg, rgba(15, 106, 92, 0.05) 0%, rgba(235, 237, 240, 0.7) 100%)',
+    gradientPanel: 'linear-gradient(180deg, #ffffff 0%, #fafafa 100%)',
+    glassBg: 'rgba(255, 255, 255, 0.84)',
+    glassBgStrong: 'rgba(255, 255, 255, 0.94)',
+    glassBorder: 'rgba(29, 29, 31, 0.08)',
+    glassShadow: '0 18px 42px -14px rgba(15, 20, 28, 0.08), 0 2px 8px -2px rgba(15, 20, 28, 0.03)',
+    workflowCanvasBg: 'linear-gradient(180deg, #f8f8fa 0%, #ebedf0 100%)',
+    workflowCanvasGrid: 'rgba(29, 29, 31, 0.06)',
     workflowCanvasGlow:
-      'radial-gradient(circle at top left, rgba(19, 194, 194, 0.16), transparent 36%)',
-    workflowNodeBg: 'rgba(255, 255, 255, 0.90)',
-    workflowNodeBorder: 'rgba(22, 119, 255, 0.28)',
-    workflowNodeSelectedBorder: '#1677ff',
-    workflowNodeSelectedRing: 'rgba(22, 119, 255, 0.18)',
-    workflowEdgeDefault: '#94a3b8',
-    workflowEdgeSuccess: '#52c41a',
-    workflowEdgeFailure: '#ef4444',
-    workflowInspectorBg: 'rgba(255, 255, 255, 0.88)',
-    graphScope: '#1677ff',
-    graphService: '#13c2c2',
-    graphSpan: '#7c3aed',
-    graphLog: '#b45309',
-    graphMetric: '#0891b2',
-    graphHypothesis: '#dc2626',
-    graphMuted: '#64748b',
-    graphRecommendation: '#0f766e',
-    dataPanelBg: 'rgba(255, 255, 255, 0.88)',
-    dataPanelBorder: '#e5e7eb',
-    dataRowHoverBg: '#f9f9fb',
-    dataRowSelectedBg: '#e6f4ff',
-    listItemActiveBg: 'linear-gradient(135deg, rgba(22, 119, 255, 0.12), rgba(19, 194, 194, 0.10))',
-    listItemActiveBorder: 'rgba(22, 119, 255, 0.42)',
+      'radial-gradient(circle at top left, rgba(15, 106, 92, 0.08), transparent 40%)',
+    workflowNodeBg: 'rgba(255, 255, 255, 0.96)',
+    workflowNodeBorder: 'rgba(29, 29, 31, 0.10)',
+    workflowNodeSelectedBorder: '#0f6a5c',
+    workflowNodeSelectedRing: 'rgba(15, 106, 92, 0.16)',
+    workflowEdgeDefault: '#9a9aa1',
+    workflowEdgeSuccess: '#128064',
+    workflowEdgeFailure: '#c94f38',
+    workflowInspectorBg: 'rgba(250, 250, 252, 0.94)',
+    graphScope: '#0f6a5c',
+    graphService: '#0d8a78',
+    graphSpan: '#76767d',
+    graphLog: '#b8741a',
+    graphMetric: '#14806f',
+    graphHypothesis: '#c94f38',
+    graphMuted: '#76767d',
+    graphRecommendation: '#0f6a5c',
+    dataPanelBg: '#ffffff',
+    dataPanelBorder: '#dfe2e7',
+    dataRowHoverBg: 'rgba(15, 106, 92, 0.038)',
+    dataRowSelectedBg: '#eaf6f3',
+    listItemActiveBg: '#0f6a5c',
+    listItemActiveBorder: 'rgba(15, 106, 92, 0.25)',
   },
   dark: {
-    primaryRgb: '64, 150, 255',
-    primary: '#4096ff',
-    primaryHover: '#69b1ff',
-    primaryActive: '#1677ff',
-    primaryLightDefault: 'rgba(64, 150, 255, 0.16)',
-    primaryLightHover: 'rgba(64, 150, 255, 0.24)',
-    primaryLightActive: 'rgba(64, 150, 255, 0.30)',
-    primaryDisabled: 'rgba(64, 150, 255, 0.34)',
-    colorSuccess: '#4ade80',
-    colorWarning: '#fb923c',
+    primaryRgb: '45, 212, 191',
+    primary: '#14b8a6',
+    primaryHover: '#2dd4bf',
+    primaryActive: '#0d9488',
+    primaryLightDefault: 'rgba(45, 212, 191, 0.12)',
+    primaryLightHover: 'rgba(45, 212, 191, 0.18)',
+    primaryLightActive: 'rgba(45, 212, 191, 0.24)',
+    primaryDisabled: 'rgba(100, 116, 139, 0.34)',
+    colorSuccess: '#34d399',
+    colorWarning: '#fbbf24',
     colorDanger: '#f87171',
-    colorInfo: '#69b1ff',
-    controlOutline: 'rgba(64, 150, 255, 0.28)',
-    colorBgBase: '#07111f',
-    colorBgLayout: '#07111f',
-    colorBgContainer: '#0d1726',
-    colorBgElevated: '#101c2d',
-    colorBgMuted: '#122238',
-    colorBorder: '#1e334d',
-    colorBorderSecondary: '#28415f',
-    colorFill: '#2c4665',
-    colorFillSecondary: '#172b44',
-    colorFillTertiary: '#102035',
-    colorFillQuaternary: '#0f1b2b',
-    colorText: '#fafafa',
-    colorTextSecondary: '#d4d4d8',
-    colorTextTertiary: '#a1a1aa',
-    colorTextQuaternary: '#71717a',
-    colorCodeBg: '#000000',
-    colorCodeText: '#fafafa',
-    terminalBg: '#020817',
-    terminalFg: '#e5edf5',
-    terminalCursor: '#7dd3fc',
-    terminalBorder: 'rgba(64, 150, 255, 0.22)',
-    terminalMuted: 'rgba(148, 163, 184, 0.88)',
-    terminalRowDivider: 'rgba(148, 163, 184, 0.10)',
-    terminalOverlayBg: 'rgba(2, 8, 23, 0.92)',
-    colorPrimaryBg: 'rgba(64, 150, 255, 0.16)',
-    colorPrimaryBgHover: 'rgba(64, 150, 255, 0.24)',
-    colorPrimaryBorder: 'rgba(64, 150, 255, 0.32)',
-    colorPrimaryBorderHover: 'rgba(105, 177, 255, 0.44)',
-    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45)',
-    boxShadowSecondary: '0 18px 42px rgba(0, 0, 0, 0.34)',
-    accentBlue: '#4096ff',
-    accentBlueRgb: '64, 150, 255',
-    accentCyan: '#36cfc9',
-    accentCyanRgb: '54, 207, 201',
-    accentViolet: '#a78bfa',
-    accentTeal: '#73d13d',
-    accentTealRgb: '115, 209, 61',
-    gradientPrimary: 'linear-gradient(135deg, #4096ff 0%, #36cfc9 56%, #73d13d 100%)',
+    colorInfo: '#2dd4bf',
+    controlOutline: 'rgba(45, 212, 191, 0.22)',
+    colorBgBase: '#0b0e13',
+    colorBgLayout: '#0b0e13',
+    colorBgContainer: '#12161d',
+    colorBgElevated: '#181d26',
+    colorBgMuted: '#0e1218',
+    colorBorder: '#222936',
+    colorBorderSecondary: '#1b212c',
+    colorFill: '#333d4f',
+    colorFillSecondary: '#252d3b',
+    colorFillTertiary: '#1a202b',
+    colorFillQuaternary: 'rgba(226, 232, 240, 0.045)',
+    colorText: '#f1f5f9',
+    colorTextSecondary: '#94a3b8',
+    colorTextTertiary: '#64748b',
+    colorTextQuaternary: '#475569',
+    colorCodeBg: '#080a0e',
+    colorCodeText: '#f1f5f9',
+    terminalBg: '#080a0e',
+    terminalFg: '#e2e8f0',
+    terminalCursor: '#2dd4bf',
+    terminalBorder: 'rgba(148, 163, 184, 0.14)',
+    terminalMuted: 'rgba(148, 163, 184, 0.85)',
+    terminalRowDivider: 'rgba(255, 255, 255, 0.06)',
+    terminalOverlayBg: 'rgba(8, 10, 14, 0.92)',
+    colorPrimaryBg: 'rgba(45, 212, 191, 0.11)',
+    colorPrimaryBgHover: 'rgba(45, 212, 191, 0.17)',
+    colorPrimaryBorder: 'rgba(45, 212, 191, 0.28)',
+    colorPrimaryBorderHover: 'rgba(45, 212, 191, 0.44)',
+    boxShadow: '0 18px 42px -12px rgba(0, 0, 0, 0.62)',
+    boxShadowSecondary: '0 24px 56px -14px rgba(0, 0, 0, 0.72), 0 2px 8px rgba(0, 0, 0, 0.45)',
+    accentBlue: '#f1f5f9',
+    accentBlueRgb: '241, 245, 249',
+    accentCyan: '#2dd4bf',
+    accentCyanRgb: '45, 212, 191',
+    accentViolet: '#38bdf8',
+    accentTeal: '#14b8a6',
+    accentTealRgb: '20, 184, 166',
+    gradientPrimary: 'linear-gradient(150deg, #115e59 0%, #0f3d3e 100%)',
     gradientSubtle:
-      'linear-gradient(135deg, rgba(64, 150, 255, 0.18) 0%, rgba(54, 207, 201, 0.14) 54%, rgba(115, 209, 61, 0.12) 100%)',
-    gradientPanel:
-      'linear-gradient(180deg, rgba(16, 28, 45, 0.92) 0%, rgba(13, 23, 38, 0.88) 100%)',
-    glassBg: 'rgba(13, 23, 38, 0.72)',
-    glassBgStrong: 'rgba(16, 28, 45, 0.88)',
-    glassBorder: 'rgba(64, 150, 255, 0.24)',
-    glassShadow: '0 20px 56px rgba(0, 0, 0, 0.36)',
-    workflowCanvasBg:
-      'linear-gradient(180deg, rgba(7, 17, 31, 0.98) 0%, rgba(13, 23, 38, 0.94) 100%)',
-    workflowCanvasGrid: 'rgba(64, 150, 255, 0.18)',
+      'linear-gradient(135deg, rgba(45, 212, 191, 0.08) 0%, rgba(18, 22, 29, 0.7) 100%)',
+    gradientPanel: 'linear-gradient(180deg, #161b24 0%, #12161d 100%)',
+    glassBg: 'rgba(18, 22, 29, 0.84)',
+    glassBgStrong: 'rgba(24, 29, 38, 0.94)',
+    glassBorder: 'rgba(148, 163, 184, 0.12)',
+    glassShadow: '0 24px 56px -12px rgba(0, 0, 0, 0.72)',
+    workflowCanvasBg: 'linear-gradient(180deg, #0b0e13 0%, #12161d 100%)',
+    workflowCanvasGrid: 'rgba(148, 163, 184, 0.07)',
     workflowCanvasGlow:
-      'radial-gradient(circle at top left, rgba(54, 207, 201, 0.16), transparent 38%)',
-    workflowNodeBg: 'rgba(16, 28, 45, 0.90)',
-    workflowNodeBorder: 'rgba(64, 150, 255, 0.28)',
-    workflowNodeSelectedBorder: '#4096ff',
-    workflowNodeSelectedRing: 'rgba(64, 150, 255, 0.24)',
-    workflowEdgeDefault: '#64748b',
-    workflowEdgeSuccess: '#73d13d',
+      'radial-gradient(circle at top left, rgba(45, 212, 191, 0.10), transparent 40%)',
+    workflowNodeBg: 'rgba(24, 29, 38, 0.94)',
+    workflowNodeBorder: 'rgba(148, 163, 184, 0.14)',
+    workflowNodeSelectedBorder: '#2dd4bf',
+    workflowNodeSelectedRing: 'rgba(45, 212, 191, 0.22)',
+    workflowEdgeDefault: '#475569',
+    workflowEdgeSuccess: '#34d399',
     workflowEdgeFailure: '#f87171',
-    workflowInspectorBg: 'rgba(16, 28, 45, 0.88)',
-    graphScope: '#4096ff',
-    graphService: '#36cfc9',
-    graphSpan: '#a78bfa',
+    workflowInspectorBg: 'rgba(24, 29, 38, 0.94)',
+    graphScope: '#f1f5f9',
+    graphService: '#2dd4bf',
+    graphSpan: '#94a3b8',
     graphLog: '#fbbf24',
-    graphMetric: '#22d3ee',
+    graphMetric: '#34d399',
     graphHypothesis: '#f87171',
-    graphMuted: '#94a3b8',
-    graphRecommendation: '#5eead4',
-    dataPanelBg: 'rgba(16, 28, 45, 0.88)',
-    dataPanelBorder: '#1e334d',
-    dataRowHoverBg: '#0f1b2b',
-    dataRowSelectedBg: 'rgba(64, 150, 255, 0.16)',
-    listItemActiveBg: 'linear-gradient(135deg, rgba(64, 150, 255, 0.18), rgba(54, 207, 201, 0.14))',
-    listItemActiveBorder: 'rgba(64, 150, 255, 0.42)',
+    graphMuted: '#64748b',
+    graphRecommendation: '#2dd4bf',
+    dataPanelBg: '#12161d',
+    dataPanelBorder: '#222936',
+    dataRowHoverBg: 'rgba(45, 212, 191, 0.05)',
+    dataRowSelectedBg: 'rgba(45, 212, 191, 0.11)',
+    listItemActiveBg: '#115e59',
+    listItemActiveBorder: 'rgba(45, 212, 191, 0.28)',
   },
 }
 
@@ -314,9 +459,105 @@ export function resolveThemeMode(themeMode: ThemeMode): ResolvedThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-export function getThemePalette(themeMode: ThemeMode | ResolvedThemeMode): ThemePalette {
+export function deriveCanvasTokens(canvasHex: string | undefined, mode: ResolvedThemeMode) {
+  const fallback = mode === 'dark' ? DEFAULT_DARK_CANVAS_COLOR : DEFAULT_LIGHT_CANVAS_COLOR
+  const bg = normalizeHexColor(canvasHex, fallback)
+  const rgb = hexToRgbTuple(bg, fallback)
+  if (mode === 'dark') {
+    const container =
+      bg === DEFAULT_DARK_CANVAS_COLOR ? '#12161d' : mixRgb(rgb, [226, 232, 240], 0.036)
+    const elevated =
+      bg === DEFAULT_DARK_CANVAS_COLOR ? '#181d26' : mixRgb(rgb, [226, 232, 240], 0.068)
+    const muted = bg === DEFAULT_DARK_CANVAS_COLOR ? '#0e1218' : mixRgb(rgb, [226, 232, 240], 0.018)
+    const border = bg === DEFAULT_DARK_CANVAS_COLOR ? '#222936' : mixRgb(rgb, [148, 163, 184], 0.14)
+    const borderSecondary =
+      bg === DEFAULT_DARK_CANVAS_COLOR ? '#1b212c' : mixRgb(rgb, [148, 163, 184], 0.095)
+    const containerRgb = hexToRgbTuple(container, '#12161d')
+    const elevatedRgb = hexToRgbTuple(elevated, '#181d26')
+    return {
+      colorBgBase: bg,
+      colorBgLayout: bg,
+      colorBgContainer: container,
+      colorBgElevated: elevated,
+      colorBgMuted: muted,
+      colorBorder: border,
+      colorBorderSecondary: borderSecondary,
+      bgOat: mixRgb(rgb, [226, 232, 240], 0.052),
+      bgSurfaceSoft: mixRgb(rgb, [226, 232, 240], 0.044),
+      glassBg: `rgba(${containerRgb[0]}, ${containerRgb[1]}, ${containerRgb[2]}, 0.84)`,
+      glassBgStrong: `rgba(${elevatedRgb[0]}, ${elevatedRgb[1]}, ${elevatedRgb[2]}, 0.94)`,
+      dataPanelBg: container,
+      dataPanelBorder: border,
+    }
+  }
+  const muted = bg === DEFAULT_LIGHT_CANVAS_COLOR ? '#ebedf0' : mixRgb(rgb, [15, 23, 42], 0.042)
+  const border = bg === DEFAULT_LIGHT_CANVAS_COLOR ? '#dfe2e7' : mixRgb(rgb, [15, 23, 42], 0.092)
+  const borderSecondary =
+    bg === DEFAULT_LIGHT_CANVAS_COLOR ? '#e8eaee' : mixRgb(rgb, [15, 23, 42], 0.056)
+  return {
+    colorBgBase: bg,
+    colorBgLayout: bg,
+    colorBgContainer: '#ffffff',
+    colorBgElevated: '#ffffff',
+    colorBgMuted: muted,
+    colorBorder: border,
+    colorBorderSecondary: borderSecondary,
+    bgOat: bg === DEFAULT_LIGHT_CANVAS_COLOR ? '#e6e8ec' : mixRgb(rgb, [15, 23, 42], 0.064),
+    bgSurfaceSoft: '#fafafa',
+    glassBg: 'rgba(255, 255, 255, 0.84)',
+    glassBgStrong: 'rgba(255, 255, 255, 0.94)',
+    dataPanelBg: '#ffffff',
+    dataPanelBorder: border,
+  }
+}
+
+export function getThemePalette(
+  themeMode: ThemeMode | ResolvedThemeMode,
+  accentColor?: string,
+  canvasColor?: string,
+): ThemePalette {
   const resolvedMode = themeMode === 'system' ? resolveThemeMode(themeMode) : themeMode
-  return THEME_PALETTES[resolvedMode]
+  const base = THEME_PALETTES[resolvedMode]
+  const accent = deriveAccentTokens(accentColor, resolvedMode)
+  const canvas = deriveCanvasTokens(canvasColor, resolvedMode)
+  return {
+    ...base,
+    colorBgBase: canvas.colorBgBase,
+    colorBgLayout: canvas.colorBgLayout,
+    colorBgContainer: canvas.colorBgContainer,
+    colorBgElevated: canvas.colorBgElevated,
+    colorBgMuted: canvas.colorBgMuted,
+    colorBorder: canvas.colorBorder,
+    colorBorderSecondary: canvas.colorBorderSecondary,
+    glassBg: canvas.glassBg,
+    glassBgStrong: canvas.glassBgStrong,
+    dataPanelBg: canvas.dataPanelBg,
+    dataPanelBorder: canvas.dataPanelBorder,
+    primary: accent.primary,
+    primaryRgb: accent.primaryRgb,
+    primaryHover: accent.primaryHover,
+    primaryActive: accent.primaryActive,
+    primaryLightDefault: accent.primaryLightDefault,
+    primaryLightHover: accent.primaryLightHover,
+    primaryLightActive: accent.primaryLightActive,
+    controlOutline: `rgba(${accent.primaryRgb}, 0.20)`,
+    colorInfo: accent.primary,
+    colorPrimaryBg: accent.primaryLightDefault,
+    colorPrimaryBgHover: accent.primaryLightHover,
+    colorPrimaryBorder: `rgba(${accent.primaryRgb}, 0.26)`,
+    colorPrimaryBorderHover: `rgba(${accent.primaryRgb}, 0.44)`,
+    accentBlue: resolvedMode === 'dark' ? base.colorText : accent.primary,
+    accentBlueRgb: resolvedMode === 'dark' ? '241, 245, 249' : accent.primaryRgb,
+    accentCyan: accent.primary,
+    accentCyanRgb: accent.primaryRgb,
+    listItemActiveBg: accent.buttonPrimary,
+    listItemActiveBorder: `rgba(${accent.primaryRgb}, 0.28)`,
+    dataRowHoverBg:
+      resolvedMode === 'dark'
+        ? `rgba(${accent.primaryRgb}, 0.055)`
+        : `rgba(${accent.primaryRgb}, 0.036)`,
+    dataRowSelectedBg: accent.primaryLightDefault,
+  }
 }
 
 export function readThemeCssVariable(name: string, fallback: string): string {
@@ -352,9 +593,14 @@ export function readTerminalThemeColors() {
   }
 }
 
-export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeConfig {
+export function getAntdTheme(
+  themeMode: ThemeMode | ResolvedThemeMode,
+  accentColor?: string,
+  canvasColor?: string,
+): ThemeConfig {
   const resolvedMode = themeMode === 'system' ? resolveThemeMode(themeMode) : themeMode
-  const palette = getThemePalette(resolvedMode)
+  const palette = getThemePalette(resolvedMode, accentColor, canvasColor)
+  const accent = deriveAccentTokens(accentColor, resolvedMode)
 
   return {
     algorithm: resolvedMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
@@ -515,9 +761,9 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
         itemHoverColor: palette.colorText,
         itemHoverBg: palette.colorFillQuaternary,
         itemActiveBg: palette.colorFillQuaternary,
-        itemSelectedColor: palette.primary,
-        itemSelectedBg: palette.colorPrimaryBg,
-        subMenuItemSelectedColor: palette.primary,
+        itemSelectedColor: palette.colorText,
+        itemSelectedBg: palette.primaryLightDefault,
+        subMenuItemSelectedColor: palette.colorText,
         groupTitleColor: palette.colorTextTertiary,
         darkItemBg: 'transparent',
         darkSubMenuItemBg: 'transparent',
@@ -525,11 +771,11 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
         darkItemColor: palette.colorTextSecondary,
         darkItemHoverColor: palette.colorText,
         darkItemHoverBg: palette.colorFillQuaternary,
-        darkItemSelectedColor: palette.primary,
-        darkItemSelectedBg: palette.colorPrimaryBg,
+        darkItemSelectedColor: palette.colorText,
+        darkItemSelectedBg: palette.primaryLightDefault,
         darkGroupTitleColor: palette.colorTextTertiary,
-        itemBorderRadius: 10,
-        subMenuItemBorderRadius: 10,
+        itemBorderRadius: 7,
+        subMenuItemBorderRadius: 7,
         itemMarginInline: 8,
         itemHeight: 38,
         groupTitleFontSize: APP_SUPPORTING_FONT_SIZE,
@@ -541,7 +787,7 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
         cellFontSizeMD: APP_FONT_SIZE,
         cellFontSizeSM: APP_SUPPORTING_FONT_SIZE,
         borderColor: palette.colorBorder,
-        headerBg: palette.colorBgMuted,
+        headerBg: palette.colorBgContainer,
         headerColor: palette.colorText,
         headerSplitColor: palette.colorBorder,
         cellPaddingBlockSM: 8,
@@ -552,7 +798,7 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
         cellPaddingInline: 12,
         headerSortActiveBg: palette.colorFillQuaternary,
         headerSortHoverBg: palette.colorFillQuaternary,
-        rowHoverBg: palette.colorFillQuaternary,
+        rowHoverBg: palette.dataRowHoverBg,
         rowSelectedBg: palette.colorPrimaryBg,
         rowSelectedHoverBg: palette.colorPrimaryBgHover,
         bodySortBg: palette.colorBgContainer,
@@ -575,23 +821,29 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
       Button: {
         contentFontSize: APP_CONTROL_FONT_SIZE,
         contentFontSizeSM: APP_SUPPORTING_FONT_SIZE,
-        primaryShadow: '0 1px 2px rgba(var(--soha-primary-rgb), 0.12)',
-        defaultShadow: 'none',
+        colorPrimary: accent.buttonPrimary,
+        colorPrimaryHover: accent.buttonHover,
+        colorPrimaryActive: accent.buttonActive,
+        primaryShadow:
+          resolvedMode === 'dark'
+            ? 'inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 20px -6px rgba(0, 0, 0, 0.55)'
+            : `inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 10px 24px -8px rgba(${accent.buttonRgbString}, 0.34)`,
+        defaultShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(23, 33, 28, 0.04)',
         dangerShadow: 'none',
         defaultBorderColor: palette.colorBorder,
         defaultColor: palette.colorText,
         defaultBg: palette.colorBgContainer,
-        defaultHoverBg: palette.colorFillQuaternary,
+        defaultHoverBg: palette.colorFillTertiary,
         defaultHoverBorderColor: palette.colorPrimaryBorder,
         defaultHoverColor: palette.colorText,
         defaultActiveBg: palette.colorFillSecondary,
         defaultActiveBorderColor: palette.colorPrimaryBorder,
         defaultActiveColor: palette.colorText,
-        primaryColor: '#ffffff',
-        solidTextColor: '#ffffff',
+        primaryColor: '#f7f4ee',
+        solidTextColor: '#f7f4ee',
         dangerColor: '#ffffff',
-        fontWeight: 500,
-        borderRadius: APP_CONTROL_RADIUS,
+        fontWeight: 600,
+        borderRadius: 999,
       },
       Input: {
         inputFontSize: APP_CONTROL_FONT_SIZE,
@@ -693,12 +945,25 @@ export function getAppThemeLabel(): string {
   return 'Soha'
 }
 
-export function applyAppTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
+export function applyAppTheme(
+  _themeId: AppThemeId,
+  themeMode: ThemeMode,
+  accentColor?: string,
+  canvasColor?: string,
+  options?: {
+    paperGrain?: boolean
+  },
+) {
   if (typeof document === 'undefined') return
   const resolvedMode = resolveThemeMode(themeMode)
-  const palette = getThemePalette(resolvedMode)
+  const palette = getThemePalette(resolvedMode, accentColor, canvasColor)
+  const accent = deriveAccentTokens(accentColor, resolvedMode)
+  const canvas = deriveCanvasTokens(canvasColor, resolvedMode)
   const root = document.documentElement
-  const motion = antdTheme.getDesignToken(getAntdTheme(resolvedMode))
+  delete root.dataset.lightCanvas
+  delete root.dataset.tableStyle
+  root.dataset.paperGrain = options?.paperGrain === false ? 'off' : 'on'
+  const motion = antdTheme.getDesignToken(getAntdTheme(resolvedMode, accentColor, canvasColor))
   root.style.setProperty(
     '--soha-motion-duration-fast',
     motion.motion ? motion.motionDurationFast : '0s',
@@ -786,16 +1051,43 @@ export function applyAppTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
     '--soha-resource-limit-on-fill',
     resolvedMode === 'dark' ? '#a8071a' : '#ffccc7',
   )
-  root.style.setProperty('--soha-table-header-bg', palette.colorBgMuted)
-  root.style.setProperty('--soha-table-header-sort-bg', palette.colorFillSecondary)
-  root.style.setProperty('--soha-table-row-hover-bg', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-table-header-bg', palette.colorBgContainer)
+  root.style.setProperty('--soha-table-header-sort-bg', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-table-row-hover-bg', palette.dataRowHoverBg)
   root.style.setProperty('--soha-table-row-selected-bg', palette.colorPrimaryBg)
   root.style.setProperty('--soha-table-row-selected-hover-bg', palette.colorPrimaryBgHover)
-  root.style.setProperty('--soha-table-link-color', palette.primary)
-  root.style.setProperty('--soha-table-link-hover-color', palette.primaryHover)
+  root.style.setProperty('--soha-table-link-color', palette.colorText)
+  root.style.setProperty('--soha-table-link-hover-color', accent.primary)
   root.style.setProperty('--soha-menu-item-hover-bg', palette.colorFillQuaternary)
-  root.style.setProperty('--soha-menu-item-selected-bg', palette.colorPrimaryBg)
-  root.style.setProperty('--soha-menu-item-selected-color', palette.primary)
+  root.style.setProperty('--soha-menu-item-selected-bg', palette.listItemActiveBg)
+  root.style.setProperty('--soha-menu-item-selected-color', '#f8fafc')
+  root.style.setProperty('--soha-brand-teal', accent.primary)
+  root.style.setProperty('--soha-brand-teal-rgb', accent.primaryRgb)
+  root.style.setProperty('--soha-brand-teal-soft', accent.primaryLightDefault)
+  root.style.setProperty('--soha-bg-oat', canvas.bgOat)
+  root.style.setProperty('--soha-bg-surface-soft', canvas.bgSurfaceSoft)
+  root.style.setProperty(
+    '--soha-hairline',
+    resolvedMode === 'dark' ? 'rgba(148, 163, 184, 0.10)' : 'rgba(29, 29, 31, 0.065)',
+  )
+  root.style.setProperty(
+    '--soha-hairline-strong',
+    resolvedMode === 'dark' ? 'rgba(148, 163, 184, 0.16)' : 'rgba(29, 29, 31, 0.105)',
+  )
+  root.style.setProperty(
+    '--soha-bezel-bg',
+    resolvedMode === 'dark' ? 'rgba(148, 163, 184, 0.055)' : 'rgba(29, 29, 36, 0.042)',
+  )
+  root.style.setProperty(
+    '--soha-inner-highlight',
+    resolvedMode === 'dark'
+      ? 'inset 0 1px 0 rgba(255, 255, 255, 0.065)'
+      : 'inset 0 1px 0 rgba(255, 255, 255, 0.92)',
+  )
+  root.style.setProperty('--soha-ease-fluid', 'cubic-bezier(0.32, 0.72, 0, 1)')
+  root.style.setProperty('--soha-ease-expo', 'cubic-bezier(0.16, 1, 0.3, 1)')
+  root.style.setProperty('--soha-font-serif', APP_SERIF_FONT_FAMILY)
+  root.style.setProperty('--soha-font-mono', APP_MONO_FONT_FAMILY)
   root.style.setProperty('--soha-overview-card-bg', palette.colorBgContainer)
   root.style.setProperty('--soha-overview-card-success-bg', palette.colorBgContainer)
   root.style.setProperty('--soha-overview-card-warning-bg', palette.colorBgContainer)

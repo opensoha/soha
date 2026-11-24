@@ -36,6 +36,10 @@ applyBrandingSettings(readStoredBrandingSettings())
 function AppProviders() {
   const localeCode = usePreferencesStore((state) => state.localeCode)
   const themeMode = usePreferencesStore((state) => state.themeMode)
+  const accentColor = usePreferencesStore((state) => state.accentColor)
+  const lightCanvasColor = usePreferencesStore((state) => state.lightCanvasColor)
+  const darkCanvasColor = usePreferencesStore((state) => state.darkCanvasColor)
+  const paperGrain = usePreferencesStore((state) => state.paperGrain)
   const brandingQuery = useBrandingSettings()
   const [systemThemeVersion, setSystemThemeVersion] = React.useState(0)
 
@@ -53,24 +57,28 @@ function AppProviders() {
     return watchSystemThemeMode(() => setSystemThemeVersion((current) => current + 1))
   }, [themeMode])
 
-  React.useEffect(
-    () =>
-      watchSystemMotion(() => {
-        applyAppTheme(DEFAULT_APP_THEME_ID, themeMode)
-        setSystemThemeVersion((current) => current + 1)
-      }),
-    [themeMode],
-  )
-
   const resolvedThemeMode = React.useMemo(
     () => resolveThemeMode(themeMode),
     [themeMode, systemThemeVersion],
   )
+  const activeCanvasColor = resolvedThemeMode === 'dark' ? darkCanvasColor : lightCanvasColor
+
+  React.useEffect(
+    () =>
+      watchSystemMotion(() => {
+        applyAppTheme(DEFAULT_APP_THEME_ID, themeMode, accentColor, activeCanvasColor, {
+          paperGrain,
+        })
+        setSystemThemeVersion((current) => current + 1)
+      }),
+    [accentColor, activeCanvasColor, paperGrain, themeMode],
+  )
+
   const antdTheme = React.useMemo(() => {
-    const theme = getAntdTheme(resolvedThemeMode)
+    const theme = getAntdTheme(resolvedThemeMode, accentColor, activeCanvasColor)
     // Keep Antd's motion provider present from the first render to preserve page state.
     return systemThemeVersion === 0 ? { ...theme, token: { ...theme.token, motion: false } } : theme
-  }, [resolvedThemeMode, systemThemeVersion])
+  }, [accentColor, activeCanvasColor, resolvedThemeMode, systemThemeVersion])
 
   return (
     <ConfigProvider

@@ -31,10 +31,10 @@ export function resourceColumnWidths(columns: Column[], rows: Record<string, unk
             ? Math.max(length, String(value).length)
             : length
         }, 0)
-        if (index === primary) width = Math.max(260, Math.min(360, longest * 7 + 32))
-        else if (field === 'namespace') width = Math.max(112, Math.min(176, longest * 7 + 32))
+        if (index === primary) width = Math.max(220, Math.min(320, longest * 7 + 32))
+        else if (field === 'namespace') width = Math.max(108, Math.min(164, longest * 7 + 28))
         else if (/ip$/i.test(field)) width = Math.max(104, Math.min(288, longest * 7 + 32))
-        else if (column.width === undefined) width = Math.max(96, Math.min(240, longest * 7 + 32))
+        else if (column.width === undefined) width = Math.max(88, Math.min(220, longest * 7 + 28))
       }
       return [columnId(column, index), width]
     }),
@@ -138,9 +138,9 @@ export function KubernetesResourceTable({
       ellipsis: column.ellipsis ?? (index === primary ? true : undefined),
       width:
         index === primary && !(fitted.scope === scope && fitted.contentFit)
-          ? Math.max(260, Math.min(360, Math.round(available * 0.34)))
+          ? Math.max(220, Math.min(320, Math.round(available * 0.3)))
           : widths[columnId(column, index)],
-      minWidth: column.minWidth ?? (index === primary ? 240 : 64),
+      minWidth: column.minWidth ?? (index === primary ? 200 : 64),
       fixed:
         index === primary
           ? available >= 640

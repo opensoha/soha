@@ -8,7 +8,7 @@ import {
   ClockCircleOutlined,
   ClusterOutlined,
   DesktopOutlined,
-  InfoCircleOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { lazy, Suspense, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -498,40 +498,61 @@ export function ComputeOverviewPage() {
         className="soha-compute-snapshot"
         aria-label={localeText(localeCode, '资源统计', 'Resource counts')}
       >
-        <div className="soha-overview-metric-grid">
-          {visibleOverviewStats.map(({ key, path, ...item }) => (
-            <OverviewLink
-              snapshot={snapshot}
-              aria-label={localeText(
-                localeCode,
-                `查看${String(item.label)}`,
-                `View ${String(item.label)}`,
-              )}
-              className="soha-overview-card-link"
-              key={key}
-              to={path}
-            >
-              <Card
-                loading={overviewQuery.isLoading}
-                className={`soha-overview-metric-card ${item.className}`}
-                classNames={{ body: 'soha-compute-metric-body' }}
+        <div
+          className={`soha-overview-metric-grid ${
+            visibleOverviewStats.length === 4 ? 'is-asymmetric-bento' : ''
+          }`}
+        >
+          {visibleOverviewStats.map(({ key, path, ...item }, index) => {
+            const isHero = visibleOverviewStats.length === 4 && index === 0
+            return (
+              <OverviewLink
+                snapshot={snapshot}
+                aria-label={localeText(
+                  localeCode,
+                  `查看${String(item.label)}`,
+                  `View ${String(item.label)}`,
+                )}
+                className={`soha-overview-card-link ${
+                  isHero ? 'is-bento-hero' : `is-bento-tile is-bento-tile-${index}`
+                }`}
+                key={key}
+                to={path}
               >
-                <div className="soha-compute-metric-content">
-                  <div>
-                    <span className="soha-compute-metric-label">
-                      {item.icon}
-                      {item.label}
-                    </span>
-                    <strong className="soha-compute-metric-value">{item.value}</strong>
+                <Card
+                  loading={overviewQuery.isLoading}
+                  className={`soha-overview-metric-card ${item.className} ${
+                    isHero ? 'is-hero-sage' : ''
+                  }`}
+                  classNames={{ body: 'soha-compute-metric-body' }}
+                >
+                  <div className="soha-compute-metric-content">
+                    <div>
+                      <span className="soha-compute-metric-label">
+                        {item.icon}
+                        {item.label}
+                      </span>
+                      <strong className="soha-compute-metric-value">{item.value}</strong>
+                    </div>
+                    <Suspense fallback={<div className="soha-compute-chart-placeholder" />}>
+                      <SummaryChart {...item.visual} surface={isHero ? 'hero' : 'default'} />
+                    </Suspense>
                   </div>
-                  <Suspense fallback={<div className="soha-compute-chart-placeholder" />}>
-                    <SummaryChart {...item.visual} />
-                  </Suspense>
-                </div>
-                <div className="soha-compute-metric-caption">{item.helper}</div>
-              </Card>
-            </OverviewLink>
-          ))}
+                  <div className="soha-compute-metric-footer">
+                    <div className="soha-compute-metric-caption">{item.helper}</div>
+                    {isHero ? (
+                      <span className="soha-btn-island is-cream" aria-hidden="true">
+                        <span>{localeText(localeCode, '浏览实例', 'Explore Fleet')}</span>
+                        <span className="soha-btn-island__circle">
+                          <ArrowRightOutlined />
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                </Card>
+              </OverviewLink>
+            )
+          })}
         </div>
       </section>
       <div className="soha-compute-priority-grid">
@@ -606,7 +627,7 @@ export function ComputeOverviewPage() {
               >
                 <Button
                   type="text"
-                  icon={<InfoCircleOutlined />}
+                  icon={<QuestionCircleOutlined />}
                   aria-label={localeText(localeCode, '查看数据说明', 'About this data')}
                   aria-expanded={dataNotesOpen}
                   onKeyDown={(event) => {
