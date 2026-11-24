@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Button, Form, Modal, Radio, Select, Table } from 'antd'
+import { App, Button, Form, Modal, Radio, Select } from 'antd'
 import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import type { Key } from 'react'
 import type {
@@ -10,6 +10,7 @@ import type {
   AssistantMeshInheritanceRetirement,
   AssistantMeshInheritanceRetirementEnvelope,
 } from '@opensoha/contracts/gen/ts/sohaapi'
+import { AdminTable } from '@/components/admin-table'
 import { ContextFeedback } from '@/components/context-feedback'
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { api } from '@/services/api-client'
@@ -168,15 +169,16 @@ export function AssistantInheritance({
           />
         </Form.Item>
       </Form>
-      <Table<AssistantMeshInheritanceAsset>
-        size="small"
+      <AdminTable
         rowKey="id"
         columns={columns}
         dataSource={assets}
         pagination={false}
         scroll={{ y: 300 }}
         loading={list.isPending}
-        locale={{ emptyText: '暂无可继承的已发布资产' }}
+        empty="暂无可继承的已发布资产"
+        tableSize="small"
+        enableColumnSelection={false}
         rowSelection={
           mode === 'selected'
             ? {
