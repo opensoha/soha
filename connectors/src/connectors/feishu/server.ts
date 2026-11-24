@@ -19,6 +19,7 @@ export interface FeishuHttpRuntimeConfig {
     actionToken?: string;
     eventSink?: ConnectorEventSinkOptions;
     maxBodyBytes: number;
+    heyaMeshEnabled?: boolean;
   };
   logLevel: ConnectorLogLevel;
 }
@@ -27,6 +28,9 @@ export async function startFeishuConnectorServer(
   runtimeConfig: FeishuHttpRuntimeConfig,
   logger?: ConnectorLogger
 ): Promise<ConnectorHttpServerHandle> {
+  if (runtimeConfig.http.heyaMeshEnabled) {
+    validateHeyaMeshRuntime(runtimeConfig);
+  }
   const runtimeLogger = logger ?? createJsonLogger({ name: "feishu-connector", level: runtimeConfig.logLevel });
   return startConnectorHttpServer({
     connector: new FeishuConnector(),
@@ -48,7 +52,8 @@ export function loadFeishuHttpRuntimeConfigFromEnv(env: NodeJS.ProcessEnv = proc
   const http: FeishuHttpRuntimeConfig["http"] = {
     host: optionalEnv(env, "SOHA_CONNECTOR_HTTP_HOST") ?? "0.0.0.0",
     port: positiveIntEnv(env, "SOHA_CONNECTOR_HTTP_PORT", 3000),
-    maxBodyBytes: positiveIntEnv(env, "SOHA_CONNECTOR_HTTP_MAX_BODY_BYTES", 1024 * 1024)
+    maxBodyBytes: positiveIntEnv(env, "SOHA_CONNECTOR_HTTP_MAX_BODY_BYTES", 1024 * 1024),
+    heyaMeshEnabled: booleanEnv(env, "SOHA_FEISHU_HEYA_MESH_ENABLED") ?? false
   };
   if (actionToken) {
     http.actionToken = actionToken;
@@ -106,6 +111,35 @@ function positiveIntEnv(env: NodeJS.ProcessEnv, name: string, fallback: number):
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function booleanEnv(env: NodeJS.ProcessEnv, name: string): boolean | undefined {
+  const value = optionalEnv(env, name);
+  if (!value) {
+    return undefined;
+  }
+  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(value.toLowerCase())) {
+    return false;
+  }
+  throw new Error(`${name} must be a boolean`);
+}
+
+function validateHeyaMeshRuntime(runtimeConfig: FeishuHttpRuntimeConfig): void {
+  const missing = [
+    ["SOHA_CONNECTOR_HTTP_TOKEN", runtimeConfig.http.actionToken],
+    ["SOHA_CONNECTOR_EVENT_SINK_URL", runtimeConfig.http.eventSink?.url],
+    ["SOHA_CONNECTOR_EVENT_SINK_TOKEN", runtimeConfig.http.eventSink?.token],
+    ["SOHA_FEISHU_ENCRYPT_KEY", runtimeConfig.connector.encryptKey]
+  ].filter(([, value]) => typeof value !== "string" || value.trim() === "");
+  if (missing.length > 0) {
+    throw new Error(`Feishu Heya mesh runtime requires ${missing.map(([name]) => name).join(", ")}`);
+  }
+  if (runtimeConfig.connector.autoReply?.enabled) {
+    throw new Error("Feishu Heya mesh runtime rejects legacy autoReply.enabled");
+  }
 }
 
 function logLevelEnv(env: NodeJS.ProcessEnv, name: string, fallback: ConnectorLogLevel): ConnectorLogLevel {

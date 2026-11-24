@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "organizationApproverUserIds": [],
+  "defaultVisibility": "private",
+  "experienceCardLifetimeDays": 90,
+  "allowPermanentExperienceCards": true,
+  "defaultProfileOpen": false,
+  "receptionMinScore": 0
+}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, Descriptions, Drawer, Input, Select, Space, Tabs, Typography } from 'antd'
+import { Button, Card, Descriptions, Drawer, Input, Select, Space, Tabs, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { EyeOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -33,6 +33,9 @@ import {
   UsageSnapshotSummary,
   usageSnapshotFilterParams,
 } from '../usage-snapshot'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { useAuthStore } from '@/stores/auth-store'
+import { AssistantInquiryAudit } from './assistant-inquiry-audit'
 import '../shared/log-styles.css'
 
 const { Paragraph, Text, Title } = Typography
@@ -41,17 +44,28 @@ function AuditLogDrawer({
   record,
   open,
   onClose,
+  onReadInquiry,
 }: {
   record: AuditLog | null
   open: boolean
   onClose: () => void
+  onReadInquiry?: (id: string) => void
 }) {
+  const inquiryId =
+    record?.action.startsWith('inquiry.') || record?.action === 'assistant_mesh.inquiry.audit_read'
+      ? record?.resourceName
+      : undefined
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title={record ? `审计记录 · ${prettifyAction(record.action)}` : '审计记录'}
       size={620}
+      extra={
+        onReadInquiry && inquiryId ? (
+          <Button onClick={() => onReadInquiry(inquiryId)}>查看问询正文</Button>
+        ) : undefined
+      }
       destroyOnHidden
     >
       {record ? (
@@ -183,6 +197,13 @@ function AuditLogsPageContent({
 }) {
   const location = useLocation()
   const endpointScope = resolveSystemEndpointScope(location.pathname)
+  const { data: permissions, isSuccess: permissionsLoaded } = usePermissionSnapshot()
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration)
+  const canReadInquiry =
+    endpointScope === 'system' &&
+    permissionsLoaded &&
+    hasPermission(permissions?.data, 'system.audit.view')
+  const [inquiryAudit, setInquiryAudit] = useState<{ id: string; session: number } | null>(null)
   const [actionFilter, setActionFilter] = useState<string>('')
   const [resultFilter, setResultFilter] = useState<string>('')
   const [requestMethodFilter, setRequestMethodFilter] = useState<string>('')
@@ -431,6 +452,14 @@ function AuditLogsPageContent({
         columnSettingPlacement: 'header',
         headerExtra: (
           <ManagementTableToolbar>
+            {canReadInquiry ? (
+              <Button
+                size="small"
+                onClick={() => setInquiryAudit({ id: '', session: sessionGeneration })}
+              >
+                查看问询正文
+              </Button>
+            ) : null}
             <ManagementDensityButton
               aria-label="切换审计日志表格密度"
               size="small"
@@ -463,11 +492,25 @@ function AuditLogsPageContent({
         }),
       }}
       afterTable={
-        <AuditLogDrawer
-          record={rawLogs?.find((item) => item.id === activeRecord?.id) ?? null}
-          open={!!rawLogs?.some((item) => item.id === activeRecord?.id)}
-          onClose={() => setActiveRecord(null)}
-        />
+        <>
+          <AuditLogDrawer
+            record={rawLogs?.find((item) => item.id === activeRecord?.id) ?? null}
+            open={!!rawLogs?.some((item) => item.id === activeRecord?.id)}
+            onClose={() => setActiveRecord(null)}
+            onReadInquiry={
+              canReadInquiry
+                ? (id) => setInquiryAudit({ id, session: sessionGeneration })
+                : undefined
+            }
+          />
+          {canReadInquiry && inquiryAudit?.session === sessionGeneration ? (
+            <AssistantInquiryAudit
+              key={sessionGeneration}
+              inquiryId={inquiryAudit.id}
+              onClose={() => setInquiryAudit(null)}
+            />
+          ) : null}
+        </>
       }
     />
   )

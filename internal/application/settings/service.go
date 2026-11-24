@@ -28,12 +28,14 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	store       domainsettings.Store
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
-	saml        SAMLMetadataPinner
-	logger      *zap.Logger
+	store               domainsettings.Store
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
+	saml                SAMLMetadataPinner
+	logger              *zap.Logger
+	assistantMeshWriter AssistantMeshSettingsWriter
+	assistantMeshUsers  AssistantMeshUsers
 }
 
 type SAMLMetadataPinner interface {

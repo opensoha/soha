@@ -98,6 +98,9 @@ func (s *Service) ConfirmDSHAssembly(ctx context.Context, grant string, report d
 	if report.SchemaVersion != dshAssemblySchema || report.Kind != "assembly_report" || report.RunID == "" {
 		return domain.DSHAssemblyDecision{}, apperrors.ErrInvalidArgument
 	}
+	if isDSHReception(report.RunID) {
+		return s.confirmDSHReception(grant, report)
+	}
 	lock := s.dshLock(report.RunID)
 	lock.Lock()
 	defer lock.Unlock()

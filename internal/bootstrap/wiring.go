@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
@@ -560,6 +561,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
 	settingsService := appsettings.New(repos.settingsRepository, permissionResolver, auditService, operationService)
+	settingsService.SetAssistantMeshSettingsDependencies(repos.settingsRepository, repos.identityRepository)
 	settingsService.SetInstrumentation(infra.logger.Named("settings").With(
 		zap.String("event", "settings.evidence.record_failed"),
 	))
@@ -1549,6 +1551,14 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		DirectorySync:       directorySyncHandler,
 	}
 	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	if cfg.AIGateway.FeishuMesh.Enabled && (!cfg.Modules.AI.Enabled || !cfg.Modules.AIGateway.Enabled) {
+		return apiRoutes.Dependencies{}, errors.New("the Heya Feishu channel requires AI and AI Gateway modules")
+	}
+	if cfg.Modules.AI.Enabled {
+		if err := wireAssistantMeshRoutes(cfg, &dependencies, infra, repos, core, delivery, gateway); err != nil {
+			return apiRoutes.Dependencies{}, err
+		}
+	}
 	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
 	return dependencies, nil
 }

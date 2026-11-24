@@ -123,3 +123,27 @@ func TestReceiptsRejectsInvalidState(t *testing.T) {
 		t.Fatalf("ListReceipts() calls = %d, want 0", repo.listCalls)
 	}
 }
+
+func TestInboxViewerKeepsBroadcastAndPersonalGrantsSeparate(t *testing.T) {
+	resolver := appaccess.NewPermissionResolver(announcementRolePermissions{
+		permissions: map[string][]string{
+			"portal-user": {appaccess.PermIdentityPortalView},
+			"viewer":      {appaccess.PermIdentityApplicationsView},
+		},
+	})
+	service := &Service{permissions: resolver}
+	user := domainidentity.Principal{UserID: "4da4ffcd-01b9-4c42-b456-78acfe05c004", Roles: []string{"viewer"}}
+	viewer, err := service.inboxViewer(t.Context(), user)
+	if err != nil || viewer.Broadcast || !viewer.Personal || viewer.UserID != user.UserID {
+		t.Fatalf("personal viewer = %+v, %v", viewer, err)
+	}
+	user.AccessTokenID = "pat"
+	if _, err := service.inboxViewer(t.Context(), user); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("PAT with no broadcast permission = %v", err)
+	}
+	user.Roles = []string{"portal-user"}
+	viewer, err = service.inboxViewer(t.Context(), user)
+	if err != nil || !viewer.Broadcast || viewer.Personal {
+		t.Fatalf("broadcast-only PAT = %+v, %v", viewer, err)
+	}
+}

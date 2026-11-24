@@ -24,9 +24,13 @@ type AuditRecorder interface {
 }
 
 type Service struct {
-	repo           Repository
-	audit          AuditRecorder
-	eventSinkToken string
+	repo              Repository
+	audit             AuditRecorder
+	eventSinkToken    string
+	feishuMeshToken   string
+	feishuMeshAppID   string
+	feishuMeshTenant  string
+	feishuMeshEnqueue func(context.Context, domainevent.ConnectorEvent) error
 }
 
 func New(repo Repository) *Service {
@@ -39,6 +43,18 @@ func (s *Service) SetAuditRecorder(audit AuditRecorder) {
 
 func (s *Service) SetConnectorEventSinkToken(token string) {
 	s.eventSinkToken = strings.TrimSpace(token)
+}
+
+func (s *Service) SetFeishuMeshReceiver(token, appID, tenantKey string, enqueue func(context.Context, domainevent.ConnectorEvent) error) {
+	s.feishuMeshToken = strings.TrimSpace(token)
+	s.feishuMeshAppID = appID
+	s.feishuMeshTenant = tenantKey
+	s.feishuMeshEnqueue = enqueue
+}
+
+func (s *Service) ValidFeishuMeshToken(token string) bool {
+	return s.feishuMeshEnqueue != nil && s.feishuMeshToken != "" &&
+		subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(s.feishuMeshToken)) == 1
 }
 
 func (s *Service) ValidateConnectorEventSinkToken(token string) error {
@@ -82,6 +98,21 @@ func (s *Service) IngestConnectorEvents(ctx context.Context, input domainevent.C
 	eventIDs := make([]string, 0, len(input.Events))
 	sources := make([]string, 0, len(input.Events))
 	for _, event := range input.Events {
+		feishuMessage := connectorID == "feishu" && strings.TrimSpace(event.Type) == "im.message.receive_v1"
+		if input.AuthKind == "feishu_mesh_token" {
+			if s.feishuMeshEnqueue == nil || !feishuMessage || event.Source != "feishu" {
+				return accepted, apperrors.ErrAccessDenied
+			}
+			if err := s.feishuMeshEnqueue(ctx, event); err != nil {
+				return accepted, err
+			}
+			accepted++
+			continue
+		}
+		if s.feishuMeshEnqueue != nil && feishuMessage &&
+			event.Payload["appId"] == s.feishuMeshAppID && event.Payload["tenantKey"] == s.feishuMeshTenant {
+			return accepted, apperrors.ErrAccessDenied
+		}
 		envelope, err := connectorEventEnvelope(connectorID, event)
 		if err != nil {
 			return accepted, err
