@@ -5,6 +5,7 @@ import type {
   PluginConfigRequest,
   PluginInstallRequest,
   PluginRepositoryInstallRequest,
+  PluginRepositoryRollbackRequest,
   PluginRepositoryUpgradeRequest,
 } from './plugin-model'
 
@@ -46,6 +47,16 @@ export const pluginMutations = {
       mutationKey: pluginMutationKeys.repositoryUpgrade(),
       mutationFn: ({ pluginId, input }: RepositoryUpgradeVariables) =>
         pluginApi.repositoryUpgrade(pluginId, input),
+      onSuccess: () => invalidatePluginQueries(queryClient),
+    }),
+  repositoryRollback: (queryClient: QueryClient) =>
+    mutationOptions({
+      mutationKey: pluginMutationKeys.repositoryRollback(),
+      mutationFn: ({
+        pluginId,
+        input,
+      }: PluginLifecycleVariables & { input: PluginRepositoryRollbackRequest }) =>
+        pluginApi.repositoryRollback(pluginId, input),
       onSuccess: () => invalidatePluginQueries(queryClient),
     }),
   enable: (queryClient: QueryClient) =>

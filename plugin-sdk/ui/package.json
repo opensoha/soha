@@ -1,0 +1,12 @@
+{
+  "name": "@opensoha/plugin-ui-sdk",
+  "version": "0.1.0-rc.1",
+  "description": "Sandboxed Soha plugin pages and their Web or desktop host.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/opensoha/soha", "directory": "plugin-sdk/ui" },
+  "exports": { ".": { "types": "./index.d.ts", "import": "./index.js" } },
+  "files": ["index.js", "index.d.ts", "protocol.js", "host.js", "page.js", "README.md", "LICENSE"],
+  "devDependencies": { "typescript": "^5.9.3" },
+  "scripts": { "test": "node --test bridge.test.js && tsc --noEmit --strict --lib ES2022,DOM usage.test.ts" }
+}

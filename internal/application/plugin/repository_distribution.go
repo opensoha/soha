@@ -49,39 +49,36 @@ func WithRepositoryDistribution(source RepositoryManifestSource, key []byte) Opt
 }
 
 type repositoryPreviewClaims struct {
-	Caller              string
-	Scope               string
-	Repository          string
-	Ref                 string
-	Commit              string
-	ID                  string
-	Version             string
-	Checksum            string
-	Expires             int64
-	InstalledAt         time.Time
-	UpdatedAt           time.Time
-	MarketplaceSourceID string `json:",omitempty"`
-	MarketplaceURL      string `json:",omitempty"`
-	MarketplaceOfficial bool   `json:",omitempty"`
+	Caller               string
+	Scope                string
+	Repository           string
+	Ref                  string
+	Commit               string
+	ID                   string
+	Version              string
+	Checksum             string
+	Expires              int64
+	InstalledAt          time.Time
+	UpdatedAt            time.Time
+	MarketplaceSourceID  string `json:",omitempty"`
+	MarketplaceURL       string `json:",omitempty"`
+	MarketplaceOfficial  bool   `json:",omitempty"`
+	PublisherFingerprint string `json:",omitempty"`
+	ReleaseDigest        string `json:",omitempty"`
+	PublisherTrust       string `json:",omitempty"`
 }
 
 func (s *Service) PreviewRepository(ctx context.Context, actor domainidentity.Principal, input domainplugin.PluginRepositoryPreviewRequest) (domainplugin.PluginRepositoryPreview, error) {
 	if err := s.authorizeRepository(ctx, actor, appaccess.PermPluginInstall); err != nil {
 		return domainplugin.PluginRepositoryPreview{}, err
 	}
+	if err := s.authorizePublisherAcknowledgement(ctx, actor, input.TrustPublisherFingerprint); err != nil {
+		return domainplugin.PluginRepositoryPreview{}, err
+	}
 	claims := repositoryPreviewClaims{Caller: actor.UserID, Scope: repositoryPreviewScope, ID: input.PluginID}
-	if input.MarketplaceSourceID != "" {
-		if input.PluginID == "" || input.RepositoryURL == "" {
-			return domainplugin.PluginRepositoryPreview{}, apperrors.ErrInvalidArgument
-		}
-		entry, err := s.marketplaceRepositoryRegistration(ctx, input.MarketplaceSourceID, "", input.PluginID, input.RepositoryURL)
-		if errors.Is(err, apperrors.ErrConflict) {
-			return domainplugin.PluginRepositoryPreview{}, errMarketplaceRepositoryMismatch
-		}
-		if err != nil {
-			return domainplugin.PluginRepositoryPreview{}, err
-		}
-		claims.MarketplaceSourceID, claims.MarketplaceURL, claims.MarketplaceOfficial = entry.SourceID, entry.SourceURL, entry.SourceInfo.Official
+	catalogKeys, err := s.bindMarketplacePreview(ctx, input, &claims)
+	if err != nil {
+		return domainplugin.PluginRepositoryPreview{}, err
 	}
 	repo, ref, commit, err := s.repositories.source.Resolve(ctx, input.RepositoryURL, input.Ref)
 	if err != nil {
@@ -104,18 +101,60 @@ func (s *Service) PreviewRepository(ctx context.Context, actor domainidentity.Pr
 		claims.InstalledAt, claims.UpdatedAt = current.InstalledAt, current.UpdatedAt
 	}
 	claims.Expires = s.repositories.now().Add(repositoryPreviewLifetime).Unix()
-	token, err := s.repositories.sign(claims)
+	preview := domainplugin.PluginRepositoryPreview{
+		Manifest: resolved.Manifest, ExpiresAt: time.Unix(claims.Expires, 0).UTC(),
+		ChecksumStatus: resolved.ChecksumStatus, SignatureStatus: resolved.SignatureStatus,
+		SourceInfo: claims.previewSource(),
+	}
+	if executableManifest(resolved.Manifest) {
+		if err := s.previewExecutable(ctx, &claims, &preview, current, resolved, catalogKeys, input.TrustPublisherFingerprint); err != nil {
+			return domainplugin.PluginRepositoryPreview{}, err
+		}
+		if preview.PreviewToken == "preview-only" {
+			return preview, nil
+		}
+	} else if input.TrustPublisherFingerprint != "" {
+		return domainplugin.PluginRepositoryPreview{}, apperrors.ErrInvalidArgument
+	}
+	preview.PreviewToken, err = s.repositories.sign(claims)
 	if err != nil {
 		return domainplugin.PluginRepositoryPreview{}, err
 	}
-	return domainplugin.PluginRepositoryPreview{
-		Manifest: resolved.Manifest, PreviewToken: token, ExpiresAt: time.Unix(claims.Expires, 0).UTC(),
-		ChecksumStatus: resolved.ChecksumStatus, SignatureStatus: resolved.SignatureStatus,
-		SourceInfo: domainplugin.PluginRepositoryPreviewSource{
-			Kind: string(domainplugin.SourceKindGitHubRepo), CanonicalSource: repo, PinnedRef: ref,
-			CommitSha: commit, RawManifestChecksum: claims.Checksum, Official: claims.MarketplaceOfficial,
-		},
-	}, nil
+	return preview, nil
+}
+
+func (s *Service) authorizePublisherAcknowledgement(ctx context.Context, actor domainidentity.Principal, fingerprint string) error {
+	if fingerprint == "" {
+		return nil
+	}
+	if err := s.authorizeRepository(ctx, actor, appaccess.PermPluginManage); err != nil {
+		return err
+	}
+	if !publisherFingerprintPattern.MatchString(fingerprint) {
+		return apperrors.ErrInvalidArgument
+	}
+	return nil
+}
+
+func (s *Service) bindMarketplacePreview(ctx context.Context, input domainplugin.PluginRepositoryPreviewRequest, claims *repositoryPreviewClaims) ([]string, error) {
+	if input.MarketplaceSourceID == "" {
+		return nil, nil
+	}
+	if input.PluginID == "" || input.RepositoryURL == "" {
+		return nil, apperrors.ErrInvalidArgument
+	}
+	entry, err := s.marketplaceRepositoryRegistration(ctx, input.MarketplaceSourceID, "", input.PluginID, input.RepositoryURL)
+	if errors.Is(err, apperrors.ErrConflict) {
+		return nil, errMarketplaceRepositoryMismatch
+	}
+	if err != nil {
+		return nil, err
+	}
+	claims.MarketplaceSourceID, claims.MarketplaceURL, claims.MarketplaceOfficial = entry.SourceID, entry.SourceURL, entry.SourceInfo.Official
+	if claims.MarketplaceOfficial {
+		return entry.PublisherKeys, nil
+	}
+	return nil, nil
 }
 
 func validateRepositoryReleaseVersion(ref, manifestVersion string) error {
@@ -139,6 +178,7 @@ func (s *Service) InstallRepository(ctx context.Context, actor domainidentity.Pr
 	if err := s.authorizeRepository(ctx, actor, appaccess.PermPluginInstall); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	defer s.withExecutableMutation()()
 	claims, err := s.repositories.verify(input.PreviewToken, actor.UserID)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
@@ -150,6 +190,25 @@ func (s *Service) InstallRepository(ctx context.Context, actor domainidentity.Pr
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	if executableManifest(resolved.Manifest) {
+		current, err := s.repo.GetInstalled(ctx, claims.ID)
+		if err == nil {
+			if samePluginSource(current.SourceInfo, resolved.SourceInfo) && repositoryVersionMatches(current, claims) {
+				return s.withExecutableDetails(ctx, current)
+			}
+			return domainplugin.InstalledPlugin{}, repositorySourceConflict()
+		}
+		if !errors.Is(err, apperrors.ErrNotFound) {
+			return domainplugin.InstalledPlugin{}, err
+		}
+		if input.Enable {
+			return domainplugin.InstalledPlugin{}, apperrors.NewBusiness(apperrors.ErrInvalidArgument, "plugin_executable_enable_separately",
+				"Enable this plugin separately after installation.", "请在安装后单独启用插件。")
+		}
+		if err := s.prepareExecutable(ctx, actor, claims, &resolved); err != nil {
+			return domainplugin.InstalledPlugin{}, err
+		}
+	}
 	return s.installResolved(ctx, actor, domainplugin.PluginInstallRequest{Enable: input.Enable}, resolved)
 }
 
@@ -157,6 +216,7 @@ func (s *Service) UpgradeRepository(ctx context.Context, actor domainidentity.Pr
 	if err := s.authorizeRepository(ctx, actor, appaccess.PermPluginUpgrade); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	defer s.withExecutableMutation()()
 	claims, err := s.repositories.verify(input.PreviewToken, actor.UserID)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
@@ -172,8 +232,8 @@ func (s *Service) UpgradeRepository(ctx context.Context, actor domainidentity.Pr
 		return domainplugin.InstalledPlugin{}, err
 	}
 	if !current.InstalledAt.Equal(claims.InstalledAt) || !current.UpdatedAt.Equal(claims.UpdatedAt) {
-		if current.Version == claims.Version && current.SourceInfo.RawManifestChecksum == claims.Checksum {
-			return current, nil
+		if repositoryVersionMatches(current, claims) {
+			return s.withExecutableDetails(ctx, current)
 		}
 		return domainplugin.InstalledPlugin{}, repositoryPreviewInvalid()
 	}
@@ -185,12 +245,30 @@ func (s *Service) UpgradeRepository(ctx context.Context, actor domainidentity.Pr
 		return domainplugin.InstalledPlugin{}, apperrors.NewBusiness(apperrors.ErrConflict, "plugin_permission_increase", "Review and confirm the additional plugin permissions.", "请审阅并确认新增插件权限。")
 	}
 	if current.Version == claims.Version {
-		if current.SourceInfo.RawManifestChecksum == claims.Checksum {
-			return current, nil
+		if repositoryVersionMatches(current, claims) {
+			return s.withExecutableDetails(ctx, current)
 		}
 		return domainplugin.InstalledPlugin{}, apperrors.NewBusiness(apperrors.ErrConflict, "plugin_version_immutable", "The installed version is bound to different manifest bytes. Select a new version.", "当前版本已绑定其他清单内容，请选择新版本。")
 	}
+	if err := s.prepareRepositoryUpgrade(ctx, actor, claims, current, &resolved); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
 	return s.upgradeResolved(ctx, actor, current, domainplugin.PluginInstallRequest{}, resolved)
+}
+
+func (s *Service) prepareRepositoryUpgrade(ctx context.Context, actor domainidentity.Principal, claims repositoryPreviewClaims,
+	current domainplugin.InstalledPlugin, resolved *ResolvedManifest) error {
+	if executableManifest(resolved.Manifest) != executableManifest(current.Manifest) {
+		return repositorySourceConflict()
+	}
+	if !executableManifest(current.Manifest) {
+		return nil
+	}
+	if storageDriverID(current.Manifest) != storageDriverID(resolved.Manifest) ||
+		(!claims.MarketplaceOfficial && claims.PublisherFingerprint != current.SourceInfo.PublisherKeyFingerprint) {
+		return repositorySourceConflict()
+	}
+	return s.prepareExecutable(ctx, actor, claims, resolved)
 }
 
 func (s *Service) checkRepositoryMarketplaceBinding(ctx context.Context, claims repositoryPreviewClaims) error {
@@ -291,7 +369,7 @@ func (d *repositoryDistribution) fetch(ctx context.Context, claims repositoryPre
 		source = "marketplace:" + manifest.ID
 	}
 	return ResolvedManifest{
-		Manifest: manifest, RawChecksum: checksum, ChecksumStatus: "verified",
+		Manifest: manifest, RawChecksum: checksum, rawManifest: raw, ChecksumStatus: "verified",
 		SignatureStatus: integrityStatus(manifest), Source: source, SourceID: claims.MarketplaceSourceID,
 		MarketplaceURL: claims.MarketplaceURL, SourceInfo: claims.sourceInfo(checksum),
 	}, nil
@@ -300,7 +378,7 @@ func (d *repositoryDistribution) fetch(ctx context.Context, claims repositoryPre
 func (claims repositoryPreviewClaims) sourceInfo(checksum string) *domainplugin.PluginSourceInfo {
 	info := &domainplugin.PluginSourceInfo{
 		Kind: domainplugin.SourceKindGitHubRepo, CanonicalSource: claims.Repository,
-		PinnedRef: claims.Ref, CommitSha: claims.Commit, RawManifestChecksum: checksum,
+		PinnedRef: claims.Ref, CommitSha: claims.Commit, RawManifestChecksum: checksum, PublisherKeyFingerprint: claims.PublisherFingerprint, ReleaseAttestationDigest: claims.ReleaseDigest,
 	}
 	if claims.MarketplaceSourceID != "" {
 		info.Kind, info.CanonicalSource = domainplugin.SourceKindMarketplace, claims.MarketplaceURL

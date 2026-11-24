@@ -129,3 +129,79 @@ func TestNASAdmissionRetriesAreBoundedAndFallBackToDisconnect(t *testing.T) {
 		t.Fatalf("unbounded retry=%#v", got)
 	}
 }
+
+func TestStrictNASAdmissionFencesLoginEpoch(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := admissionSnapshot(now)
+	snapshot.Binding.AccessMedium = domain.AccessMediumWired
+	snapshot.Binding.StrictOnlineQualified = true
+	snapshot.Binding.DisconnectSupported = true
+	snapshot.Binding.EAPServerTrust = &domain.EAPServerTrust{EapMethod: "tls"}
+	snapshot.AccessNetworkID = "strict"
+	snapshot.Attachment.NASPortID = "Gi1/0/1"
+	snapshot.AuthenticationMethod = networkprotocol.NASAuthenticationEAPTLS
+	snapshot.AccessNetworks = []domain.AccessNetwork{{ID: "strict", Activated: true, Configuration: domain.AccessNetworkInput{
+		SiteID: snapshot.Site.ID, AccessMedium: domain.AccessMediumWired, Kind: domain.AccessNetworkStrict, Enabled: true,
+		NASBindingIDs: []string{snapshot.Binding.ID}, PortIDs: []string{snapshot.Attachment.NASPortID},
+		VLANID: 500, SessionTimeoutSeconds: 900, Rules: []domain.AccessNetworkRule{{Effect: domain.PolicyEffectAllow}},
+	}}}
+	loginUntil := now.Add(30 * time.Second)
+	snapshot.StrictUIEpoch = "original-login"
+	snapshot.StrictUI = domain.StrictUILease{SubjectID: snapshot.Session.SubjectID, Epoch: "original-login", Until: &loginUntil}
+	if decision := evaluateNASAdmission(snapshot, now); decision.Profile == domain.ProfileDeny || decision.RadiusAttributes == nil ||
+		decision.RadiusAttributes.SessionTimeoutSeconds != domain.StrictNASReauthenticationSeconds || !decision.RadiusAttributes.Reauthenticate {
+		t.Fatalf("bound current login did not admit with reauthentication: %+v", decision)
+	}
+	snapshot.StrictUI.Epoch = "new-login"
+	expired := reconcileNASAdmission(snapshot, now)
+	if expired == nil || expired.Profile != domain.ProfileDeny || expired.Command == nil ||
+		expired.Command.Action != domain.SessionActionDisconnect || expired.Command.SessionID != snapshot.Session.ID {
+		t.Fatalf("new login did not fence the old NAS session: %+v", expired)
+	}
+	snapshot.Binding.StrictOnlineQualified = false
+	if decision := EvaluateNASNetwork(now, snapshot); decision.Allowed {
+		t.Fatal("unqualified NAS could enable strict admission")
+	}
+}
+
+func TestNASAdmissionKeepsSelectedAccessNetwork(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := admissionSnapshot(now)
+	snapshot.Binding.AccessMedium = domain.AccessMediumWired
+	snapshot.AccessNetworkID = "selected"
+	snapshot.Attachment.NASPortID = "Gi1/0/1"
+	snapshot.AuthenticationMethod = networkprotocol.NASAuthenticationEAPTLS
+	snapshot.AccessNetworks = []domain.AccessNetwork{{ID: "selected", Activated: true, Configuration: domain.AccessNetworkInput{
+		SiteID: snapshot.Site.ID, AccessMedium: domain.AccessMediumWired, Kind: domain.AccessNetworkStandard, Enabled: true,
+		NASBindingIDs: []string{snapshot.Binding.ID}, PortIDs: []string{snapshot.Attachment.NASPortID},
+		VLANID: 500, FilterID: "full-acl", SessionTimeoutSeconds: 30,
+		Rules: []domain.AccessNetworkRule{{Effect: domain.PolicyEffectAllow}},
+	}}}
+	limited := evaluateNASAdmission(snapshot, now)
+	if limited.Profile != domain.ProfileRestricted || limited.RadiusAttributes == nil || limited.RadiusAttributes.VLANID != 20 ||
+		limited.RadiusAttributes.FilterID != "repair" || limited.RadiusAttributes.SessionTimeoutSeconds != 30 {
+		t.Fatalf("limited network bypasses site isolation: %#v", limited)
+	}
+	selected := &snapshot.AccessNetworks[0]
+	selected.Configuration.Kind = domain.AccessNetworkStrict
+	if mutation := reconcileNASAdmission(snapshot, now); mutation == nil || mutation.Profile != domain.ProfileDeny || mutation.Command == nil {
+		t.Fatalf("strict network remained admitted: %#v", mutation)
+	}
+	selected.Configuration.Kind = domain.AccessNetworkStandard
+	startMinute, endMinute := 0, 60
+	selected.Configuration.Rules[0].ScheduleStartMinute, selected.Configuration.Rules[0].ScheduleEndMinute = &startMinute, &endMinute
+	noon := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+	snapshot.Session.ExpiresAt = noon.Add(time.Hour)
+	if mutation := reconcileNASAdmission(snapshot, noon); mutation == nil || mutation.Profile != domain.ProfileDeny || mutation.Command == nil || mutation.Reason != "access_network_missing_allow" {
+		t.Fatalf("expired rule schedule remained admitted: %#v", mutation)
+	}
+	selected.Configuration.Rules[0].ScheduleStartMinute, selected.Configuration.Rules[0].ScheduleEndMinute = nil, nil
+	replacement := snapshot.AccessNetworks[0]
+	replacement.ID = "replacement"
+	snapshot.AccessNetworks[0].Deleted = true
+	snapshot.AccessNetworks = append(snapshot.AccessNetworks, replacement)
+	mutation := reconcileNASAdmission(snapshot, now)
+	if mutation == nil || mutation.Profile != domain.ProfileDeny || mutation.Command == nil || mutation.Command.Action != domain.SessionActionDisconnect {
+		t.Fatalf("rebound original session to replacement: %#v", mutation)
+	}
+}

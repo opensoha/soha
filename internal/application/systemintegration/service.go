@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,16 +62,19 @@ type ConnectionTesterFactory interface {
 }
 
 type Service struct {
-	repo        domain.Repository
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
-	keys        keyring.Ring
-	adapters    map[string]SourceAdapterFactory
-	testers     map[string]ConnectionTesterFactory
-	oauth       map[string]OAuthProvider
-	now         func() time.Time
-	logger      *zap.Logger
+	repo            domain.Repository
+	permissions     *appaccess.PermissionResolver
+	audit           AuditRecorder
+	operations      OperationRecorder
+	keys            keyring.Ring
+	adapters        map[string]SourceAdapterFactory
+	testers         map[string]ConnectionTesterFactory
+	oauth           map[string]OAuthProvider
+	now             func() time.Time
+	logger          *zap.Logger
+	storageDrivers  *StorageDriverRegistry
+	storageSecrets  storageSecrets
+	storageMutation sync.Mutex
 }
 
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
@@ -130,7 +134,9 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "create")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
-	item, credentials, err := s.normalizeCreate(request, principal.UserID)
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
+	item, credentials, err := s.normalizeCreate(ctx, principal, request)
 	if err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
@@ -146,11 +152,13 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "update")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
 	current, err := s.repo.Get(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
-	item, credentials, clearKeys, err := s.normalizeUpdate(current, input, principal.UserID)
+	item, credentials, clearKeys, err := s.normalizeUpdate(ctx, principal, current, input)
 	if err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
@@ -166,6 +174,8 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "delete")); err != nil {
 		return err
 	}
+	s.storageMutation.Lock()
+	defer s.storageMutation.Unlock()
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return err
@@ -181,7 +191,7 @@ func (s *Service) Test(ctx context.Context, principal domainidentity.Principal, 
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "test")); err != nil {
 		return sohaapi.SystemIntegrationTestResult{}, err
 	}
-	item, adapter, capabilities, err := s.connectionTester(ctx, strings.TrimSpace(id))
+	item, adapter, capabilities, err := s.connectionTester(ctx, principal, strings.TrimSpace(id))
 	if err != nil {
 		return sohaapi.SystemIntegrationTestResult{}, err
 	}
@@ -200,10 +210,14 @@ func (s *Service) Test(ctx context.Context, principal domainidentity.Principal, 
 	return result, nil
 }
 
-func (s *Service) connectionTester(ctx context.Context, id string) (domain.Integration, ConnectionTester, []string, error) {
+func (s *Service) connectionTester(ctx context.Context, principal domainidentity.Principal, id string) (domain.Integration, ConnectionTester, []string, error) {
 	item, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return domain.Integration{}, nil, nil, err
+	}
+	if item.Category == domain.CategoryStorage && item.ProviderType != domain.ProviderS3 {
+		driver, binding, err := s.resolveDriverBinding(ctx, principal, item)
+		return item, driverConnectionTest{driver: driver, binding: binding}, []string{"object.get", "object.put", "object.delete", "object.list"}, err
 	}
 	if factory := s.testers[connectionTesterKey(item.Category, item.ProviderType)]; factory != nil {
 		credentials, err := s.decryptCredentials(ctx, item.ID)
@@ -256,7 +270,7 @@ func (s *Service) ResolveStorageConnection(ctx context.Context, id string, requi
 	return item, credentials, err
 }
 
-func (s *Service) normalizeCreate(request sohaapi.SystemIntegrationCreateRequest, actor string) (domain.Integration, map[string]string, error) {
+func (s *Service) normalizeCreate(ctx context.Context, principal domainidentity.Principal, request sohaapi.SystemIntegrationCreateRequest) (domain.Integration, map[string]string, error) {
 	category := strings.ToLower(strings.TrimSpace(string(request.Category)))
 	providerType := strings.ToLower(strings.TrimSpace(request.ProviderType))
 	name := strings.TrimSpace(request.Name)
@@ -272,14 +286,15 @@ func (s *Service) normalizeCreate(request sohaapi.SystemIntegrationCreateRequest
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
-	if err := validateProviderConfiguration(category, providerType, request.Enabled, configuration, credentialKeySet(credentials)); err != nil {
+	now := s.now().UTC()
+	item := domain.Integration{ID: uuid.NewString(), Category: category, ProviderType: providerType, Name: name, Description: description, Enabled: request.Enabled, Configuration: configuration, HealthStatus: domain.HealthUnknown, Version: 1, CreatedBy: principal.UserID, UpdatedBy: principal.UserID, CreatedAt: now, UpdatedAt: now}
+	if err := s.validateIntegrationProvider(ctx, principal, item, credentialKeySet(credentials)); err != nil {
 		return domain.Integration{}, nil, err
 	}
-	now := s.now().UTC()
-	return domain.Integration{ID: uuid.NewString(), Category: category, ProviderType: providerType, Name: name, Description: description, Enabled: request.Enabled, Configuration: configuration, HealthStatus: domain.HealthUnknown, Version: 1, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}, credentials, nil
+	return item, credentials, nil
 }
 
-func (s *Service) normalizeUpdate(current domain.Integration, input domain.UpdateInput, actor string) (domain.Integration, map[string]string, []string, error) {
+func (s *Service) normalizeUpdate(ctx context.Context, principal domainidentity.Principal, current domain.Integration, input domain.UpdateInput) (domain.Integration, map[string]string, []string, error) {
 	if input.ExpectedVersion < 1 {
 		return domain.Integration{}, nil, nil, fmt.Errorf("%w: expectedVersion is required", apperrors.ErrInvalidArgument)
 	}
@@ -326,10 +341,10 @@ func (s *Service) normalizeUpdate(current domain.Integration, input domain.Updat
 	for key := range credentials {
 		configuredKeys[key] = struct{}{}
 	}
-	if err := validateProviderConfiguration(item.Category, item.ProviderType, item.Enabled, item.Configuration, configuredKeys); err != nil {
+	if err := s.validateIntegrationProvider(ctx, principal, item, configuredKeys); err != nil {
 		return domain.Integration{}, nil, nil, err
 	}
-	item.UpdatedBy = actor
+	item.UpdatedBy = principal.UserID
 	item.UpdatedAt = s.now().UTC()
 	return item, credentials, clearKeys, nil
 }

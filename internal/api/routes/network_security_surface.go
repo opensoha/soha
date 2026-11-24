@@ -6,7 +6,7 @@ func isNetworkSecurityReadOnlyPOST(path string) bool {
 	switch path {
 	case "/api/v1/network-access/policy/preview", "/api/v1/network-access/admission/preview",
 		"/api/v1/network-access/conflicts/analyze", "/api/v1/network-access/sessions/:sessionID/actions/plan",
-		"/api/v1/network-access/vpn/selection-preview",
+		"/api/v1/network-access/vpn/selection-preview", "/api/v1/network-access/access-networks/preview",
 		"/api/v1/network-access/endpoint-response-policies/:policyID/preview",
 		"/api/v1/network-access/content-transfers/destinations/:destinationID/preview",
 		"/api/v1/docker/projects/:id/content-dlp/preview":

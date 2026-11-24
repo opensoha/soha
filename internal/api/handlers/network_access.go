@@ -135,6 +135,7 @@ type NetworkAccessServices struct {
 	Gateway            NetworkGatewayService
 	MihomoProfile      NetworkMihomoProfileService
 	NASBinding         NetworkNASBindingService
+	AccessNetwork      NetworkAccessNetworkService
 	SiteProfileBinding NetworkSiteProfileBindingService
 	Session            NetworkSessionService
 	Policy             NetworkPolicyService
@@ -150,6 +151,7 @@ type NetworkAccessHandler struct {
 	gateway            NetworkGatewayService
 	mihomoProfile      NetworkMihomoProfileService
 	nASBinding         NetworkNASBindingService
+	accessNetwork      NetworkAccessNetworkService
 	siteProfileBinding NetworkSiteProfileBindingService
 	session            NetworkSessionService
 	policy             NetworkPolicyService
@@ -160,7 +162,7 @@ type NetworkAccessHandler struct {
 }
 
 func NewNetworkAccessHandler(services NetworkAccessServices, enrollments NetworkEnrollmentService, grants NetworkAccessGrantService, telemetry NetworkTelemetryService) *NetworkAccessHandler {
-	return &NetworkAccessHandler{workload: services.Workload, device: services.Device, site: services.Site, space: services.Space, resource: services.Resource, gateway: services.Gateway, mihomoProfile: services.MihomoProfile, nASBinding: services.NASBinding, siteProfileBinding: services.SiteProfileBinding, session: services.Session, policy: services.Policy, policyEvaluation: services.PolicyEvaluation, enrollments: enrollments, grants: grants, telemetry: telemetry}
+	return &NetworkAccessHandler{workload: services.Workload, device: services.Device, site: services.Site, space: services.Space, resource: services.Resource, gateway: services.Gateway, mihomoProfile: services.MihomoProfile, nASBinding: services.NASBinding, accessNetwork: services.AccessNetwork, siteProfileBinding: services.SiteProfileBinding, session: services.Session, policy: services.Policy, policyEvaluation: services.PolicyEvaluation, enrollments: enrollments, grants: grants, telemetry: telemetry}
 }
 
 func (h *NetworkAccessHandler) ListDevices(c *gin.Context) {
@@ -200,21 +202,27 @@ func (h *NetworkAccessHandler) ListConnectionOptions(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.device.ListConnectionOptions(c.Request.Context(), principal(c), params.DeviceID)
+	var items []domainnetworkaccess.ConnectionOption
+	var bootstrap []appnetworkaccess.BootstrapNetworkChoice
+	var err error
+	if h.accessNetwork != nil {
+		items, bootstrap, err = h.accessNetwork.ListAccessNetworkChoices(c.Request.Context(), principal(c), params.DeviceID,
+			appnetworkaccess.AccessNetworkChoiceOptions{IncludeBootstrap: params.IncludeBootstrap, IncludeNASSession: params.IncludeNasSession})
+	} else {
+		items, err = h.device.ListConnectionOptions(c.Request.Context(), principal(c), params.DeviceID)
+	}
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	result := make([]sohaapi.NetworkConnectionOption, len(items))
-	for index, item := range items {
-		result[index] = sohaapi.NetworkConnectionOption{
-			SiteID: item.SiteID, SiteName: item.SiteName, AccessMedium: sohaapi.NetworkAccessMedium(item.AccessMedium),
-			Ssid: item.SSID, Authentication: sohaapi.NetworkConnectionAuthentication(item.Authentication),
-			AccessProfile: sohaapi.NetworkAccessProfile(item.AccessProfile), PolicyVersion: item.PolicyVersion,
-		}
+	if items == nil {
+		items = []domainnetworkaccess.ConnectionOption{}
 	}
 	c.Header("Cache-Control", "no-store")
-	apiresponse.Items(c, http.StatusOK, result)
+	c.JSON(http.StatusOK, struct {
+		Items             []domainnetworkaccess.ConnectionOption    `json:"items"`
+		BootstrapNetworks []appnetworkaccess.BootstrapNetworkChoice `json:"bootstrapNetworks,omitempty"`
+	}{Items: items, BootstrapNetworks: bootstrap})
 }
 
 func (h *NetworkAccessHandler) ListSites(c *gin.Context) {
@@ -885,10 +893,14 @@ func principal(c *gin.Context) domainidentity.Principal { return apiMiddleware.P
 
 // Registration must not silently accept administrative classification fields.
 func bindDeviceRegistration(c *gin.Context, target any) bool {
+	return bindStrictNetworkJSON(c, target, "invalid endpoint registration payload")
+}
+
+func bindStrictNetworkJSON(c *gin.Context, target any, message string) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid endpoint registration payload")
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", message)
 		return false
 	}
 	return true

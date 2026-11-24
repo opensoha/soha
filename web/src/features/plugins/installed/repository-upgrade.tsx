@@ -12,6 +12,8 @@ import { addedPluginPermissions, pluginSourceKindLabel } from '../plugin-model'
 import { pluginMutations } from '../mutations'
 import { RepositoryRefs } from '../shared/repository-refs'
 import {
+  pluginPublisherSignatureLabel,
+  previewCanConfirm,
   previewExpired,
   previewNeedsRefresh,
   previewRequiresBranch,
@@ -35,6 +37,7 @@ export function useRepositoryUpgradeAction() {
   const { plugin, update } = target ?? {}
   const source = plugin?.sourceInfo
   const repositoryUrl = update?.repositoryUrl ?? source?.canonicalSource
+  const confirmable = preview && previewCanConfirm(preview)
   const currentPermissions = plugin?.requestedPermissions ?? plugin?.manifest.permissions
   const added = addedPluginPermissions(currentPermissions, preview?.manifest.permissions)
   const permissionIncrease = Boolean(added.required.length || added.domain.length)
@@ -103,7 +106,15 @@ export function useRepositoryUpgradeAction() {
   }
 
   async function previewUpgrade() {
-    if (!plugin || !source || !repositoryUrl || mutation.blocked || (needsBranch && !branch)) return
+    if (
+      !plugin ||
+      !source ||
+      !repositoryUrl ||
+      mutation.blocked ||
+      previewing ||
+      (needsBranch && !branch)
+    )
+      return
     if (
       update &&
       (update.installedVersion !== plugin.version ||
@@ -152,6 +163,7 @@ export function useRepositoryUpgradeAction() {
         setTarget({ plugin: latest, update })
         throw new Error('已安装插件在预览期间有变更，请重新预览。')
       }
+      setTarget({ plugin: latest, update })
       setPreview(result)
     } catch (error) {
       if (sequence !== requestSequence.current) return
@@ -166,7 +178,14 @@ export function useRepositoryUpgradeAction() {
   }
 
   function confirm() {
-    if (!plugin || !preview || mutation.blocked || (permissionIncrease && !acknowledged)) return
+    if (
+      !plugin ||
+      !preview ||
+      !previewCanConfirm(preview) ||
+      mutation.blocked ||
+      (permissionIncrease && !acknowledged)
+    )
+      return
     if (previewExpired(preview)) {
       clearPreview(false)
       setExpired(true)
@@ -217,20 +236,25 @@ export function useRepositoryUpgradeAction() {
             <Button
               loading={previewing}
               disabled={mutation.blocked || (needsBranch && !branch)}
-              onClick={previewUpgrade}
+              onClick={() => void previewUpgrade()}
             >
               {preview ? '重新预览' : '预览升级'}
             </Button>
-            <Button
-              type="primary"
-              loading={mutation.isPending}
-              disabled={
-                !preview || previewing || mutation.blocked || (permissionIncrease && !acknowledged)
-              }
-              onClick={confirm}
-            >
-              确认升级
-            </Button>
+            {!preview || confirmable ? (
+              <Button
+                type="primary"
+                loading={mutation.isPending}
+                disabled={
+                  !preview ||
+                  previewing ||
+                  mutation.blocked ||
+                  (permissionIncrease && !acknowledged)
+                }
+                onClick={confirm}
+              >
+                确认升级
+              </Button>
+            ) : null}
           </Space>
         }
       >
@@ -258,8 +282,38 @@ export function useRepositoryUpgradeAction() {
                 {
                   key: 'currentCommit',
                   label: '当前固定提交',
-                  children: source.commitSha || '-',
+                  children: <span className="soha-plugin-digest">{source.commitSha || '-'}</span>,
                 },
+                {
+                  key: 'currentSignature',
+                  label: '当前签名状态',
+                  children: pluginPublisherSignatureLabel(
+                    plugin.signatureStatus,
+                    source.publisherKeyFingerprint,
+                  ),
+                },
+                ...(source.publisherKeyFingerprint
+                  ? [
+                      {
+                        key: 'publisherFingerprint',
+                        label: '当前 Ed25519 公钥指纹',
+                        children: (
+                          <span className="soha-plugin-digest">
+                            {source.publisherKeyFingerprint}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(plugin.referenceCount !== undefined
+                  ? [
+                      {
+                        key: 'referenceCount',
+                        label: '受影响存储连接',
+                        children: plugin.referenceCount,
+                      },
+                    ]
+                  : []),
               ]}
             />
           ) : null}
@@ -300,7 +354,7 @@ export function useRepositoryUpgradeAction() {
                 currentPermissions={currentPermissions ?? {}}
                 preview={preview}
               />
-              {permissionIncrease ? (
+              {confirmable && permissionIncrease ? (
                 <Checkbox
                   checked={acknowledged}
                   disabled={mutation.blocked}

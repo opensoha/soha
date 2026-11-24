@@ -8878,6 +8878,63 @@ func (e NetworkAccessMode) Valid() bool {
 	}
 }
 
+// Defines values for NetworkAccessNetworkKind.
+const (
+	NetworkAccessNetworkKindOpenGuestBootstrap NetworkAccessNetworkKind = "open_guest_bootstrap"
+	NetworkAccessNetworkKindStandard           NetworkAccessNetworkKind = "standard"
+	NetworkAccessNetworkKindStrictOnline       NetworkAccessNetworkKind = "strict_online"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkKind enum.
+func (e NetworkAccessNetworkKind) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkKindOpenGuestBootstrap:
+		return true
+	case NetworkAccessNetworkKindStandard:
+		return true
+	case NetworkAccessNetworkKindStrictOnline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkAccessNetworkPreviewInputAuthenticationMethod.
+const (
+	NetworkAccessNetworkPreviewInputAuthenticationMethodEapTLS     NetworkAccessNetworkPreviewInputAuthenticationMethod = "eap_tls"
+	NetworkAccessNetworkPreviewInputAuthenticationMethodEapTtlsPap NetworkAccessNetworkPreviewInputAuthenticationMethod = "eap_ttls_pap"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkPreviewInputAuthenticationMethod enum.
+func (e NetworkAccessNetworkPreviewInputAuthenticationMethod) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkPreviewInputAuthenticationMethodEapTLS:
+		return true
+	case NetworkAccessNetworkPreviewInputAuthenticationMethodEapTtlsPap:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkAccessNetworkRuleAuthenticationMethods.
+const (
+	NetworkAccessNetworkRuleAuthenticationMethodsEapTLS     NetworkAccessNetworkRuleAuthenticationMethods = "eap_tls"
+	NetworkAccessNetworkRuleAuthenticationMethodsEapTtlsPap NetworkAccessNetworkRuleAuthenticationMethods = "eap_ttls_pap"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkRuleAuthenticationMethods enum.
+func (e NetworkAccessNetworkRuleAuthenticationMethods) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkRuleAuthenticationMethodsEapTLS:
+		return true
+	case NetworkAccessNetworkRuleAuthenticationMethodsEapTtlsPap:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkAccessProfile.
 const (
 	NetworkAccessProfileDeny       NetworkAccessProfile = "deny"
@@ -8971,6 +9028,30 @@ const (
 func (e NetworkConnectionAuthentication) Valid() bool {
 	switch e {
 	case NetworkConnectionAuthenticationRadius8021X:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkConnectionNASSessionState.
+const (
+	NetworkConnectionNASSessionStateEnded    NetworkConnectionNASSessionState = "ended"
+	NetworkConnectionNASSessionStateObserved NetworkConnectionNASSessionState = "observed"
+	NetworkConnectionNASSessionStatePending  NetworkConnectionNASSessionState = "pending"
+	NetworkConnectionNASSessionStateUnknown  NetworkConnectionNASSessionState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkConnectionNASSessionState enum.
+func (e NetworkConnectionNASSessionState) Valid() bool {
+	switch e {
+	case NetworkConnectionNASSessionStateEnded:
+		return true
+	case NetworkConnectionNASSessionStateObserved:
+		return true
+	case NetworkConnectionNASSessionStatePending:
+		return true
+	case NetworkConnectionNASSessionStateUnknown:
 		return true
 	default:
 		return false
@@ -30825,6 +30906,16 @@ type MultiAgentSubtaskCompletionInput struct {
 // NativeProviderObject Native provider-compatible JSON. Unknown fields are preserved and responses are not wrapped in an OpenSoha envelope.
 type NativeProviderObject map[string]any
 
+// NetworkAccessBootstrapOption Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers.
+type NetworkAccessBootstrapOption struct {
+	AccessNetworkID string `json:"accessNetworkId"`
+	AutoConnect     bool   `json:"autoConnect"`
+	Name            string `json:"name"`
+	Priority        int    `json:"priority"`
+	SiteID          string `json:"siteId"`
+	Ssid            string `json:"ssid"`
+}
+
 // NetworkAccessDeviceType defines model for NetworkAccessDeviceType.
 type NetworkAccessDeviceType string
 
@@ -30896,6 +30987,107 @@ type NetworkAccessMedium string
 
 // NetworkAccessMode defines model for NetworkAccessMode.
 type NetworkAccessMode string
+
+// NetworkAccessNetwork defines model for NetworkAccessNetwork.
+type NetworkAccessNetwork struct {
+	Configuration NetworkAccessNetworkInput `json:"configuration"`
+	CreatedAt     time.Time                 `json:"createdAt"`
+	ID            string                    `json:"id"`
+	UpdatedAt     time.Time                 `json:"updatedAt"`
+}
+
+// NetworkAccessNetworkDecision defines model for NetworkAccessNetworkDecision.
+type NetworkAccessNetworkDecision struct {
+	AccessNetworkID string               `json:"accessNetworkId"`
+	AccessProfile   NetworkAccessProfile `json:"accessProfile,omitempty"`
+	Allowed         bool                 `json:"allowed"`
+
+	// MatchedRuleIndex One-based index of the first matching rule that determined the decision, when applicable.
+	MatchedRuleIndex int    `json:"matchedRuleIndex,omitempty"`
+	Name             string `json:"name"`
+	ReasonCode       string `json:"reasonCode"`
+}
+
+// NetworkAccessNetworkDecisionListEnvelope defines model for NetworkAccessNetworkDecisionListEnvelope.
+type NetworkAccessNetworkDecisionListEnvelope struct {
+	Items []NetworkAccessNetworkDecision `json:"items"`
+}
+
+// NetworkAccessNetworkEnvelope defines model for NetworkAccessNetworkEnvelope.
+type NetworkAccessNetworkEnvelope struct {
+	Data NetworkAccessNetwork `json:"data"`
+}
+
+// NetworkAccessNetworkInput defines model for NetworkAccessNetworkInput.
+type NetworkAccessNetworkInput struct {
+	AccessMedium NetworkAccessMedium `json:"accessMedium"`
+	AutoConnect  bool                `json:"autoConnect"`
+
+	// Bssids Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks.
+	Bssids   []string `json:"bssids,omitempty"`
+	Enabled  bool     `json:"enabled"`
+	FilterID string   `json:"filterId,omitempty"`
+
+	// Kind strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+	Kind          NetworkAccessNetworkKind `json:"kind"`
+	Name          string                   `json:"name"`
+	NasBindingIDs []string                 `json:"nasBindingIds"`
+
+	// PortEnd Wired port range end. Core restricts this to wired access networks and validates the range order.
+	PortEnd *int64 `json:"portEnd,omitempty"`
+
+	// PortIDs Wired port identifiers. Core restricts this to wired access networks.
+	PortIDs []string `json:"portIds,omitempty"`
+
+	// PortStart Wired port range start. Core restricts this to wired access networks and validates the range order.
+	PortStart             *int64                     `json:"portStart,omitempty"`
+	Priority              int                        `json:"priority"`
+	Rules                 []NetworkAccessNetworkRule `json:"rules"`
+	SessionTimeoutSeconds int                        `json:"sessionTimeoutSeconds,omitempty"`
+	SiteID                string                     `json:"siteId"`
+
+	// Ssid Wi-Fi SSID. Core restricts this to Wi-Fi access networks.
+	Ssid   string `json:"ssid,omitempty"`
+	VlanID int    `json:"vlanId,omitempty"`
+}
+
+// NetworkAccessNetworkKind strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+type NetworkAccessNetworkKind string
+
+// NetworkAccessNetworkListEnvelope defines model for NetworkAccessNetworkListEnvelope.
+type NetworkAccessNetworkListEnvelope struct {
+	Items []NetworkAccessNetwork `json:"items"`
+}
+
+// NetworkAccessNetworkPreviewInput defines model for NetworkAccessNetworkPreviewInput.
+type NetworkAccessNetworkPreviewInput struct {
+	AuthenticationMethod NetworkAccessNetworkPreviewInputAuthenticationMethod `json:"authenticationMethod,omitempty"`
+	DeviceID             string                                               `json:"deviceId"`
+	Draft                *NetworkAccessNetworkInput                           `json:"draft,omitempty"`
+	SiteID               string                                               `json:"siteId"`
+	UserID               string                                               `json:"userId"`
+}
+
+// NetworkAccessNetworkPreviewInputAuthenticationMethod defines model for NetworkAccessNetworkPreviewInput.AuthenticationMethod.
+type NetworkAccessNetworkPreviewInputAuthenticationMethod string
+
+// NetworkAccessNetworkRule Empty subject arrays match any subject. Core applies deny precedence before allow.
+type NetworkAccessNetworkRule struct {
+	AuthenticationMethods []NetworkAccessNetworkRuleAuthenticationMethods `json:"authenticationMethods,omitempty"`
+	DeviceIDs             []string                                        `json:"deviceIds,omitempty"`
+	DeviceStatuses        []EndpointDeviceStatus                          `json:"deviceStatuses,omitempty"`
+	Effect                NetworkPolicyEffect                             `json:"effect"`
+	FilterID              string                                          `json:"filterId,omitempty"`
+	PostureStatuses       []EndpointDevicePostureStatus                   `json:"postureStatuses,omitempty"`
+	ScheduleEndMinute     *int                                            `json:"scheduleEndMinute,omitempty"`
+	ScheduleStartMinute   *int                                            `json:"scheduleStartMinute,omitempty"`
+	SessionTimeoutSeconds int                                             `json:"sessionTimeoutSeconds,omitempty"`
+	Subjects              NetworkPolicySubjects                           `json:"subjects"`
+	VlanID                int                                             `json:"vlanId,omitempty"`
+}
+
+// NetworkAccessNetworkRuleAuthenticationMethods defines model for NetworkAccessNetworkRule.AuthenticationMethods.
+type NetworkAccessNetworkRuleAuthenticationMethods string
 
 // NetworkAccessPolicy defines model for NetworkAccessPolicy.
 type NetworkAccessPolicy struct {
@@ -31018,24 +31210,48 @@ type NetworkConflictSourceType string
 // NetworkConnectionAuthentication defines model for NetworkConnectionAuthentication.
 type NetworkConnectionAuthentication string
 
+// NetworkConnectionNASSession Last Core observation of the NAS session bound to this access network and registered device.
+type NetworkConnectionNASSession struct {
+	LastReceivedAt *time.Time `json:"lastReceivedAt,omitempty"`
+
+	// State Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+	State NetworkConnectionNASSessionState `json:"state"`
+}
+
+// NetworkConnectionNASSessionState Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+type NetworkConnectionNASSessionState string
+
 // NetworkConnectionOption defines model for NetworkConnectionOption.
 type NetworkConnectionOption struct {
-	AccessMedium          NetworkAccessMedium             `json:"accessMedium"`
-	AccessProfile         NetworkAccessProfile            `json:"accessProfile"`
-	Authentication        NetworkConnectionAuthentication `json:"authentication"`
-	PolicyVersion         int                             `json:"policyVersion"`
-	ProvisioningAvailable bool                            `json:"provisioningAvailable,omitempty"`
-	ProvisioningReason    string                          `json:"provisioningReason,omitempty"`
-	SiteID                string                          `json:"siteId"`
-	SiteName              string                          `json:"siteName"`
+	AccessMedium    NetworkAccessMedium             `json:"accessMedium"`
+	AccessNetworkID string                          `json:"accessNetworkId,omitempty"`
+	AccessProfile   NetworkAccessProfile            `json:"accessProfile"`
+	Authentication  NetworkConnectionAuthentication `json:"authentication"`
+	AutoConnect     bool                            `json:"autoConnect,omitempty"`
+
+	// NasSession Last Core observation of the NAS session bound to this access network and registered device.
+	NasSession             *NetworkConnectionNASSession `json:"nasSession,omitempty"`
+	NetworkName            string                       `json:"networkName,omitempty"`
+	PolicyVersion          int                          `json:"policyVersion"`
+	ProvisioningAvailable  bool                         `json:"provisioningAvailable,omitempty"`
+	ProvisioningReason     string                       `json:"provisioningReason,omitempty"`
+	RecommendationPriority int                          `json:"recommendationPriority,omitempty"`
+	SiteID                 string                       `json:"siteId"`
+	SiteName               string                       `json:"siteName"`
 
 	// Ssid Present only for Wi-Fi options.
 	Ssid string `json:"ssid,omitempty"`
+
+	// StrictOnline Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+	StrictOnline *struct {
+		LeaseUntil *time.Time `json:"leaseUntil,omitempty"`
+	} `json:"strictOnline,omitempty"`
 }
 
 // NetworkConnectionOptionListEnvelope defines model for NetworkConnectionOptionListEnvelope.
 type NetworkConnectionOptionListEnvelope struct {
-	Items []NetworkConnectionOption `json:"items"`
+	BootstrapNetworks []NetworkAccessBootstrapOption `json:"bootstrapNetworks,omitempty"`
+	Items             []NetworkConnectionOption      `json:"items"`
 }
 
 // NetworkDeviceGovernanceMode Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
@@ -42790,9 +43006,20 @@ type ListNetworkAccessGrantsParams struct {
 	Limit     int                      `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListNetworkAccessNetworksParams defines parameters for ListNetworkAccessNetworks.
+type ListNetworkAccessNetworksParams struct {
+	SiteID string `form:"siteId" json:"siteId"`
+}
+
 // ListCurrentNetworkConnectionOptionsParams defines parameters for ListCurrentNetworkConnectionOptions.
 type ListCurrentNetworkConnectionOptionsParams struct {
 	DeviceID string `form:"deviceId" json:"deviceId"`
+
+	// IncludeBootstrap When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
+	IncludeBootstrap bool `form:"includeBootstrap,omitempty" json:"includeBootstrap,omitempty"`
+
+	// IncludeNasSession Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+	IncludeNasSession bool `form:"includeNasSession,omitempty" json:"includeNasSession,omitempty"`
 }
 
 // ListManagedContentCasesParams defines parameters for ListManagedContentCases.
@@ -44369,6 +44596,15 @@ type UpdateMenuJSONRequestBody = MenuInput
 
 // CreateNetworkAccessGrantJSONRequestBody defines body for CreateNetworkAccessGrant for application/json ContentType.
 type CreateNetworkAccessGrantJSONRequestBody = NetworkAccessGrantInput
+
+// CreateNetworkAccessNetworkJSONRequestBody defines body for CreateNetworkAccessNetwork for application/json ContentType.
+type CreateNetworkAccessNetworkJSONRequestBody = NetworkAccessNetworkInput
+
+// PreviewNetworkAccessNetworksJSONRequestBody defines body for PreviewNetworkAccessNetworks for application/json ContentType.
+type PreviewNetworkAccessNetworksJSONRequestBody = NetworkAccessNetworkPreviewInput
+
+// UpdateNetworkAccessNetworkJSONRequestBody defines body for UpdateNetworkAccessNetwork for application/json ContentType.
+type UpdateNetworkAccessNetworkJSONRequestBody = NetworkAccessNetworkInput
 
 // PreviewNetworkAdmissionJSONRequestBody defines body for PreviewNetworkAdmission for application/json ContentType.
 type PreviewNetworkAdmissionJSONRequestBody = NetworkAdmissionPreviewRequest

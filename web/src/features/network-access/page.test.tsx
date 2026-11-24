@@ -11,6 +11,8 @@ import type {
   NetworkGateway,
   NetworkMihomoProfile,
   NetworkNASBinding,
+  NetworkAccessNetwork,
+  NetworkSite,
   NetworkTelemetrySummary,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import type { PermissionSnapshot } from '@/types'
@@ -70,13 +72,17 @@ const apiMocks = vi.hoisted(() => ({
   ),
   listNetworkAccessPolicies: vi.fn(() => Promise.resolve([])),
   listNetworkAccessGrants: vi.fn(() => Promise.resolve([])),
+  saveNetworkAccessNetwork: vi.fn(),
+  deleteNetworkAccessNetwork: vi.fn(),
+  previewNetworkAccessNetworks: vi.fn(),
+  listNetworkAccessNetworks: vi.fn(() => Promise.resolve([] as NetworkAccessNetwork[])),
   listNetworkNASBindings: vi.fn(() => Promise.resolve([] as NetworkNASBinding[])),
   listEndpointDevices: vi.fn(() => Promise.resolve([] as EndpointDevice[])),
   listNetworkGateways: vi.fn(() => Promise.resolve([] as NetworkGateway[])),
   listNetworkMihomoProfiles: vi.fn(() => Promise.resolve([] as NetworkMihomoProfile[])),
   listNetworkResources: vi.fn(() => Promise.resolve([])),
   listNetworkRuntimeEnrollments: vi.fn(() => Promise.resolve([])),
-  listNetworkSites: vi.fn(() => Promise.resolve([])),
+  listNetworkSites: vi.fn(() => Promise.resolve([] as NetworkSite[])),
   listNetworkSiteProfileBindings: vi.fn(() => Promise.resolve([])),
   listNetworkSessions: vi.fn(() => Promise.resolve([])),
   listNetworkSpaces: vi.fn(() => Promise.resolve([])),
@@ -103,6 +109,14 @@ vi.mock('@/features/auth', () => ({
     snapshot?.permissionKeys.includes(key) ?? false,
 }))
 vi.mock('./api', () => apiMocks)
+
+const site = {
+  id: 'site-hq',
+  name: '总部站点',
+  status: 'active',
+  createdAt: '2026-09-04T00:00:00Z',
+  updatedAt: '2026-09-04T00:00:00Z',
+} as const
 
 let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
@@ -156,6 +170,8 @@ describe('network access page', () => {
     state.snapshot = { permissionKeys: [], visibleMenuIds: [], visibleMenus: [] }
     vi.clearAllMocks()
     apiMocks.listEndpointDevices.mockResolvedValue([])
+    apiMocks.listNetworkSites.mockResolvedValue([site])
+    apiMocks.listNetworkAccessNetworks.mockResolvedValue([])
   })
 
   afterEach(async () => {
@@ -171,7 +187,7 @@ describe('network access page', () => {
 
   it('renders the section selected by the global navigation route', async () => {
     state.snapshot.permissionKeys = ['network_access.sites.view', 'network_access.sites.update']
-    await renderPage('/network-access/settings?tab=nas-bindings')
+    await renderPage('/network-access/settings?tab=nas-bindings&siteId=site-hq')
 
     expect(container.querySelector('.soha-network-access-nav')).toBeNull()
     expect(container.querySelector('h1')).toBeNull()
@@ -180,7 +196,7 @@ describe('network access page', () => {
       '统一管理设备、站点、网络空间、ProtectedSet 资源、网关与访问路径决策。',
     )
     expect(container.textContent).toContain('新增网络设备')
-    expect(apiMocks.listNetworkNASBindings).toHaveBeenCalledWith({ limit: 200 })
+    expect(apiMocks.listNetworkNASBindings).toHaveBeenCalledWith({ limit: 200, siteId: site.id })
     expect(apiMocks.listNetworkSites).toHaveBeenCalledWith({ limit: 200 })
     expect(apiMocks.listEndpointDevices).not.toHaveBeenCalled()
   })
@@ -226,45 +242,65 @@ describe('network access page', () => {
     expect(container.textContent).toContain('新增入网配置')
   })
 
-  it('keeps SSID settings limited to Wi-Fi records', async () => {
-    const base = {
-      runtimeId: 'freeradius-hq',
-      siteId: 'site-hq',
-      status: 'active',
-      coaSupported: true,
-      disconnectSupported: true,
-      createdAt: '2026-09-04T00:00:00Z',
-      updatedAt: '2026-09-04T00:00:00Z',
+  it('lists Wi-Fi and wired access networks without exposing management for read-only users', async () => {
+    const configuration = {
+      siteId: site.id,
+      kind: 'standard',
+      enabled: true,
+      nasBindingIds: ['nas-1'],
+      autoConnect: false,
+      rules: [],
     } as const
-    apiMocks.listNetworkNASBindings.mockResolvedValueOnce([
+    apiMocks.listNetworkAccessNetworks.mockResolvedValue([
       {
-        ...base,
+        ...site,
         id: 'wifi-1',
-        name: '总部办公 Wi-Fi',
-        nasId: 'nas-hq-wifi',
-        accessMedium: 'wifi',
-        deviceType: 'wireless_controller',
-        ssid: 'Soha-Staff',
+        configuration: {
+          ...configuration,
+          nasBindingIds: ['nas-1'],
+          rules: [],
+          name: '总部办公 Wi-Fi',
+          priority: 10,
+          accessMedium: 'wifi',
+          ssid: 'Soha-Staff',
+        },
       },
       {
-        ...base,
+        ...site,
         id: 'wired-1',
-        name: '总部接入交换机',
-        nasId: 'nas-hq-switch',
-        accessMedium: 'wired',
-        deviceType: 'switch',
+        configuration: {
+          ...configuration,
+          nasBindingIds: ['nas-2'],
+          rules: [],
+          name: '总部有线网络',
+          priority: 20,
+          accessMedium: 'wired',
+          portStart: 0,
+          portEnd: 0,
+        },
       },
     ])
-    state.snapshot.permissionKeys = ['network_access.sites.view', 'network_access.sites.update']
+    state.snapshot.permissionKeys = ['network_access.sites.view']
 
-    await renderPage('/network-access/settings?tab=ssids')
-    await act(async () => {
-      await vi.waitFor(() => expect(container.textContent).toContain('Soha-Staff'))
+    await renderPage('/network-access/settings?tab=ssids&siteId=site-hq')
+    await vi.waitFor(async () => {
+      await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+      expect(container.textContent).toContain('Soha-Staff')
     })
 
-    expect(container.textContent).not.toContain('RADIUS 接入')
-    expect(container.textContent).toContain('新增 SSID')
-    expect(container.textContent).not.toContain('总部接入交换机')
+    expect(apiMocks.listNetworkAccessNetworks).toHaveBeenCalledWith(site.id)
+    expect(apiMocks.listNetworkNASBindings).not.toHaveBeenCalled()
+    const cells = Array.from(container.querySelectorAll('td'), (cell) => cell.textContent)
+    expect(cells).toContain('0–0')
+    expect(container.textContent).not.toContain('新增接入网络')
+    expect(container.textContent).toContain('预览授权')
+  })
+
+  it('does not load access networks until a site is selected', async () => {
+    state.snapshot.permissionKeys = ['network_access.sites.view']
+    await renderPage('/network-access/settings?tab=ssids')
+    expect(container.textContent).toContain('请选择站点以查看配置。')
+    expect(apiMocks.listNetworkAccessNetworks).not.toHaveBeenCalled()
   })
 
   it('switches among the permission-scoped admission setting tabs', async () => {
@@ -273,22 +309,22 @@ describe('network access page', () => {
       'network_access.sites.update',
       'network_access.enrollments.view',
     ]
-    await renderPage('/network-access/settings')
+    await renderPage('/network-access/settings?siteId=site-hq')
 
     const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['网络设备', 'SSID', 'RADIUS 接入'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['网络设备', '接入网络', 'RADIUS 接入'])
     expect(container.textContent).toContain('新增网络设备')
-    expect(apiMocks.listNetworkNASBindings).toHaveBeenCalledWith({ limit: 200 })
+    expect(apiMocks.listNetworkNASBindings).toHaveBeenCalledWith({ limit: 200, siteId: site.id })
     expect(apiMocks.listNetworkRuntimeEnrollments).not.toHaveBeenCalled()
 
     await act(async () => tabs[1]?.click())
     await act(async () => {
       await vi.waitFor(() =>
-        expect(apiMocks.listNetworkNASBindings).toHaveBeenCalledWith({ limit: 200 }),
+        expect(apiMocks.listNetworkAccessNetworks).toHaveBeenCalledWith(site.id),
       )
     })
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('true')
-    expect(container.textContent).toContain('新增 SSID')
+    expect(container.textContent).toContain('新增接入网络')
     await act(async () => tabs[2]?.click())
     await act(async () => {
       await vi.waitFor(() =>

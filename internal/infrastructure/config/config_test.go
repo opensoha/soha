@@ -163,6 +163,18 @@ func TestLoadUsesExplicitConfigFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 app:
   name: custom-soha
+plugins:
+  executable:
+    package_root: /var/lib/soha/packages
+    runtime_root: /run/soha
+    storage_accounts:
+      "opensoha.azure-blob":
+        - uid: 1401
+          gid: 1401
+        - uid: 1402
+          gid: 1402
+    trusted_publisher_keys:
+      "https://github.com/opensoha/soha-plugin-storage-azureblob": AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 runtime:
   execution_runner_token: runner-token-123456789012345678901234
 database:
@@ -193,6 +205,18 @@ security:
 	}
 	if cfg.App.Name != "custom-soha" {
 		t.Fatalf("App.Name = %q, want custom-soha", cfg.App.Name)
+	}
+	executable := cfg.Plugins.Executable
+	if executable.PackageRoot != "/var/lib/soha/packages" || executable.RuntimeRoot != "/run/soha" {
+		t.Fatalf("executable roots did not load: %q, %q", executable.PackageRoot, executable.RuntimeRoot)
+	}
+	wantAccounts := []PluginExecutableAccount{{UID: 1401, GID: 1401}, {UID: 1402, GID: 1402}}
+	if len(executable.StorageAccounts) != 1 || !slices.Equal(executable.StorageAccounts["opensoha.azure-blob"], wantAccounts) {
+		t.Fatalf("executable accounts do not preserve plugin ID: %v", executable.StorageAccounts)
+	}
+	const repository = "https://github.com/opensoha/soha-plugin-storage-azureblob"
+	if key := executable.TrustedPublisherKeys[repository]; len(executable.TrustedPublisherKeys) != 1 || key != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" {
+		t.Fatal("executable publisher keys do not preserve the repository URL")
 	}
 }
 
