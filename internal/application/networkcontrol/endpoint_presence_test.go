@@ -84,13 +84,7 @@ func TestStrictUILeaseRequiresFreshBoundLogin(t *testing.T) {
 		t.Fatalf("incorrect bound lease %+v", lease)
 	}
 	store.endpointRestriction.Epoch = 3
-	for _, runtimeID := range []string{identity.ID, "different-endpoint"} {
-		authorization := domain.NASAuthorization{Decision: access.DecisionAllow, AccessProfile: access.ProfileFull, CreatedAt: now}
-		err := service.applyEndpointAdmission(context.Background(), &authorization, access.Subject{UserID: "user-1"}, access.Device{ID: payload.DeviceID}, access.NASBinding{}, runtimeID)
-		if err != nil || authorization.RestrictionEpoch != 3 || (authorization.Decision == access.DecisionAllow) != (runtimeID == identity.ID) {
-			t.Fatalf("strict authorization for runtime %q: %+v, %v", runtimeID, authorization, err)
-		}
-	}
+	assertStrictAdmissionRuntimeBinding(t, service, now, identity.ID, payload.DeviceID)
 	payload.BootID = "boot-2"
 	if err := send(); err != nil || store.presenceRecord.StrictUI.Epoch == lease.Epoch {
 		t.Fatalf("changed boot retained epoch: %+v, %v", store.presenceRecord.StrictUI, err)
@@ -121,6 +115,17 @@ func TestStrictUILeaseRequiresFreshBoundLogin(t *testing.T) {
 	store.credential.Capabilities = []string{"endpoint-presence-v1", "endpoint-ui-presence-v1"}
 	if err := send(); !errors.Is(err, apperrors.ErrUnauthorized) {
 		t.Fatalf("credential without scoped capability was accepted: %v", err)
+	}
+}
+
+func assertStrictAdmissionRuntimeBinding(t *testing.T, service *Service, now time.Time, endpointID, deviceID string) {
+	t.Helper()
+	for _, runtimeID := range []string{endpointID, "different-endpoint"} {
+		authorization := domain.NASAuthorization{Decision: access.DecisionAllow, AccessProfile: access.ProfileFull, CreatedAt: now}
+		err := service.applyEndpointAdmission(context.Background(), &authorization, access.Subject{UserID: "user-1"}, access.Device{ID: deviceID}, access.NASBinding{}, runtimeID)
+		if err != nil || authorization.RestrictionEpoch != 3 || (authorization.Decision == access.DecisionAllow) != (runtimeID == endpointID) {
+			t.Fatalf("strict authorization for runtime %q: %+v, %v", runtimeID, authorization, err)
+		}
 	}
 }
 

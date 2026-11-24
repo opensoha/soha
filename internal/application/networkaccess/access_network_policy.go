@@ -98,7 +98,7 @@ func evaluateAccessNetwork(now time.Time, network domain.AccessNetwork, method s
 		return decision
 	}
 	method = strings.ReplaceAll(method, "-", "_")
-	if cfg.Kind != domain.AccessNetworkStandard && !(decision.StrictOnline && strictQualified && method == "eap_tls") {
+	if cfg.Kind != domain.AccessNetworkStandard && (!decision.StrictOnline || !strictQualified || method != "eap_tls") {
 		decision.ReasonCode = "access_network_requires_other_admission"
 		return decision
 	}

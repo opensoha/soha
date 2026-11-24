@@ -164,7 +164,8 @@ func (c accessNetworkChoiceCatalog) EndpointPresence(context.Context, string) (d
 	return c.presence, nil
 }
 
-func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
+func accessNetworkChoiceFixture(t *testing.T) (*accessNetworkChoiceStore, accessNetworkChoiceCatalog) {
+	t.Helper()
 	store := &accessNetworkChoiceStore{connectionOptionsStore{
 		device:   domain.Device{ID: "device-1", OwnerUserID: "user-1", SiteID: "site", Status: domain.DeviceStatusActive},
 		subject:  domain.Subject{UserID: "user-1", Status: domain.StatusActive},
@@ -191,6 +192,11 @@ func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
 		}
 		return map[string]domain.ConnectionNASSession{"first": {State: "observed"}}
 	}}
+	return store, catalog
+}
+
+func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
+	store, catalog := accessNetworkChoiceFixture(t)
 	service := &Service{store: store, accessNetworks: catalog}
 	ctx := context.Background()
 	principal := identity.Principal{UserID: "user-1"}
@@ -208,7 +214,10 @@ func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
 	if _, _, err := service.ListAccessNetworkChoices(ctx, identity.Principal{UserID: "other-user"}, "device-1", AccessNetworkChoiceOptions{IncludeNASSession: true}); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("foreign device readback returned %v", err)
 	}
+}
 
+func TestAccessNetworkChoicesScopeStrictLease(t *testing.T) {
+	store, catalog := accessNetworkChoiceFixture(t)
 	for index := range catalog.items {
 		if catalog.items[index].ID == "second" {
 			catalog.items[index].Configuration.Kind = domain.AccessNetworkStrict
@@ -219,8 +228,10 @@ func TestAccessNetworkChoicesKeepGuestSeparate(t *testing.T) {
 	store.bindings[0].EAPServerTrust = &domain.EAPServerTrust{EapMethod: "tls"}
 	until := time.Now().Add(20 * time.Second)
 	catalog.presence.StrictUI = domain.StrictUILease{SubjectID: "user-1", Epoch: "bound", Until: &until}
-	service.accessNetworks = catalog
-	items, _, err = service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{IncludeBootstrap: true})
+	service := &Service{store: store, accessNetworks: catalog}
+	ctx := context.Background()
+	principal := identity.Principal{UserID: "user-1"}
+	items, _, err := service.ListAccessNetworkChoices(ctx, principal, "device-1", AccessNetworkChoiceOptions{IncludeBootstrap: true})
 	if err != nil || len(items) != 2 || items[0].StrictOnline != nil || items[1].StrictOnline == nil || items[1].StrictOnline.LeaseUntil == nil || !items[1].StrictOnline.LeaseUntil.Equal(until) {
 		t.Fatalf("strict lease readback: %#v, %v", items, err)
 	}

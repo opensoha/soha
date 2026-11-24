@@ -59,37 +59,8 @@ func (s *accessRepositoryScenario) checkAccessNetworkCatalog(t *testing.T) {
 	}
 	strict := create("strict")
 	strict.Configuration.Kind = domain.AccessNetworkStrict
-	if _, err := s.repository.SaveAccessNetwork(s.ctx, strict, true); !errors.Is(err, apperrors.ErrInvalidArgument) {
-		t.Fatalf("unqualified NAS could publish strict admission: %v", err)
-	}
-	if err := s.store.Exec(s.ctx, `UPDATE network_access_nas_bindings SET strict_online_qualified=true,disconnect_supported=true,eap_server_trust='{"eapMethod":"tls"}' WHERE id=$1`, binding.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.Exec(s.ctx, `INSERT INTO network_nas_authorizations
-		(runtime_id,request_id,request_hash,nas_id,subject_id,device_id,authentication_method,session_id,decision,access_profile,
-		 policy_version,reason_code,radius_attributes,valid_until,created_at,access_network_id)
-		VALUES ($1,$2,'sha256:'||repeat('a',64),$3,'old-user','old-device','eap-tls',$2,'allow','full',1,'fixture','{"sessionTimeoutSeconds":300}'::jsonb,$4,$5,$6)`,
-		s.runtimeID, oldID+"-eap", binding.NASID, time.Now().Add(time.Minute), s.now, first.ID); err != nil {
-		t.Fatal(err)
-	}
-	toStrict := first
-	toStrict.Configuration.Kind = domain.AccessNetworkStrict
-	if _, err := s.repository.SaveAccessNetwork(s.ctx, toStrict, false); !errors.Is(err, apperrors.ErrConflict) {
-		t.Fatalf("strict mode accepted an old unfenced authorization: %v", err)
-	}
-	paused := first
-	paused.Configuration.Enabled = false
-	if _, err := s.repository.SaveAccessNetwork(s.ctx, paused, false); err != nil {
-		t.Fatal(err)
-	}
-	replacement := toStrict
-	replacement.ID += "-replacement"
-	if _, err := s.repository.SaveAccessNetwork(s.ctx, replacement, true); !errors.Is(err, apperrors.ErrConflict) {
-		t.Fatalf("replacing a disabled network accepted an old unfenced authorization: %v", err)
-	}
-	if _, err := s.repository.SaveAccessNetwork(s.ctx, first, false); err != nil {
-		t.Fatal(err)
-	}
+	s.checkStrictAccessNetworkTransition(t, first, strict, binding, oldID+"-eap")
+
 	overlap := create("same")
 	overlap.Configuration.SSID = first.Configuration.SSID
 	if _, err := s.repository.SaveAccessNetwork(s.ctx, overlap, true); !errors.Is(err, apperrors.ErrConflict) {
@@ -109,5 +80,40 @@ func (s *accessRepositoryScenario) checkAccessNetworkCatalog(t *testing.T) {
 	items, err := s.repository.ListAccessNetworks(s.ctx, site.ID)
 	if err != nil || len(items) != 2 || !items[1].Deleted {
 		t.Fatalf("catalog retention result: %#v, %v", items, err)
+	}
+}
+
+func (s *accessRepositoryScenario) checkStrictAccessNetworkTransition(t *testing.T, first, strict domain.AccessNetwork, binding domain.NASBinding, authorizationID string) {
+	t.Helper()
+	if _, err := s.repository.SaveAccessNetwork(s.ctx, strict, true); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("unqualified NAS could publish strict admission: %v", err)
+	}
+	if err := s.store.Exec(s.ctx, `UPDATE network_access_nas_bindings SET strict_online_qualified=true,disconnect_supported=true,eap_server_trust='{"eapMethod":"tls"}' WHERE id=$1`, binding.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Exec(s.ctx, `INSERT INTO network_nas_authorizations
+		(runtime_id,request_id,request_hash,nas_id,subject_id,device_id,authentication_method,session_id,decision,access_profile,
+		 policy_version,reason_code,radius_attributes,valid_until,created_at,access_network_id)
+		VALUES ($1,$2,'sha256:'||repeat('a',64),$3,'old-user','old-device','eap-tls',$2,'allow','full',1,'fixture','{"sessionTimeoutSeconds":300}'::jsonb,$4,$5,$6)`,
+		s.runtimeID, authorizationID, binding.NASID, time.Now().Add(time.Minute), s.now, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	toStrict := first
+	toStrict.Configuration.Kind = domain.AccessNetworkStrict
+	if _, err := s.repository.SaveAccessNetwork(s.ctx, toStrict, false); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("strict mode accepted an old unfenced authorization: %v", err)
+	}
+	paused := first
+	paused.Configuration.Enabled = false
+	if _, err := s.repository.SaveAccessNetwork(s.ctx, paused, false); err != nil {
+		t.Fatal(err)
+	}
+	replacement := toStrict
+	replacement.ID += "-replacement"
+	if _, err := s.repository.SaveAccessNetwork(s.ctx, replacement, true); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("replacing a disabled network accepted an old unfenced authorization: %v", err)
+	}
+	if _, err := s.repository.SaveAccessNetwork(s.ctx, first, false); err != nil {
+		t.Fatal(err)
 	}
 }
