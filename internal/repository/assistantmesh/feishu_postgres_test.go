@@ -1,10 +1,9 @@
 package assistantmesh_test
 
 import (
+	"context"
 	"database/sql"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +26,18 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 		GroupID: "chat", SenderID: "ou_sender", TargetID: "ou_owner", Question: "bounded question",
 		NextAt: now, ExpiresAt: now.Add(time.Hour),
 	}
+
+	checkFeishuReceiptLease(t, ctx, store, repo, first, now)
+	afterLease := now.Add(61 * time.Second)
+	inquiryID := checkFeishuQuestionAndAnswerStages(t, ctx, store, repo, first, now, afterLease)
+	checkFeishuDuplicateAnswer(t, ctx, store, repo, first, now, afterLease, inquiryID)
+	retryAt := afterLease.Add(61 * time.Second)
+	checkFeishuAnswerRetryAndCompletion(t, ctx, store, repo, first, retryAt, inquiryID)
+	checkFeishuExpiredJobCleanup(t, ctx, store, repo, first, now)
+}
+
+func checkFeishuReceiptLease(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, first domain.FeishuJob, now time.Time) {
+	scope := first.Scope
 	if err := repo.EnqueueFeishuJob(ctx, first); err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +71,10 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 	if row.ClaimID != "" || !row.StartedAt.Equal(now) {
 		t.Fatalf("receipt attempt was not persisted with its lease cleared: %+v", row)
 	}
+}
 
-	afterLease := now.Add(61 * time.Second)
+func checkFeishuQuestionAndAnswerStages(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, first domain.FeishuJob, now, afterLease time.Time) string {
+	scope := first.Scope
 	reclaimed, err := repo.ClaimFeishuJob(ctx, scope, afterLease)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +88,7 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 	if err := repo.SaveFeishuJob(ctx, reclaimed); err != nil {
 		t.Fatal(err)
 	}
-	row = readFeishuJob(t, store, scope, first.ID)
+	row := readFeishuJob(t, store, scope, first.ID)
 	if row.Stage != domain.FeishuQuestion || row.GroupID != "" || row.Question != first.Question {
 		t.Fatalf("question stage scrub = %+v", row)
 	}
@@ -96,7 +109,11 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 	if row.Stage != domain.FeishuAnswer || row.InquiryID != inquiryID || row.Question != "" || row.GroupID != "" {
 		t.Fatalf("answer stage = %+v", row)
 	}
+	return inquiryID
+}
 
+func checkFeishuDuplicateAnswer(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, first domain.FeishuJob, now, afterLease time.Time, inquiryID string) {
+	scope := first.Scope
 	second := first
 	second.ID = strings.Repeat("c", 64)
 	second.NextAt = now
@@ -112,7 +129,7 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 	if err := repo.SaveFeishuJob(ctx, contender); err != nil {
 		t.Fatal(err)
 	}
-	row = readFeishuJob(t, store, scope, second.ID)
+	row := readFeishuJob(t, store, scope, second.ID)
 	if row.Stage != domain.FeishuDone || row.Outcome != "duplicate" || row.InquiryID != "" {
 		t.Fatalf("duplicate answer = %+v", row)
 	}
@@ -120,8 +137,10 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 		row.OwnerID != "" || row.Question != "" {
 		t.Fatalf("duplicate retained private input: %+v", row)
 	}
+}
 
-	retryAt := afterLease.Add(61 * time.Second)
+func checkFeishuAnswerRetryAndCompletion(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, first domain.FeishuJob, retryAt time.Time, inquiryID string) {
+	scope := first.Scope
 	retry, err := repo.ClaimFeishuJob(ctx, scope, retryAt)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +149,7 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 	if err := repo.SaveFeishuJob(ctx, retry); err != nil {
 		t.Fatal(err)
 	}
-	row = readFeishuJob(t, store, scope, first.ID)
+	row := readFeishuJob(t, store, scope, first.ID)
 	if row.Stage != domain.FeishuAnswer || row.InquiryID != inquiryID {
 		t.Fatalf("same owner retry = %+v", row)
 	}
@@ -152,7 +171,10 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 		row.OwnerID != "" || row.Question != "" || row.ClaimID != "" || !row.StartedAt.IsZero() {
 		t.Fatalf("done retained private input: %+v", row)
 	}
+}
 
+func checkFeishuExpiredJobCleanup(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, first domain.FeishuJob, now time.Time) {
+	scope := first.Scope
 	expired := first
 	expired.ID = strings.Repeat("d", 64)
 	expired.NextAt, expired.ExpiresAt = now, now.Add(-time.Second)
@@ -179,18 +201,7 @@ func TestFeishuJobLeaseDedupeAndCleanupWithPostgres(t *testing.T) {
 func feishuPostgres(t *testing.T) *dbstore.Store {
 	t.Helper()
 	store := receptionPostgres(t)
-	dir := t.TempDir()
-	name := "0158_assistant_mesh_feishu.sql"
-	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "postgres", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, name), contents, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateFromFile(t.Context(), dir); err != nil {
-		t.Fatal(err)
-	}
+	migrateFixtures(t, store, "0158_assistant_mesh_feishu.sql")
 	return store
 }
 

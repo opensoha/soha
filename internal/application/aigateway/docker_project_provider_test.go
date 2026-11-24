@@ -50,7 +50,9 @@ func TestAssistantMeshMCPRequiresExplicitProjectGrant(t *testing.T) {
 	}
 	repo := &memoryGatewayRepository{}
 	service := newProjectGatewayTestService(repo)
-	service.SetCapabilityProviders(provider)
+	if err := service.SetCapabilityProviders(provider); err != nil {
+		t.Fatal(err)
+	}
 	caller := testPrincipal("admin")
 	ctx := WithAssistantMeshProjectGrant(t.Context())
 	invoke := func(project string, wantAllowed bool) {

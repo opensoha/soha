@@ -90,7 +90,7 @@ func (s *Service) trial(ctx context.Context, principal domainidentity.Principal,
 	if err != nil {
 		return ActionResult{}, err
 	}
-	s.audit(ctx, principal, "assistant.mesh.asset.trial", id, "success", map[string]any{"digest": digest, "runId": runID})
+	s.auditCompletedAssetAction(ctx, principal, "assistant.mesh.asset.trial", id, map[string]any{"digest": digest, "runId": runID})
 	return ActionResult{Asset: asset, RunID: runID}, nil
 }
 
@@ -116,7 +116,7 @@ func (s *Service) run(ctx context.Context, principal domainidentity.Principal, i
 	if err != nil {
 		return ActionResult{}, err
 	}
-	s.audit(ctx, principal, "assistant.mesh.asset.run", id, "success", map[string]any{"digest": version.Digest, "runId": runID})
+	s.auditCompletedAssetAction(ctx, principal, "assistant.mesh.asset.run", id, map[string]any{"digest": version.Digest, "runId": runID})
 	return ActionResult{Asset: asset, RunID: runID}, nil
 }
 

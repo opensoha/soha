@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -282,4 +283,11 @@ func (s *Service) audit(ctx context.Context, principal domainidentity.Principal,
 		RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP,
 		Metadata: metadata, CreatedAt: time.Now().UTC(),
 	})
+}
+
+// auditCompletedAssetAction records actions whose durable change or run launch has already completed.
+func (s *Service) auditCompletedAssetAction(ctx context.Context, principal domainidentity.Principal, action, id string, metadata map[string]any) {
+	if err := s.audit(ctx, principal, action, id, "success", metadata); err != nil {
+		slog.WarnContext(ctx, "failed to record completed Heya asset action", "action", action, "asset_id", id)
+	}
 }

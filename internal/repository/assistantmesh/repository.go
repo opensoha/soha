@@ -101,7 +101,7 @@ func (r *Repository) List(ctx context.Context, kind string, ownerID string, limi
 	if err != nil {
 		return nil, fmt.Errorf("list assistant mesh assets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]Record, 0)
 	for rows.Next() {
 		var item Record

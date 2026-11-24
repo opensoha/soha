@@ -60,7 +60,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return Asset{}, err
 	}
-	s.audit(ctx, principal, "assistant.mesh.asset.update", id, "success", map[string]any{"digest": input.Digest()})
+	s.auditCompletedAssetAction(ctx, principal, "assistant.mesh.asset.update", id, map[string]any{"digest": input.Digest()})
 	return asset, nil
 }
 

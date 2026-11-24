@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	domain "github.com/opensoha/soha/internal/domain/assistantmesh"
+	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	mesh "github.com/opensoha/soha/internal/repository/assistantmesh"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
@@ -56,6 +57,11 @@ func TestConfiguredInquiryClosureWithPostgres(t *testing.T) {
 	if err != nil || frozen.PurgeAfter == nil || !frozen.PurgeAfter.Equal(due.Add(14*24*time.Hour)) {
 		t.Fatalf("changing duration restamped an overdue inquiry: %+v, %v", frozen, err)
 	}
+	checkConfiguredWorkerExpiry(t, ctx, store, repo, expired, userClosed, *closed.PurgeAfter, due)
+	checkConfiguredInquiryPurge(t, ctx, store, repo, expired, due)
+}
+
+func checkConfiguredWorkerExpiry(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, expired, userClosed domain.Inquiry, closedPurgeAfter, due time.Time) {
 	if err := store.Exec(ctx, `UPDATE assistant_mesh_inquiries
 		SET due_at=$1, citations='[{"assetId":"published-id","version":3,"title":"private excerpt"}]' WHERE id=$2`, due, expired.ID); err != nil {
 		t.Fatal(err)
@@ -63,14 +69,17 @@ func TestConfiguredInquiryClosureWithPostgres(t *testing.T) {
 	if err := repo.CleanupWithInquiryPolicy(ctx, domain.InquiryLimits{Retention: 14 * 24 * time.Hour, OwnerPending: 5}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := repo.GetInquiry(ctx, workerCaller, expired.RequestID)
+	got, err := repo.GetInquiry(ctx, expired.CallerID, expired.RequestID)
 	if err != nil || got.Status != domain.InquiryExpired || got.PurgeAfter == nil || !got.PurgeAfter.Equal(due.Add(3*24*time.Hour)) {
 		t.Fatalf("worker expiry did not use current retention: %+v, %v", got, err)
 	}
-	old, err := repo.GetInquiry(ctx, caller, userClosed.RequestID)
-	if err != nil || old.PurgeAfter == nil || !old.PurgeAfter.Equal(*closed.PurgeAfter) {
+	old, err := repo.GetInquiry(ctx, userClosed.CallerID, userClosed.RequestID)
+	if err != nil || old.PurgeAfter == nil || !old.PurgeAfter.Equal(closedPurgeAfter) {
 		t.Fatalf("retention change rewrote a terminal deadline: %+v, %v", old, err)
 	}
+}
+
+func checkConfiguredInquiryPurge(t *testing.T, ctx context.Context, store *dbstore.Store, repo *mesh.Repository, expired domain.Inquiry, due time.Time) {
 	if err := store.Exec(ctx, `UPDATE assistant_mesh_inquiries SET purge_after=$1, answer='retained answer' WHERE id=$2`, due, expired.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +88,9 @@ func TestConfiguredInquiryClosureWithPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	purged, err := repo.GetInquiry(ctx, workerCaller, expired.RequestID)
+	purged, err := repo.GetInquiry(ctx, expired.CallerID, expired.RequestID)
 	if err != nil || purged.Question != "" || purged.Answer != "" || purged.Status != domain.InquiryExpired ||
-		purged.OwnerID != owner || !purged.DueAt.Equal(due) {
+		purged.OwnerID != expired.OwnerID || !purged.DueAt.Equal(due) {
 		t.Fatalf("purge did not erase only the retained content: %+v, %v", purged, err)
 	}
 	var versions string

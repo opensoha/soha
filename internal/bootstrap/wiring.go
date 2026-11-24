@@ -1551,7 +1551,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	}
 	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
 	if cfg.AIGateway.FeishuMesh.Enabled && (!cfg.Modules.AI.Enabled || !cfg.Modules.AIGateway.Enabled) {
-		return apiRoutes.Dependencies{}, errors.New("Heya Feishu channel requires AI and AI Gateway modules")
+		return apiRoutes.Dependencies{}, errors.New("the Heya Feishu channel requires AI and AI Gateway modules")
 	}
 	if cfg.Modules.AI.Enabled {
 		if err := wireAssistantMeshRoutes(cfg, &dependencies, infra, repos, core, delivery, gateway); err != nil {

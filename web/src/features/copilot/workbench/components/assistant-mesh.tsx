@@ -216,7 +216,7 @@ export function AssistantMesh({
   const [extractRunId, setExtractRunId] = useState('')
 
   const availabilityQuery = useQuery({
-    queryKey: ['assistant-mesh', owner, 'availability'],
+    queryKey: workbenchKeys.assistantMesh.availability(owner),
     queryFn: () => api.getEnvelope<AssistantMeshAssetPage>(meshListPath('mine', undefined, 0)),
     enabled: Boolean(owner),
     retry: false,
@@ -239,7 +239,7 @@ export function AssistantMesh({
   }, [open, selected?.id, publishingDefaults?.visibility, hasTeams, hasProjects])
 
   const listQuery = useInfiniteQuery({
-    queryKey: ['assistant-mesh', owner, 'list', view, kindFilter],
+    queryKey: workbenchKeys.assistantMesh.list(owner, view, kindFilter),
     queryFn: ({ pageParam }) =>
       api.getEnvelope<AssistantMeshAssetPage>(meshListPath(view, kindFilter, pageParam)),
     initialPageParam: 0,
@@ -254,7 +254,7 @@ export function AssistantMesh({
   const listDenied = listQuery.error instanceof ApiError && listQuery.error.status === 403
 
   const detailQuery = useQuery({
-    queryKey: ['assistant-mesh', owner, 'asset', selected?.id, selected?.kind],
+    queryKey: workbenchKeys.assistantMesh.asset(owner, selected?.id, selected?.kind),
     queryFn: async () => {
       if (!selected) throw new Error('未选择共享能力')
       const response = await api.getEnvelope<AssistantMeshAssetEnvelope>(
@@ -271,13 +271,13 @@ export function AssistantMesh({
   const sourceInput = asset ? meshInput(asset) : undefined
 
   const extractMessagesQuery = useQuery({
-    queryKey: ['assistant-mesh', owner, 'extract-messages', extractSessionId],
+    queryKey: workbenchKeys.assistantMesh.extractMessages(owner, extractSessionId),
     queryFn: async () => (await workbenchApi.sessions.messages(extractSessionId)).data ?? [],
     enabled: open && extractOpen && Boolean(extractSessionId),
     retry: false,
   })
   const extractRunsQuery = useQuery({
-    queryKey: ['assistant-mesh', owner, 'extract-runs', extractSessionId],
+    queryKey: workbenchKeys.assistantMesh.extractRuns(owner, extractSessionId),
     queryFn: async () => (await workbenchApi.agentRuns.session(extractSessionId)).data ?? [],
     enabled: open && extractOpen && Boolean(extractSessionId),
     retry: false,
@@ -318,7 +318,8 @@ export function AssistantMesh({
     setReviewReason('')
   }, [selected?.id])
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['assistant-mesh', owner] })
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: workbenchKeys.assistantMesh.all(owner) })
 
   const createMutation = useOperationMutation(
     {

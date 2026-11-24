@@ -167,7 +167,7 @@ func (r *Repository) ListDelegations(ctx context.Context, userID string, inbox b
 	if err != nil {
 		return nil, fmt.Errorf("list assistant mesh delegations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domain.DelegationRecord, 0)
 	for rows.Next() {
 		item, err := scanDelegation(rows)

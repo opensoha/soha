@@ -66,6 +66,7 @@ type feishuTestSetup struct {
 	reception *Reception
 	inquiries *receptionTestStore
 	ids       receptionTestIdentities
+	settings  *fakeSettings
 }
 
 func setupFeishuTest(t *testing.T, stage, senderID, question string) feishuTestSetup {
@@ -74,7 +75,7 @@ func setupFeishuTest(t *testing.T, stage, senderID, question string) feishuTestS
 	caller, owner, other := employee(receptionCaller, "team-a"), employee(receptionOwner), employee(receptionOther)
 	ids := receptionTestIdentities{}
 	for _, p := range []identity.Principal{caller, owner, other} {
-		f.service.users.(*fakeUsers).users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
+		f.users.users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
 		ids[p.UserID] = p
 	}
 	store := &receptionTestStore{profile: domain.Profile{OwnerID: owner.UserID, Open: true}, inquiries: map[string]domain.Inquiry{}}
@@ -95,7 +96,10 @@ func setupFeishuTest(t *testing.T, stage, senderID, question string) feishuTestS
 	if stage == domain.FeishuReceipt {
 		jobs.job.GroupID = "oc_group"
 	}
-	return feishuTestSetup{channel, jobs, sender, directory, reception, store, ids}
+	return feishuTestSetup{
+		channel: channel, jobs: jobs, sender: sender, directory: directory,
+		reception: reception, inquiries: store, ids: ids, settings: f.settings,
+	}
 }
 
 func (f feishuTestSetup) step(t *testing.T, count int) {
@@ -205,7 +209,7 @@ func TestFeishuHumanReplyRemainsInHeyaIfPrivateDeliveryFails(t *testing.T) {
 
 func TestFeishuLinkedInquiryUsesConfiguredLongerDeadline(t *testing.T) {
 	f := setupFeishuTest(t, domain.FeishuQuestion, "ou_caller", "机房什么时候搬迁")
-	f.channel.reception.assets.config.(*fakeSettings).value.InquiryTimeoutHours = 240
+	f.settings.value.InquiryTimeoutHours = 240
 	f.jobs.job.ExpiresAt = f.channel.now().Add(7 * 24 * time.Hour)
 	f.step(t, 1)
 	if want := f.channel.now().Add(240*time.Hour + feishuRetryWindow); f.jobs.job.Stage != domain.FeishuAnswer ||

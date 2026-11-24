@@ -34,7 +34,7 @@ func (s *policyReceptionStore) ReplyInquiry(_ context.Context, owner, id, answer
 
 func TestInquiryGovernanceSnapshotAppliesDeadlineAtCreationAndRetentionAtClosure(t *testing.T) {
 	f := newFixture(t)
-	settings := f.service.config.(*fakeSettings)
+	settings := f.settings
 	settings.value.InquiryPairLimitPerHour = 8
 	settings.value.InquiryCallerLimitPerDay = 100
 	settings.value.InquiryMergeWindowHours = 72
@@ -44,7 +44,7 @@ func TestInquiryGovernanceSnapshotAppliesDeadlineAtCreationAndRetentionAtClosure
 
 	caller, owner := employee(receptionCaller), employee(receptionOwner)
 	for _, p := range []identity.Principal{caller, owner} {
-		f.service.users.(*fakeUsers).users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
+		f.users.users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
 	}
 	store := &policyReceptionStore{receptionTestStore: &receptionTestStore{
 		profile:   domain.Profile{OwnerID: owner.UserID, Open: true},

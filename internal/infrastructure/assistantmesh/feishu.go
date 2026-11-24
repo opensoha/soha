@@ -122,7 +122,7 @@ func NewFeishuSender(endpoint, token, appID string) (*FeishuSender, error) {
 	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("%w: Feishu sender endpoint is invalid", apperrors.ErrInvalidArgument)
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && plainHTTPAllowed(parsed.Hostname())) {
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !plainHTTPAllowed(parsed.Hostname())) {
 		return nil, fmt.Errorf("%w: Feishu sender endpoint must use HTTPS", apperrors.ErrInvalidArgument)
 	}
 	return &FeishuSender{
@@ -180,7 +180,7 @@ func (s *FeishuSender) SendFeishuText(ctx context.Context, idType, recipient, re
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return true, fmt.Errorf("Feishu action transport failed: %w", err)
+		return true, fmt.Errorf("send Feishu action: %w", err)
 	}
 	payload, readErr := io.ReadAll(io.LimitReader(resp.Body, feishuResponseLimit+1))
 	closeErr := resp.Body.Close()
@@ -207,7 +207,7 @@ func (s *FeishuSender) SendFeishuText(ctx context.Context, idType, recipient, re
 	} else if resp.StatusCode == http.StatusOK {
 		retryable = true
 	}
-	return retryable, fmt.Errorf("Feishu action failed with HTTP %d", resp.StatusCode)
+	return retryable, fmt.Errorf("send Feishu action: HTTP %d", resp.StatusCode)
 }
 
 func validFeishuRecipient(idType, recipient string) bool {

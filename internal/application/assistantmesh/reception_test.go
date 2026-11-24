@@ -114,7 +114,7 @@ func TestReceptionFiltersDiscoveryAndEveryAnswerRead(t *testing.T) {
 	caller, other := employee(receptionCaller, "team-a"), employee(receptionOther)
 	owner := employee(receptionOwner, "team-a")
 	for _, p := range []identity.Principal{caller, owner, other} {
-		f.service.users.(*fakeUsers).users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
+		f.users.users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
 	}
 	ids := receptionTestIdentities{caller.UserID: caller, owner.UserID: owner, other.UserID: other}
 	store := &receptionTestStore{
@@ -129,27 +129,15 @@ func TestReceptionFiltersDiscoveryAndEveryAnswerRead(t *testing.T) {
 	publishReceptionFact(t, f, "expired", "过期订单同步", "expired content", knowledge.AccessScope{Visibility: "organization"}, &yesterday)
 
 	ctx := context.Background()
-	items, err := svc.Discover(ctx, caller, "订单同步失败怎么办")
-	if err != nil || len(items) != 1 || len(items[0].Topics) != 1 || items[0].Topics[0] != "订单同步" {
-		t.Fatalf("unexpected admissible discovery: %v, %v", items, err)
-	}
-	items, err = svc.Discover(ctx, other, "")
-	if err != nil || len(items) != 0 {
-		t.Fatalf("outside audience sees assistant: %v, %v", items, err)
-	}
+	assertReceptionDiscoveryScope(t, ctx, svc, caller, other)
+
 	ask := InquiryInput{OwnerID: owner.UserID, RequestID: receptionReq, Question: "订单同步失败怎么办"}
 	item, err := svc.Ask(ctx, caller, ask)
 	if err != nil || item.Status != domain.InquiryAnswered || len(item.Citations) != 1 || len(model.facts) != 1 || model.facts[0].Body != "published procedure" {
 		t.Fatalf("unexpected scoped answer: %+v, %v (%+v)", item, err, model.facts)
 	}
-	if _, err := svc.Ask(ctx, other, ask); !errors.Is(err, apperrors.ErrNotFound) {
-		t.Fatalf("audience bypassed via guessed recipient: %v", err)
-	}
-	pat := caller
-	pat.AccessTokenID = "unrelated-pat"
-	if _, err := svc.Ask(ctx, pat, ask); !errors.Is(err, apperrors.ErrAccessDenied) {
-		t.Fatalf("personal token escaped Web session boundary: %v", err)
-	}
+	assertReceptionAskScope(t, ctx, svc, caller, other, ask)
+
 	miss := InquiryInput{OwnerID: owner.UserID, RequestID: receptionReq2, Question: "请问机房今天要搬迁吗"}
 	item, err = svc.Ask(ctx, caller, miss)
 	if err != nil || item.Status != domain.InquiryPending || item.Answer != "" || len(model.facts) != 1 {
@@ -169,11 +157,35 @@ func TestReceptionFiltersDiscoveryAndEveryAnswerRead(t *testing.T) {
 	}
 }
 
+func assertReceptionDiscoveryScope(t *testing.T, ctx context.Context, svc *Reception, caller, other identity.Principal) {
+	t.Helper()
+	items, err := svc.Discover(ctx, caller, "订单同步失败怎么办")
+	if err != nil || len(items) != 1 || len(items[0].Topics) != 1 || items[0].Topics[0] != "订单同步" {
+		t.Fatalf("unexpected admissible discovery: %v, %v", items, err)
+	}
+	items, err = svc.Discover(ctx, other, "")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("outside audience sees assistant: %v, %v", items, err)
+	}
+}
+
+func assertReceptionAskScope(t *testing.T, ctx context.Context, svc *Reception, caller, other identity.Principal, ask InquiryInput) {
+	t.Helper()
+	if _, err := svc.Ask(ctx, other, ask); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("audience bypassed via guessed recipient: %v", err)
+	}
+	pat := caller
+	pat.AccessTokenID = "unrelated-pat"
+	if _, err := svc.Ask(ctx, pat, ask); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("personal token escaped Web session boundary: %v", err)
+	}
+}
+
 func TestReceptionThresholdFallsBackWithoutCallingModel(t *testing.T) {
 	f := newFixture(t)
 	caller, owner := employee(receptionCaller, "team-a"), employee(receptionOwner, "team-a")
 	for _, p := range []identity.Principal{caller, owner} {
-		f.service.users.(*fakeUsers).users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
+		f.users.users[p.UserID] = identity.User{ID: p.UserID, Status: "active"}
 	}
 	publishReceptionFact(t, f, "shared", "order sync retry backoff", "procedure", knowledge.AccessScope{Visibility: "teams", Teams: []string{"team-a"}}, nil)
 	publishReceptionFact(t, f, "private", "order sync", "private notes", knowledge.AccessScope{Visibility: "private"}, nil)
@@ -183,7 +195,7 @@ func TestReceptionThresholdFallsBackWithoutCallingModel(t *testing.T) {
 		inquiries: map[string]domain.Inquiry{},
 	}
 	svc := NewReception(f.service, store, receptionTestIdentities{caller.UserID: caller, owner.UserID: owner}, receptionTestAccess{}, model)
-	policy := f.service.config.(*fakeSettings)
+	policy := f.settings
 	policy.value.ReceptionMinScore = new(0.51)
 	miss := InquiryInput{OwnerID: owner.UserID, RequestID: receptionReq, Question: "How does order sync work?"}
 	item, err := svc.Ask(t.Context(), caller, miss)
@@ -214,8 +226,8 @@ func TestReceptionThresholdFallsBackWithoutCallingModel(t *testing.T) {
 func TestReceptionFactsIncludeVisibleWorkPulse(t *testing.T) {
 	f := newFixture(t)
 	caller, owner := employee(receptionCaller, "team-a"), employee(receptionOwner, "team-a")
-	f.service.users.(*fakeUsers).users[caller.UserID] = identity.User{ID: caller.UserID, Status: "active"}
-	f.service.users.(*fakeUsers).users[owner.UserID] = identity.User{ID: owner.UserID, Status: "active"}
+	f.users.users[caller.UserID] = identity.User{ID: caller.UserID, Status: "active"}
+	f.users.users[owner.UserID] = identity.User{ID: owner.UserID, Status: "active"}
 	svc := &Reception{assets: f.service}
 	now := nowUTC()
 	audience := knowledge.AccessScope{Visibility: "teams", Teams: []string{"team-a"}}

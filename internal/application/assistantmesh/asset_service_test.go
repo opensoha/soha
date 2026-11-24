@@ -126,10 +126,12 @@ func (f *fakeAudit) Record(_ context.Context, entry domainaudit.Entry) error {
 }
 
 type fixture struct {
-	service *Service
-	store   *memoryStore
-	runner  *fakeRunner
-	audit   *fakeAudit
+	service  *Service
+	store    *memoryStore
+	runner   *fakeRunner
+	audit    *fakeAudit
+	settings *fakeSettings
+	users    *fakeUsers
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -142,7 +144,7 @@ func newFixture(t *testing.T) *fixture {
 		"user-a": {ID: "user-a", Status: "active"}, "user-b": {ID: "user-b", Status: "active"}, "admin": {ID: "admin", Status: "active"},
 	}}
 	service := New(store, settings, runner, users, appaccess.NewPermissionResolver(fakeRoles{}), audit)
-	return &fixture{service: service, store: store, runner: runner, audit: audit}
+	return &fixture{service: service, store: store, runner: runner, audit: audit, settings: settings, users: users}
 }
 
 func employee(id string, teams ...string) domainidentity.Principal {
@@ -361,7 +363,7 @@ func TestWorkPulseLifetimeRules(t *testing.T) {
 func TestWorkPulseConfiguredLifetimeThroughPublishing(t *testing.T) {
 	f := newFixture(t)
 	owner := employee("user-a", "team-a")
-	policy := f.service.config.(*fakeSettings)
+	policy := f.settings
 	policy.value.WorkPulseDefaultLifetimeHours, policy.value.WorkPulseMaxLifetimeDays = 48, 20
 	asset, err := f.service.Create(t.Context(), owner, domain.AssetInput{
 		Kind: domain.KindWorkPulse, Title: "网关迁移", Body: "证书轮换中", WorkStatus: "in_progress",

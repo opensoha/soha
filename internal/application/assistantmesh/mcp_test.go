@@ -80,7 +80,11 @@ func TestAssistantMeshMCPReviewBindsProposalAudienceAndRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, draft := asset["id"].(string), asset["draftDigest"].(string)
+	id, idOK := asset["id"].(string)
+	draft, draftOK := asset["draftDigest"].(string)
+	if !idOK || !draftOK {
+		t.Fatalf("missing asset ID or draft digest: %+v", asset)
+	}
 	submit := func(scope knowledge.AccessScope) string {
 		t.Helper()
 		_, err := s.Act(ctx, author, id, "publish", ActionRequest{ExpectedDigest: draft, Audience: scope})

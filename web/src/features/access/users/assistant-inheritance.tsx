@@ -15,6 +15,7 @@ import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { api } from '@/services/api-client'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import type { AccessUser } from '../shared/types'
+import { accessKeys } from '../shared/keys'
 import { getUserLabel } from '../shared/utils'
 
 const path = '/copilot/assistant-mesh/governance/inheritance'
@@ -47,7 +48,7 @@ export function AssistantInheritance({
   const [mode, setMode] = useState<'selected' | 'all'>('selected')
   const [assetIds, setAssetIds] = useState<Key[]>([])
   const list = useInfiniteQuery({
-    queryKey: ['heya-inheritance', session, owner.id],
+    queryKey: accessKeys.heyaInheritance(session, owner.id),
     gcTime: 0,
     initialPageParam: '',
     queryFn: async ({ pageParam, signal }) => {

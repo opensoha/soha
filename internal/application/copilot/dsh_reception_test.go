@@ -42,19 +42,7 @@ func TestDSHReceptionCallbackFenceAndZeroTools(t *testing.T) {
 				RunID: start.RunID, Attempt: start.Attempt, Fence: start.Fence,
 				ProfileID: start.Assembly.ProfileID, Revision: start.Assembly.Revision, Assets: []domain.RuntimeAssetStatus{},
 			}
-			grant := start.ToolGrant
-			switch name {
-			case "native_tools":
-				report.NativeTools = []domain.DSHNativeTool{{Name: "fixture"}}
-			case "final_tools":
-				call.Request.Tools = []aigateway.WorkbenchTool{{Name: "fixture"}}
-			case "tool_history":
-				call.Request.Messages = []aigateway.WorkbenchRelayMessage{{Role: "tool"}}
-			case "wrong_grant":
-				grant = "wrong"
-			case "stale_fence":
-				call.Fence++
-			}
+			grant := configureDSHReceptionCallback(name, start.ToolGrant, &report, &call)
 			if name != "unconfirmed" {
 				_, err := s.ConfirmDSHAssembly(ctx, start.ToolGrant, report)
 				if (err != nil) != (name == "native_tools") {
@@ -87,4 +75,20 @@ func TestDSHReceptionCallbackFenceAndZeroTools(t *testing.T) {
 			}
 		})
 	}
+}
+
+func configureDSHReceptionCallback(name, grant string, report *domain.DSHAssemblyReport, call *DSHModelCall) string {
+	switch name {
+	case "native_tools":
+		report.NativeTools = []domain.DSHNativeTool{{Name: "fixture"}}
+	case "final_tools":
+		call.Request.Tools = []aigateway.WorkbenchTool{{Name: "fixture"}}
+	case "tool_history":
+		call.Request.Messages = []aigateway.WorkbenchRelayMessage{{Role: "tool"}}
+	case "wrong_grant":
+		return "wrong"
+	case "stale_fence":
+		call.Fence++
+	}
+	return grant
 }

@@ -99,7 +99,7 @@ func (r *Repository) ListProfiles(ctx context.Context, afterID string, limit int
 	if err != nil {
 		return nil, fmt.Errorf("list assistant mesh profiles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []domain.Profile{}
 	for rows.Next() {
 		var profile domain.Profile
@@ -236,7 +236,7 @@ func (r *Repository) ListInquiries(ctx context.Context, userID string, inbox boo
 		if err != nil {
 			return fmt.Errorf("list assistant mesh inquiries: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			item, err := scanInquiry(rows)
 			if err != nil {
@@ -354,7 +354,7 @@ func lockInquiryParticipants(ctx context.Context, db *gorm.DB, callerID, ownerID
 	if err != nil {
 		return fmt.Errorf("lock inquiry participants: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	found := 0
 	active := true
 	for rows.Next() {

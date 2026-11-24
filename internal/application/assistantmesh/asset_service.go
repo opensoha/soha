@@ -69,7 +69,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 		return Asset{}, err
 	}
 	asset := s.ownerAsset(record, value)
-	s.audit(ctx, principal, "assistant.mesh.asset.create", record.ID, "success", map[string]any{"kind": record.Kind, "digest": value.DraftDigest})
+	s.auditCompletedAssetAction(ctx, principal, "assistant.mesh.asset.create", record.ID, map[string]any{"kind": record.Kind, "digest": value.DraftDigest})
 	return asset, nil
 }
 

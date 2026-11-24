@@ -34,7 +34,7 @@ func (r *Repository) ResolveActiveFeishuOpenID(ctx context.Context, connectionID
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var userIDs []string
 	for rows.Next() {

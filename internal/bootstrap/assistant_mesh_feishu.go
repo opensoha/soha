@@ -40,12 +40,12 @@ func validateFeishuMeshConfig(settings cfgpkg.AIGatewayConfig) error {
 		strings.TrimSpace(cfg.TenantKey) == "" || strings.TrimSpace(cfg.ConnectionID) == "" ||
 		strings.TrimSpace(cfg.Endpoint) == "" || strings.TrimSpace(cfg.IngressToken) == "" ||
 		strings.TrimSpace(cfg.RuntimeToken) == "" {
-		return errors.New("Heya Feishu channel requires app, tenant, bot, directory connection, runtime endpoint and both channel tokens")
+		return errors.New("the Heya Feishu channel requires app, tenant, bot, directory connection, runtime endpoint and both channel tokens")
 	}
 	ingress := strings.TrimSpace(cfg.IngressToken)
 	outbound := strings.TrimSpace(cfg.RuntimeToken)
 	if ingress == outbound || ingress == strings.TrimSpace(settings.ConnectorEventSink.Token) {
-		return errors.New("Heya Feishu ingress requires a distinct token")
+		return errors.New("the Heya Feishu ingress requires a distinct token")
 	}
 	return nil
 }

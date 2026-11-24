@@ -8,6 +8,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Empty, List, Segmented, Space, Tag, Typography } from 'antd'
+import { workbenchKeys } from '../keys'
 import { useState } from 'react'
 
 const PATH = '/copilot/assistant-mesh/delegations'
@@ -26,9 +27,9 @@ const STATUS: Record<AssistantMeshDelegation['status'], string> = {
 export function AssistantDelegations({ owner }: { owner: string }) {
   const client = useQueryClient()
   const [direction, setDirection] = useState<'inbox' | 'sent'>('inbox')
-  const key = ['assistant-mesh', owner, 'delegations'] as const
+  const key = workbenchKeys.assistantMesh.delegations(owner)
   const query = useQuery({
-    queryKey: [...key, direction],
+    queryKey: workbenchKeys.assistantMesh.delegationList(owner, direction),
     queryFn: async () =>
       (await api.getEnvelope<AssistantMeshDelegationListEnvelope>(`${PATH}?direction=${direction}`)).items,
     retry: false,

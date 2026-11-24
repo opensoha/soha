@@ -48,15 +48,7 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if _, err := service.GetAssistantMeshSettings(ctx, viewer); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("viewer read = %v", err)
 	}
-	defaults, err := service.GetAssistantMeshSettings(ctx, editor)
-	if err != nil || defaults.Enabled || defaults.ExperienceCardLifetimeDays != 90 || defaults.DelegationLifetimeHours != 4 || defaults.DefaultVisibility != "private" || !defaults.AllowPermanentExperienceCards {
-		t.Fatalf("defaults = %+v, %v", defaults, err)
-	}
-	if defaults.DefaultProfileOpen == nil || *defaults.DefaultProfileOpen || defaults.ReceptionMinScore == nil ||
-		*defaults.ReceptionMinScore != 0 || defaults.WorkPulseDefaultLifetimeHours != 24 || defaults.WorkPulseMaxLifetimeDays != 14 {
-		t.Fatalf("policy defaults = %+v", defaults)
-	}
-	input := defaults
+	input := readAssistantMeshDefaults(t, ctx, service, editor)
 	input.DefaultProfileOpen = new(true)
 	input.ReceptionMinScore = new(0.75)
 	input.WorkPulseDefaultLifetimeHours = 36
@@ -77,17 +69,42 @@ func TestAssistantMeshSettingsDefaultsAndUpdate(t *testing.T) {
 	if err != nil || !got.Enabled || got.ExperienceCardLifetimeDays != 120 || got.DelegationLifetimeHours != 12 || len(got.OrganizationApproverUserIDs) != 1 || got.OrganizationApproverUserIDs[0] != activeMeshReviewer {
 		t.Fatalf("saved settings = %+v, %v", got, err)
 	}
+	assertAssistantMeshUpdateAudit(t, audit)
+	assertAssistantMeshLegacyUpdate(t, ctx, service, editor, input)
+}
+
+func readAssistantMeshDefaults(t *testing.T, ctx context.Context, service *Service, editor domainidentity.Principal) domainsettings.AssistantMeshSettings {
+	t.Helper()
+	defaults, err := service.GetAssistantMeshSettings(ctx, editor)
+	if err != nil || defaults.Enabled || defaults.ExperienceCardLifetimeDays != 90 || defaults.DelegationLifetimeHours != 4 || defaults.DefaultVisibility != "private" || !defaults.AllowPermanentExperienceCards {
+		t.Fatalf("defaults = %+v, %v", defaults, err)
+	}
+	if defaults.DefaultProfileOpen == nil || *defaults.DefaultProfileOpen || defaults.ReceptionMinScore == nil ||
+		*defaults.ReceptionMinScore != 0 || defaults.WorkPulseDefaultLifetimeHours != 24 || defaults.WorkPulseMaxLifetimeDays != 14 {
+		t.Fatalf("policy defaults = %+v", defaults)
+	}
+	return defaults
+}
+
+func assertAssistantMeshUpdateAudit(t *testing.T, audit *captureSettingsAudit) {
+	t.Helper()
 	if len(audit.entries) != 1 {
 		t.Fatalf("unexpected audit count: %d", len(audit.entries))
 	}
 	entry := audit.entries[0]
-	if entry.ActorID != "alice" || entry.Metadata["before"].(map[string]any)["enabled"] != false || entry.Metadata["after"].(map[string]any)["enabled"] != true {
+	before, beforeOK := entry.Metadata["before"].(map[string]any)
+	after, afterOK := entry.Metadata["after"].(map[string]any)
+	if !beforeOK || !afterOK || entry.ActorID != "alice" || before["enabled"] != false || after["enabled"] != true {
 		t.Fatalf("unexpected audit: %+v", audit.entries)
 	}
-	if before, after := entry.Metadata["before"].(map[string]any), entry.Metadata["after"].(map[string]any); before["defaultProfileOpen"] != false || after["defaultProfileOpen"] != true || after["receptionMinScore"] != 0.75 ||
+	if before["defaultProfileOpen"] != false || after["defaultProfileOpen"] != true || after["receptionMinScore"] != 0.75 ||
 		after["workPulseDefaultLifetimeHours"] != 36 || after["workPulseMaxLifetimeDays"] != 21 {
 		t.Fatalf("policy audit = %+v", entry)
 	}
+}
+
+func assertAssistantMeshLegacyUpdate(t *testing.T, ctx context.Context, service *Service, editor domainidentity.Principal, input domainsettings.AssistantMeshSettings) {
+	t.Helper()
 	input.DefaultProfileOpen, input.ReceptionMinScore = nil, nil
 	input.WorkPulseDefaultLifetimeHours, input.WorkPulseMaxLifetimeDays = 0, 0
 	input.DelegationLifetimeHours = 0

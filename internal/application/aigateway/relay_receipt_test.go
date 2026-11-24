@@ -98,7 +98,12 @@ func TestWorkbenchSingleAttemptDoesNotReplayToFallback(t *testing.T) {
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		firstCalls.Add(1)
-		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("upstream response writer cannot be hijacked")
+			return
+		}
+		conn, _, err := hijacker.Hijack()
 		if err != nil {
 			t.Errorf("close upstream before headers: %v", err)
 			return

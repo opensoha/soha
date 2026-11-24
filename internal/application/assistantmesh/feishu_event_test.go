@@ -18,15 +18,23 @@ const (
 )
 
 func TestParseFeishuMessage(t *testing.T) {
-	tests := []struct {
-		name       string
-		event      domainevent.ConnectorEvent
-		wantOK     bool
-		wantStage  string
-		wantTarget string
-		wantGroup  string
-		wantText   string
-	}{
+	runFeishuMessageCases(t, feishuGroupMessageCases())
+	runFeishuMessageCases(t, feishuRejectedEnvelopeCases(t))
+	runFeishuMessageCases(t, feishuDirectMessageCases(t))
+}
+
+type feishuMessageCase struct {
+	name       string
+	event      domainevent.ConnectorEvent
+	wantOK     bool
+	wantStage  string
+	wantTarget string
+	wantGroup  string
+	wantText   string
+}
+
+func feishuGroupMessageCases() []feishuMessageCase {
+	return []feishuMessageCase{
 		{
 			name:       "group bot and employee asks a question",
 			event:      feishuTestEvent("group", "@_user_1 @_user_2 how do I deploy?", feishuTestMention("@_user_1", feishuTestBot), feishuTestMention("@_user_2", feishuTestEmployee)),
@@ -69,6 +77,26 @@ func TestParseFeishuMessage(t *testing.T) {
 			wantOK: false,
 		},
 		{
+			name: "tenant mismatch on the mention fails the question",
+			event: feishuTestEvent("group", "@_user_1 @_user_2 question",
+				feishuTestMention("@_user_1", feishuTestBot),
+				map[string]any{"key": "@_user_2", "id": map[string]any{"open_id": feishuTestEmployee}, "tenant_key": "tenant_other"},
+			),
+			wantOK:    true,
+			wantStage: domain.FeishuReceipt,
+			wantGroup: feishuTestChatID,
+		},
+	}
+}
+
+func feishuRejectedEnvelopeCases(t *testing.T) []feishuMessageCase {
+	t.Helper()
+	selfSend := feishuTestEvent("group", "@_user_1 question", feishuTestMention("@_user_1", feishuTestBot))
+	body := feishuTestObject(t, selfSend.Payload, "event")
+	sender := feishuTestObject(t, body, "sender")
+	feishuTestObject(t, sender, "sender_id")["open_id"] = feishuTestBot
+	return []feishuMessageCase{
+		{
 			name: "wrong app id is ignored",
 			event: func() domainevent.ConnectorEvent {
 				event := feishuTestEvent("group", "@_user_1 question", feishuTestMention("@_user_1", feishuTestBot))
@@ -87,15 +115,19 @@ func TestParseFeishuMessage(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name: "bot self send is ignored",
-			event: func() domainevent.ConnectorEvent {
-				event := feishuTestEvent("group", "@_user_1 question", feishuTestMention("@_user_1", feishuTestBot))
-				body := event.Payload["event"].(map[string]any)
-				body["sender"].(map[string]any)["sender_id"].(map[string]any)["open_id"] = feishuTestBot
-				return event
-			}(),
+			name:   "bot self send is ignored",
+			event:  selfSend,
 			wantOK: false,
 		},
+	}
+}
+
+func feishuDirectMessageCases(t *testing.T) []feishuMessageCase {
+	t.Helper()
+	invalidID := feishuTestEvent("p2p", "@_user_1 question", feishuTestMention("@_user_1", feishuTestEmployee))
+	body := feishuTestObject(t, invalidID.Payload, "event")
+	feishuTestObject(t, body, "message")["message_id"] = "om_" + strings.Repeat("a", 126)
+	return []feishuMessageCase{
 		{
 			name:       "p2p employee mention asks a question",
 			event:      feishuTestEvent("p2p", "@_user_1 summarize the incident", feishuTestMention("@_user_1", feishuTestEmployee)),
@@ -113,16 +145,6 @@ func TestParseFeishuMessage(t *testing.T) {
 			wantText:   "check @CFO",
 		},
 		{
-			name: "tenant mismatch on the mention fails the question",
-			event: feishuTestEvent("group", "@_user_1 @_user_2 question",
-				feishuTestMention("@_user_1", feishuTestBot),
-				map[string]any{"key": "@_user_2", "id": map[string]any{"open_id": feishuTestEmployee}, "tenant_key": "tenant_other"},
-			),
-			wantOK:    true,
-			wantStage: domain.FeishuReceipt,
-			wantGroup: feishuTestChatID,
-		},
-		{
 			name: "malformed message body is ignored",
 			event: func() domainevent.ConnectorEvent {
 				event := feishuTestEvent("p2p", "@_user_1 question", feishuTestMention("@_user_1", feishuTestEmployee))
@@ -132,17 +154,15 @@ func TestParseFeishuMessage(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name: "invalid id bounds are ignored",
-			event: func() domainevent.ConnectorEvent {
-				event := feishuTestEvent("p2p", "@_user_1 question", feishuTestMention("@_user_1", feishuTestEmployee))
-				body := event.Payload["event"].(map[string]any)
-				body["message"].(map[string]any)["message_id"] = "om_" + strings.Repeat("a", 126)
-				return event
-			}(),
+			name:   "invalid id bounds are ignored",
+			event:  invalidID,
 			wantOK: false,
 		},
 	}
+}
 
+func runFeishuMessageCases(t *testing.T, tests []feishuMessageCase) {
+	t.Helper()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			job, ok := parseFeishuMessage(test.event, feishuTestAppID, feishuTestTenant, feishuTestBot)
@@ -157,6 +177,15 @@ func TestParseFeishuMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func feishuTestObject(t *testing.T, object map[string]any, key string) map[string]any {
+	t.Helper()
+	nested, ok := object[key].(map[string]any)
+	if !ok || nested == nil {
+		t.Fatalf("expected an object for %q, got %#v", key, object[key])
+	}
+	return nested
 }
 
 func feishuTestEvent(chatType, text string, mentions ...map[string]any) domainevent.ConnectorEvent {
