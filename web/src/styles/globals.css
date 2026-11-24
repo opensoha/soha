@@ -1842,6 +1842,14 @@ a {
   box-shadow: 0 0 0 1.5px var(--soha-bg-surface);
 }
 
+@media (max-width: 480px) {
+  .soha-header-right {
+    gap: 5px;
+    min-height: 40px;
+    padding-block: 4px;
+  }
+}
+
 .soha-palette-popover-body {
   padding: 6px !important;
   border-radius: 22px !important;

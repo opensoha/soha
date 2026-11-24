@@ -120,7 +120,7 @@
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
-  background: var(--soha-capsule-head-bg, var(--soha-bg-surface)) !important;
+  background: var(--soha-bg-surface-muted) !important;
 }
 
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
