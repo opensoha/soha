@@ -71,10 +71,7 @@ jobs:
       - name: Typecheck
         working-directory: web
         run: npm run typecheck
-      - name: Test
-        working-directory: web
-        run: npm test
-      - name: Coverage
+      - name: Test with coverage
         working-directory: web
         run: npm run test:coverage
       - name: Build

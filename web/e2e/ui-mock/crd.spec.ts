@@ -202,7 +202,9 @@ test('U09–U11: exact deletion confirmation, failure context, retry and duplica
   expect(catalog.deleteCalls).toEqual([])
   await input.fill(definitions[0].name)
   await submit.click()
-  await expect(dialog).toContainText('删除 CRD 定义：操作请求失败')
+  await expect(page.locator('.soha-operation-feedback')).toContainText(
+    '删除 CRD 定义：操作请求失败',
+  )
   await expect(input).toHaveValue(definitions[0].name)
   expect(catalog.deleteCalls[0]).toContain('expectedUid=synthetic-uid-0')
   catalog.failDelete = false
@@ -227,11 +229,11 @@ test('U09: unknown deletion keeps the original confirmation and blocks another r
   const submit = dialog.getByRole('button', { name: '删除定义及实例' })
   await input.fill(definitions[0].name)
   await submit.click()
-  await expect(dialog.locator('.soha-operation-feedback')).toContainText(
-    '删除 CRD 定义：请求结果不明',
-  )
-  await expect(dialog).toContainText('crd-delete-original-request')
-  await expect(dialog.locator('.soha-operation-feedback')).toHaveCount(1)
+  const notice = page.locator('.soha-operation-feedback')
+  await expect(notice).toContainText('删除 CRD 定义：请求结果不明')
+  await notice.locator('summary').click()
+  await expect(notice.getByText(/crd-delete-original-request/)).toBeVisible()
+  await expect(notice).toHaveCount(1)
   await expect(submit).toBeDisabled()
   await expect(input).toBeDisabled()
   await expect(input).toHaveValue(definitions[0].name)

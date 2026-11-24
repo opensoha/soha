@@ -456,7 +456,12 @@ describe('SoftwareLibraryPage', () => {
 
     const container = await renderPage()
     await openObjectStorageDrawer(container)
-    expect(document.body.textContent).toContain('对象存储读取失败')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      '身份数据读取失败',
+    )
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'unavailable',
+    )
     expect(document.body.textContent).not.toContain('配置对象存储')
   })
 

@@ -77,6 +77,7 @@ jobs:
     with:
       contracts_sha: ${{ needs.identity.outputs.sha }}
       recovery_control_sha: ${{ inputs.publish_mode == 'recover' && github.workflow_sha || '' }}
+      publish_mode: ${{ inputs.publish_mode }}
 
   artifacts:
     runs-on: ubuntu-latest

@@ -1,10 +1,14 @@
+/** @vitest-environment jsdom */
+
 import type { AdminTableProps } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
 import type { AuditLog } from '@/features/system'
 import { ApiError } from '@/services/api-error'
-import type { ReactNode } from 'react'
+import { App as AntdApp } from 'antd'
+import { act, type ReactNode } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { IdentityLoginRecordsPage } from './page'
 
 const state = vi.hoisted(() => ({
@@ -73,7 +77,18 @@ vi.mock('@tanstack/react-query', async (original) => ({
   },
 }))
 
+let root: ReturnType<typeof createRoot> | undefined
+let container: HTMLDivElement | undefined
+
+afterEach(async () => {
+  await act(async () => root?.unmount())
+  container?.remove()
+  root = undefined
+  container = undefined
+})
+
 beforeEach(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   state.permissions = ['identity.audit.view', 'identity.applications.view']
   state.enabled = []
   state.error = null
@@ -134,12 +149,23 @@ it('falls back to application IDs when the audit reader cannot view applications
   expect(state.enabled).toEqual([true, false])
 })
 
-it('labels stale cached audit rows and keeps them readable after a transient failure', () => {
+it('labels stale cached audit rows and keeps them readable after a transient failure', async () => {
   state.error = new Error('audit unavailable')
-  const html = renderToStaticMarkup(<IdentityLoginRecordsPage />)
-  expect(html).toContain('未更新，正在展示上次读取结果')
-  expect(html.replace(/\s/g, '')).toContain('重试')
-  expect(html).toContain('Alice')
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+  await act(async () => {
+    root!.render(
+      <AntdApp>
+        <IdentityLoginRecordsPage />
+      </AntdApp>,
+    )
+  })
+  const notice = document.querySelector('.soha-read-feedback-notification')
+  expect(notice?.textContent).toContain('未更新，正在展示上次读取结果')
+  expect(notice?.querySelector('button[aria-label="重试读取登录记录"]')).not.toBeNull()
+  expect(notice?.textContent).toContain('audit unavailable')
+  expect(container.textContent).toContain('Alice')
 })
 
 it('removes cached audit records after a real permission refusal', () => {

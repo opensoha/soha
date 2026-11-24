@@ -13,7 +13,9 @@ describe('pluginQueries', () => {
 
   it('shares normalized filters between marketplace keys and wire calls', async () => {
     const plugins = [{ id: 'plugin-1' }]
-    const marketplace = vi.spyOn(pluginApi, 'marketplace').mockResolvedValue(plugins as never)
+    const marketplace = vi
+      .spyOn(pluginApi, 'marketplaceWithMeta')
+      .mockResolvedValue(plugins as never)
     const options = pluginQueries.marketplace({ query: ' agent ', publisher: '' })
 
     expect(options.queryKey).toEqual(pluginKeys.marketplaceList({ query: 'agent' }))

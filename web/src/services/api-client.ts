@@ -92,14 +92,24 @@ async function fetchApi(
   const method = getRequestMethod(options)
 
   try {
-    const response = await withAuthCookieRequest(path, method, () => {
-      if (owner) assertAuthSession(owner)
-      return fetch(`${API_BASE_URL}${path}`, {
-        ...options,
-        credentials: options.credentials ?? 'include',
-        headers,
-      })
-    })
+    const response = await withAuthCookieRequest(
+      path,
+      method,
+      async (cookieSignal) => {
+        if (owner) assertAuthSession(owner)
+        const response = await fetch(`${API_BASE_URL}${path}`, {
+          ...options,
+          credentials: options.credentials ?? 'include',
+          headers,
+          signal: cookieSignal ?? options.signal,
+        })
+        // Cookie-changing JSON endpoints finish reading the body before releasing their slot.
+        return cookieSignal && response.body
+          ? new Response(await response.arrayBuffer(), response)
+          : response
+      },
+      options.signal,
+    )
     if (owner) assertAuthSession(owner, response)
     return response
   } catch (cause) {

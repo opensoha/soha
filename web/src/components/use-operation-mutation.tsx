@@ -114,10 +114,11 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
       }
     : receipt
 
+  // A new submission must not inherit the previous notice's auto-close timer.
   const renderedFeedback = useMemo(
     () => (
       <OperationFeedback
-        notificationKey={`soha-operation-${feedbackKey}`}
+        notificationKey={`soha-operation-${feedbackKey}-${mutation.submittedAt}`}
         submittedAt={mutation.submittedAt}
         label={label}
         target={target}

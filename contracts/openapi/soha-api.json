@@ -29898,14 +29898,36 @@
           "publisher": {
             "type": "string"
           },
+          "referenceCount": {
+            "description": "Number of stored integrations referring to the driver supplied by the plugin.",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-type-skip-optional-pointer": false
+          },
           "requestedPermissions": {
             "$ref": "#/components/schemas/PluginPermissionRequest"
+          },
+          "rollbackRequiresPermissionConfirmation": {
+            "description": "Restoring the previous version adds a permission compared to the installed version.",
+            "type": "boolean"
+          },
+          "rollbackVersion": {
+            "description": "Previous verified version available for offline rollback.",
+            "type": "string"
+          },
+          "runtimeReady": {
+            "description": "The selected executable package is serving on this execution host.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
           },
           "signatureStatus": {
             "type": "string"
           },
           "source": {
             "type": "string"
+          },
+          "sourceInfo": {
+            "$ref": "#/components/schemas/PluginSourceInfo"
           },
           "status": {
             "enum": [
@@ -49994,6 +50016,19 @@
           "publisherInfo": {
             "$ref": "#/components/schemas/MarketplacePublisher"
           },
+          "publisherKeys": {
+            "description": "Publisher keys from this server's official repository catalog registration.",
+            "items": {
+              "pattern": "^[A-Za-z0-9+/]{43}=$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "repositoryUrl": {
+            "description": "Public GitHub repository registered by the marketplace catalog. Release data is queried separately.",
+            "type": "string",
+            "x-go-name": "RepositoryURL"
+          },
           "riskLevel": {
             "type": "string"
           },
@@ -50002,6 +50037,9 @@
           },
           "sourceId": {
             "type": "string"
+          },
+          "sourceInfo": {
+            "$ref": "#/components/schemas/PluginSourceInfo"
           },
           "sourceUrl": {
             "type": "string"
@@ -50059,6 +50097,9 @@
               "$ref": "#/components/schemas/MarketplacePlugin"
             },
             "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MarketplacePluginListMeta"
           }
         },
         "required": [
@@ -50066,10 +50107,27 @@
         ],
         "type": "object"
       },
+      "MarketplacePluginListMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceSourceStatus"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "MarketplacePluginVersion": {
         "additionalProperties": false,
         "properties": {
           "checksum": {
+            "type": "string"
+          },
+          "commitSha": {
+            "description": "Publisher-declared source commit for this immutable release. This declaration is not a signature or proof of origin.",
+            "pattern": "^[0-9a-f]{40}$",
             "type": "string"
           },
           "deprecated": {
@@ -50139,6 +50197,34 @@
         "required": [
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "MarketplaceSourceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Stable warning code for an unavailable source, when known.",
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "MarketplaceSourceStatusAvailable",
+              "MarketplaceSourceStatusUnavailable"
+            ]
+          }
+        },
+        "required": [
+          "sourceId",
+          "status"
         ],
         "type": "object"
       },
@@ -67910,6 +67996,30 @@
       },
       "PluginManifest": {
         "additionalProperties": false,
+        "else": {
+          "not": {
+            "required": [
+              "components"
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "runtime": {
+              "properties": {
+                "mode": {
+                  "const": "executable-package-v1"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "required": [
+            "runtime"
+          ]
+        },
         "properties": {
           "assets": {
             "$ref": "#/components/schemas/PluginAssetSnapshot"
@@ -67922,6 +68032,10 @@
           },
           "compatibility": {
             "$ref": "#/components/schemas/PluginCompatibility"
+          },
+          "components": {
+            "$ref": "#/components/schemas/PluginPackageComponents",
+            "minProperties": 1
           },
           "configSchema": {
             "$ref": "#/components/schemas/JSONSchema"
@@ -68000,6 +68114,33 @@
           "publisher",
           "type"
         ],
+        "then": {
+          "properties": {
+            "companionPack": false,
+            "configSchema": {
+              "properties": {
+                "x-soha-test-connection-action": {
+                  "const": "storage.testConnection"
+                }
+              }
+            },
+            "id": {
+              "maxLength": 255
+            },
+            "type": {
+              "not": {
+                "const": "companion-pack"
+              }
+            },
+            "version": {
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+            }
+          },
+          "required": [
+            "components"
+          ]
+        },
         "type": "object"
       },
       "PluginManifestEnvelope": {
@@ -68117,6 +68258,18 @@
           "signals",
           "capabilities"
         ],
+        "type": "object"
+      },
+      "PluginPackageComponents": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/PluginStorageDriverPackage"
+          },
+          "web": {
+            "$ref": "#/components/schemas/PluginReleaseArtifact"
+          }
+        },
         "type": "object"
       },
       "PluginPackageDescriptor": {
@@ -68245,6 +68398,472 @@
         ],
         "type": "object"
       },
+      "PluginReleaseArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "byteLength": {
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Flat filename of one asset attached to the pinned GitHub Release.",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "sha256",
+          "byteLength"
+        ],
+        "type": "object"
+      },
+      "PluginReleaseAttestation": {
+        "additionalProperties": false,
+        "properties": {
+          "commitSha": {
+            "pattern": "^[a-f0-9]{40}$",
+            "type": "string"
+          },
+          "components": {
+            "$ref": "#/components/schemas/PluginPackageComponents"
+          },
+          "pluginId": {
+            "maxLength": 255,
+            "pattern": "^[a-z0-9][a-z0-9.-]*\\.[a-z0-9][a-z0-9._-]*$",
+            "type": "string"
+          },
+          "rawManifestSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "repository": {
+            "pattern": "^https://github\\.com/[a-z0-9-]+/[a-z0-9_.-]+$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "1",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "pluginId",
+          "version",
+          "repository",
+          "commitSha",
+          "rawManifestSha256",
+          "components"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryInstallRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enable": {
+            "description": "Manifest-only installs can be enabled explicitly. Signed executable packages require a separate enable operation.",
+            "type": "boolean"
+          },
+          "previewToken": {
+            "description": "An unexpired token issued to the same caller and scope by the repository preview endpoint.",
+            "maxLength": 8192,
+            "minLength": 1,
+            "not": {
+              "const": "preview-only"
+            },
+            "type": "string"
+          }
+        },
+        "required": [
+          "previewToken"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryPreview": {
+        "additionalProperties": false,
+        "else": {
+          "if": {
+            "properties": {
+              "manifest": {
+                "required": [
+                  "components"
+                ]
+              }
+            }
+          },
+          "properties": {
+            "previewToken": {
+              "not": {
+                "const": "preview-only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "installEligibility": {
+                "const": "confirmable"
+              },
+              "releaseAttestation": {
+                "properties": {
+                  "components": {
+                    "minProperties": 1
+                  }
+                }
+              },
+              "signatureStatus": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "installEligibility",
+              "releaseAttestation"
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "installEligibility": {
+              "enum": [
+                "signed-release-required",
+                "publisher-trust-required"
+              ]
+            }
+          },
+          "required": [
+            "installEligibility"
+          ]
+        },
+        "properties": {
+          "checksumStatus": {
+            "description": "A computed digest can bind confirmation to the preview; it does not authenticate the publisher.",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "installEligibility": {
+            "description": "Absent for legacy previews. A signed-release-required or publisher-trust-required preview is informational and cannot authorize installation or upgrade.",
+            "enum": [
+              "confirmable",
+              "signed-release-required",
+              "publisher-trust-required"
+            ],
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/PluginManifest"
+          },
+          "previewToken": {
+            "description": "For a read-only preview this field is the literal preview-only, which is never a credential. Otherwise a server-signed token bound to the caller, scope, repository, immutable commit, plugin identity and manifest digest.",
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "publisherKeyFingerprint": {
+            "description": "SHA-256 of the raw 32-byte candidate Ed25519 public key. A fingerprint alone does not establish trust.",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "releaseAttestation": {
+            "$ref": "#/components/schemas/PluginReleaseAttestation"
+          },
+          "signatureStatus": {
+            "description": "A signature declared by a repository is not verified until checked against a trusted key.",
+            "type": "string"
+          },
+          "sourceInfo": {
+            "$ref": "#/components/schemas/PluginRepositoryPreviewSource"
+          }
+        },
+        "required": [
+          "manifest",
+          "sourceInfo",
+          "checksumStatus",
+          "signatureStatus",
+          "previewToken",
+          "expiresAt"
+        ],
+        "then": {
+          "if": {
+            "properties": {
+              "installEligibility": {
+                "const": "publisher-trust-required"
+              }
+            }
+          },
+          "properties": {
+            "manifest": {
+              "required": [
+                "components"
+              ]
+            },
+            "previewToken": {
+              "const": "preview-only"
+            },
+            "releaseAttestation": {
+              "properties": {
+                "components": {
+                  "minProperties": 1
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "signatureStatus": {
+                "const": "untrusted"
+              }
+            },
+            "required": [
+              "publisherKeyFingerprint",
+              "releaseAttestation"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PluginRepositoryPreviewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PluginRepositoryPreview"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "marketplaceSourceId": {
+            "description": "Configured repository catalog source. The server verifies the plugin and repository binding.",
+            "type": "string",
+            "x-go-name": "MarketplaceSourceID"
+          },
+          "pluginId": {
+            "description": "Marketplace plugin identity. Supply with marketplaceSourceId for a registered repository preview.",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Optional branch, tag or commit. A ref in the URL must match this value if both are supplied. A bare URL selects the latest stable release, or asks the caller to explicitly select a branch when no stable release exists.",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "repositoryUrl": {
+            "description": "Public GitHub repository, tree revision, or published release tag URL. The manifest must be at the repository root.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "pattern": "^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+(/(tree|releases/tag)/[^?#\\s]+)?/?$",
+            "type": "string"
+          },
+          "trustPublisherFingerprint": {
+            "description": "Administrator acknowledgement of the exact publisher key shown by a read-only preview.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repositoryUrl"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryPreviewSource": {
+        "additionalProperties": false,
+        "properties": {
+          "canonicalSource": {
+            "pattern": "^https://github\\.com/[a-z0-9-]+/[a-z0-9_.-]+$",
+            "type": "string"
+          },
+          "commitSha": {
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "kind": {
+            "const": "github-repo",
+            "type": "string"
+          },
+          "official": {
+            "description": "True when the server confirms that the repository was selected from a configured official catalog.",
+            "type": "boolean"
+          },
+          "pinnedRef": {
+            "description": "Selected repository revision, including a qualified release tag when available.",
+            "type": "string"
+          },
+          "rawManifestChecksum": {
+            "description": "Digest of the original repository manifest bytes.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "canonicalSource",
+          "commitSha",
+          "rawManifestChecksum",
+          "official"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "prerelease": {
+            "description": "True for a published prerelease. Prereleases require an explicit revision choice.",
+            "type": "boolean"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string",
+            "x-go-type-skip-optional-pointer": false
+          },
+          "releaseUrl": {
+            "type": "string",
+            "x-go-name": "ReleaseURL"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRefList": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/PluginRepositoryRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "refs",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRefListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PluginRepositoryRefList"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRefsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "release",
+              "branch"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "PluginRepositoryRefsRequestKindRelease",
+              "PluginRepositoryRefsRequestKindBranch"
+            ]
+          },
+          "page": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer",
+            "x-go-type-skip-optional-pointer": false
+          },
+          "repositoryUrl": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string",
+            "x-go-name": "RepositoryURL"
+          }
+        },
+        "required": [
+          "repositoryUrl",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryRollbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmPermissionIncrease": {
+            "description": "Explicitly acknowledges additional permissions when restoring the retained version.",
+            "type": "boolean"
+          },
+          "expectedUpdatedAt": {
+            "description": "Revision of the installed version shown during review.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedVersion": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "description": "The retained verified version shown to the operator.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "expectedUpdatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PluginRepositoryUpgradeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmPermissionIncrease": {
+            "description": "Explicitly acknowledges additional permissions shown for the selected upgrade. Does not grant any authorization.",
+            "type": "boolean"
+          },
+          "previewToken": {
+            "description": "An unexpired token issued to the same caller and scope for the selected repository version.",
+            "maxLength": 8192,
+            "minLength": 1,
+            "not": {
+              "const": "preview-only"
+            },
+            "type": "string"
+          }
+        },
+        "required": [
+          "previewToken"
+        ],
+        "type": "object"
+      },
       "PluginResourceExtensions": {
         "additionalProperties": false,
         "properties": {
@@ -68301,7 +68920,8 @@
             "enum": [
               "manifest-only",
               "external-http",
-              "managed-container"
+              "managed-container",
+              "executable-package-v1"
             ],
             "type": "string"
           },
@@ -68335,6 +68955,95 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "PluginSourceInfo": {
+        "additionalProperties": false,
+        "description": "Server-computed distribution source. Never use author-provided catalog or manifest claims as trust evidence.",
+        "properties": {
+          "canonicalSource": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "commitSha": {
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "marketplace",
+              "github-repo",
+              "direct-manifest"
+            ],
+            "type": "string"
+          },
+          "official": {
+            "description": "True only for a server-configured official catalog source. This is separate from manifest integrity and signature verification.",
+            "type": "boolean"
+          },
+          "pinnedRef": {
+            "description": "Selected repository revision, including a qualified release tag when available. Use commitSha for the immutable revision.",
+            "type": "string"
+          },
+          "publisherKeyFingerprint": {
+            "description": "SHA-256 of the verified raw Ed25519 publisher public key.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "rawManifestChecksum": {
+            "description": "Digest of the original manifest bytes, not of a reserialized JSON object.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "releaseAttestationDigest": {
+            "description": "SHA-256 of the verified release inventory.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "repositoryUrl": {
+            "description": "The author repository for a repository-backed marketplace installation.",
+            "type": "string",
+            "x-go-name": "RepositoryURL"
+          },
+          "sourceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "canonicalSource",
+          "official"
+        ],
+        "type": "object"
+      },
+      "PluginStorageDriverPackage": {
+        "additionalProperties": false,
+        "properties": {
+          "driverId": {
+            "pattern": "^[a-z][a-z0-9.-]{0,126}$",
+            "type": "string"
+          },
+          "platforms": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PluginReleaseArtifact"
+            },
+            "minProperties": 1,
+            "propertyNames": {
+              "pattern": "^[a-z0-9]+/[a-z0-9]+$",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "protocol": {
+            "const": "object-storage/v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "driverId",
+          "protocol",
+          "platforms"
         ],
         "type": "object"
       },
@@ -68372,6 +69081,58 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "PluginUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "installedVersion": {
+            "type": "string"
+          },
+          "marketplaceSourceId": {
+            "type": "string",
+            "x-go-name": "MarketplaceSourceID"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "releaseUrl": {
+            "type": "string",
+            "x-go-name": "ReleaseURL"
+          },
+          "repositoryUrl": {
+            "type": "string",
+            "x-go-name": "RepositoryURL"
+          },
+          "targetVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pluginId",
+          "repositoryUrl",
+          "installedVersion",
+          "targetVersion",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "PluginUpdateListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PluginUpdate"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
         "type": "object"
       },
       "PodMetrics": {
@@ -74249,6 +75010,41 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/SourceTag"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "StorageDriverDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "configSchema": {
+            "$ref": "#/components/schemas/JSONSchema"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "configSchema"
+        ],
+        "type": "object"
+      },
+      "StorageDriverListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StorageDriverDescriptor"
             },
             "type": "array"
           }
@@ -83861,7 +84657,7 @@
   "info": {
     "description": "Public OpenSoha core API contract. This first contract focuses on stable cross-repository boundaries: auth, health, runner-facing control-plane callbacks, AI Gateway, and MCP capability discovery. Pod session WebSocket targets and their UID-aware ticket requirements are described separately in x-soha-websocket-paths to preserve HTTP client generation.\n",
     "title": "Soha API",
-    "version": "0.2.0"
+    "version": "0.2.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -135204,6 +136000,117 @@
         ]
       }
     },
+    "/plugins/{pluginID}/repository/rollback": {
+      "post": {
+        "description": "Restores the previous verified local package without contacting its repository.",
+        "operationId": "rollbackRepositoryPlugin",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PluginID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstalledPluginEnvelope"
+                }
+              }
+            },
+            "description": "Previous verified package restored."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.upgrade"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/plugins/{pluginID}/repository/upgrade": {
+      "post": {
+        "description": "Upgrades a repository-installed plugin using a preview token bound to a new immutable commit from its existing source. Clients must not fall back to the legacy upgrade route when this operation is unavailable.",
+        "operationId": "upgradeRepositoryPlugin",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PluginID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryUpgradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstalledPluginEnvelope"
+                }
+              }
+            },
+            "description": "Updated plugin snapshot from the existing source."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.upgrade"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/plugins/{pluginID}/rollback": {
       "post": {
         "operationId": "rollbackInstalledPlugin",
@@ -135288,6 +136195,9 @@
               }
             },
             "description": "Plugin upgraded and manifest snapshot refreshed."
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "tags": [
@@ -135318,6 +136228,9 @@
               }
             },
             "description": "Installed plugin snapshot."
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           }
         },
         "tags": [
@@ -135462,6 +136375,238 @@
         "tags": [
           "Plugins"
         ]
+      }
+    },
+    "/plugins/repository/install": {
+      "post": {
+        "description": "Installs the immutable repository version reviewed in preview. Clients must not fall back to the legacy install route when this operation is unavailable.",
+        "operationId": "installRepositoryPlugin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstalledPluginEnvelope"
+                }
+              }
+            },
+            "description": "Installed plugin snapshot."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.install"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/plugins/repository/preview": {
+      "post": {
+        "description": "Requires plugin.install before fetching a supported public repository. Resolves the requested revision to a full commit and validates the root manifest without installing or enabling the plugin.",
+        "operationId": "previewRepositoryPlugin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRepositoryPreviewEnvelope"
+                }
+              }
+            },
+            "description": "Validated manifest and opaque short-lived confirmation token. Clients must not persist, log or decode the token.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "description": "no-store",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          },
+          "504": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.install"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/plugins/repository/refs": {
+      "post": {
+        "description": "Reads a page of public published releases or branch choices for a GitHub plugin repository.",
+        "operationId": "listPluginRepositoryRefs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRepositoryRefsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRepositoryRefListEnvelope"
+                }
+              }
+            },
+            "description": "The requested page of repository revisions."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/plugins/updates": {
+      "get": {
+        "description": "Checks up to 24 installed plugins for higher stable releases from their recorded sources. Pass the installed IDs visible on the current page to check a specific set.",
+        "operationId": "listPluginUpdates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pluginId",
+            "schema": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 24,
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginUpdateListEnvelope"
+                }
+              }
+            },
+            "description": "A list of available same-source upgrades."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "504": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Plugins"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "plugin.view"
+          ],
+          "mode": "all"
+        }
       }
     },
     "/portal/applications": {
@@ -138475,6 +139620,32 @@
           }
         },
         "security": [],
+        "tags": [
+          "System Integrations"
+        ]
+      }
+    },
+    "/system-integrations/storage-drivers": {
+      "get": {
+        "operationId": "listSystemIntegrationStorageDrivers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageDriverListEnvelope"
+                }
+              }
+            },
+            "description": "Verified storage drivers available to the system integration form."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
         "tags": [
           "System Integrations"
         ]

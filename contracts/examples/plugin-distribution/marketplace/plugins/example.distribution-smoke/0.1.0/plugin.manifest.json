@@ -1,0 +1,14 @@
+{
+  "id": "example.distribution-smoke",
+  "name": "Distribution Smoke Pack",
+  "version": "0.1.0",
+  "publisher": "example",
+  "type": "skill-pack",
+  "description": "Registers a sample extension without loading assets or starting a runtime.",
+  "runtime": { "mode": "manifest-only" },
+  "extensionPoints": {
+    "ai": {
+      "skillPacks": [{ "id": "distribution-smoke", "label": "Distribution Smoke Pack" }]
+    }
+  }
+}

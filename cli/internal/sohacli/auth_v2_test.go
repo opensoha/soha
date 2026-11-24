@@ -482,6 +482,8 @@ func TestDeviceLoginResumesOriginalClaim(t *testing.T) {
 				t.Error("resume changed original claim identity")
 			}
 			if !approved.Load() {
+				// Move the next poll beyond the context deadline.
+				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(503)
 				_, _ = w.Write([]byte(`{"error":{"code":"unavailable","message":"test"}}`))
 				return
@@ -494,12 +496,13 @@ func TestDeviceLoginResumesOriginalClaim(t *testing.T) {
 	}))
 	defer server.Close()
 	args := []string{"login", "--server", server.URL, "--profile", "local", "--device-code", "--no-browser", "--credential-store", "file"}
-	first, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	first, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	var out, diagnostics bytes.Buffer
 	code := Run(first, args, Runtime{In: strings.NewReader(""), Out: &out, Err: &diagnostics, ConfigPath: path})
-	if code != 1 || creates.Load() != 1 || claims.Load() != 1 {
-		t.Fatal("initial interrupted claim was not retained")
+	if code != 1 || !errors.Is(first.Err(), context.DeadlineExceeded) || creates.Load() != 1 || claims.Load() != 1 {
+		t.Fatalf("initial claim was not interrupted by the deadline: exit=%d, context=%v, creates=%d, claims=%d",
+			code, first.Err(), creates.Load(), claims.Load())
 	}
 	approved.Store(true)
 	out.Reset()

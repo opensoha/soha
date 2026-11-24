@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { App } from 'antd'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -63,7 +64,9 @@ async function mount() {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <Subject />
+        <App>
+          <Subject />
+        </App>
       </QueryClientProvider>,
     ),
   )
@@ -144,7 +147,11 @@ describe('personal Key rotation recovery', () => {
       ),
     ).not.toContain('sensitive-test-new-key')
     expect(sessionStorage.length).toBe(0)
-    expect(container.textContent).toContain('旧 Key 已撤销')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        '旧 Key 已撤销',
+      ),
+    )
   })
   it('reuses the original request on retry and resolves an outcome without replaying plaintext', async () => {
     vi.mocked(authProfileApi.rotateGatewayToken).mockRejectedValue(
@@ -166,8 +173,11 @@ describe('personal Key rotation recovery', () => {
     })
     await click('核对轮换结果')
     expect(onValue).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('replacement-test')
-    expect(container.textContent).toContain('新明文不能恢复')
+    await vi.waitFor(() => {
+      const feedback = document.querySelector('.soha-operation-feedback')?.textContent
+      expect(feedback).toContain('replacement-test')
+      expect(feedback).toContain('新明文不能恢复')
+    })
     expect(sessionStorage.length).toBe(0)
   })
   it('does not show a late plaintext response after the browser account changes', async () => {

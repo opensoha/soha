@@ -398,7 +398,10 @@ test('failed graph refresh retains facts; forbidden refresh clears graph and ins
   const inspector = panel.getByRole('complementary', { name: '选中资源信息' })
   fixture.state.status = 500
   await panel.getByRole('button', { name: '刷新资源关系', exact: true }).click()
-  await expect(panel.getByRole('alert')).toContainText('正在展示上次读取结果', { timeout: 15_000 })
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
+    '正在展示上次读取结果',
+    { timeout: 15_000 },
+  )
   await expect(inspector).toContainText('8080')
   fixture.state.status = 403
   await panel.getByRole('button', { name: '刷新资源关系', exact: true }).click()

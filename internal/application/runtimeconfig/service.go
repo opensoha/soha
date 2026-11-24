@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -252,11 +253,10 @@ func (s *Service) validate(request sohaapi.RuntimeConfigChangeRequest) sohaapi.R
 				result.Issues = append(result.Issues, issue("invalid_type", key, err.Error()))
 				continue
 			}
-			if definition.Validate != nil {
-				if err := definition.Validate(value); err != nil {
-					result.Issues = append(result.Issues, issue("invalid_value", key, err.Error()))
-					continue
-				}
+			value, err = definition.validatedValue(value)
+			if err != nil {
+				result.Issues = append(result.Issues, issue("invalid_value", key, err.Error()))
+				continue
 			}
 			proposed = value
 		}
@@ -279,6 +279,9 @@ func (s *Service) validate(request sohaapi.RuntimeConfigChangeRequest) sohaapi.R
 	if aiHierarchyTouched && proposedAssistantEnabled && !proposedAIEnabled {
 		result.Issues = append(result.Issues, issue("dependency_required", KeyAssistantGlobal, "global AI assistant requires the AI workbench to be enabled"))
 	}
+	if err := current.validateMarketplaceChanges(result.Changes); err != nil {
+		result.Issues = append(result.Issues, issue("invalid_value", KeyMarketplaceThirdPartyURLs, err.Error()))
+	}
 	result.Valid = len(result.Issues) == 0
 	return result
 }
@@ -290,14 +293,26 @@ func (s *Service) commitAndApply(ctx context.Context, principal domainidentity.P
 	changes := make([]sohaapi.RuntimeConfigChange, 0, len(request.Changes))
 	for _, change := range request.Changes {
 		definition, _ := s.registry.Definition(change.Key)
+		if isMarketplaceConfigKey(definition.Key) {
+			change.Key = definition.Key
+		}
 		if change.Reset {
 			delete(overrides, change.Key)
 			changes = append(changes, sohaapi.RuntimeConfigChange{Key: change.Key, Reset: true})
 			continue
 		}
-		value, _ := normalizeValue(definition.ValueType, change.Value)
+		value, err := normalizedChangeValue(definition, change.Value)
+		if err != nil {
+			return sohaapi.RuntimeConfigApplyResult{}, err
+		}
 		overrides[change.Key] = value
 		changes = append(changes, sohaapi.RuntimeConfigChange{Key: change.Key, Value: redacted(definition, value)})
+	}
+	if rollbackRevisionID != "" && slices.ContainsFunc(changes, func(change sohaapi.RuntimeConfigChange) bool { return isMarketplaceConfigKey(change.Key) }) {
+		candidate := Snapshot{registry: s.registry, Overrides: overrides}
+		if _, err := candidate.ManagedMarketplaceSources(); err != nil {
+			return sohaapi.RuntimeConfigApplyResult{}, err
+		}
 	}
 	now := time.Now().UTC()
 	version := previousDesired.Version + 1
@@ -310,7 +325,7 @@ func (s *Service) commitAndApply(ctx context.Context, principal domainidentity.P
 	}
 	application := domainruntimeconfig.Application{
 		ID: applicationID, RevisionID: revisionID, Version: version,
-		Status: sohaapi.RuntimeConfigApplicationStatusPending, Items: pendingItems(s.registry, request.Changes),
+		Status: sohaapi.RuntimeConfigApplicationStatusPending, Items: pendingItems(s.registry, changes),
 		CreatedAt: now, UpdatedAt: now,
 	}
 	state, err := s.store.Commit(ctx, domainruntimeconfig.Commit{ExpectedVersion: request.ExpectedVersion, Revision: revision, Application: application})
@@ -321,7 +336,7 @@ func (s *Service) commitAndApply(ctx context.Context, principal domainidentity.P
 		return sohaapi.RuntimeConfigApplyResult{}, err
 	}
 	next := snapshotFromState(s.registry, state)
-	keys := changeKeys(request.Changes)
+	keys := changeKeys(changes)
 	effective := s.effectiveCandidate(previous, next, keys)
 	s.desired.Store(next)
 	application.Items, err = s.applyHooks(ctx, previous, effective, keys)
@@ -447,6 +462,27 @@ func snapshotWithRevision(effective, desired Snapshot) Snapshot {
 	effective.ActiveRevisionID = desired.ActiveRevisionID
 	effective.Overrides = cloneValues(effective.Overrides)
 	return effective
+}
+
+func (d Definition) validatedValue(value any) (any, error) {
+	if d.normalize != nil {
+		return d.normalize(value)
+	}
+	if d.Validate != nil {
+		return value, d.Validate(value)
+	}
+	return value, nil
+}
+
+func normalizedChangeValue(definition Definition, input any) (any, error) {
+	value, err := normalizeValue(definition.ValueType, input)
+	if definition.normalize == nil {
+		return value, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", apperrors.ErrInvalidArgument, definition.Key, err)
+	}
+	return definition.normalize(value)
 }
 
 func normalizeValue(kind sohaapi.RuntimeConfigValueType, value any) (any, error) {

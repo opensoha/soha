@@ -764,6 +764,12 @@ const apiGetMock = vi.hoisted(() =>
         },
       }
     }
+    if (
+      path === '/copilot/sessions/inaccessible' ||
+      path.startsWith('/copilot/sessions/inaccessible/messages')
+    ) {
+      throw new ApiError(403, 'Session access denied', { method: 'GET' })
+    }
     throw new Error(`Unhandled GET ${path}`)
   }),
 )
@@ -3065,8 +3071,10 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
   it('does not quote inaccessible sessions or send session commands to the model', async () => {
     const container = await renderPage()
     await submitSenderMessage(container, '/session inaccessible')
-    await waitForWorkbenchText(container, '无法读取此会话')
-    expect(container.textContent).toContain('无法读取此会话')
+    await waitForWorkbenchText(container, '来源会话无访问权限')
+    expect(container.querySelector('[role="alert"].soha-read-feedback')?.textContent).toContain(
+      '来源会话无访问权限',
+    )
     expect(container.textContent).not.toContain('插入会话引用')
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
   })
@@ -3463,7 +3471,12 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       expect(container.textContent).toContain('正在停止任务，等待后台确认')
       expect(container.querySelector<HTMLTextAreaElement>('textarea')?.readOnly).toBe(true)
       expect(streamWorkbenchMessageMock).toHaveBeenCalledTimes(1)
-      if (outcome === 'failed') expect(document.body.textContent).toContain('取消接口暂时不可用')
+      if (outcome === 'failed') {
+        await waitForWorkbenchText(document.body, '取消接口暂时不可用')
+        expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+          '取消接口暂时不可用',
+        )
+      }
       await act(async () => {
         testState.cancelRunsGate = undefined
         testState.cancelRunsError = false

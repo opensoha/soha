@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,27 +14,56 @@ test('active release accepts exact Core versions and rejects prefixed or unrelat
   const steps = workflow.jobs.release.steps
   const script = steps.find((step) => step.name === 'Verify release version').run
   const root = mkdtempSync(join(tmpdir(), 'soha-core-version-'))
-  mkdirSync(join(root, 'deploy'))
-  writeFileSync(
-    join(root, 'deploy/kustomization.yaml'),
-    '  - name: ghcr.io/opensoha/soha\n    newTag: v1.2.3\n',
-  )
-  writeFileSync(
-    join(root, 'deploy/deployment.yaml'),
-    '          image: ghcr.io/opensoha/soha:v1.2.3\n',
-  )
-  const run = (version, ref = 'refs/tags/v1.2.3') =>
-    spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
-      cwd: root,
-      env: {
-        ...process.env,
-        RELEASE_VERSION: version,
-        GITHUB_REF: ref,
-        GITHUB_REF_NAME: ref.replace(/^refs\/(?:heads|tags)\//, ''),
-      },
-    }).status
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' })
   try {
+    mkdirSync(join(root, 'deploy'))
+    writeFileSync(
+      join(root, 'deploy/kustomization.yaml'),
+      '  - name: ghcr.io/opensoha/soha\n    newTag: v1.2.3\n',
+    )
+    writeFileSync(
+      join(root, 'deploy/deployment.yaml'),
+      '          image: ghcr.io/opensoha/soha:v1.2.3\n',
+    )
+    const notes = 'docs/releases/v1.2.3.md'
+    mkdirSync(join(root, 'docs/releases'), { recursive: true })
+    writeFileSync(join(root, notes), '# Soha v1.2.3 · Fixture\n\nVerified release notes.\n')
+    git('init', '--quiet')
+    git('add', notes)
+    git(
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.invalid',
+      'commit',
+      '--quiet',
+      '--no-gpg-sign',
+      '-m',
+      'release notes fixture',
+    )
+    const sha = git('rev-parse', 'HEAD').trim()
+    writeFileSync(join(root, notes), 'Uncommitted text.\n')
+    const run = (version, ref = 'refs/tags/v1.2.3') =>
+      spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        cwd: root,
+        env: {
+          ...process.env,
+          RELEASE_VERSION: version,
+          RELEASE_SHA: sha,
+          RUNNER_TEMP: root,
+          GITHUB_REF: ref,
+          GITHUB_REF_NAME: ref.replace(/^refs\/(?:heads|tags)\//, ''),
+        },
+      }).status
     assert.equal(run('v1.2.3'), 0)
+    assert.equal(
+      readFileSync(join(root, 'soha-release-title.txt'), 'utf8'),
+      'Soha v1.2.3 · Fixture\n',
+    )
+    assert.equal(
+      readFileSync(join(root, 'soha-release-notes.md'), 'utf8'),
+      'Verified release notes.\n',
+    )
     assert.equal(run('v1.2.3', 'refs/heads/main'), 0)
     for (const value of ['contracts/v1.2.3', '1.2.3', 'v1.2.3-rc.1', 'v1.2.4', 'v1.2.3\n'])
       assert.notEqual(run(value), 0)

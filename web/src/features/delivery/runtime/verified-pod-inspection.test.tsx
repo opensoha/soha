@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act } from 'react'
+import { App } from 'antd'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
@@ -54,13 +55,15 @@ async function render(mode: 'details' | 'events' = 'details') {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <VerifiedPodInspection
-          clusterId="cluster"
-          namespace="team"
-          podName="api"
-          expectedUid="original"
-          mode={mode}
-        />
+        <App>
+          <VerifiedPodInspection
+            clusterId="cluster"
+            namespace="team"
+            podName="api"
+            expectedUid="original"
+            mode={mode}
+          />
+        </App>
       </QueryClientProvider>,
     ),
   )
@@ -169,12 +172,17 @@ it('offers retry when event history cannot be loaded', async () => {
   state.pod.mockResolvedValue({ uid: 'original' })
   state.events.mockRejectedValue(new Error('unavailable'))
   await render('events')
-  expect(document.body.textContent).toContain('Pod 事件读取失败')
+  expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+    'Pod 事件读取失败',
+  )
   state.events.mockResolvedValue([])
   const retry = [...document.querySelectorAll('button')].find(
     (button) => button.getAttribute('aria-label') === '重试读取Pod 事件',
   )!
-  await act(async () => retry.click())
+  await act(async () => {
+    retry.click()
+    await Promise.resolve()
+  })
   expect(state.events).toHaveBeenCalledTimes(2)
 })
 it('does not fetch events for a replaced Pod or without view permission', async () => {
@@ -202,14 +210,16 @@ async function clickAndSettle(label: string) {
     await new Promise((resolve) => setTimeout(resolve, 40))
   })
 }
-it('retains cached event history after 503 and recovers through inline retry', async () => {
+it('retains cached event history after 503 and recovers through notification retry', async () => {
   state.pod.mockResolvedValue({ uid: 'original' })
   state.events.mockResolvedValue([historicalEvent])
   await render('events')
   state.events.mockRejectedValue(new ApiError(503, 'temporarily unavailable'))
   await clickAndSettle('刷新 Pod 事件')
   expect(document.body.textContent).toContain('Historical readiness timeout')
-  expect(document.body.textContent).toContain('未更新，正在展示上次读取结果')
+  expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+    '未更新，正在展示上次读取结果',
+  )
   expect(document.body.textContent).not.toContain('没有匹配的 Pod 事件')
   state.events.mockResolvedValue([{ ...historicalEvent, message: 'Updated event history' }])
   await clickAndSettle('重试读取Pod 事件')

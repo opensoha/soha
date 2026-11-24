@@ -1,7 +1,12 @@
 import { mutationOptions, type QueryClient } from '@tanstack/react-query'
 import { pluginApi } from './plugin-api'
 import { pluginKeys, pluginMutationKeys } from './keys'
-import type { PluginConfigRequest, PluginInstallRequest } from './plugin-model'
+import type {
+  PluginConfigRequest,
+  PluginInstallRequest,
+  PluginRepositoryInstallRequest,
+  PluginRepositoryUpgradeRequest,
+} from './plugin-model'
 
 export interface PluginLifecycleVariables {
   pluginId: string
@@ -15,6 +20,10 @@ export interface ConfigurePluginVariables extends PluginLifecycleVariables {
   input: PluginConfigRequest
 }
 
+export interface RepositoryUpgradeVariables extends PluginLifecycleVariables {
+  input: PluginRepositoryUpgradeRequest
+}
+
 export function invalidatePluginQueries(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: pluginKeys.all })
 }
@@ -24,6 +33,19 @@ export const pluginMutations = {
     mutationOptions({
       mutationKey: pluginMutationKeys.install(),
       mutationFn: (input: PluginInstallRequest) => pluginApi.install(input),
+      onSuccess: () => invalidatePluginQueries(queryClient),
+    }),
+  repositoryInstall: (queryClient: QueryClient) =>
+    mutationOptions({
+      mutationKey: pluginMutationKeys.repositoryInstall(),
+      mutationFn: (input: PluginRepositoryInstallRequest) => pluginApi.repositoryInstall(input),
+      onSuccess: () => invalidatePluginQueries(queryClient),
+    }),
+  repositoryUpgrade: (queryClient: QueryClient) =>
+    mutationOptions({
+      mutationKey: pluginMutationKeys.repositoryUpgrade(),
+      mutationFn: ({ pluginId, input }: RepositoryUpgradeVariables) =>
+        pluginApi.repositoryUpgrade(pluginId, input),
       onSuccess: () => invalidatePluginQueries(queryClient),
     }),
   enable: (queryClient: QueryClient) =>

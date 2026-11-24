@@ -286,7 +286,7 @@ test('Cluster editor saves exact metric identity and verifies real zero samples'
   await fillIdentity(page)
   await expect(page.getByLabel('Prometheus Token', { exact: true })).toHaveValue('')
   await page.getByRole('button', { name: '保存并校验', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('集群配置已保存')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('集群配置已保存')
   await expect(page.getByRole('dialog')).toContainText('主机指标已接通')
   expect(state.writes.filter((w) => w.method === 'PUT')).toHaveLength(1)
   expect(state.writes[0].body).toMatchObject({
@@ -372,10 +372,15 @@ test('Monitoring query failure never becomes a successful connection or an unsav
   await edit(page)
   await fillIdentity(page)
   await page.getByRole('button', { name: '保存并校验', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('集群配置已保存')
-  await expect(page.getByRole('dialog')).toContainText('读取失败')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('集群配置已保存')
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText('读取失败')
   await expect(page.getByRole('dialog')).not.toContainText('主机指标已接通')
   state.failMetrics = false
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
   await clickDone(page)
   await page.getByRole('button', { name: '校验接入', exact: true }).click()
   await expect(page.getByRole('tabpanel')).toContainText('主机指标已接通')
@@ -414,7 +419,9 @@ test('Cluster edit failures preserve the draft and do not silently save or check
   const saveAndCheck = editor.getByRole('button').filter({ hasText: /^保存并校验$/ })
   const updates = () => state.writes.filter(({ method, path }) => method === 'PUT' && path === root)
   await saveAndCheck.click()
-  await expect(editor).toContainText('Cluster configuration changed')
+  await expect(page.locator('.soha-operation-feedback')).toContainText(
+    'Cluster configuration changed',
+  )
   await expect(editor.getByRole('textbox', { name: '集群标签值', exact: true })).toHaveValue(
     'middleware-prod',
   )
@@ -529,7 +536,7 @@ test('Credential disclosure preserves the draft and Enter submits through the fi
   await dialog.getByRole('button', { name: '收起 Token', exact: true }).click()
   await fillIdentity(page)
   await dialog.getByRole('textbox', { name: '集群标签值', exact: true }).press('Enter')
-  await expect(dialog).toContainText('集群配置已保存')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('集群配置已保存')
   await expect(dialog).toContainText('主机指标已接通')
   expect(state.writes[0].body).toMatchObject({
     kubeconfig: 'synthetic-kubeconfig-draft',

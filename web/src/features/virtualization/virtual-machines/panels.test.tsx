@@ -137,7 +137,10 @@ describe('VM panel presentation and protected cache', () => {
     })
     expect(state.read).toHaveBeenCalledTimes(3)
     expect(container.querySelector('[data-testid="metric-chart"]')).not.toBeNull()
-    expect(document.querySelector('.ant-notification-notice')?.textContent).toContain('刷新未完成')
+    expect(document.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(1)
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'metric upstream unavailable',
+    )
   })
   for (const status of [401, 403]) {
     it(`removes cached metric series after ${status}`, async () => {

@@ -372,7 +372,14 @@ it('shows the selected Helm rollback revision in the delivery target row', async
 it('pins the saved version and keeps one idempotency key across uncertain retries until input changes', async () => {
   await renderEditor(workflow)
   await click('开始交付')
-  expect(document.body.textContent).toContain('响应连接中断')
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      '响应连接中断',
+    )
+  })
   await click('开始交付')
   const create = vi.mocked(deliveryApi.batches.create)
   const first = create.mock.calls[0][0]

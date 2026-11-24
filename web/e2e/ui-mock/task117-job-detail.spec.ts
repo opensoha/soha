@@ -452,7 +452,7 @@ test('Job delete retains exact scope and rejected confirmation', async ({ contex
   await expect(modal).toContainText('cluster-a / monitoring / report')
   state.failDelete = true
   await modal.getByRole('button', { name: '删除', exact: true }).click()
-  await expect(modal).toContainText('Job deletion rejected')
+  await expect(page.locator('.soha-operation-feedback')).toContainText('Job deletion rejected')
   expect(state.writes).toEqual([prefix + '?namespace=monitoring'])
   await modal.getByRole('button', { name: '取消', exact: true }).click()
   verifyBrowserEvidence(evidence)

@@ -118,25 +118,7 @@ func TestBindingApplicationsCountsAccessibleAppsAcrossRawPages(t *testing.T) {
 					}
 				}
 			}
-			if len(repo.filters) != test.pages || len(repo.getIDs) != 0 {
-				t.Fatalf("reads = %d list / %d get, want %d list", len(repo.filters), len(repo.getIDs), test.pages)
-			}
-			for page, filter := range repo.filters {
-				if filter.Limit != 100 || filter.Search != "" {
-					t.Fatalf("unbounded or changed filter: %+v", filter)
-				}
-				if page == 0 {
-					if filter.After != nil {
-						t.Fatalf("first page cursor = %+v", filter.After)
-					}
-				} else {
-					last := repo.items[page*100-1]
-					want := domainapp.ListCursor{Group: last.Group, Name: last.Name, ID: last.ID}
-					if filter.After == nil || *filter.After != want {
-						t.Fatalf("page %d cursor = %+v, want %+v", page, filter.After, want)
-					}
-				}
-			}
+			assertBindingApplicationPages(t, repo, test.pages)
 			if len(audit.entries) != 1 || audit.entries[0].ActorID != "reader" || audit.entries[0].Action != "list" || audit.entries[0].Result != "success" {
 				t.Fatalf("list audit = %+v", audit.entries)
 			}
@@ -144,6 +126,29 @@ func TestBindingApplicationsCountsAccessibleAppsAcrossRawPages(t *testing.T) {
 				t.Fatalf("authorization checks = %d, want %d", got, want)
 			}
 		})
+	}
+}
+
+func assertBindingApplicationPages(t *testing.T, repo *impactApplicationRepository, pages int) {
+	t.Helper()
+	if len(repo.filters) != pages || len(repo.getIDs) != 0 {
+		t.Fatalf("reads = %d list / %d get, want %d list", len(repo.filters), len(repo.getIDs), pages)
+	}
+	for page, filter := range repo.filters {
+		if filter.Limit != 100 || filter.Search != "" {
+			t.Fatalf("unbounded or changed filter: %+v", filter)
+		}
+		if page == 0 {
+			if filter.After != nil {
+				t.Fatalf("first page cursor = %+v", filter.After)
+			}
+			continue
+		}
+		last := repo.items[page*100-1]
+		want := domainapp.ListCursor{Group: last.Group, Name: last.Name, ID: last.ID}
+		if filter.After == nil || *filter.After != want {
+			t.Fatalf("page %d cursor = %+v, want %+v", page, filter.After, want)
+		}
 	}
 }
 
