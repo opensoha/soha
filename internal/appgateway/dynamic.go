@@ -156,13 +156,18 @@ func dynamicUpstreamHeaders(in http.Header, cookies []*http.Cookie) http.Header 
 	for _, name := range []string{"Authorizer", "X-Authorizer", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port", "X-Forwarded-Prefix", "X-Real-IP"} {
 		out.Del(name)
 	}
-	out.Del("Cookie")
-	upstream := http.Request{Header: out}
+	pairs := make([]string, 0, len(cookies))
 	for _, cookie := range cookies {
 		if cookie == nil || isReservedCookieName(cookie.Name) {
 			continue
 		}
-		upstream.AddCookie(cookie)
+		//nolint:gosec // G124 applies to response cookies. Only serialize request name and value.
+		pair := http.Cookie{Name: cookie.Name, Value: cookie.Value, Quoted: cookie.Quoted}
+		pairs = append(pairs, pair.String())
+	}
+	out.Del("Cookie")
+	if len(pairs) > 0 {
+		out.Set("Cookie", strings.Join(pairs, "; "))
 	}
 	return out
 }
