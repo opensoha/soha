@@ -86,11 +86,14 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
-  client.clear()
-  container.remove()
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
+  try {
+    await act(async () => root.unmount())
+  } finally {
+    client.clear()
+    container.remove()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
 })
 
 async function click(label: string) {
@@ -136,7 +139,9 @@ it('keeps invalid source separate, displays field location, and changes format o
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <Harness />
+        <App>
+          <Harness />
+        </App>
       </QueryClientProvider>,
     ),
   )

@@ -229,15 +229,16 @@ describe('MonitoringPage', () => {
     apiMocks.get.mockImplementation((path: keyof typeof responses) =>
       Promise.resolve({ data: responses[path] ?? [] }),
     )
-    const retry = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.replace(/\s/g, '') === '重试读取',
+    const retry = document.querySelector<HTMLButtonElement>(
+      '.soha-read-feedback-notification button[aria-label="重试读取Provider 状态"]',
     )!
+    expect(retry).not.toBeNull()
     await act(async () => {
       retry.click()
       await new Promise((resolve) => setTimeout(resolve, 20))
     })
     expect(container.textContent).toContain('健康 Provider: 1')
-    expect(container.textContent).not.toContain('Provider 状态读取失败')
+    expect(document.querySelector('.soha-read-feedback-notification')).toBeNull()
   })
 
   it('renders the bounded overview from canonical capability queries', async () => {
@@ -260,8 +261,12 @@ describe('MonitoringPage', () => {
 
     const container = await renderMonitoringPage()
 
-    expect(container.textContent).toContain('Provider 状态读取失败')
-    expect(container.textContent).toContain('provider offline')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'Provider 状态读取失败',
+    )
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'provider offline',
+    )
     expect(container.textContent).toContain('健康 Provider: 不可用')
     expect(container.textContent).not.toContain('健康 Provider: 0')
   })

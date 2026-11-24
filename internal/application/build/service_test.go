@@ -170,6 +170,13 @@ func (r *buildRepoFake) Update(_ context.Context, item domainbuild.Record) (doma
 	return item, nil
 }
 
+func (r *buildRepoFake) UpdateUnlinked(ctx context.Context, item domainbuild.Record) (domainbuild.Record, error) {
+	if metadataString(r.record.Metadata, "executionTaskId") != "" {
+		return domainbuild.Record{}, apperrors.ErrConflict
+	}
+	return r.Update(ctx, item)
+}
+
 type buildAppFake struct {
 	app          domainapp.App
 	repositories map[string]domainapp.SourceRepository
@@ -190,8 +197,10 @@ func (r buildAppFake) GetRepository(_ context.Context, id string) (domainapp.Sou
 
 type executionFake struct{}
 
-func (executionFake) StartBuildExecution(context.Context, execution.BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
-	return domaindelivery.ReleaseBundle{ID: "bundle-1"}, domaindelivery.ExecutionTask{ID: "task-1", ProviderKind: "ci_agent_runner", Status: "queued", Result: map[string]any{}}, nil
+func (executionFake) StartBuildExecution(ctx context.Context, plan execution.BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
+	bundle := domaindelivery.ReleaseBundle{ID: "bundle-1"}
+	task := domaindelivery.ExecutionTask{ID: "task-1", ProviderKind: "ci_agent_runner", Status: "queued", Result: map[string]any{}}
+	return bundle, task, plan.AssociateProjection(ctx, bundle, task)
 }
 
 func TestTriggerLinksBuildToQueuedExecutionTask(t *testing.T) {

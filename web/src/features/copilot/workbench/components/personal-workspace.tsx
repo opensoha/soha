@@ -91,8 +91,9 @@ export function PersonalWorkspace({
     onSettled: onRefresh,
     onError: () => void message.error('工具接通请求未确认，请核对环境。'),
   })
+  const workspaceReadDenied = queryAccessDenied(query)
   const denied =
-    queryAccessDenied(query) ||
+    workspaceReadDenied ||
     queryAccessDenied(toolsQuery) ||
     queryAccessDenied(operation) ||
     queryAccessDenied(tools)
@@ -197,7 +198,7 @@ export function PersonalWorkspace({
   return (
     <>
       <ReadFeedback
-        query={queryAccessDenied(query) ? { ...query, isEnabled: true } : query}
+        query={{ ...query, isEnabled: open || workspaceReadDenied }}
         label="个人工作空间"
       />
       <Button disabled={denied} onClick={() => setOpen(true)}>

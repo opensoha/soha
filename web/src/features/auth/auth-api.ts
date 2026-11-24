@@ -109,6 +109,7 @@ function sendAuthRequest(
   }
 
   if (owner) assertAuthSession(owner)
+  options.signal?.throwIfAborted()
   return fetch(`${API_BASE_URL}${path}`, {
     ...options,
     credentials: options.credentials ?? 'include',
@@ -139,19 +140,50 @@ async function fetchAuthJSON<T>(
   options: AuthFetchOptions = {},
   owner: AuthSessionOwner | null = captureAuthSession(),
 ): Promise<T> {
-  const response = await withAuthCookieRequest(path, options.method ?? 'GET', () =>
-    sendAuthRequest(path, options, owner),
+  return withAuthCookieRequest(
+    path,
+    options.method ?? 'GET',
+    async (signal) => {
+      const response = await sendAuthRequest(path, { ...options, signal: signal ?? options.signal }, owner)
+      return readAuthJSON<T>(response, owner)
+    },
+    options.signal,
   )
-  return readAuthJSON<T>(response, owner)
 }
 
 function requestAuthResult(path: string, options: AuthFetchOptions, owner: AuthSessionOwner) {
-  return withAuthCookieRequest(path, options.method ?? 'POST', () =>
-    sendAuthRequest(path, options, owner),
-  ).then(async (response) => {
+  return withAuthCookieRequest(path, options.method ?? 'POST', async (signal) => {
+    const response = await sendAuthRequest(path, { ...options, signal }, owner)
     // A queued logout may need these credentials even after the local owner is signed out.
     return (await readAuthJSON<ApiResponse<AuthResult>>(response, null)).data
   })
+}
+
+function accessTokenSessionId(token: string): string | undefined {
+  const parts = token.split('.')
+  const payload = parts[1]
+  if (parts.length !== 3 || !parts[0] || !payload || !parts[2]) return
+  try {
+    const bytes = Uint8Array.from(atob(payload.replace(/-/g, '+').replace(/_/g, '/')), (byte) =>
+      byte.charCodeAt(0),
+    )
+    const { sid } = JSON.parse(new TextDecoder().decode(bytes)) as { sid?: unknown }
+    return typeof sid === 'string' && sid ? sid : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function isSameBrowserSession(
+  accessToken: string | null,
+  userId: string | undefined,
+  result: AuthResult,
+) {
+  if (!accessToken || userId !== result.user.userId) return false
+  if (accessToken === result.tokens.accessToken) return true
+  // Core validates the token. The signed sid correlates its auth responses across token rotation.
+  const sessionId = accessTokenSessionId(accessToken)
+  return Boolean(sessionId && sessionId === accessTokenSessionId(result.tokens.accessToken))
 }
 
 export function getStoredAccessToken() {
@@ -187,8 +219,8 @@ export async function logoutAuthSession() {
       : refreshInFlight && sameOwner(refreshInFlight.owner)
         ? { result: refreshInFlight.result, login: false }
         : undefined
-  const response = withAuthCookieRequest('/auth/logout', 'POST', () =>
-    revokeBrowserSession(accessToken, userId, preceding),
+  const response = withAuthCookieRequest('/auth/logout', 'POST', (signal) =>
+    revokeBrowserSession(accessToken, userId, preceding, signal),
   )
   const owner = clearAuthSession()
   if (isCurrentAuthSession(owner)) pendingSessionChange = owner
@@ -205,45 +237,46 @@ async function revokeBrowserSession(
   capturedToken: string | null,
   userId: string | undefined,
   preceding: { result: Promise<AuthResult>; login: boolean } | undefined,
+  signal?: AbortSignal,
 ) {
   const refreshed = await preceding?.result.catch(() => undefined)
-  const expectedUserId = refreshed && preceding?.login ? refreshed.user.userId : userId
-  const tokenFor = (result: AuthResult) => {
-    if (expectedUserId && result.user.userId !== expectedUserId)
-      throw new DOMException(
-        'Authentication context changed; this session was not revoked.',
-        'AbortError',
-      )
-    return result.tokens.accessToken
-  }
+  const ownedResult =
+    refreshed && (preceding?.login || isSameBrowserSession(capturedToken, userId, refreshed))
+      ? refreshed
+      : undefined
   const sendLogout = async (accessToken: string, refreshToken?: string) =>
     readAuthJSON(
       await sendAuthRequest(
         '/auth/logout',
         {
           method: 'POST',
+          // Core can revoke both supplied credentials. An ambient cookie may belong to another tab's session.
+          credentials: 'omit',
           accessToken,
           body: refreshToken ? JSON.stringify({ refreshToken }) : undefined,
+          signal,
         },
         null,
       ),
       null,
     )
-  const accessToken = refreshed ? tokenFor(refreshed) : capturedToken
-  if (accessToken) {
-    try {
-      await sendLogout(accessToken, refreshed?.tokens.refreshToken)
-      return
-    } catch (error) {
-      if (!(error instanceof AuthApiError) || error.status !== 401) throw error
-    }
+  const accessToken = ownedResult?.tokens.accessToken ?? capturedToken
+  if (!accessToken) return
+  try {
+    await sendLogout(accessToken, ownedResult?.tokens.refreshToken)
+    return
+  } catch (error) {
+    if (!(error instanceof AuthApiError) || error.status !== 401) throw error
   }
+  if (refreshed && !ownedResult) return
   // Already inside the logout cookie slot: recovery must not enqueue behind itself.
   const response = await readAuthJSON<ApiResponse<AuthResult>>(
-    await sendAuthRequest('/auth/refresh', { method: 'POST' }, null),
+    await sendAuthRequest('/auth/refresh', { method: 'POST', signal }, null),
     null,
   )
-  await sendLogout(tokenFor(response.data), response.data.tokens.refreshToken)
+  if (isSameBrowserSession(accessToken, ownedResult?.user.userId ?? userId, response.data)) {
+    await sendLogout(response.data.tokens.accessToken, response.data.tokens.refreshToken)
+  }
 }
 
 async function requestNewSession(path: string, body: unknown) {
@@ -306,10 +339,9 @@ async function restoreOwnedSession(
     useAuthStore.setState((state) => ({
       accessToken: result.tokens.accessToken,
       user: result.user,
-      sessionGeneration:
-        !state.accessToken || state.user?.userId !== result.user.userId
-          ? state.sessionGeneration + 1
-          : state.sessionGeneration,
+      sessionGeneration: isSameBrowserSession(state.accessToken, state.user?.userId, result)
+        ? state.sessionGeneration
+        : state.sessionGeneration + 1,
     }))
     return 'authenticated'
   } catch (error) {

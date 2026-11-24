@@ -457,7 +457,7 @@ test('rule business errors remain retryable reads', async ({ context, page }) =>
   await page.getByRole('button', { name: '测试告警规则' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('规则测试业务错误 QA', { exact: true }).first()).toBeVisible()
-  await expect(dialog.getByText(/请求结果不明/)).toBeHidden()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeHidden()
   state.testState = 'ok'
   await dialog.getByRole('button', { name: '重试测试' }).click()
   await expect(dialog.getByText('规则测试完成 QA', { exact: true })).toBeVisible()
@@ -532,7 +532,7 @@ test('notification preview isolates evidence when selecting a different event', 
     .locator('.ant-select-item-option-content')
     .getByText('Other event QA (firing)', { exact: true })
     .click()
-  await expect(dialog.getByText(/读取失败/)).toBeVisible()
+  await expect(page.locator('.soha-read-feedback-notification').getByText(/读取失败/)).toBeVisible()
   await expect(dialog.getByText('Preview first QA', { exact: true })).toBeHidden()
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
@@ -552,7 +552,10 @@ test('integration one-time token stays in its private display and clears on clos
     .click()
   const dialog = page.getByRole('dialog', { name: '集成 Token' })
   await expect(dialog.locator('input')).toHaveValue(state.returnedToken)
-  await expect(page.locator('#root').getByText('告警集成记录已更新')).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText('告警集成记录已更新'),
+  ).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback')).not.toContainText(state.returnedToken)
   await dialog.getByRole('button', { name: /完\s*成/, exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(page.locator('input[value="qa-one-time-token"]')).toHaveCount(0)
@@ -569,8 +572,10 @@ test('integration normalization failures are retryable and refused drafts are cl
   state.writeStatus = 503
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: /归一化测试/ }).click()
-  await expect(dialog.getByText(/归一化测试：操作请求失败/)).toBeVisible()
-  await expect(dialog.getByText(/请求结果不明/)).toBeHidden()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText(/归一化测试：操作请求失败/),
+  ).toBeVisible()
+  await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeHidden()
   state.writeStatus = 403
   await dialog.getByRole('button', { name: /归一化测试/ }).click()
   await expect(dialog).toBeHidden()
@@ -627,7 +632,9 @@ test('unknown oncall override fixes its target and blocks duplicate submission',
   state.writeStatus = 503
   const modal = page.getByRole('dialog', { name: /值班覆盖/ })
   await modal.getByRole('button', { name: '保存覆盖', exact: true }).click()
-  await expect(modal.getByText(/更新值班覆盖：请求结果不明/)).toBeVisible()
+  await expect(
+    page.locator('.soha-operation-feedback').getByText(/更新值班覆盖：请求结果不明/),
+  ).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(modal).toBeVisible()
   await expect(modal.getByRole('button').filter({ hasText: /^保存覆盖$/ })).toBeDisabled()

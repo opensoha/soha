@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Form, Button } from 'antd'
+import { App, Form, Button } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { deliveryApi } from '../api'
@@ -202,7 +202,9 @@ beforeEach(async () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <Harness />
+        <App>
+          <Harness />
+        </App>
       </QueryClientProvider>,
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -282,7 +284,9 @@ it('prepares an existing Docker project in an environment without a Kubernetes b
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <DockerHarness />
+        <App>
+          <DockerHarness />
+        </App>
       </QueryClientProvider>,
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -368,7 +372,9 @@ it('preserves typed build overrides and limits scalar enum choices', async () =>
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <BuildHarness />
+        <App>
+          <BuildHarness />
+        </App>
       </QueryClientProvider>,
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -479,7 +485,9 @@ it('prepares native Helm YAML configuration without a manifest package or a buil
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <HelmHarness />
+        <App>
+          <HelmHarness />
+        </App>
       </QueryClientProvider>,
     )
     await new Promise((resolve) => setTimeout(resolve, 40))
@@ -561,7 +569,9 @@ it('edits Schema fields without replacing nested YAML and hides inspection after
   await act(async () => {
     root.render(
       <QueryClientProvider client={new QueryClient()}>
-        <SchemaHarness />
+        <App>
+          <SchemaHarness />
+        </App>
       </QueryClientProvider>,
     )
   })

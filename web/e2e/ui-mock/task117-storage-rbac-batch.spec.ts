@@ -389,12 +389,15 @@ test('StorageClass read error is visible and retry recovers the same detail iden
   const owner = owners[2]
   const { evidence, state } = await setup(context, page, { fail: owner.kind })
   await page.goto(detailURL(owner))
-  await expect(page.getByRole('alert').filter({ hasText: '读取失败' }).first()).toContainText(
+  await expect(page.locator('.soha-read-feedback-notification')).toContainText(
     'Synthetic storage/RBAC read unavailable',
   )
   await expect(page.getByRole('heading', { name, exact: true })).toHaveCount(0)
   state.fail = undefined
-  await page.getByRole('button', { name: /重试/ }).first().click()
+  await page
+    .locator('.soha-read-feedback-notification')
+    .getByRole('button', { name: /^重试读取/ })
+    .click()
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)

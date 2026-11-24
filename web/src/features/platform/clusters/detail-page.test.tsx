@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { App as AntdApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -186,9 +187,11 @@ async function renderDetail(entry = '/clusters/cluster-a') {
     root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[entry]}>
-          <Routes>
-            <Route path="/clusters/:clusterId" element={<ClusterDetailPage />} />
-          </Routes>
+          <AntdApp>
+            <Routes>
+              <Route path="/clusters/:clusterId" element={<ClusterDetailPage />} />
+            </Routes>
+          </AntdApp>
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -207,10 +210,12 @@ describe('cluster detail page', () => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <LogCollectionCard
-            scope={{ clusterId: 'cluster-a', namespace: null }}
-            localeCode="zh_CN"
-          />
+          <AntdApp>
+            <LogCollectionCard
+              scope={{ clusterId: 'cluster-a', namespace: null }}
+              localeCode="zh_CN"
+            />
+          </AntdApp>
         </QueryClientProvider>,
       ),
     )
@@ -228,7 +233,8 @@ describe('cluster detail page', () => {
     )
     await vi.waitFor(() => {
       expect(container.textContent).toContain('runtime_only')
-      expect(container.querySelectorAll('.soha-read-feedback')).toHaveLength(1)
+      expect(document.querySelectorAll('.soha-read-feedback-notification')).toHaveLength(1)
+      expect(container.querySelector('.soha-read-feedback')).toBeNull()
       expect(container.textContent).not.toContain('日志采集状态加载失败')
     })
     await act(async () => query.setState({ status: 'error', error: new ApiError(403, 'denied') }))
@@ -250,9 +256,11 @@ describe('cluster detail page', () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <MemoryRouter initialEntries={['/clusters/cluster-a']}>
-            <Routes>
-              <Route path="/clusters/:clusterId" element={<ClusterDetailPage />} />
-            </Routes>
+            <AntdApp>
+              <Routes>
+                <Route path="/clusters/:clusterId" element={<ClusterDetailPage />} />
+              </Routes>
+            </AntdApp>
           </MemoryRouter>
         </QueryClientProvider>,
       )

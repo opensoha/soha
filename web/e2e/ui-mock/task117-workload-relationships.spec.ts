@@ -456,7 +456,11 @@ for (const status of [403, 500]) {
     await panel(page).getByRole('button', { name: 'runtime-config', exact: true }).click()
     fixture.state.status = status
     await panel(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
-    await expect(panel(page).getByRole('alert')).toContainText(
+    await expect(
+      status === 403
+        ? panel(page).getByRole('alert')
+        : page.locator('.soha-read-feedback-notification'),
+    ).toContainText(
       status === 403 ? '资源关系无访问权限' : '资源关系未更新，正在展示上次读取结果',
       { timeout: 15_000 },
     )
@@ -469,8 +473,11 @@ for (const status of [403, 500]) {
     } else {
       await expect(inspector(page)).toContainText('runtime-config')
       fixture.state.status = 200
-      await panel(page).getByRole('button', { name: '重试读取资源关系', exact: true }).click()
-      await expect(panel(page).getByRole('alert')).toHaveCount(0)
+      await page
+        .locator('.soha-read-feedback-notification')
+        .getByRole('button', { name: /^重试读取/ })
+        .click()
+      await expect(page.locator('.soha-read-feedback-notification')).toHaveCount(0)
       await expect(inspector(page)).toContainText('runtime-config')
     }
     expect(fixture.writes).toEqual([])

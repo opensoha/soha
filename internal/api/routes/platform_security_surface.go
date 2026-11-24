@@ -60,6 +60,8 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/deployments/preflight") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		path == "/api/v1/ai-gateway/plans/validate" ||
+		path == "/api/v1/plugins/repository/preview" ||
+		path == "/api/v1/plugins/repository/refs" ||
 		strings.HasSuffix(path, "/logs/query") ||
 		strings.HasSuffix(path, "/logs/stream-ticket") ||
 		(strings.Contains(path, "/observability/dashboards/") && strings.HasSuffix(path, "/query")))
@@ -715,7 +717,7 @@ func aiGatewayMutationSecuritySurface(method, path string) (nonPlatformMutationS
 
 func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
-	case strings.HasPrefix(path, "/api/v1/plugins/install"):
+	case path == "/api/v1/plugins/repository/install" || strings.HasPrefix(path, "/api/v1/plugins/install"):
 		return nonPlatformMutationEntry("Plugin", "install", appaccess.PermPluginInstall, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/") && strings.HasSuffix(path, "/config"):
 		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigure, false), true

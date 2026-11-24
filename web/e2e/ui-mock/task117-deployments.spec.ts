@@ -287,6 +287,12 @@ test('row scale/restart/rollback and delete failure keep exact target, feedback 
     body: { name: 'deployment-000', namespace: 'monitoring', replicas: 4 },
   })
   await expect(scale).not.toBeVisible()
+  const scaleReceipt = page
+    .locator('.soha-operation-feedback')
+    .filter({ hasText: '调整副本数：请求已返回' })
+  await expect(scaleReceipt).toBeVisible()
+  await scaleReceipt.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(scaleReceipt).toHaveCount(0)
   for (const [label, path] of [
     ['重启', 'restart'],
     ['回滚', 'rollback'],
@@ -300,14 +306,21 @@ test('row scale/restart/rollback and delete failure keep exact target, feedback 
       name: 'deployment-000',
       namespace: 'monitoring',
     })
-    await expect(page.getByText(/请求已返回/).first()).toBeVisible()
+    const receipt = page.locator('.soha-operation-feedback').filter({
+      hasText: `${label === '重启' ? '重启工作负载' : '回滚资源'}：请求已返回`,
+    })
+    await expect(receipt).toBeVisible()
+    await receipt.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(receipt).toHaveCount(0)
   }
   state.failDelete = true
   await openMenu(page)
   await menu(page).getByRole('menuitem', { name: '删除', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '确认删除 deployment-000？' })
   await dialog.getByRole('button', { name: /^删\s*除$/, exact: true }).click()
-  await expect(dialog).toContainText('Synthetic deployment rejection')
+  await expect(page.locator('.soha-operation-feedback')).toContainText(
+    'Synthetic deployment rejection',
+  )
   await expect(dialog).toBeVisible()
   expect(state.writes.at(-1)).toMatchObject({
     method: 'DELETE',

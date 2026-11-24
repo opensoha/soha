@@ -214,6 +214,8 @@ type KnowledgeSearchResult struct {
 
 type PluginManifest = sohaapi.PluginManifest
 
+type PluginPermissionRequest = sohaapi.PluginPermissionRequest
+
 type MarketplacePlugin = sohaapi.MarketplacePlugin
 
 type InstalledPlugin = sohaapi.InstalledPlugin
@@ -221,6 +223,14 @@ type InstalledPlugin = sohaapi.InstalledPlugin
 type PluginInstallRequest = sohaapi.PluginInstallRequest
 
 type PluginConfigRequest = sohaapi.PluginConfigRequest
+
+type PluginRepositoryPreviewRequest = sohaapi.PluginRepositoryPreviewRequest
+
+type PluginRepositoryPreview = sohaapi.PluginRepositoryPreview
+
+type PluginRepositoryInstallRequest = sohaapi.PluginRepositoryInstallRequest
+
+type PluginRepositoryUpgradeRequest = sohaapi.PluginRepositoryUpgradeRequest
 
 type ClusterCapabilityStatus string
 
@@ -750,6 +760,31 @@ func (c APIClient) GetInstalledPluginManifest(ctx context.Context, pluginID stri
 func (c APIClient) InstallPlugin(ctx context.Context, input PluginInstallRequest, headers map[string]string) (InstalledPlugin, error) {
 	var out itemResponse[InstalledPlugin]
 	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/plugins/install", c.Token, headers, input, &out); err != nil {
+		return InstalledPlugin{}, err
+	}
+	return out.Data, nil
+}
+
+func (c APIClient) PreviewRepositoryPlugin(ctx context.Context, input PluginRepositoryPreviewRequest, headers map[string]string) (PluginRepositoryPreview, error) {
+	var out itemResponse[PluginRepositoryPreview]
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/plugins/repository/preview", c.Token, headers, input, &out); err != nil {
+		return PluginRepositoryPreview{}, err
+	}
+	return out.Data, nil
+}
+
+func (c APIClient) InstallRepositoryPlugin(ctx context.Context, input PluginRepositoryInstallRequest, headers map[string]string) (InstalledPlugin, error) {
+	var out itemResponse[InstalledPlugin]
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/plugins/repository/install", c.Token, headers, input, &out); err != nil {
+		return InstalledPlugin{}, err
+	}
+	return out.Data, nil
+}
+
+func (c APIClient) UpgradeRepositoryPlugin(ctx context.Context, pluginID string, input PluginRepositoryUpgradeRequest, headers map[string]string) (InstalledPlugin, error) {
+	var out itemResponse[InstalledPlugin]
+	path := "/api/v1/plugins/" + url.PathEscape(strings.TrimSpace(pluginID)) + "/repository/upgrade"
+	if err := c.doJSON(ctx, http.MethodPost, path, c.Token, headers, input, &out); err != nil {
 		return InstalledPlugin{}, err
 	}
 	return out.Data, nil

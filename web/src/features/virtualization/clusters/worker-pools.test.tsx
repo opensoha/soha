@@ -111,14 +111,14 @@ async function render() {
   await act(async () =>
     root?.render(
       <QueryClientProvider client={client}>
-        <App>
-          <MemoryRouter>
+        <MemoryRouter>
+          <App>
             <WorkerPoolsDrawer
               connection={{ id: 'pve-1', name: 'PVE', provider: 'pve' }}
               onClose={() => {}}
             />
-          </MemoryRouter>
-        </App>
+          </App>
+        </MemoryRouter>
       </QueryClientProvider>,
     ),
   )

@@ -81,7 +81,13 @@ test('manual adoption preserves exclusions after recompare, adjacent diffs and w
   await verifyGeometry(page, submit)
   await submit.focus()
   await submit.press('Enter')
-  await expect(drawer.getByText('批次已创建', { exact: true })).toBeVisible()
+  const receipt = page.locator('.soha-operation-feedback').filter({
+    hasText: '采用批次已受理，请查看执行和审批进度。',
+  })
+  await expect(receipt).toBeVisible()
+  await expect(
+    receipt.getByRole('link', { name: '查看批次 batch-adoption', exact: true }),
+  ).toHaveAttribute('href', '/delivery/batches/batch-adoption')
   expect(state.batches).toHaveLength(1)
   expect(state.batches[0]).toMatchObject({
     previewDigest: 'digest-2',
@@ -113,9 +119,11 @@ test('read failures retry without writes and readonly users cannot submit', asyn
   await page.goto('/deployment-templates')
   await page.getByRole('button', { name: '检查模板更新', exact: true }).click()
   const drawer = page.getByRole('dialog', { name: '模板采用 · http' })
-  await expect(drawer).toContainText('暂时无法读取应用绑定')
+  const notice = page.locator('.soha-read-feedback-notification')
+  await notice.locator('summary').click()
+  await expect(notice.getByText(/暂时无法读取应用绑定/)).toBeVisible()
   state.failRead = false
-  await drawer.getByRole('button', { name: /重试/ }).click()
+  await notice.getByRole('button', { name: /重试/ }).click()
   await drawer.locator('tbody input[type=checkbox]').first().check()
   await drawer.getByRole('button', { name: '比较所选 1 项', exact: true }).click()
   await expect(
@@ -146,7 +154,9 @@ test('policy is explicit, stale adoption retains the frozen comparison', async (
   await drawer.locator('tbody input[type=checkbox]').first().check()
   await drawer.getByRole('button', { name: '比较所选 1 项', exact: true }).click()
   await drawer.getByRole('button', { name: '分批采用 1 项配置', exact: true }).click()
-  await expect(drawer).toContainText('绑定已变化，请重新比较')
+  await expect(
+    page.locator('.soha-operation-feedback').filter({ hasText: '分批采用模板' }),
+  ).toContainText('绑定已变化，请重新比较')
   await expect(drawer.getByRole('tab', { name: '累计差异 v1 → v4', exact: true })).toBeVisible()
   expect(state.batches).toHaveLength(1)
   verifyBrowserEvidence(evidence)
@@ -164,7 +174,9 @@ test('failed recompare retains the frozen diff, permission denial clears it', as
   await expect(cumulative).toBeVisible()
   state.previewError = 503
   await drawer.getByRole('button', { name: '重新生成差异', exact: true }).click()
-  await expect(drawer).toContainText('无法重新比较模板')
+  await expect(
+    page.locator('.soha-operation-feedback').filter({ hasText: '比较模板更新：操作请求失败' }),
+  ).toContainText('无法重新比较模板')
   await expect(cumulative).toBeVisible()
   await expect(
     drawer.getByRole('button', { name: '分批采用 1 项配置', exact: true }),

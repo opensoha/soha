@@ -195,10 +195,14 @@ ai_gateway:
 plugins:
   marketplace:
     # Local development marketplace. Override with
-    # https://marketplace.opensoha.com/marketplace/index.json in deployed environments.
+    # https://marketplace.opensoha.com/marketplace/repositories.json in deployed environments.
     url: http://127.0.0.1:8081/marketplace/index.json
     source_id: opensoha-local
     sources: []
+  repository:
+    github_token: ""
+    # Set the same random secret on every Core replica. A blank value uses a key generated at Core startup.
+    preview_signing_key: ""
   companion:
     storage_dir: .data/companion
     max_package_bytes: 268435456

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "marketplace.opensoha.io/v1",
+  "generatedAt": "2026-07-24T00:00:00Z",
+  "sourceId": "opensoha-local",
+  "plugins": [
+    {
+      "id": "example.distribution-smoke",
+      "name": "Distribution Smoke Pack",
+      "version": "0.1.0",
+      "publisher": "example",
+      "type": "skill-pack",
+      "source": "marketplace:example.distribution-smoke",
+      "latestVersion": "0.1.0",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "manifestUrl": "plugins/example.distribution-smoke/0.1.0/plugin.manifest.json",
+          "checksum": "sha256:2152e97127a9fbbc7f6f3663a78196fdbd68d006d438dc0ee0b23816cd668ecb"
+        }
+      ],
+      "manifest": {
+        "id": "example.distribution-smoke",
+        "name": "Distribution Smoke Pack",
+        "version": "0.1.0",
+        "publisher": "example",
+        "type": "skill-pack",
+        "description": "Registers a sample extension without loading assets or starting a runtime.",
+        "runtime": { "mode": "manifest-only" },
+        "extensionPoints": {
+          "ai": {
+            "skillPacks": [{ "id": "distribution-smoke", "label": "Distribution Smoke Pack" }]
+          }
+        }
+      }
+    }
+  ]
+}

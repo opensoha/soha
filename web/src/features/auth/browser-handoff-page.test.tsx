@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { App } from 'antd'
 import { act } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot, type Root } from 'react-dom/client'
@@ -42,12 +43,14 @@ async function renderPage(navigate = vi.fn()) {
     root.render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/auth/browser-handoff/handoff-1']}>
-          <Routes>
-            <Route
-              path="/auth/browser-handoff/:handoffId"
-              element={<BrowserHandoffPage navigate={navigate} />}
-            />
-          </Routes>
+          <App>
+            <Routes>
+              <Route
+                path="/auth/browser-handoff/:handoffId"
+                element={<BrowserHandoffPage navigate={navigate} />}
+              />
+            </Routes>
+          </App>
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -124,9 +127,11 @@ describe('browser handoff page', () => {
 
   it('renders inspection failures without completing', async () => {
     vi.mocked(inspectBrowserHandoff).mockRejectedValueOnce(new Error('handoff expired'))
-    const { container } = await renderPage()
-    await waitForText(container, 'handoff expired')
-    expect(container.textContent).toContain('handoff expired')
+    await renderPage()
+    await waitForText(document.body, 'handoff expired')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'handoff expired',
+    )
     expect(completeBrowserHandoff).not.toHaveBeenCalled()
   })
 
@@ -139,9 +144,12 @@ describe('browser handoff page', () => {
     )
 
     await act(async () => continueButton?.click())
-    await waitForText(container, 'browser account conflict')
+    await waitForText(document.body, 'browser account conflict')
 
-    expect(container.textContent).toContain('browser account conflict')
+    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+      'browser account conflict',
+    )
+    expect(continueButton?.isConnected).toBe(true)
     expect(navigate).not.toHaveBeenCalled()
   })
 })

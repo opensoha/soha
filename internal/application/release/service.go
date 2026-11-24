@@ -194,11 +194,21 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
-	bundleID := strings.TrimSpace(input.ReleaseBundleID)
-	bundleID, taskID := s.startReleaseExecution(ctx, app, input, target, resolvedImage, bundleID, providerKind, targetKind)
-	if !shouldApplyReleaseDirectly(target) {
-		return s.createQueuedRelease(ctx, principal, app, connection, target, input, resolvedImage, bundleID, taskID, providerKind, targetKind)
+	plan := execution.ReleasePlan{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
+		ReleaseBundleID:          strings.TrimSpace(input.ReleaseBundleID),
+		Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
+		SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
+		ProviderKind:             providerKind,
+		TargetKind:               targetKind,
+		ArtifactRef:              resolvedImage,
+		Metadata:                 buildReleaseExecutionMetadata(app, input, target, resolvedImage),
 	}
+	if !shouldApplyReleaseDirectly(target) {
+		return s.createQueuedRelease(ctx, principal, prepared, input, plan)
+	}
+	bundleID, taskID := s.startReleaseExecution(ctx, plan)
 	applied, err := s.applyAndPersistDirectRelease(ctx, app, connection, input, resolvedImage, bundleID, taskID)
 	if err != nil {
 		return domainrelease.Record{}, err
@@ -370,28 +380,22 @@ func validateReleaseTriggerInput(input domainrelease.TriggerInput) error {
 	}
 }
 
-func (s *Service) startReleaseExecution(ctx context.Context, app domainapp.App, input domainrelease.TriggerInput, target domaincatalog.ReleaseTarget, image, bundleID, providerKind, targetKind string) (string, string) {
+func (s *Service) startReleaseExecution(ctx context.Context, plan execution.ReleasePlan) (string, string) {
 	if s.execution == nil {
-		return bundleID, ""
+		return plan.ReleaseBundleID, ""
 	}
-	bundle, task, err := s.execution.StartReleaseExecution(ctx, execution.ReleasePlan{
-		ApplicationID:            app.ID,
-		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
-		ReleaseBundleID:          bundleID,
-		Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
-		SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
-		ProviderKind:             providerKind,
-		TargetKind:               targetKind,
-		ArtifactRef:              image,
-		Metadata:                 buildReleaseExecutionMetadata(app, input, target, image),
-	})
+	bundle, task, err := s.execution.StartReleaseExecution(ctx, plan)
 	if err != nil {
-		return bundleID, ""
+		return plan.ReleaseBundleID, ""
 	}
 	return bundle.ID, task.ID
 }
 
-func (s *Service) createQueuedRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, connection domaincluster.Connection, target domaincatalog.ReleaseTarget, input domainrelease.TriggerInput, image, bundleID, taskID, providerKind, targetKind string) (domainrelease.Record, error) {
+func (s *Service) createQueuedRelease(ctx context.Context, principal domainidentity.Principal, prepared preparedReleaseTrigger, input domainrelease.TriggerInput, plan execution.ReleasePlan) (domainrelease.Record, error) {
+	if s.execution == nil {
+		return domainrelease.Record{}, fmt.Errorf("%w: execution plane is not configured", apperrors.ErrUnsupportedOperation)
+	}
+	app, connection, target := prepared.app, prepared.connection, prepared.target
 	now := time.Now().UTC()
 	record := domainrelease.Record{
 		ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
@@ -403,25 +407,33 @@ func (s *Service) createQueuedRelease(ctx context.Context, principal domainident
 		Metadata: map[string]any{
 			"applicationName":          app.Name,
 			"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
-			"releaseBundleId":          bundleID,
-			"executionTaskId":          taskID,
 			"clusterId":                input.ClusterID,
 			"namespace":                input.Namespace,
-			"targetKind":               targetKind,
-			"executorKind":             providerKind,
+			"targetKind":               plan.TargetKind,
+			"executorKind":             plan.ProviderKind,
 			"deploymentName":           input.DeploymentName,
 			"workloadKind":             target.WorkloadKind,
 			"workloadName":             target.WorkloadName,
 			"containerName":            input.ContainerName,
 			"releaseName":              input.ReleaseName,
 			"imageTag":                 strings.TrimSpace(input.ImageTag),
-			"image":                    image,
+			"image":                    plan.ArtifactRef,
 		},
 		CreatedAt: now,
 	}
-	record, err := s.repo.Create(ctx, record)
+	plan.AssociateProjection = func(ctx context.Context, bundle domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask) error {
+		record.Metadata["releaseBundleId"] = bundle.ID
+		record.Metadata["executionTaskId"] = task.ID
+		var err error
+		record, err = s.repo.Create(ctx, record)
+		return err
+	}
+	bundle, task, err := s.execution.StartReleaseExecution(ctx, plan)
 	if err != nil {
 		return domainrelease.Record{}, err
+	}
+	if current, err := s.repo.Get(ctx, record.ID); err == nil {
+		record = current
 	}
 	if s.events != nil {
 		_ = s.events.Create(ctx, domainevent.Envelope{
@@ -435,12 +447,12 @@ func (s *Service) createQueuedRelease(ctx context.Context, principal domainident
 			Payload: map[string]any{
 				"releaseId":       record.ID,
 				"applicationId":   record.ApplicationID,
-				"executionTaskId": taskID,
-				"releaseBundleId": bundleID,
+				"executionTaskId": task.ID,
+				"releaseBundleId": bundle.ID,
 			},
 		})
 	}
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": image})
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": plan.ArtifactRef})
 	return record, nil
 }
 

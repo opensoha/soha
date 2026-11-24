@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth-store'
 import { ApiError } from '@/services/api-error'
-import { ConfigProvider } from 'antd'
+import { App, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { CLISessionsPanel } from './cli-sessions-panel'
 import { cliAuthApi } from './cli-auth-api'
@@ -50,7 +50,9 @@ async function mount() {
     root.render(
       <ConfigProvider locale={zhCN}>
         <QueryClientProvider client={client}>
-          <CLISessionsPanel />
+          <App>
+            <CLISessionsPanel />
+          </App>
         </QueryClientProvider>
       </ConfigProvider>,
     ),
@@ -120,11 +122,17 @@ describe('personal CLI sessions', () => {
     await click('确定')
     expect(cliAuthApi.revokeSession).toHaveBeenCalledWith('terminal-to-revoke', expect.anything())
     expect(cliAuthApi.sessions).toHaveBeenCalledTimes(2)
-    expect(container.textContent).toContain('CLI 会话已撤销')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        'CLI 会话已撤销',
+      ),
+    )
     vi.mocked(cliAuthApi.sessions).mockRejectedValue(new ApiError(503, 'Temporarily unavailable'))
     await act(async () => client.invalidateQueries())
     await flush()
-    expect(document.body.textContent).toContain('Temporarily unavailable')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      'Temporarily unavailable',
+    )
     expect(button('下一页').disabled).toBe(true)
   })
 })

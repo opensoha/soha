@@ -5,16 +5,21 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -22,7 +27,11 @@ import (
 const (
 	maxMarketplaceCatalogBytes  = 5 << 20
 	maxMarketplaceManifestBytes = 2 << 20
+	marketplaceSourceTimeout    = 10 * time.Second
 )
+
+var errMarketplaceReleaseSuspended = apperrors.NewBusiness(apperrors.ErrConflict, "plugin_release_suspended",
+	"This plugin release is suspended.", "此插件版本已暂停分发。")
 
 var nonPublicMarketplacePrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -57,21 +66,29 @@ type MarketplaceProvider interface {
 	FetchManifest(context.Context, domainplugin.PluginVersionRef) (ResolvedManifest, error)
 }
 
+type marketplaceSourceLister interface {
+	listWithSources(context.Context, domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error)
+}
+
 type ResolvedManifest struct {
 	Plugin          domainplugin.MarketplacePlugin
 	Manifest        domainplugin.PluginManifest
 	Integrity       *domainplugin.PluginIntegrity
+	RawChecksum     string
 	ChecksumStatus  string
 	SignatureStatus string
 	Source          string
 	SourceID        string
 	MarketplaceURL  string
+	SourceInfo      *domainplugin.PluginSourceInfo
 	Package         *domainplugin.PluginPackageDescriptor
 }
 
 type MarketplaceSource struct {
-	ID  string
-	URL string
+	ID       string
+	URL      string
+	Official bool
+	Legacy   bool
 }
 
 type CompositeMarketplaceProvider struct {
@@ -105,20 +122,92 @@ func NewCompositeMarketplaceProvider(providers ...MarketplaceProvider) *Composit
 }
 
 func (p *CompositeMarketplaceProvider) List(ctx context.Context, filter domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error) {
-	items := []domainplugin.MarketplacePlugin{}
-	for _, provider := range p.providers {
-		providerItems, err := provider.List(ctx, filter)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, providerItems...)
+	result, err := p.listWithSources(ctx, filter)
+	return result.Items, err
+}
+
+func (p *CompositeMarketplaceProvider) listWithSources(ctx context.Context, filter domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error) {
+	ctx, cancel := context.WithTimeout(ctx, marketplaceSourceTimeout)
+	defer cancel()
+	type catalogResult struct {
+		list sohaapi.MarketplacePluginListEnvelope
+		err  error
 	}
-	return items, nil
+	providers := make([]MarketplaceProvider, 0, len(p.providers))
+	for _, provider := range p.providers {
+		if visibleMarketplaceProvider(provider) && marketplaceProviderMatchesSource(provider, filter.SourceID) {
+			providers = append(providers, provider)
+		}
+	}
+	catalogs := make([]catalogResult, len(providers))
+	var group errgroup.Group
+	for index, provider := range providers {
+		group.Go(func() error {
+			catalogs[index].list, catalogs[index].err = listMarketplaceProvider(ctx, provider, filter)
+			return nil
+		})
+	}
+	_ = group.Wait()
+
+	result := sohaapi.MarketplacePluginListEnvelope{Items: []domainplugin.MarketplacePlugin{}}
+	var firstErr error
+	var available bool
+	for _, catalog := range catalogs {
+		if catalog.list.Meta != nil {
+			if result.Meta == nil {
+				result.Meta = &sohaapi.MarketplacePluginListMeta{}
+			}
+			result.Meta.Sources = append(result.Meta.Sources, catalog.list.Meta.Sources...)
+		}
+		if catalog.err == nil {
+			available = true
+			result.Items = append(result.Items, catalog.list.Items...)
+		} else if firstErr == nil {
+			firstErr = catalog.err
+		}
+	}
+	if !available && firstErr != nil {
+		result.Items = nil
+		return result, firstErr
+	}
+	return result, nil
+}
+
+func listMarketplaceProvider(ctx context.Context, provider MarketplaceProvider, filter domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error) {
+	if lister, ok := provider.(marketplaceSourceLister); ok {
+		return lister.listWithSources(ctx, filter)
+	}
+	items, err := provider.List(ctx, filter)
+	return sohaapi.MarketplacePluginListEnvelope{Items: items}, err
+}
+
+func marketplaceProviderMatchesSource(provider MarketplaceProvider, sourceID string) bool {
+	if sourceID == "" {
+		return true
+	}
+	switch candidate := provider.(type) {
+	case *RemoteMarketplaceProvider:
+		return sourceID == candidate.sourceID
+	case *CompositeMarketplaceProvider:
+		return slices.ContainsFunc(candidate.providers, func(child MarketplaceProvider) bool {
+			return marketplaceProviderMatchesSource(child, sourceID)
+		})
+	default:
+		return true
+	}
+}
+
+func visibleMarketplaceProvider(provider MarketplaceProvider) bool {
+	remote, ok := provider.(*RemoteMarketplaceProvider)
+	return !ok || !remote.legacy
 }
 
 func (p *CompositeMarketplaceProvider) Get(ctx context.Context, ref domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error) {
 	var lastErr error
 	for _, provider := range p.providers {
+		if !visibleMarketplaceProvider(provider) || !marketplaceProviderMatchesSource(provider, ref.SourceID) {
+			continue
+		}
 		item, err := provider.Get(ctx, ref)
 		if err == nil {
 			return item, nil
@@ -134,9 +223,12 @@ func (p *CompositeMarketplaceProvider) Get(ctx context.Context, ref domainplugin
 func (p *CompositeMarketplaceProvider) FetchManifest(ctx context.Context, ref domainplugin.PluginVersionRef) (ResolvedManifest, error) {
 	var lastErr error
 	for _, provider := range p.providers {
+		if !visibleMarketplaceProvider(provider) || !marketplaceProviderMatchesSource(provider, ref.SourceID) {
+			continue
+		}
 		resolved, err := provider.FetchManifest(ctx, ref)
-		if err == nil {
-			return resolved, nil
+		if err == nil || errors.Is(err, errMarketplaceReleaseSuspended) || errors.Is(err, errMarketplaceRepositoryPreviewRequired) {
+			return resolved, err
 		}
 		lastErr = err
 	}
@@ -147,6 +239,9 @@ func (p *CompositeMarketplaceProvider) FetchManifest(ctx context.Context, ref do
 }
 
 type RemoteMarketplaceProvider struct {
+	official   bool
+	managed    bool
+	legacy     bool
 	sourceID   string
 	catalogURL string
 	client     *http.Client
@@ -162,10 +257,12 @@ func NewRemoteMarketplaceProvider(source MarketplaceSource, client *http.Client)
 		return nil, err
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = &http.Client{Timeout: marketplaceSourceTimeout}
 	}
 	return &RemoteMarketplaceProvider{
 		sourceID:   source.ID,
+		official:   source.Official,
+		legacy:     source.Legacy,
 		catalogURL: source.URL,
 		client:     client,
 	}, nil
@@ -179,21 +276,25 @@ func NewAdHocRemoteMarketplaceProvider(source MarketplaceSource) (*RemoteMarketp
 	}
 	return &RemoteMarketplaceProvider{
 		sourceID:   source.ID,
+		official:   source.Official,
 		catalogURL: source.URL,
 		client:     newAdHocMarketplaceHTTPClient(),
 	}, nil
 }
 
 func (p *RemoteMarketplaceProvider) List(ctx context.Context, filter domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error) {
-	catalog, err := p.fetchCatalog(ctx)
+	if !marketplaceProviderMatchesSource(p, filter.SourceID) {
+		return []domainplugin.MarketplacePlugin{}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, marketplaceSourceTimeout)
+	defer cancel()
+	items, err := p.fetchMarketplaceItems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sourceURL := firstNonEmpty(catalog.SourceURL, p.catalogURL)
-	sourceID := firstNonEmpty(catalog.SourceID, p.sourceID)
-	items := normalizeMarketplaceItems(sourceID, sourceURL, catalog.Plugins)
 	out := make([]domainplugin.MarketplacePlugin, 0, len(items))
 	for _, item := range items {
+		item.SourceInfo.Official = p.official
 		if matchesMarketplaceFilter(item, filter) {
 			out = append(out, item)
 		}
@@ -201,17 +302,33 @@ func (p *RemoteMarketplaceProvider) List(ctx context.Context, filter domainplugi
 	return out, nil
 }
 
+func (p *RemoteMarketplaceProvider) listWithSources(ctx context.Context, filter domainplugin.MarketplaceFilter) (sohaapi.MarketplacePluginListEnvelope, error) {
+	items, err := p.List(ctx, filter)
+	result := sohaapi.MarketplacePluginListEnvelope{Items: items}
+	if !marketplaceProviderMatchesSource(p, filter.SourceID) {
+		return result, err
+	}
+	status := sohaapi.MarketplaceSourceStatus{SourceID: p.sourceID, Status: sohaapi.MarketplaceSourceStatusAvailable}
+	if err != nil {
+		status.Status = sohaapi.MarketplaceSourceStatusUnavailable
+		status.Code = "source_unavailable"
+	}
+	result.Meta = &sohaapi.MarketplacePluginListMeta{Sources: []sohaapi.MarketplaceSourceStatus{status}}
+	return result, err
+}
+
 func (p *RemoteMarketplaceProvider) Get(ctx context.Context, ref domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error) {
-	items, err := p.List(ctx, domainplugin.MarketplaceFilter{
-		SourceID: ref.SourceID,
-		Version:  ref.Version,
-	})
+	return p.get(ctx, ref, false)
+}
+
+func (p *RemoteMarketplaceProvider) get(ctx context.Context, ref domainplugin.PluginVersionRef, includeUnversionedRepository bool) (domainplugin.MarketplacePlugin, error) {
+	items, err := p.List(ctx, domainplugin.MarketplaceFilter{SourceID: ref.SourceID})
 	if err != nil {
 		return domainplugin.MarketplacePlugin{}, err
 	}
 	pluginID := strings.TrimSpace(ref.PluginID)
 	for _, item := range items {
-		if item.ID == pluginID && marketplaceVersionMatches(item, ref.Version) {
+		if item.ID == pluginID && ((includeUnversionedRepository && item.RepositoryURL != "") || marketplaceVersionMatches(item, ref.Version)) {
 			return item, nil
 		}
 	}
@@ -219,21 +336,27 @@ func (p *RemoteMarketplaceProvider) Get(ctx context.Context, ref domainplugin.Pl
 }
 
 func (p *RemoteMarketplaceProvider) FetchManifest(ctx context.Context, ref domainplugin.PluginVersionRef) (ResolvedManifest, error) {
-	item, err := p.Get(ctx, ref)
+	item, err := p.get(ctx, ref, true)
 	if err != nil {
 		return ResolvedManifest{}, err
+	}
+	if item.RepositoryURL != "" {
+		return ResolvedManifest{}, errMarketplaceRepositoryPreviewRequired
 	}
 	version, ok := selectMarketplaceVersion(item, ref.Version)
 	if !ok {
 		return ResolvedManifest{}, fmt.Errorf("%w: marketplace plugin version not found", apperrors.ErrNotFound)
 	}
+	if item.Suspended || version.Suspended {
+		return ResolvedManifest{}, errMarketplaceReleaseSuspended
+	}
 	manifest := item.Manifest
+	rawChecksum := ""
 	checksumStatus := "not_provided"
 	integrity := &domainplugin.PluginIntegrity{
 		Checksum:  version.Checksum,
 		Signature: version.Signature,
 		Status:    "catalog",
-		Verified:  version.Signature != "",
 	}
 	if strings.TrimSpace(version.ManifestURL) != "" {
 		manifestURL, err := resolveMarketplaceURL(p.catalogURL, version.ManifestURL)
@@ -244,57 +367,74 @@ func (p *RemoteMarketplaceProvider) FetchManifest(ctx context.Context, ref domai
 		if err != nil {
 			return ResolvedManifest{}, err
 		}
+		manifest = domainplugin.PluginManifest{}
 		if err := json.Unmarshal(raw, &manifest); err != nil {
 			return ResolvedManifest{}, fmt.Errorf("%w: decode plugin manifest", apperrors.ErrInvalidArgument)
 		}
+		rawChecksum = checksumBytes(raw)
 		if strings.TrimSpace(version.Checksum) != "" {
-			sum := checksumBytes(raw)
-			if sum != strings.TrimSpace(version.Checksum) {
+			if rawChecksum != strings.TrimSpace(version.Checksum) {
 				return ResolvedManifest{}, fmt.Errorf("%w: manifest checksum mismatch", apperrors.ErrInvalidArgument)
 			}
 			checksumStatus = "verified"
 		}
+	}
+	if manifest.ID != item.ID || manifest.Version != version.Version {
+		return ResolvedManifest{}, fmt.Errorf("%w: manifest identity does not match catalog release", apperrors.ErrInvalidArgument)
 	}
 	if integrity.Checksum == "" && manifest.Integrity != nil {
 		integrity.Checksum = manifest.Integrity.Checksum
 	}
 	if integrity.Signature == "" && manifest.Integrity != nil {
 		integrity.Signature = manifest.Integrity.Signature
-		integrity.Verified = manifest.Integrity.Verified
 	}
+	manifest = withoutManifestTrustClaims(manifest)
 	signatureStatus := "not_provided"
 	if integrity.Signature != "" {
-		signatureStatus = "provided"
-	}
-	if integrity.Verified {
-		signatureStatus = "verified"
+		signatureStatus = "declared"
 	}
 	return ResolvedManifest{
 		Plugin:          item,
 		Manifest:        manifest,
 		Integrity:       integrity,
+		RawChecksum:     rawChecksum,
 		ChecksumStatus:  checksumStatus,
 		SignatureStatus: signatureStatus,
 		Source:          firstNonEmpty(item.Source, "marketplace:"+item.ID),
 		SourceID:        firstNonEmpty(item.SourceID, p.sourceID),
 		MarketplaceURL:  firstNonEmpty(item.SourceURL, p.catalogURL),
+		SourceInfo:      marketplaceReleaseSource(item.SourceInfo, version, rawChecksum, checksumStatus == "verified"),
 		Package:         version.Package,
 	}, nil
 }
 
-func (p *RemoteMarketplaceProvider) fetchCatalog(ctx context.Context) (domainplugin.MarketplaceCatalog, error) {
+func (p *RemoteMarketplaceProvider) fetchMarketplaceItems(ctx context.Context) ([]domainplugin.MarketplacePlugin, error) {
 	raw, err := p.getBytes(ctx, p.catalogURL, maxMarketplaceCatalogBytes)
 	if err != nil {
-		return domainplugin.MarketplaceCatalog{}, err
+		return nil, err
+	}
+	var header struct {
+		SchemaVersion string `json:"schemaVersion"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return nil, fmt.Errorf("%w: decode marketplace catalog", apperrors.ErrInvalidArgument)
+	}
+	if header.SchemaVersion == marketplaceRepositoriesVersion {
+		return p.decodeMarketplaceRepositories(raw)
+	}
+	if p.managed {
+		if err := validateManagedMarketplaceCatalog(raw); err != nil {
+			return nil, err
+		}
 	}
 	var catalog domainplugin.MarketplaceCatalog
 	if err := json.Unmarshal(raw, &catalog); err != nil {
-		return domainplugin.MarketplaceCatalog{}, fmt.Errorf("%w: decode marketplace catalog", apperrors.ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: decode marketplace catalog", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(catalog.SchemaVersion) == "" || strings.TrimSpace(catalog.SourceID) == "" {
-		return domainplugin.MarketplaceCatalog{}, fmt.Errorf("%w: marketplace catalog missing schemaVersion or sourceId", apperrors.ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: marketplace catalog missing schemaVersion or sourceId", apperrors.ErrInvalidArgument)
 	}
-	return catalog, nil
+	return normalizeMarketplaceItems(p.sourceID, p.catalogURL, catalog.Plugins), nil
 }
 
 func (p *RemoteMarketplaceProvider) getBytes(ctx context.Context, rawURL string, limit int64) ([]byte, error) {
@@ -350,11 +490,19 @@ func normalizeMarketplaceItems(sourceID, sourceURL string, items []domainplugin.
 		if item.Source == "" {
 			item.Source = "marketplace:" + item.ID
 		}
-		if item.SourceID == "" {
-			item.SourceID = sourceID
-		}
-		if item.SourceURL == "" {
-			item.SourceURL = sourceURL
+		item.SourceID = sourceID
+		item.SourceURL = sourceURL
+		item.RepositoryURL = ""
+		item.SourceInfo = &domainplugin.PluginSourceInfo{Kind: domainplugin.SourceKindMarketplace, CanonicalSource: sourceURL, SourceID: sourceID}
+		item.Verified = false
+		item.Manifest = withoutManifestTrustClaims(item.Manifest)
+		if item.PublisherInfo != nil {
+			publisher := *item.PublisherInfo
+			publisher.Verified = false
+			if publisher.VerificationLevel == "official" || publisher.VerificationLevel == "verified" {
+				publisher.VerificationLevel = "community"
+			}
+			item.PublisherInfo = &publisher
 		}
 		if item.Compatibility == nil {
 			item.Compatibility = item.Manifest.Compatibility
@@ -362,6 +510,33 @@ func normalizeMarketplaceItems(sourceID, sourceURL string, items []domainplugin.
 		out = append(out, item)
 	}
 	return out
+}
+
+func marketplaceReleaseSource(source *domainplugin.PluginSourceInfo, version domainplugin.MarketplacePluginVersion, checksum string, verified bool) *domainplugin.PluginSourceInfo {
+	info := *source
+	commit := version.CommitSha
+	if commit == "" && info.Official && verified {
+		// Released catalog schemas can carry the official release commit in metadata.
+		commit, _ = version.Metadata["commitSha"].(string)
+	}
+	if repositoryCommitSHA.MatchString(commit) {
+		info.CommitSha = commit
+	}
+	info.RawManifestChecksum = checksum
+	return &info
+}
+
+func withoutManifestTrustClaims(manifest domainplugin.PluginManifest) domainplugin.PluginManifest {
+	if manifest.Integrity != nil {
+		integrity := *manifest.Integrity
+		integrity.Verified = false
+		integrity.Status = "not_provided"
+		if strings.TrimSpace(integrity.Signature) != "" {
+			integrity.Status = "declared"
+		}
+		manifest.Integrity = &integrity
+	}
+	return manifest
 }
 
 func selectMarketplaceVersion(item domainplugin.MarketplacePlugin, version string) (domainplugin.MarketplacePluginVersion, bool) {

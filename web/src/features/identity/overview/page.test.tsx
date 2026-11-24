@@ -3,6 +3,7 @@
 import type { SystemIntegrationCategory } from '@/features/settings'
 import type { AuditLog, OnlineUser } from '@/features/system'
 import { act, type ReactNode } from 'react'
+import { App as AntdApp } from 'antd'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IdentityOutpost } from '../outposts'
@@ -35,7 +36,8 @@ vi.mock('@ant-design/icons', () => {
   }
 })
 
-vi.mock('antd', () => ({
+vi.mock('antd', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('antd')>()),
   Button: ({
     children,
     disabled,
@@ -361,7 +363,11 @@ async function renderPage() {
   const root = createRoot(container)
   roots.push(root)
   await act(async () => {
-    root.render(<IdentityOverviewPage />)
+    root.render(
+      <AntdApp>
+        <IdentityOverviewPage />
+      </AntdApp>,
+    )
   })
   return container
 }

@@ -152,7 +152,9 @@ describe('HealingPage task tabs', () => {
     await render()
     expect(panel().querySelector('.ant-spin-spinning')).not.toBeNull()
     await settle(() => rejectPolicies(new Error('策略读取失败')))
-    expect(panel().textContent).toContain('策略读取失败')
+    expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+      '策略读取失败',
+    )
     expect(button('刷新列表')).toBeTruthy()
     await selectTab('执行记录')
     expect(panel().textContent).toContain(run.id)

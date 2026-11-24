@@ -882,8 +882,9 @@ describe('delivery runtime detail pages', () => {
           await new Promise((resolve) => setTimeout(resolve, 10))
         })
         expect(view.textContent).toContain('protected/image:v1')
-        expect(view.textContent).toContain('上次读取结果')
-        expect(view.textContent).toContain('req-evidence-503')
+        const notice = document.querySelector('.soha-read-feedback-notification')!
+        expect(notice.textContent).toContain('上次读取结果')
+        expect(notice.textContent).toContain('req-evidence-503')
         testState.apiGet.mockRejectedValueOnce(
           new ApiError(403, 'evidence denied', { method: 'GET', requestId: 'req-evidence-403' }),
         )
@@ -1180,7 +1181,9 @@ describe('delivery runtime detail pages', () => {
       expect(container.querySelector('[aria-label="工作负载运行关系"]')?.textContent).toContain(
         'checkout-config',
       )
-      expect(container.textContent).toContain('读取失败')
+      expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
+        '读取失败',
+      )
     } finally {
       testState.apiGet.mockImplementation(get)
     }
