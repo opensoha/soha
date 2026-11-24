@@ -21,6 +21,22 @@ export type MockResolver = (
   request: Request,
 ) => MockResponse | Promise<MockResponse>
 
+function defaultHeyaReads(url: URL, method: string): MockResponse {
+  if (method !== 'GET') return undefined
+  const location = url.pathname + url.search
+  if (location === '/api/v1/announcements/inbox?limit=10')
+    return { body: { data: { items: [], unreadCount: 0 } } }
+  if (
+    location === '/api/v1/copilot/assistant-mesh/assets?view=mine&offset=0' ||
+    location === '/api/v1/copilot/assistant-mesh/profile'
+  )
+    return {
+      status: 403,
+      body: { error: { code: 'access_denied', message: 'Assistant mesh is disabled' } },
+    }
+  return undefined
+}
+
 export async function installMocks(context: BrowserContext, page: Page, resolve?: MockResolver) {
   const evidence: BrowserEvidence = { fatal: [], failures: [], missing: [], requests: [] }
   page.on('pageerror', (error) =>
@@ -75,7 +91,9 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
           : !url.pathname.includes('/workloads/deployments/api/') ||
             url.searchParams.get('namespace') === 'monitoring'
     const response =
-      selected ?? (body && scoped && request.method() === 'GET' ? { body } : undefined)
+      selected ??
+      (body && scoped && request.method() === 'GET' ? { body } : undefined) ??
+      defaultHeyaReads(url, request.method())
     // Refresh is POST in the actual API client; mock authentication never proves real login.
     const refresh: MockResponse =
       url.pathname === '/api/v1/auth/refresh' && request.method() === 'POST' ? { body } : undefined
