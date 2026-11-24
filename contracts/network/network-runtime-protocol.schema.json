@@ -1749,7 +1749,15 @@
           "items": {
             "$ref": "#/$defs/DNSResolutionRequest"
           }
+        },
+        "vpnConnectivity": {
+          "$ref": "#/$defs/WireGuardPathPlan"
         }
+      },
+      "dependentRequired": {
+        "vpnConnectivity": [
+          "wireguard"
+        ]
       }
     },
     "MihomoBypassHost": {
@@ -2376,6 +2384,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "vpnConnectivity": {
+          "$ref": "#/$defs/WireGuardPathReadback"
         }
       }
     },
@@ -3449,6 +3460,233 @@
         },
         "status": {
           "const": "revoked"
+        }
+      }
+    },
+    "WireGuardPathMode": {
+      "enum": [
+        "direct",
+        "relay_udp",
+        "relay_tls_tcp",
+        "disconnected",
+        "unknown"
+      ]
+    },
+    "WireGuardPathScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "sessionId",
+        "pairId",
+        "peerRuntimeId",
+        "leaseId",
+        "policyEpoch",
+        "validUntil"
+      ],
+      "properties": {
+        "deploymentId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pairId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "peerRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policyEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "WireGuardPathRelay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relayId",
+        "transports",
+        "ticketRef"
+      ],
+      "properties": {
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "transports": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "udp",
+              "tls_tcp"
+            ]
+          }
+        },
+        "ticketRef": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "WireGuardPathGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/WireGuardPathScope"
+        },
+        "relay": {
+          "$ref": "#/$defs/WireGuardPathRelay"
+        }
+      }
+    },
+    "WireGuardPathPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "peers"
+      ],
+      "properties": {
+        "version": {
+          "const": "wireguard-peer-path/v1alpha1"
+        },
+        "peers": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/WireGuardPathGrant"
+          }
+        }
+      }
+    },
+    "WireGuardPathSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairId",
+        "policyEpoch",
+        "mode",
+        "observedAt"
+      ],
+      "properties": {
+        "pairId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policyEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mode": {
+          "$ref": "#/$defs/WireGuardPathMode"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "relay_udp",
+                  "relay_tls_tcp"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "relayId"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "relayId"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "WireGuardPathReadback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "peers"
+      ],
+      "properties": {
+        "version": {
+          "const": "wireguard-peer-path/v1alpha1"
+        },
+        "peers": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/WireGuardPathSample"
+          }
+        }
+      }
+    },
+    "WireGuardPathRelayTicketClaims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "relayId",
+        "sourceRuntimeId",
+        "transport",
+        "ticketId",
+        "expiresAt"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/WireGuardPathScope"
+        },
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sourceRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "transport": {
+          "enum": [
+            "udp",
+            "tls_tcp"
+          ]
+        },
+        "ticketId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     }
