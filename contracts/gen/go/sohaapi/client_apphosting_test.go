@@ -191,6 +191,7 @@ func TestAppHostingSettingsAndAudienceClientMethods(t *testing.T) {
 	})
 
 	t.Run("rotate gateway token", func(t *testing.T) {
+		wantToken := "fixture-for-" + t.Name()
 		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 			assertCommonRequest(t, r, http.MethodPost, "/api/v1/app-hosting/settings/gateway-token/rotate")
 			req := decodeJSONRequestBody[AppHostingGatewayTokenRotateRequest](t, r)
@@ -199,7 +200,7 @@ func TestAppHostingSettingsAndAudienceClientMethods(t *testing.T) {
 			}
 			writeJSON(t, w, AppHostingGatewayTokenRotateResponse{
 				Data: AppHostingGatewayTokenSecret{
-					Token:     "soha_ahgw_test_secret_token",
+					Token:     wantToken,
 					RotatedAt: now,
 				},
 			})
@@ -210,7 +211,7 @@ func TestAppHostingSettingsAndAudienceClientMethods(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RotateAppHostingGatewayToken: %v", err)
 		}
-		if secret.Token != "soha_ahgw_test_secret_token" || !secret.RotatedAt.Equal(now) {
+		if secret.Token != wantToken || !secret.RotatedAt.Equal(now) {
 			t.Fatalf("secret = %#v", secret)
 		}
 	})
@@ -604,7 +605,8 @@ func TestAppHostingGatewayClientMethodsSupportClientAndOverrideBearerTokens(t *t
 		t.Fatalf("CheckHostedAppGatewayAccess = %#v, %v", decision, err)
 	}
 
-	var aliasCheck AppHostingGatewayAccessDecision = decision
+	var aliasCheck AppHostingGatewayAccessDecision
+	aliasCheck = decision
 	if aliasCheck.Host != "ops-report-a1b2c3.apps.soha.internal" {
 		t.Fatalf("alias check = %#v", aliasCheck)
 	}
@@ -667,7 +669,7 @@ func TestAppHostingB2PortalCollaborationApprovalAndWorkspaceClientMethods(t *tes
 	}
 
 	t.Run("settings policy and list apps filters", func(t *testing.T) {
-		var aliasReq UpdateAppHostingSettingsRequest = AppHostingSettingsUpdateRequest{
+		aliasReq := UpdateAppHostingSettingsRequest{
 			Enabled:                      true,
 			AppsDomain:                   "apps.soha.internal",
 			StorageIntegrationID:         "int_minio_1",
