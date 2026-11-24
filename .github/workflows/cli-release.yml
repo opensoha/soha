@@ -78,7 +78,7 @@ jobs:
         run: python3 scripts/source-workspace.py check-go
       - name: Verify declared released SDK without workspace replacement
         env:
-          REQUESTED_CONTRACTS_REF: v0.2.2
+          REQUESTED_CONTRACTS_REF: v0.2.3
         run: python3 agent/deploy/resolve_contracts.py --mode declared --consumer cli
       - name: Qualify cli against the public declared SDK
         working-directory: cli

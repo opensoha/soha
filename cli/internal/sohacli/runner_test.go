@@ -2816,7 +2816,7 @@ func TestRunCompletionPrintsScript(t *testing.T) {
 		`add)`,
 		"plugin",
 		`plugin)`,
-		"search show install list enable disable upgrade config remove rm",
+		"search show install list enable disable upgrade rollback config remove rm",
 		"auth)",
 		"revoke-session",
 		"token-rotate",

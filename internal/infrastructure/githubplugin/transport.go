@@ -14,6 +14,8 @@ import (
 const (
 	apiHost        = "api.github.com"
 	rawHost        = "raw.githubusercontent.com"
+	releaseHost    = "release-assets.githubusercontent.com"
+	objectsHost    = "objects.githubusercontent.com"
 	dialTimeout    = 5 * time.Second
 	requestTimeout = 10 * time.Second
 )
@@ -62,7 +64,7 @@ type publicDialer struct {
 
 func (dialer publicDialer) dialContext(ctx context.Context, network, target string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(target)
-	if err != nil || port != "443" || (host != apiHost && host != rawHost) {
+	if err != nil || port != "443" || (host != apiHost && host != rawHost && !isReleaseAssetHost(host)) {
 		return nil, ErrEgressBlocked
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
@@ -87,6 +89,10 @@ func (dialer publicDialer) dialContext(ctx context.Context, network, target stri
 		}
 	}
 	return nil, requestFailure(dialCtx, nil)
+}
+
+func isReleaseAssetHost(host string) bool {
+	return host == releaseHost || host == objectsHost
 }
 
 func isPublicAddress(address netip.Addr) bool {

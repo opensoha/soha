@@ -240,6 +240,7 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/plugins/:pluginID/disable", deps.Plugins.Disable)
 	protected.POST("/plugins/:pluginID/upgrade", deps.Plugins.Upgrade)
 	protected.POST("/plugins/:pluginID/repository/upgrade", deps.Plugins.UpgradeRepository)
+	protected.POST("/plugins/:pluginID/repository/rollback", deps.Plugins.RollbackRepository)
 	protected.PUT("/plugins/:pluginID/config", deps.Plugins.Configure)
 	protected.POST("/plugins/:pluginID/activate", deps.Plugins.ActivateCompanion)
 	protected.POST("/plugins/:pluginID/rollback", deps.Plugins.RollbackCompanion)
