@@ -66,9 +66,10 @@ function normalizeS3StorageEndpoint(value?: string) {
 export function isValidS3StorageEndpoint(value: string | undefined, required: boolean) {
   if (!value?.trim()) return !required
   const endpoint = normalizeS3StorageEndpoint(value)
-  if (!/^https?:\/\//.test(endpoint)) return false
+  if (!/^https?:\/\/[^/?#\\\s]/i.test(endpoint)) return false
   try {
-    return Boolean(new URL(endpoint).hostname)
+    const url = new URL(endpoint)
+    return Boolean(url.hostname) && !url.username && !url.password && !url.search && !url.hash
   } catch {
     return false
   }

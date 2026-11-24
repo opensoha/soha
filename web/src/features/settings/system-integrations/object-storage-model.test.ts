@@ -108,6 +108,9 @@ describe('S3 object storage integration model', () => {
     expect(isValidS3StorageEndpoint('   ', true)).toBe(false)
     expect(isValidS3StorageEndpoint('///', false)).toBe(false)
     expect(isValidS3StorageEndpoint('https:///', true)).toBe(false)
+    expect(isValidS3StorageEndpoint('https:///objects.example.test', true)).toBe(false)
+    expect(isValidS3StorageEndpoint('https://user@objects.example.test', true)).toBe(false)
+    expect(isValidS3StorageEndpoint('https://objects.example.test/?bucket=app', true)).toBe(false)
     expect(isValidS3StorageEndpoint(' https://objects.example.test/ ', true)).toBe(true)
   })
 
