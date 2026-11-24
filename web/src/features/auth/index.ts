@@ -21,3 +21,4 @@ export {
   usePermissionSnapshot,
 } from './permission-snapshot'
 export { buildSameOriginStreamURL, withStreamTicket } from './stream-ticket'
+export { takeWorkbenchEntryRead } from './workbench-startup-reads'

@@ -123,8 +123,8 @@ function ServiceReferenceDrawer({
 }) {
   const queryClient = useQueryClient()
   const [sourceId, setSourceId] = useState<string>()
-  const slotKey = [...deliveryKeys.environments.all, 'service-reference', bindingId, serviceId]
-  const bindingsKey = [...deliveryKeys.environments.all, 'reference-bindings', applicationId]
+  const slotKey = deliveryKeys.environments.serviceReference(bindingId, serviceId)
+  const bindingsKey = deliveryKeys.environments.referenceBindings(applicationId)
   const bindingsQuery = useQuery({
     queryKey: bindingsKey,
     queryFn: () => serviceReferenceApi.bindings(applicationId),
@@ -134,7 +134,7 @@ function ServiceReferenceDrawer({
   })
   const catalogQuery = useQuery(deliveryQueries.environmentCatalog.list(canEditReference))
   const markersQuery = useQuery({
-    queryKey: [...slotKey, 'identities'],
+    queryKey: deliveryKeys.environments.serviceReferenceIdentities(bindingId, serviceId),
     queryFn: async () => {
       const [candidate, active] = await Promise.all([
         serviceReferenceApi.findCandidate(bindingId, serviceId),
@@ -153,7 +153,12 @@ function ServiceReferenceDrawer({
     (target) => referenceTargetServiceId(target) === serviceId,
   )
   const candidateQuery = useQuery({
-    queryKey: [...slotKey, 'candidate', markers?.candidate?.id, markers?.candidate?.revision],
+    queryKey: deliveryKeys.environments.serviceReferenceCandidate(
+      bindingId,
+      serviceId,
+      markers?.candidate?.id,
+      markers?.candidate?.revision,
+    ),
     queryFn: () => serviceReferenceApi.candidate(bindingId, serviceId),
     enabled: canEditReference && Boolean(markers?.candidate),
     staleTime: 0,
@@ -161,7 +166,12 @@ function ServiceReferenceDrawer({
     retry: false,
   })
   const activeQuery = useQuery({
-    queryKey: [...slotKey, 'active', markers?.active?.id, markers?.active?.revision],
+    queryKey: deliveryKeys.environments.serviceReferenceActive(
+      bindingId,
+      serviceId,
+      markers?.active?.id,
+      markers?.active?.revision,
+    ),
     queryFn: () => serviceReferenceApi.active(bindingId, serviceId),
     enabled: Boolean(markers?.active),
     staleTime: 0,
@@ -201,7 +211,7 @@ function ServiceReferenceDrawer({
         }
       : undefined
   const previewQuery = useQuery({
-    queryKey: [...slotKey, 'preview', request],
+    queryKey: deliveryKeys.environments.serviceReferencePreview(bindingId, serviceId, request),
     queryFn: ({ signal }) => serviceReferenceApi.preview(bindingId, request!, signal),
     enabled: Boolean(canEditReference && request),
     gcTime: 0,

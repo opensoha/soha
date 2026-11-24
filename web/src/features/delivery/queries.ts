@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
-import { takeWorkbenchEntryRead } from '@/features/auth/workbench-startup-reads'
+import { takeWorkbenchEntryRead } from '@/features/auth'
 import { deliveryApi } from './api'
 import {
   deliveryKeys,

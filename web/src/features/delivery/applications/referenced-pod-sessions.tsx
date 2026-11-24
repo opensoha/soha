@@ -6,6 +6,7 @@ import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useRealtimeSessionDock } from '@/features/platform'
+import { deliveryKeys } from '../keys'
 import { readReferenceOwnedPods, referenceTargetRoots } from './reference-session'
 
 export function ReferencedPodSessions({ reference }: { reference: EnvironmentServiceReference }) {
@@ -28,14 +29,12 @@ export function ReferencedPodSessions({ reference }: { reference: EnvironmentSer
   const selected =
     targets.find(({ key }) => key === selectedId) ?? (targets.length === 1 ? targets[0] : undefined)
   const relations = useQuery({
-    queryKey: [
-      'delivery',
-      'reference-owned-pods',
+    queryKey: deliveryKeys.referenceOwnedPods(
       source.applicationEnvironmentId,
       reference.id,
       reference.revision,
       selected?.key,
-    ],
+    ),
     queryFn: ({ signal }) =>
       selected
         ? readReferenceOwnedPods(

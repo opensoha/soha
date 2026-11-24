@@ -27,6 +27,7 @@ import { formatMetricValue } from '@/components/resource-metrics-format'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
   podQueries,
+  podKeys,
   deploymentMutations,
   useClusterCapabilityForCluster,
   useRealtimeSessionDock,
@@ -120,7 +121,7 @@ function usePodMetricPreviews(candidates: PodRow[]) {
       return {
         ...options,
         // Preview observers own transport cancellation independently of full metric views.
-        queryKey: [...options.queryKey, 'delivery-preview'],
+        queryKey: podKeys.deliveryPreview(options.queryKey),
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           runPodMetricPreview(signal, () =>
             deliveryApi.workloads.podMetricsPreview(

@@ -1189,14 +1189,12 @@ export function ApplicationDetailWorkspace({
 
   const focusedReference = focusedSlot?.kind === 'reference' ? focusedSlot.reference : undefined
   const sourceQuery = useQuery({
-    queryKey: [
-      'delivery',
-      'focused-service-reference',
+    queryKey: deliveryKeys.focusedServiceReference(
       activeEnvironmentId,
       focusedServiceId,
       focusedReference?.id,
       focusedReference?.revision,
-    ],
+    ),
     queryFn: () => serviceReferenceApi.active(activeEnvironmentId, focusedServiceId),
     enabled: activeTab === 'services' && Boolean(focusedReference),
     gcTime: 0,

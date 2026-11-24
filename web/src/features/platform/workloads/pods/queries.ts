@@ -47,10 +47,7 @@ export const podQueries = {
     container?: string,
   ) =>
     queryOptions<PodMetrics>({
-      queryKey: [
-        ...workloadKeys.metrics('pods', scope, name, rangeMinutes, uid),
-        ...(container ? ['container', container] : []),
-      ],
+      queryKey: podKeys.metrics(scope, name, rangeMinutes, uid, container),
       queryFn: () => getPodMetrics({ ...target(scope, name), uid }, rangeMinutes, container),
       enabled: hasPodReference(scope, name),
     }),

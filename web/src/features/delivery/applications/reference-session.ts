@@ -3,9 +3,7 @@ import type {
   KubernetesResourceGraph,
   KubernetesResourceRef,
 } from '@opensoha/contracts/gen/ts/sohaapi'
-import type { RealtimeSession } from '@/features/platform/session-dock'
-import { getKubernetesResourceGraph } from '@/features/platform/shared/resource-insights/api'
-import { isOwnership } from '@/features/platform/shared/resource-insights/relationship-model'
+import { getKubernetesResourceGraph, isOwnership, type RealtimeSession } from '@/features/platform'
 import { api } from '@/services/api-client'
 import { isApiError } from '@/services/api-error'
 import { deliveryApi } from '../api'

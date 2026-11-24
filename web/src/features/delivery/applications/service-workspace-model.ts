@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import type { ApplicationEnvironmentRuntimeSummary } from '@opensoha/contracts/gen/ts/sohaapi'
 import { deliveryQueries } from '../queries'
