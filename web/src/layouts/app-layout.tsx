@@ -20,8 +20,7 @@ import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
 import { AnnouncementBell } from '@/features/announcements/announcement-center'
 import { logoutAuthSession } from '@/features/auth/auth-api'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { AssistantCompanionOverlay } from '@/features/companion'
-import { applicationEnvironmentNavigationQuery } from '@/features/delivery/application-environment-navigation-query'
+import { deliveryQueries } from '@/features/delivery/queries'
 import {
   isComputeWorkbenchMenuGroup,
   normalizeComputeWorkbenchNav,
@@ -76,6 +75,10 @@ const ApplicationNavigation = lazy(async () => {
 const ApplicationIdentity = lazy(async () => {
   const module = await import('@/features/delivery/navigation')
   return { default: module.ApplicationIdentity }
+})
+const AssistantCompanionOverlay = lazy(async () => {
+  const module = await import('@/features/companion')
+  return { default: module.AssistantCompanionOverlay }
 })
 const GlobalResourceCreateModal = lazy(async () => {
   const module =
@@ -668,7 +671,7 @@ export function AppLayout() {
     isApplicationWorkspace && hasPermission(snapshot, 'delivery.applications.view')
   const applicationId = applicationMatch?.params.applicationId ?? ''
   const sessionEnvironmentQuery = useQuery(
-    applicationEnvironmentNavigationQuery(applicationId, canReadApplicationSessions),
+    deliveryQueries.applications.environmentNavigation(applicationId, canReadApplicationSessions),
   )
   const sessionEnvironment = sessionEnvironmentId
     ? sessionEnvironmentQuery.data?.find(
@@ -1075,7 +1078,9 @@ export function AppLayout() {
       permissionSnapshot={snapshot}
       renderCompanion={(props) =>
         currentWorkbenchId === 'settings' || currentWorkbenchId === 'ai' ? null : (
-          <AssistantCompanionOverlay {...props} />
+          <Suspense fallback={null}>
+            <AssistantCompanionOverlay {...props} />
+          </Suspense>
         )
       }
     >

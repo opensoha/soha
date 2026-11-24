@@ -1,7 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { takeWorkbenchEntryRead } from '@/features/auth'
 import { deliveryApi } from './api'
-import { applicationEnvironmentNavigationQuery } from './application-environment-navigation-query'
 import {
   deliveryKeys,
   normalizeBatchListParams,
@@ -253,7 +252,16 @@ export const deliveryQueries = {
         enabled: hasValue(applicationId),
       })
     },
-    environmentNavigation: applicationEnvironmentNavigationQuery,
+    environmentNavigation: (id: string, enabled = true) => {
+      const applicationId = normalizeDeliveryId(id)
+      return queryOptions({
+        queryKey: deliveryKeys.applications.environmentNavigation(applicationId),
+        queryFn: ({ signal }) =>
+          takeWorkbenchEntryRead(applicationId, 'environments', signal) ??
+          deliveryApi.applications.environmentNavigation(applicationId, signal),
+        enabled: enabled && hasValue(applicationId),
+      })
+    },
     environmentRuntimeSummary: (id: string, bindingId: string, enabled = true) => {
       const applicationId = normalizeDeliveryId(id)
       const environmentId = normalizeDeliveryId(bindingId)
