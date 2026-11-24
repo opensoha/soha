@@ -2,6 +2,7 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { api, ApiError } from '@/services/api-client'
+import { claimApiErrorPresentation } from '@/services/api-error'
 import { useAuthStore } from '@/stores/auth-store'
 import {
   BookOutlined,
@@ -224,6 +225,10 @@ export function AssistantMesh({
   })
   const meshUnavailable =
     availabilityQuery.error instanceof ApiError && availabilityQuery.error.status === 403
+  useEffect(() => {
+    if (!meshUnavailable) return
+    return claimApiErrorPresentation(availabilityQuery.error)
+  }, [availabilityQuery.error, meshUnavailable])
   const publishingDefaults = availabilityQuery.data?.publishingDefaults
   const hasTeams = Boolean(user?.teams?.length)
   const hasProjects = Boolean(user?.projects?.length)

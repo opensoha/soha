@@ -2,6 +2,7 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { api } from '@/services/api-client'
+import { ApiError, claimApiErrorPresentation } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { CommentOutlined, ReloadOutlined } from '@ant-design/icons'
 import type {
@@ -75,6 +76,11 @@ export function useReceptionProfile(owner: string) {
     refetchOnWindowFocus: true,
   })
   const denied = queryAccessDenied(query)
+  const forbidden = query.error instanceof ApiError && query.error.status === 403
+  useEffect(() => {
+    if (!forbidden) return
+    return claimApiErrorPresentation(query.error)
+  }, [forbidden, query.error])
   useEffect(() => {
     if (denied) queryClient.setQueryData(queryKey, undefined)
   }, [denied, queryClient, queryKey])
