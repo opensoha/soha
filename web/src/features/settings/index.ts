@@ -7,6 +7,7 @@ export { PluginStorageConnections } from './system-integrations'
 export {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  isValidS3StorageEndpoint,
   s3StorageFormValues,
   updateS3StorageIntegration,
 } from './system-integrations'
