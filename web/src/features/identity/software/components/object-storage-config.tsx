@@ -6,6 +6,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
   createS3StorageIntegration,
   inferS3StoragePreset,
+  isValidS3StorageEndpoint,
   s3StorageFormValues,
   systemIntegrationMutations,
   systemIntegrationQueries,
@@ -59,9 +60,21 @@ const presetOptions: Array<{
 const endpointPlaceholders: Record<S3StoragePreset, string> = {
   aws: 'AWS S3 可留空',
   minio: 'https://minio.example.com',
-  oss: 'https://oss-cn-hangzhou.aliyuncs.com',
+  oss: 'https://s3.oss-ap-southeast-1.aliyuncs.com',
   cos: 'https://cos.ap-shanghai.myqcloud.com',
   custom: 'https://s3.example.com',
+}
+const cloudStorageHints = {
+  oss: {
+    region: '例如 ap-southeast-1',
+    endpoint: '请填写与桶所在地域匹配的 OSS S3 兼容端点。',
+    bucket: undefined,
+  },
+  cos: {
+    region: '例如 ap-shanghai',
+    endpoint: '请填写与桶所在地域匹配的 S3 兼容端点。',
+    bucket: '填写包含 APPID 的完整桶名，例如 my-bucket-1250000000。',
+  },
 }
 export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) {
   const queryClient = useQueryClient()
@@ -71,6 +84,8 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
   const [editing, setEditing] = useState<SystemIntegration | null>(null)
   const [testingAfterSave, setTestingAfterSave] = useState(false)
   const preset = Form.useWatch('preset', form) ?? 'minio'
+  const endpointRequired = preset !== 'aws'
+  const cloudHint = preset === 'oss' || preset === 'cos' ? cloudStorageHints[preset] : undefined
   const permissions = usePermissionSnapshot().data?.data
   const canView = hasPermission(permissions, 'settings.system-integrations.view')
   const canCreate = hasPermission(permissions, 'settings.system-integrations.create')
@@ -492,15 +507,26 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
               <Select
                 disabled={operationBlocked || Boolean(editing)}
                 options={presetOptions}
-                onChange={(value: S3StoragePreset) =>
+                onChange={(value: S3StoragePreset) => {
                   form.setFieldValue('pathStyle', !['aws', 'oss', 'cos'].includes(value))
-                }
+                  if (
+                    (value === 'oss' || value === 'cos') &&
+                    form.getFieldValue('region') === 'us-east-1'
+                  ) {
+                    form.setFieldValue('region', '')
+                  }
+                }}
               />
             </Form.Item>
             <Form.Item name="name" label="连接名称" rules={[{ required: true }]}>
               <Input maxLength={200} />
             </Form.Item>
-            <Form.Item name="region" label="Region" rules={[{ required: true }]}>
+            <Form.Item
+              name="region"
+              label="Region"
+              extra={!editing && cloudHint?.region}
+              rules={[{ required: true }]}
+            >
               <Input disabled={operationBlocked || Boolean(editing)} maxLength={128} />
             </Form.Item>
             <Form.Item
@@ -513,14 +539,30 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
                   </Tooltip>
                 </Space>
               }
-              rules={[{ type: 'url', warningOnly: true }]}
+              extra={!editing && cloudHint?.endpoint}
+              validateTrigger="onBlur"
+              rules={[
+                {
+                  required: !editing && endpointRequired,
+                  async validator(_, value?: string) {
+                    if (!editing && !isValidS3StorageEndpoint(value, endpointRequired)) {
+                      throw new Error('请填写该存储服务的有效 HTTP 或 HTTPS Endpoint。')
+                    }
+                  },
+                },
+              ]}
             >
               <Input
                 disabled={operationBlocked || Boolean(editing)}
                 placeholder={endpointPlaceholders[preset]}
               />
             </Form.Item>
-            <Form.Item name="bucket" label="Bucket" rules={[{ required: true }]}>
+            <Form.Item
+              name="bucket"
+              label="Bucket"
+              extra={!editing && cloudHint?.bucket}
+              rules={[{ required: true }]}
+            >
               <Input disabled={operationBlocked || Boolean(editing)} maxLength={255} />
             </Form.Item>
             <Form.Item name="prefix" label="对象前缀">
