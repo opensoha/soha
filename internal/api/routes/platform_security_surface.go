@@ -156,6 +156,13 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 		return nonPlatformMutationEntry("NetworkGateway", action, networkAccessPermission(method, appaccess.PermNetworkAccessGatewaysCreate, appaccess.PermNetworkAccessGatewaysUpdate, ""), false), true
 	case strings.HasPrefix(path, "/api/v1/network-access/mihomo-profiles"):
 		return nonPlatformMutationEntry("NetworkMihomoProfile", action, networkAccessPermission(method, appaccess.PermNetworkAccessMihomoProfilesCreate, appaccess.PermNetworkAccessMihomoProfilesUpdate, appaccess.PermNetworkAccessMihomoProfilesDelete), false), true
+	default:
+		return networkAccessTopologyMutationSecuritySurface(method, path, action)
+	}
+}
+
+func networkAccessTopologyMutationSecuritySurface(method, path, action string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
 	case strings.HasPrefix(path, "/api/v1/network-access/sites"):
 		return nonPlatformMutationEntry("NetworkSite", action, networkAccessPermission(method, appaccess.PermNetworkAccessSitesCreate, appaccess.PermNetworkAccessSitesUpdate, appaccess.PermNetworkAccessSitesDelete), false), true
 	case strings.HasPrefix(path, "/api/v1/network-access/spaces"):

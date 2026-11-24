@@ -145,16 +145,8 @@ func validateEndpointAuthorization(tx *gorm.DB, authorization domainnetworkrunti
 	if authorization.ResponsePolicyHash != domainnetworkaccess.ResponsePolicyHash(policies) && (authorization.ResponsePolicyHash != "" || len(policies) > 0) {
 		return staleNASAuthorization()
 	}
-	presence, err := repo.EndpointPresence(tx.Statement.Context, authorization.DeviceID)
-	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+	if err := validateEndpointPresence(tx.Statement.Context, repo, authorization); err != nil {
 		return err
-	}
-	if presence.PayloadHash != authorization.PresenceHash {
-		return staleNASAuthorization()
-	}
-	if authorization.Decision == domainnetworkaccess.DecisionAllow && authorization.StrictUIEpoch != "" &&
-		(presence.StrictUI.Epoch != authorization.StrictUIEpoch || !presence.StrictUI.CurrentFor(authorization.SubjectID, time.Now().UTC())) {
-		return staleNASAuthorization()
 	}
 	var binding domainnetworkaccess.NASBinding
 	if authorization.ManagedBindingID != "" {
@@ -175,6 +167,21 @@ func validateEndpointAuthorization(tx *gorm.DB, authorization domainnetworkrunti
 		return err
 	}
 	if floor.Epoch != authorization.RestrictionEpoch || authorization.Decision == domainnetworkaccess.DecisionAllow && domainnetworkaccess.RestrictAccessProfile(authorization.AccessProfile, floor.AccessProfile) != authorization.AccessProfile {
+		return staleNASAuthorization()
+	}
+	return nil
+}
+
+func validateEndpointPresence(ctx context.Context, repo *networkaccessrepo.Repository, authorization domainnetworkruntime.NASAuthorization) error {
+	presence, err := repo.EndpointPresence(ctx, authorization.DeviceID)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return err
+	}
+	if presence.PayloadHash != authorization.PresenceHash {
+		return staleNASAuthorization()
+	}
+	if authorization.Decision == domainnetworkaccess.DecisionAllow && authorization.StrictUIEpoch != "" &&
+		(presence.StrictUI.Epoch != authorization.StrictUIEpoch || !presence.StrictUI.CurrentFor(authorization.SubjectID, time.Now().UTC())) {
 		return staleNASAuthorization()
 	}
 	return nil
@@ -312,19 +319,9 @@ func validateNASAdmissionInputs(tx *gorm.DB, authorization domainnetworkruntime.
 			return staleNASAuthorization()
 		}
 	}
-	var profile *domainnetworkaccess.SiteProfileBinding
-	if authorization.Decision == domainnetworkaccess.DecisionAllow {
-		current, err := repo.FindSiteProfileBinding(tx.Statement.Context, binding.SiteID, authorization.AccessProfile)
-		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
-			return err
-		}
-		if err == nil {
-			profile = &current
-		}
-		profile = domainnetworkaccess.NASRadiusProfile(authorization.AccessNetworkID, binding.SiteID, authorization.AccessProfile, authorization.AccessNetworkRadius, profile)
-		if profile == nil {
-			return staleNASAuthorization()
-		}
+	profile, err := nasAdmissionProfile(tx.Statement.Context, repo, authorization, binding.SiteID)
+	if err != nil {
+		return err
 	}
 	if authorization.InputsHash != domainnetworkaccess.AdmissionAttributesHash(subject, device, site, binding, profile) {
 		return staleNASAuthorization()
@@ -339,6 +336,25 @@ func validateNASAdmissionInputs(tx *gorm.DB, authorization domainnetworkruntime.
 		}
 	}
 	return nil
+}
+
+func nasAdmissionProfile(ctx context.Context, repo *networkaccessrepo.Repository, authorization domainnetworkruntime.NASAuthorization, siteID string) (*domainnetworkaccess.SiteProfileBinding, error) {
+	if authorization.Decision != domainnetworkaccess.DecisionAllow {
+		return nil, nil
+	}
+	var profile *domainnetworkaccess.SiteProfileBinding
+	current, err := repo.FindSiteProfileBinding(ctx, siteID, authorization.AccessProfile)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return nil, err
+	}
+	if err == nil {
+		profile = &current
+	}
+	profile = domainnetworkaccess.NASRadiusProfile(authorization.AccessNetworkID, siteID, authorization.AccessProfile, authorization.AccessNetworkRadius, profile)
+	if profile == nil {
+		return nil, staleNASAuthorization()
+	}
+	return profile, nil
 }
 
 func validateNASAccessNetwork(tx *gorm.DB, repo *networkaccessrepo.Repository, authorization domainnetworkruntime.NASAuthorization, binding domainnetworkaccess.NASBinding) error {

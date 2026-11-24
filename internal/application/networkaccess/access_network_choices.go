@@ -73,23 +73,34 @@ func (s *Service) ListAccessNetworkChoices(ctx context.Context, principal identi
 	if err != nil {
 		return items, bootstrap, err
 	}
-	if options.IncludeBootstrap && slices.ContainsFunc(items, func(item domain.ConnectionOption) bool { return item.StrictOnline != nil }) {
-		presence, err := s.accessNetworks.EndpointPresence(ctx, device.ID)
-		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+	if options.IncludeBootstrap {
+		if err := s.readStrictUILease(ctx, device, items); err != nil {
 			return nil, nil, err
-		}
-		if presence.StrictUI.CurrentFor(device.OwnerUserID, time.Now()) {
-			for _, item := range items {
-				if item.StrictOnline != nil {
-					item.StrictOnline.LeaseUntil = presence.StrictUI.Until
-				}
-			}
 		}
 	}
 	if options.IncludeNASSession {
 		err = s.readNASSessionChoices(ctx, device, items)
 	}
 	return items, bootstrap, err
+}
+
+func (s *Service) readStrictUILease(ctx context.Context, device domain.Device, items []domain.ConnectionOption) error {
+	if !slices.ContainsFunc(items, func(item domain.ConnectionOption) bool { return item.StrictOnline != nil }) {
+		return nil
+	}
+	presence, err := s.accessNetworks.EndpointPresence(ctx, device.ID)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return err
+	}
+	if !presence.StrictUI.CurrentFor(device.OwnerUserID, time.Now()) {
+		return nil
+	}
+	for _, item := range items {
+		if item.StrictOnline != nil {
+			item.StrictOnline.LeaseUntil = presence.StrictUI.Until
+		}
+	}
+	return nil
 }
 
 func (s *Service) readNASSessionChoices(ctx context.Context, device domain.Device, items []domain.ConnectionOption) error {

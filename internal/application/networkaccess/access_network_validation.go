@@ -50,22 +50,26 @@ func validateAccessNetworkSelectors(input *domain.AccessNetworkInput) error {
 		return invalid("at least one nasBindingId is required")
 	}
 	if input.AccessMedium == domain.AccessMediumWiFi {
-		if len(input.SSID) == 0 || len(input.SSID) > 32 || containsASCIIControl(input.SSID) || len(input.PortIDs) != 0 || input.PortStart != nil || input.PortEnd != nil {
-			return invalid("Wi-Fi requires a valid ssid and may only use wireless selectors")
-		}
-		for i, bssid := range input.BSSIDs {
-			canonical := canonicalBSSID(bssid)
-			if canonical == "" || slices.Contains(input.BSSIDs[:i], canonical) {
-				return invalid("bssids must contain distinct MAC addresses")
-			}
-			input.BSSIDs[i] = canonical
-		}
-		return nil
+		return validateWiFiAccessNetworkSelectors(input)
 	}
 	if input.AccessMedium != domain.AccessMediumWired || input.SSID != "" || len(input.BSSIDs) != 0 {
 		return invalid("wired networks may only use port selectors")
 	}
 	return validateAccessPortRange(input.PortIDs, input.PortStart, input.PortEnd)
+}
+
+func validateWiFiAccessNetworkSelectors(input *domain.AccessNetworkInput) error {
+	if len(input.SSID) == 0 || len(input.SSID) > 32 || containsASCIIControl(input.SSID) || len(input.PortIDs) != 0 || input.PortStart != nil || input.PortEnd != nil {
+		return invalid("Wi-Fi requires a valid ssid and may only use wireless selectors")
+	}
+	for i, bssid := range input.BSSIDs {
+		canonical := canonicalBSSID(bssid)
+		if canonical == "" || slices.Contains(input.BSSIDs[:i], canonical) {
+			return invalid("bssids must contain distinct MAC addresses")
+		}
+		input.BSSIDs[i] = canonical
+	}
+	return nil
 }
 
 func validateAccessPortRange(ids []string, start, end *int64) error {

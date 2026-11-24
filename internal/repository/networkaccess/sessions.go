@@ -157,9 +157,28 @@ func (r *Repository) ClaimNASSessionCommand(ctx context.Context, runtimeID strin
 			noCommand = apperrors.ErrNotFound
 			return nil
 		}
-		var method string
-		var liveAccounting bool
-		bindingErr := tx.Raw(`SELECT a.authentication_method, COALESCE(a.station_id, ''), COALESCE(e.accounting_session_id, ''), COALESCE(e.nas_port_id, ''),
+		deliverable, err := checkNASCommandBinding(tx, &command, now)
+		if err != nil {
+			return err
+		}
+		if !deliverable {
+			noCommand = apperrors.ErrNotFound
+			return nil
+		}
+		command.Status = domainnetworkaccess.SessionCommandDelivered
+		claimed = command
+		return nil
+	})
+	if err == nil && noCommand != nil {
+		err = noCommand
+	}
+	return claimed, err
+}
+
+func checkNASCommandBinding(tx *gorm.DB, command *domainnetworkaccess.SessionCommand, now time.Time) (bool, error) {
+	var method string
+	var liveAccounting bool
+	bindingErr := tx.Raw(`SELECT a.authentication_method, COALESCE(a.station_id, ''), COALESCE(e.accounting_session_id, ''), COALESCE(e.nas_port_id, ''),
             a.strict_ui_epoch <> '', CASE WHEN a.strict_ui_epoch <> '' THEN COALESCE(e.state = 'active' AND e.stopped_at IS NULL AND e.started_at IS NOT NULL
               AND e.nas_id = a.nas_id AND e.runtime_id = a.runtime_id AND e.station_id = a.station_id
               AND e.device_id = a.device_id AND e.subject_id = a.subject_id AND e.credential_id = a.credential_id
@@ -172,35 +191,26 @@ func (r *Repository) ClaimNASSessionCommand(ctx context.Context, runtimeID strin
             FROM network_nas_authorizations a LEFT JOIN network_nas_session_evidence e
               ON e.tenant_id = a.tenant_id AND e.workspace_id = a.workspace_id AND e.session_id = a.session_id
             WHERE a.tenant_id = 'default' AND a.workspace_id = 'default' AND a.session_id = ?`, command.SessionID).Row().Scan(&method, &command.StationID, &command.AccountingSessionID, &command.NASPortID, &command.StrictOnline, &liveAccounting)
-		if bindingErr != nil && !errors.Is(bindingErr, sql.ErrNoRows) {
-			return bindingErr
-		}
-		if method == networkprotocol.NASAuthenticationEAPTLS && command.StationID == "" {
-			if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'unsupported', result_reason_code = 'nas_station_binding_missing', completed_at = ?, updated_at = ? WHERE id = ?`, now, now, command.ID).Error; err != nil {
-				return err
-			}
-			noCommand = apperrors.ErrNotFound
-			return nil
-		}
-		if command.StrictOnline && (command.Action != domainnetworkaccess.SessionActionDisconnect || !liveAccounting || command.AccountingSessionID == "") {
-			reason := "strict_nas_accounting_unconfirmed"
-			if command.Action != domainnetworkaccess.SessionActionDisconnect {
-				reason = "strict_nas_disconnect_required"
-			}
-			if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'unsupported', result_reason_code = ?, completed_at = ?, updated_at = ? WHERE id = ?`, reason, now, now, command.ID).Error; err != nil {
-				return err
-			}
-			noCommand = apperrors.ErrNotFound
-			return nil
-		}
-		command.Status = domainnetworkaccess.SessionCommandDelivered
-		claimed = command
-		return nil
-	})
-	if err == nil && noCommand != nil {
-		err = noCommand
+	if bindingErr != nil && !errors.Is(bindingErr, sql.ErrNoRows) {
+		return false, bindingErr
 	}
-	return claimed, err
+	if method == networkprotocol.NASAuthenticationEAPTLS && command.StationID == "" {
+		if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'unsupported', result_reason_code = 'nas_station_binding_missing', completed_at = ?, updated_at = ? WHERE id = ?`, now, now, command.ID).Error; err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if command.StrictOnline && (command.Action != domainnetworkaccess.SessionActionDisconnect || !liveAccounting || command.AccountingSessionID == "") {
+		reason := "strict_nas_accounting_unconfirmed"
+		if command.Action != domainnetworkaccess.SessionActionDisconnect {
+			reason = "strict_nas_disconnect_required"
+		}
+		if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'unsupported', result_reason_code = ?, completed_at = ?, updated_at = ? WHERE id = ?`, reason, now, now, command.ID).Error; err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (r *Repository) CompleteNASSessionCommand(ctx context.Context, runtimeID string, result networkprotocol.NASSessionCommandResult, now time.Time) error {

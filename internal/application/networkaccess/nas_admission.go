@@ -116,26 +116,33 @@ func evaluateNASAdmission(snapshot domain.NASAdmissionSnapshot, now time.Time) d
 	var attributes *networkprotocol.RadiusAttributes
 	var binding *domain.SiteProfileBinding
 	if profile != domain.ProfileDeny {
-		var siteProfile *domain.SiteProfileBinding
-		if current, ok := snapshot.Profiles[profile]; ok {
-			siteProfile = &current
-		}
-		binding = domain.NASRadiusProfile(decision.AccessNetworkID, snapshot.Site.ID, profile, NASNetworkAttributes(decision), siteProfile)
+		binding, attributes = nasAdmissionRadiusProfile(snapshot, decision, profile)
 		if binding == nil {
 			profile, reason = domain.ProfileDeny, "nas_profile_unavailable"
-		} else {
-			timeout := binding.SessionTimeoutSeconds
-			if decision.AccessNetworkID != "" && snapshot.Site.DeviceGovernance == domain.DeviceGovernanceVerified {
-				timeout = min(timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
-			}
-			if decision.StrictOnline {
-				timeout = min(domain.StrictNASReauthenticationSeconds, timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
-			}
-			attributes = &networkprotocol.RadiusAttributes{VLANID: binding.VLANID, FilterID: binding.FilterID, SessionTimeoutSeconds: timeout, Reauthenticate: decision.StrictOnline}
 		}
 	}
 
 	return domain.NASAdmissionMutation{Profile: profile, InputsHash: domain.AdmissionAttributesHash(snapshot.Subject, snapshot.Device, snapshot.Site, snapshot.Binding, binding), Reason: reason, PolicyVersion: max(snapshot.Policies.PolicyVersion, session.PolicyVersion), RadiusAttributes: attributes, Attempts: snapshot.Attempts}
+}
+
+func nasAdmissionRadiusProfile(snapshot domain.NASAdmissionSnapshot, decision AccessNetworkDecision, profile string) (*domain.SiteProfileBinding, *networkprotocol.RadiusAttributes) {
+	var siteProfile *domain.SiteProfileBinding
+	if current, ok := snapshot.Profiles[profile]; ok {
+		siteProfile = &current
+	}
+	binding := domain.NASRadiusProfile(decision.AccessNetworkID, snapshot.Site.ID, profile, NASNetworkAttributes(decision), siteProfile)
+	if binding == nil {
+		return nil, nil
+	}
+	timeout := binding.SessionTimeoutSeconds
+	session := snapshot.Session
+	if decision.AccessNetworkID != "" && snapshot.Site.DeviceGovernance == domain.DeviceGovernanceVerified {
+		timeout = min(timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
+	}
+	if decision.StrictOnline {
+		timeout = min(domain.StrictNASReauthenticationSeconds, timeout, int(session.ExpiresAt.Sub(session.StartedAt)/time.Second))
+	}
+	return binding, &networkprotocol.RadiusAttributes{VLANID: binding.VLANID, FilterID: binding.FilterID, SessionTimeoutSeconds: timeout, Reauthenticate: decision.StrictOnline}
 }
 
 func nasAdmissionMappingChanged(snapshot domain.NASAdmissionSnapshot, attributes *networkprotocol.RadiusAttributes, profile, oldProfile string) bool {

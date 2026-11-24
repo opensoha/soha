@@ -107,16 +107,11 @@ func (s *Service) PreviewAccessNetworks(ctx context.Context, principal identity.
 		return nil, err
 	}
 	if draft != nil {
-		if draft.SiteID != siteID {
-			return nil, invalid("draft site does not match preview site")
-		}
-		if err := validateAccessNetwork(draft); err != nil {
+		item, err := accessNetworkPreviewDraft(siteID, draft)
+		if err != nil {
 			return nil, err
 		}
-		if draft.Kind == domain.AccessNetworkStandard {
-			draft.Enabled = true
-		}
-		items = []domain.AccessNetwork{{ID: "draft", Configuration: *draft}}
+		items = []domain.AccessNetwork{item}
 	}
 	if !runtimeIdentifierPattern.MatchString(userID) || !runtimeIdentifierPattern.MatchString(deviceID) {
 		return nil, invalid("userId or deviceId is invalid")
@@ -165,6 +160,19 @@ func (s *Service) PreviewAccessNetworks(ctx context.Context, principal identity.
 		result = append(result, decision)
 	}
 	return result, nil
+}
+
+func accessNetworkPreviewDraft(siteID string, draft *domain.AccessNetworkInput) (domain.AccessNetwork, error) {
+	if draft.SiteID != siteID {
+		return domain.AccessNetwork{}, invalid("draft site does not match preview site")
+	}
+	if err := validateAccessNetwork(draft); err != nil {
+		return domain.AccessNetwork{}, err
+	}
+	if draft.Kind == domain.AccessNetworkStandard {
+		draft.Enabled = true
+	}
+	return domain.AccessNetwork{ID: "draft", Configuration: *draft}, nil
 }
 
 func (s *Service) activeAccessNetworkBindings(ctx context.Context, siteID string) (map[string]domain.NASBinding, error) {

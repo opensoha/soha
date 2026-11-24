@@ -92,27 +92,9 @@ func (r *Repository) SaveAccessNetwork(ctx context.Context, item domain.AccessNe
 	}
 
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockAccessNetworkSite(tx, item.Configuration.SiteID); err != nil {
-			return err
-		}
-		existing, found, err := lockAccessNetwork(tx, item.ID)
+		existing, err := lockAccessNetworkForSave(tx, item, create)
 		if err != nil {
 			return err
-		}
-		if create {
-			if found {
-				return accessNetworkConflict("access_network_exists", "An access network with this ID already exists.", "该接入网络 ID 已存在。")
-			}
-		} else {
-			if !found {
-				return fmt.Errorf("%w: access network not found", apperrors.ErrNotFound)
-			}
-			if existing.Deleted {
-				return accessNetworkConflict("access_network_deleted", "A deleted access network cannot be revived.", "已删除的接入网络不能恢复。")
-			}
-			if err := validateAccessNetworkCatalog(existing, item.Configuration); err != nil {
-				return err
-			}
 		}
 		if err := validateAccessNetworkBindings(tx, item.Configuration); err != nil {
 			return err
@@ -144,6 +126,29 @@ func (r *Repository) SaveAccessNetwork(ctx context.Context, item domain.AccessNe
 		return domain.AccessNetwork{}, normalizeDatabaseError(err)
 	}
 	return r.GetAccessNetwork(ctx, item.ID)
+}
+
+func lockAccessNetworkForSave(tx *gorm.DB, item domain.AccessNetwork, create bool) (accessNetworkRecord, error) {
+	if err := lockAccessNetworkSite(tx, item.Configuration.SiteID); err != nil {
+		return accessNetworkRecord{}, err
+	}
+	existing, found, err := lockAccessNetwork(tx, item.ID)
+	if err != nil {
+		return accessNetworkRecord{}, err
+	}
+	if create {
+		if found {
+			return accessNetworkRecord{}, accessNetworkConflict("access_network_exists", "An access network with this ID already exists.", "该接入网络 ID 已存在。")
+		}
+		return existing, nil
+	}
+	if !found {
+		return accessNetworkRecord{}, fmt.Errorf("%w: access network not found", apperrors.ErrNotFound)
+	}
+	if existing.Deleted {
+		return accessNetworkRecord{}, accessNetworkConflict("access_network_deleted", "A deleted access network cannot be revived.", "已删除的接入网络不能恢复。")
+	}
+	return existing, validateAccessNetworkCatalog(existing, item.Configuration)
 }
 
 func requireStrictNetworkDrained(tx *gorm.DB, networkID string, cfg domain.AccessNetworkInput, now time.Time) error {
