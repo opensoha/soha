@@ -66,7 +66,7 @@ func TestLinuxSwitchSignedStorageBackends(t *testing.T) {
 	base, err := os.MkdirTemp(root, "v17-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(base)) }) // #nosec G703 -- Remove only the directory created with MkdirTemp above.
-	require.NoError(t, os.Chmod(base, 0o711))                    // #nosec G302 -- Both dedicated fixture accounts must traverse this directory.
+	require.NoError(t, os.Chmod(base, 0o711))                    // #nosec G302 G703 -- MkdirTemp owns this test directory, and both fixture accounts must traverse it.
 	cfg := Config{
 		PackageRoot: filepath.Join(base, "packages"), RuntimeRoot: filepath.Join(base, "run"),
 		Slots: map[string][2]Account{fixturePlugin: accounts},

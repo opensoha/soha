@@ -4627,6 +4627,8 @@ func TestRelayLLMHTTPEnforcesRouteModelRateLimitAcrossTokens(t *testing.T) {
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].Metadata = map[string]any{"rateLimit": map[string]any{"rpm": 1, "mode": "counter"}}
 	service := newRelayRuntimeTestService(repo)
+	counter := &relaySingleWindowCounter{}
+	service.SetRateLimitBackend(counter)
 	firstAccess := relayTestAccessContext(nil)
 	secondAccess := relayTestAccessContext(nil)
 	secondAccess.TokenID = "pat-2"
@@ -4648,6 +4650,20 @@ func TestRelayLLMHTTPEnforcesRouteModelRateLimitAcrossTokens(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
+	}
+	if len(counter.requests) != 2 {
+		t.Fatalf("counter requests = %d, want 2", len(counter.requests))
+	}
+	limit := gatewayInvocationLimit{
+		PolicyID: "relay-route-rate-limit", Kind: "rate limit", Mode: "counter", Scope: "client_tool",
+		Window: time.Minute, WindowLabel: "1m", Limit: 1, Burst: 1,
+	}
+	for _, hit := range counter.requests {
+		// Compute the expected shared route/model key in each request's actual window.
+		wantKey := gatewayRateLimitCounterKey("", "", "relay-route:route-1", "llm-relay:model:gpt-public", limit, hit.WindowStart)
+		if hit.Key != wantKey {
+			t.Fatalf("counter key = %q, want shared route/model key %q", hit.Key, wantKey)
+		}
 	}
 }
 

@@ -96,7 +96,7 @@ func makeLinuxTestFixture(t *testing.T) linuxTestFixture {
 	if binaryPath == "" {
 		binaryPath = "/proc/self/exe"
 	}
-	binary, err := os.ReadFile(binaryPath) // #nosec G304 -- The operator may supply a fixture executable for this opt-in Linux test.
+	binary, err := os.ReadFile(binaryPath) // #nosec G304 G703 -- The path comes from the operator's opt-in test setting or the fixed self-executable path.
 	if err != nil {
 		t.Fatal(err)
 	}
