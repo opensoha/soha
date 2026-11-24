@@ -1,7 +1,12 @@
 import { RadiusServicesPanel } from './radius-services/panel'
 import { ManagementProofAction } from './management-proof'
 import { ManagementDataPage } from '@/components/management-data-page'
-import { ManagementIconButton, ManagementState } from '@/components/management-list'
+import {
+  ManagementIconButton,
+  ManagementQueryField,
+  ManagementQueryPanel,
+  ManagementState,
+} from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, MetadataTag } from '@/components/status-tag'
@@ -54,6 +59,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { NetworkStatusTag } from './network-status-tag'
 import './styles.css'
+import { AccessNetworkCatalog } from './access-network-catalog'
 import { NetworkAccessGrantPane } from './access-grant-pane'
 import {
   EndpointDeviceDetailDrawer,
@@ -831,19 +837,46 @@ export function NetworkAccessPage() {
       </div>
     )
   }
+  const settingsSiteId = searchParams.get('siteId') ?? ''
+  const settingsSite = visibleSitesData?.find((site) => site.id === settingsSiteId)
+  const settingsSitePrompt = (
+    <ManagementState
+      compact
+      kind="empty"
+      description={t('networkAccess.settings.chooseSite', '请选择站点以查看配置。')}
+    />
+  )
   const admissionSettingsTabs = [
     canViewSites
       ? {
           key: 'nas-bindings',
           label: t('networkAccess.settings.networkDevices', '网络设备'),
-          children: <NetworkNASBindingsPane canManage={canUpdateSites} />,
+          children: settingsSite ? (
+            <NetworkNASBindingsPane
+              key={settingsSite.id}
+              siteId={settingsSite.id}
+              canManage={canUpdateSites}
+            />
+          ) : (
+            settingsSitePrompt
+          ),
         }
       : null,
     canViewSites
       ? {
           key: 'ssids',
-          label: 'SSID',
-          children: <NetworkNASBindingsPane canManage={canUpdateSites} view="ssid" />,
+          label: t('networkAccess.settings.accessNetworks', '接入网络'),
+          children: settingsSite ? (
+            <AccessNetworkCatalog
+              key={settingsSite.id}
+              siteId={settingsSite.id}
+              canManage={canUpdateSites}
+              canViewUsers={can('access.users.view')}
+              canViewDevices={canViewDevices}
+            />
+          ) : (
+            settingsSitePrompt
+          ),
         }
       : null,
     canViewEnrollments || can('network_access.nas_bindings.view')
@@ -965,16 +998,51 @@ export function NetworkAccessPage() {
       ? {
           key: 'settings',
           children: (
-            <Tabs
-              activeKey={activeAdmissionSettingsTab}
-              className="soha-resource-tabs"
-              destroyOnHidden
-              indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
-              items={admissionSettingsTabs}
-              onChange={setAdmissionSettingsTab}
-              size="small"
-              tabBarGutter={18}
-            />
+            <div className="soha-page">
+              {canViewSites && activeAdmissionSettingsTab !== 'radius-services' && (
+                <>
+                  <ReadFeedback query={sites} label={t('networkAccess.sites', '站点')} />
+                  <ManagementQueryPanel actions={null} collapsible={false}>
+                    <ManagementQueryField
+                      label={t('networkAccess.site', '站点')}
+                      htmlFor="admission-settings-site"
+                    >
+                      <Select
+                        id="admission-settings-site"
+                        allowClear
+                        value={settingsSite?.id}
+                        loading={sites.isLoading}
+                        disabled={queryAccessDenied(sites)}
+                        placeholder={t('networkAccess.settings.selectSite', '选择站点')}
+                        showSearch={{ optionFilterProp: 'label' }}
+                        options={(visibleSitesData ?? []).map((site) => ({
+                          value: site.id,
+                          label: site.name,
+                        }))}
+                        onChange={(siteId?: string) =>
+                          setSearchParams((previous) => {
+                            const next = new URLSearchParams(previous)
+                            if (siteId) next.set('siteId', siteId)
+                            else next.delete('siteId')
+                            return next
+                          })
+                        }
+                      />
+                    </ManagementQueryField>
+                  </ManagementQueryPanel>
+                </>
+              )}
+              <Tabs
+                activeKey={activeAdmissionSettingsTab}
+                className="soha-resource-tabs"
+                destroyOnHidden
+                indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
+                items={admissionSettingsTabs}
+                onChange={setAdmissionSettingsTab}
+                size="small"
+                tabBarGutter={18}
+              />
+            </div>
           ),
         }
       : null,

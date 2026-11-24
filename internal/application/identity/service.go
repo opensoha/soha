@@ -422,6 +422,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 	return domainidentity.AuthResult{
 		User: principal,
 		Tokens: domainidentity.TokenSet{
+			SessionID:    session.ID,
 			AccessToken:  accessToken,
 			RefreshToken: refreshToken,
 			TokenType:    "Bearer",
@@ -1335,6 +1336,7 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 	return domainidentity.AuthResult{
 		User: principal,
 		Tokens: domainidentity.TokenSet{
+			SessionID:    session.ID,
 			AccessToken:  accessToken,
 			RefreshToken: refreshToken,
 			TokenType:    "Bearer",

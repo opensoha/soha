@@ -27,7 +27,7 @@ func contentTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	return db.WithContext(context.Background()), m
 }
 func contentBindingRow(now time.Time, runtime string, disconnect bool) *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "nas_id", "runtime_id", "site_id", "name", "access_medium", "device_type", "ssid", "management_address", "status", "coa_supported", "disconnect_supported", "eap_server_trust", "created_at", "updated_at"}).AddRow("binding", "nas", runtime, "site", "NAS", "wired", "", "", "", "active", false, disconnect, []byte("null"), now, now)
+	return sqlmock.NewRows([]string{"id", "nas_id", "runtime_id", "site_id", "name", "access_medium", "device_type", "ssid", "management_address", "status", "coa_supported", "disconnect_supported", "eap_server_trust", "created_at", "updated_at", "strict_online_qualified"}).AddRow("binding", "nas", runtime, "site", "NAS", "wired", "", "", "", "active", false, disconnect, []byte("null"), now, now, false)
 }
 func TestContentNASRouteKeepsLegacyAndUnknownFailClosed(t *testing.T) {
 	for _, disconnect := range []bool{true, false} {

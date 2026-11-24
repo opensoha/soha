@@ -11,7 +11,7 @@ server default {
 	}
 
 	authorize {
-		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
 			soha_reject_tracked
 		}
 		if ("$ENV{SOHA_RADIUS_MANAGED_ENABLED}" == "true") {
@@ -88,7 +88,7 @@ server default {
 			update control {
 				&Tmp-String-1 := "%{string:&Class}"
 			}
-			if (!&Acct-Session-Id || &Acct-Session-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Port-Id || &NAS-Port-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&control:Tmp-String-1 || &control:Tmp-String-1 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+			if (!&Acct-Session-Id || &Acct-Session-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || &Class[1] || &NAS-Port-Id[1] || &NAS-Port[1] || &User-Name[1] || &Calling-Station-Id[1] || &NAS-Identifier[1] || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/ || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&control:Tmp-String-1 || &control:Tmp-String-1 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
 				fail
 			}
 			if (&Acct-Status-Type == Start) {
@@ -149,7 +149,10 @@ server default {
 		if ("%{Packet-Authentication-Vector}" !~ /^0x[A-Fa-f0-9]{32}$/) {
 			soha_reject_tracked
 		}
-		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+			soha_reject_tracked
+		}
+		if (&Called-Station-Id[1] || &NAS-Port-Id[1] || &NAS-Port[1] || &User-Name[1] || &Calling-Station-Id[1] || &NAS-Identifier[1]) {
 			soha_reject_tracked
 		}
 		if (&session-state:Tmp-String-4 || &session-state:Tmp-String-5) {

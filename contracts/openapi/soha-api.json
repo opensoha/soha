@@ -49548,6 +49548,49 @@
           }
         ]
       },
+      "NetworkAccessBootstrapOption": {
+        "additionalProperties": false,
+        "description": "Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers.",
+        "properties": {
+          "accessNetworkId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "autoConnect": {
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "priority": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "siteId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ssid": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessNetworkId",
+          "siteId",
+          "name",
+          "ssid",
+          "priority",
+          "autoConnect"
+        ],
+        "type": "object"
+      },
       "NetworkAccessDeviceType": {
         "enum": [
           "wireless_controller",
@@ -49840,6 +49883,369 @@
           "NetworkAccessModeExternalVPNZTNA",
           "NetworkAccessModeExternalDirectZTNA"
         ]
+      },
+      "NetworkAccessNetwork": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/NetworkAccessNetworkInput"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "configuration",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "accessNetworkId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "accessProfile": {
+            "$ref": "#/components/schemas/NetworkAccessProfile"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "matchedRuleIndex": {
+            "description": "One-based index of the first matching rule that determined the decision, when applicable.",
+            "maximum": 128,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasonCode": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessNetworkId",
+          "name",
+          "allowed",
+          "reasonCode"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkDecisionListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkAccessNetworkDecision"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NetworkAccessNetwork"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkInput": {
+        "additionalProperties": false,
+        "properties": {
+          "accessMedium": {
+            "$ref": "#/components/schemas/NetworkAccessMedium"
+          },
+          "autoConnect": {
+            "type": "boolean"
+          },
+          "bssids": {
+            "description": "Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks.",
+            "items": {
+              "pattern": "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "filterId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NetworkAccessNetworkKind"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "nasBindingIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "portEnd": {
+            "description": "Wired port range end. Core restricts this to wired access networks and validates the range order.",
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "portIds": {
+            "description": "Wired port identifiers. Core restricts this to wired access networks.",
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "portStart": {
+            "description": "Wired port range start. Core restricts this to wired access networks and validates the range order.",
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "priority": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkAccessNetworkRule"
+            },
+            "maxItems": 128,
+            "type": "array"
+          },
+          "sessionTimeoutSeconds": {
+            "maximum": 86400,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "siteId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ssid": {
+            "description": "Wi-Fi SSID. Core restricts this to Wi-Fi access networks.",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "vlanId": {
+            "maximum": 4094,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "siteId",
+          "name",
+          "accessMedium",
+          "kind",
+          "enabled",
+          "nasBindingIds",
+          "priority",
+          "autoConnect",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkKind": {
+        "description": "strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.",
+        "enum": [
+          "standard",
+          "strict_online",
+          "open_guest_bootstrap"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "NetworkAccessNetworkKindStandard",
+          "NetworkAccessNetworkKindStrictOnline",
+          "NetworkAccessNetworkKindOpenGuestBootstrap"
+        ]
+      },
+      "NetworkAccessNetworkListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkAccessNetwork"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkPreviewInput": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticationMethod": {
+            "default": "eap_tls",
+            "enum": [
+              "eap_tls",
+              "eap_ttls_pap"
+            ],
+            "type": "string"
+          },
+          "deviceId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/NetworkAccessNetworkInput"
+          },
+          "siteId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "userId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "siteId",
+          "userId",
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "NetworkAccessNetworkRule": {
+        "additionalProperties": false,
+        "description": "Empty subject arrays match any subject. Core applies deny precedence before allow.",
+        "properties": {
+          "authenticationMethods": {
+            "items": {
+              "enum": [
+                "eap_tls",
+                "eap_ttls_pap"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "deviceIds": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "deviceStatuses": {
+            "items": {
+              "$ref": "#/components/schemas/EndpointDeviceStatus"
+            },
+            "maxItems": 4,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "effect": {
+            "$ref": "#/components/schemas/NetworkPolicyEffect"
+          },
+          "filterId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "postureStatuses": {
+            "items": {
+              "$ref": "#/components/schemas/EndpointDevicePostureStatus"
+            },
+            "maxItems": 3,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "scheduleEndMinute": {
+            "maximum": 1439,
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "scheduleStartMinute": {
+            "maximum": 1439,
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "sessionTimeoutSeconds": {
+            "maximum": 86400,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subjects": {
+            "$ref": "#/components/schemas/NetworkPolicySubjects"
+          },
+          "vlanId": {
+            "maximum": 4094,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "effect",
+          "subjects"
+        ],
+        "type": "object"
       },
       "NetworkAccessPolicy": {
         "additionalProperties": false,
@@ -50303,17 +50709,63 @@
           "NetworkConnectionAuthenticationRadius8021X"
         ]
       },
+      "NetworkConnectionNASSession": {
+        "additionalProperties": false,
+        "description": "Last Core observation of the NAS session bound to this access network and registered device.",
+        "properties": {
+          "lastReceivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.",
+            "enum": [
+              "pending",
+              "observed",
+              "ended",
+              "unknown"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "NetworkConnectionNASSessionStatePending",
+              "NetworkConnectionNASSessionStateObserved",
+              "NetworkConnectionNASSessionStateEnded",
+              "NetworkConnectionNASSessionStateUnknown"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
       "NetworkConnectionOption": {
         "additionalProperties": false,
         "properties": {
           "accessMedium": {
             "$ref": "#/components/schemas/NetworkAccessMedium"
           },
+          "accessNetworkId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
           "accessProfile": {
             "$ref": "#/components/schemas/NetworkAccessProfile"
           },
           "authentication": {
             "$ref": "#/components/schemas/NetworkConnectionAuthentication"
+          },
+          "autoConnect": {
+            "type": "boolean"
+          },
+          "nasSession": {
+            "$ref": "#/components/schemas/NetworkConnectionNASSession"
+          },
+          "networkName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
           },
           "policyVersion": {
             "minimum": 1,
@@ -50326,6 +50778,11 @@
             "maxLength": 128,
             "minLength": 1,
             "type": "string"
+          },
+          "recommendationPriority": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
           },
           "siteId": {
             "maxLength": 128,
@@ -50342,6 +50799,17 @@
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "strictOnline": {
+            "additionalProperties": false,
+            "description": "Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.",
+            "properties": {
+              "leaseUntil": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "type": "object"
           }
         },
         "required": [
@@ -50357,6 +50825,13 @@
       "NetworkConnectionOptionListEnvelope": {
         "additionalProperties": false,
         "properties": {
+          "bootstrapNetworks": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkAccessBootstrapOption"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/NetworkConnectionOption"
@@ -121074,6 +121549,247 @@
         }
       }
     },
+    "/network-access/access-networks": {
+      "get": {
+        "operationId": "listNetworkAccessNetworks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "siteId",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkAccessNetworkListEnvelope"
+                }
+              }
+            },
+            "description": "Access networks configured for the requested site."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Network Access"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "network_access.sites.view"
+          ],
+          "mode": "all"
+        }
+      },
+      "post": {
+        "operationId": "createNetworkAccessNetwork",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkAccessNetworkInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkAccessNetworkEnvelope"
+                }
+              }
+            },
+            "description": "Created access network."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Network Access"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "network_access.sites.update"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/network-access/access-networks/{accessNetworkId}": {
+      "delete": {
+        "operationId": "deleteNetworkAccessNetwork",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accessNetworkId",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Access network deleted."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Network Access"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "network_access.sites.update"
+          ],
+          "mode": "all"
+        }
+      },
+      "put": {
+        "operationId": "updateNetworkAccessNetwork",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accessNetworkId",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkAccessNetworkInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkAccessNetworkEnvelope"
+                }
+              }
+            },
+            "description": "Updated access network."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Network Access"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "network_access.sites.update"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/network-access/access-networks/preview": {
+      "post": {
+        "operationId": "previewNetworkAccessNetworks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkAccessNetworkPreviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkAccessNetworkDecisionListEnvelope"
+                }
+              }
+            },
+            "description": "Read-only per-network allow or deny decisions for the requested user and device. No access network is mutated.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always no-store because the result is user and device scoped.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Network Access"
+        ],
+        "x-soha-permissions": {
+          "keys": [
+            "network_access.sites.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/network-access/admission/preview": {
       "post": {
         "description": "Read-only admission evaluation for the device owner and selected NAS. Returns current policy and attribute versions; it does not authenticate a certificate or grant network access.",
@@ -121183,6 +121899,24 @@
               "maxLength": 128,
               "minLength": 1,
               "type": "string"
+            }
+          },
+          {
+            "description": "When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.",
+            "in": "query",
+            "name": "includeBootstrap",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include the latest NAS accounting status for authorized access networks and the current user's registered device.",
+            "in": "query",
+            "name": "includeNasSession",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
