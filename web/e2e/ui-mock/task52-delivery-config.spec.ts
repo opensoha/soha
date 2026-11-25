@@ -55,6 +55,27 @@ async function designerMocks(context: BrowserContext, page: Page) {
         },
       }
     if (path === '/api/v1/applications') return { body: { data: [application] } }
+    if (method === 'GET' && path === `/api/v1/applications/${application.id}`)
+      return { body: { data: application } }
+    if (
+      method === 'GET' &&
+      path === `/api/v1/applications/${application.id}/application-environments`
+    ) {
+      return {
+        body: {
+          data: [
+            {
+              applicationEnvironmentId: binding.id,
+              environmentId: binding.environmentId,
+              environmentKey: 'test',
+              environmentName: binding.alias,
+              isProduction: false,
+              requiresApproval: false,
+            },
+          ],
+        },
+      }
+    }
     if (path === '/api/v1/applications/app-motion/detail')
       return { body: { data: { application, environments: [binding], services: [] } } }
     if (path === '/api/v1/applications/app-motion/runtime')
