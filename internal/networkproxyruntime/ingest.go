@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ type IngestClient struct {
 	url       string
 	runtimeID string
 	http      *http.Client
+	lastSeq   atomic.Int64
 }
 
 func NewIngestClient(origin, runtimeID string, tlsConfig *tls.Config) *IngestClient {
@@ -42,11 +44,23 @@ func (c *IngestClient) Send(ctx context.Context, observation domain.Observation)
 		return err
 	}
 	id := uuid.NewString()
+	seq := now.UnixNano()
+	for {
+		prev := c.lastSeq.Load()
+		next := seq
+		if next <= prev {
+			next = prev + 1
+		}
+		if c.lastSeq.CompareAndSwap(prev, next) {
+			seq = next
+			break
+		}
+	}
 	batch, err := json.Marshal(networkprotocol.IngestBatch{
 		SchemaVersion: networkprotocol.IngestSchemaVersion, BatchID: id,
 		ProducerID: c.runtimeID, ProducerKind: "proxy", SentAt: now,
 		Events: []networkprotocol.IngestEvent{{ID: id, Type: networkprotocol.EventProxyRuntimeSample,
-			Sequence: now.UnixNano(), OccurredAt: now, Payload: payload}},
+			Sequence: seq, OccurredAt: now, Payload: payload}},
 	})
 	if err != nil {
 		return err

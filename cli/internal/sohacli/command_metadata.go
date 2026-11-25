@@ -263,7 +263,7 @@ var topLevelCommandSpecs = []commandSpec{
 			{Name: "update", Usage: "soha secret update <secret-id> [options]", Summary: "Update secret metadata and bindings", Examples: []string{"soha secret update registry-token --binding capability=docker.projects.deploy.trigger"}},
 			{Name: "disable", Usage: "soha secret disable <secret-id> [options]", Summary: "Disable a secret", Examples: []string{"soha secret disable registry-token"}},
 			{Name: "versions", Usage: "soha secret versions <secret-id> [options]", Summary: "List immutable secret versions", Examples: []string{"soha secret versions registry-token"}},
-			{Name: "rotate", Usage: "soha secret rotate <secret-id> [options]", Summary: "Create a typed local or Vault KV v2 secret; import SSH keys with --input file|- version", Examples: []string{"printf '%s\\n' \"$REGISTRY_TOKEN\" | soha secret rotate registry-token", "soha secret rotate registry-token --vault-mount secret --vault-path demo/app --vault-key token --vault-version 4"}},
+			{Name: "rotate", Usage: "soha secret rotate <secret-id> [options]", Summary: "Rotate a secret with a new immutable local or Vault KV v2 version", Examples: []string{"printf '%s\\n' \"$REGISTRY_TOKEN\" | soha secret rotate registry-token", "soha secret rotate registry-token --vault-mount secret --vault-path demo/app --vault-key token --vault-version 4"}},
 			{Name: "revoke-version", Usage: "soha secret revoke-version <secret-id> <version> [options]", Summary: "Revoke a secret version", Examples: []string{"soha secret revoke-version registry-token 1"}},
 		},
 		Handler: runSecret,

@@ -910,9 +910,16 @@ func (c APIClient) doRawJSON(ctx context.Context, method, path, token string, he
 		return nil, fmt.Errorf("%s %s request failed: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	const maxResponseBytes = 10 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > maxResponseBytes {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil, fmt.Errorf("%s %s response exceeds size limit", method, path)
+		}
+		raw = nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &httpStatusError{

@@ -408,7 +408,7 @@ export function GatewayGovernanceSection(props: GatewayGovernanceSectionProps) {
                     pagination={false}
                     scroll={{ x: 720 }}
                   />
-                  <div className="grid gap-3 lg:grid-cols-3">
+                  <div className="soha-gateway-governance-grid">
                     <AdminTable
                       shellClassName="soha-management-table-shell"
                       columnSettingIconOnly

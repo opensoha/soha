@@ -1110,28 +1110,6 @@ func toAlertEventInput(item domainalert.AlertEvent) domainalert.AlertEventInput 
 	}
 }
 
-func toHealingRunInput(item domainalert.HealingRun) domainalert.HealingRunInput {
-	return domainalert.HealingRunInput{
-		ExecutionGeneration: item.ExecutionGeneration,
-		SubmissionStatus:    item.SubmissionStatus,
-		IntentDigest:        item.IntentDigest,
-		ID:                  item.ID,
-		PolicyID:            item.PolicyID,
-		EventID:             item.EventID,
-		Status:              item.Status,
-		ApprovalStatus:      item.ApprovalStatus,
-		ApprovalComment:     item.ApprovalComment,
-		RequestedBy:         item.RequestedBy,
-		ApprovedBy:          item.ApprovedBy,
-		WorkflowRunID:       item.WorkflowRunID,
-		WorkflowStatus:      item.WorkflowStatus,
-		WorkflowSummary:     item.WorkflowSummary,
-		Result:              item.Result,
-		StartedAt:           item.StartedAt,
-		CompletedAt:         item.CompletedAt,
-	}
-}
-
 func stringValue(value any, fallback string) string {
 	if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
 		return strings.TrimSpace(text)

@@ -49,9 +49,6 @@ jobs:
       - name: Verify Go module checksums
         working-directory: cli
         run: go mod verify
-      - name: Test
-        working-directory: cli
-        run: go test ./...
       - name: Race test
         working-directory: cli
         run: go test -race ./...

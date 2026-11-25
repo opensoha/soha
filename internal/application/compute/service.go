@@ -1088,6 +1088,7 @@ func (s *Service) verifyTaskResources(ctx context.Context, view sohaapi.ComputeT
 		return taskVerificationForStatus(view.NormalizedStatus)
 	}
 	checkedAt := time.Now().UTC()
+	verified := make([]sohaapi.ComputeResourceRef, 0, len(view.Resources))
 	for _, resource := range view.Resources {
 		var err error
 		switch {
@@ -1109,7 +1110,10 @@ func (s *Service) verifyTaskResources(ctx context.Context, view sohaapi.ComputeT
 		if err != nil {
 			return &sohaapi.ComputeTaskVerification{Status: sohaapi.ComputeTaskVerificationStatusFailed, CheckedAt: &checkedAt, Verifier: "compute-resource-read", Summary: "task finished but the target resource could not be verified", Resources: []sohaapi.ComputeResourceRef{resource}}
 		}
-		return &sohaapi.ComputeTaskVerification{Status: sohaapi.ComputeTaskVerificationStatusVerified, CheckedAt: &checkedAt, Verifier: "compute-resource-read", Summary: "target resource is observable after task completion", Resources: []sohaapi.ComputeResourceRef{resource}}
+		verified = append(verified, resource)
+	}
+	if len(verified) > 0 {
+		return &sohaapi.ComputeTaskVerification{Status: sohaapi.ComputeTaskVerificationStatusVerified, CheckedAt: &checkedAt, Verifier: "compute-resource-read", Summary: "target resource is observable after task completion", Resources: verified}
 	}
 	return &sohaapi.ComputeTaskVerification{Status: sohaapi.ComputeTaskVerificationStatusUnsupported, CheckedAt: &checkedAt, Summary: "this task has no verifiable target resource"}
 }

@@ -736,12 +736,12 @@ func upsertCodexMCPConfig(path, section, block string) (string, bool, error) {
 	if statErr == nil {
 		backupPath = fmt.Sprintf("%s.bak.%s", path, time.Now().Format("20060102150405"))
 		// #nosec G703 -- backup is beside the explicit local client configuration selected by the user, not a remotely supplied path.
-		if err := os.WriteFile(backupPath, raw, mode); err != nil {
+		if err := writeAtomicFile(backupPath, raw, mode); err != nil {
 			return "", false, err
 		}
 	}
 	// #nosec G703 -- path is the explicit local client configuration selected by the user, matching the authorized read above.
-	if err := os.WriteFile(path, []byte(next), mode); err != nil {
+	if err := writeAtomicFile(path, []byte(next), mode); err != nil {
 		return "", false, err
 	}
 	return backupPath, true, nil
@@ -789,11 +789,11 @@ func upsertJSONMCPConfig(path, serverName, command string, args []string, jsonc 
 	backupPath := ""
 	if statErr == nil {
 		backupPath = fmt.Sprintf("%s.bak.%s", path, time.Now().Format("20060102150405"))
-		if err := os.WriteFile(backupPath, raw, mode); err != nil {
+		if err := writeAtomicFile(backupPath, raw, mode); err != nil {
 			return "", false, err
 		}
 	}
-	if err := os.WriteFile(path, next, mode); err != nil {
+	if err := writeAtomicFile(path, next, mode); err != nil {
 		return "", false, err
 	}
 	return backupPath, true, nil

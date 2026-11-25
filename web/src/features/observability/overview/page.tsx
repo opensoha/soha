@@ -186,7 +186,7 @@ export function MonitoringPage() {
           title="告警态势"
           extra={
             summary?.lastReceivedAt ? (
-              <Text type="secondary" className="text-xs">
+              <Text type="secondary">
                 最近接收: {formatDateTime(summary?.lastReceivedAt)}
               </Text>
             ) : null

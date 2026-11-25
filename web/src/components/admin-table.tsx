@@ -624,8 +624,11 @@ export function AdminTable({
   }, [columnLayoutKey, columnSignature, selectableColumnOptions])
 
   useEffect(() => {
-    if (pagination && pagination !== false && typeof pagination.currentPage === 'number') {
-      setCurrentPage(pagination.currentPage)
+    if (!pagination || pagination === false) return
+    const controlledPage =
+      typeof pagination.currentPage === 'number' ? pagination.currentPage : pagination.current
+    if (typeof controlledPage === 'number') {
+      setCurrentPage(controlledPage)
     }
   }, [pagination])
 
@@ -636,6 +639,22 @@ export function AdminTable({
         : pageSize
     setCurrentPageSize(nextPageSize)
   }, [pageSize, pagination])
+
+  useEffect(() => {
+    if (pagination === false) return
+    if (
+      pagination &&
+      (typeof pagination.currentPage === 'number' ||
+        typeof pagination.current === 'number' ||
+        typeof pagination.total === 'number')
+    ) {
+      return
+    }
+    const maxPage = Math.max(1, Math.ceil(dataSource.length / Math.max(1, currentPageSize)))
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage)
+    }
+  }, [currentPage, currentPageSize, dataSource.length, pagination])
 
   const activeColumnIds = useMemo(() => {
     const defaultIds = selectableColumnOptions

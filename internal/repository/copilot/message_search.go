@@ -104,6 +104,11 @@ func (r *Repository) windowAnchor(ctx context.Context, owner, session, id string
 }
 
 func (r *Repository) ReadMessageWindow(ctx context.Context, owner, session string, input domain.MessageWindowInput) (domain.MessageWindow, error) {
+	if input.Limit <= 0 {
+		input.Limit = 20
+	} else if input.Limit > 200 {
+		input.Limit = 200
+	}
 	page := domain.MessageWindow{Messages: []domain.Message{}}
 	id := input.Around
 	if input.Before != "" {

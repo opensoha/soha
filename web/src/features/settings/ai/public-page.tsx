@@ -11,7 +11,7 @@ export function AISettingsPage(props: AISettingsPageProps) {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-64 items-center justify-center">
+        <div className="soha-section-center">
           <Spin size="large" />
         </div>
       }

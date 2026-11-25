@@ -27,7 +27,7 @@ function renderRouteElement(definition: ResolvedAppRouteDefinition) {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[240px] items-center justify-center">
+        <div className="soha-section-center">
           <Spin size="large" />
         </div>
       }

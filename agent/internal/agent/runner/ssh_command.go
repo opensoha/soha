@@ -49,7 +49,8 @@ func (output *sshCommandOutput) snapshot() (string, bool) {
 
 func (r *Runner) checkSSHCommandAuthorization(ctx context.Context, input sohaapi.AgentSSHSessionRequest) error {
 	body, _ := json.Marshal(sohaapi.VMSSHCredentialRedemptionInput{ClusterID: input.ExecutionClusterID, AgentID: input.AgentID, LeaseID: input.Lease.ID, Token: input.Lease.Token})
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/virtualization/ssh-sessions/"+url.PathEscape(input.SessionID)+"/execution-status", bytes.NewReader(body))
+	baseURL := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(r.cfg.BaseURL), "/"), "/api/v1")
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/virtualization/ssh-sessions/"+url.PathEscape(input.SessionID)+"/execution-status", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

@@ -926,6 +926,66 @@ func TestRunRedactsBackendErrorOnStderr(t *testing.T) {
 }
 
 func TestAPIClientDecodeTimeoutAndEmptyResponseErrors(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		size      int
+		decode    bool
+		wantError bool
+	}{
+		{name: "response at limit", size: 10 << 20, decode: true},
+		{name: "oversized decoded response", size: (10 << 20) + 1, decode: true, wantError: true},
+		{name: "oversized ignored response", size: (10 << 20) + 1, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := `{}` + strings.Repeat(" ", test.size-2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, body)
+			}))
+			defer server.Close()
+			var out any
+			var destination any
+			if test.decode {
+				destination = &out
+			}
+			err := (APIClient{ServerURL: server.URL}).doJSON(t.Context(), http.MethodGet, "/test", "", nil, nil, destination)
+			if test.wantError {
+				if err == nil || !strings.Contains(err.Error(), "response exceeds size limit") {
+					t.Fatalf("expected response size error, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("response at limit failed: %v", err)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name   string
+		status int
+	}{
+		{name: "oversized unauthorized response", status: http.StatusUnauthorized},
+		{name: "oversized rate limited response", status: http.StatusTooManyRequests},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Retry-After", "7")
+				if test.status == http.StatusUnauthorized {
+					w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				}
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, `{"error":{"code":"upstream_error","message":"large upstream failure"}}`+strings.Repeat(" ", 10<<20))
+			}))
+			defer server.Close()
+			err := (APIClient{ServerURL: server.URL}).doJSON(t.Context(), http.MethodGet, "/test", "", nil, nil, nil)
+			status, ok := err.(*httpStatusError)
+			if !ok || status.StatusCode != test.status || status.RetryAfter != 7 || status.AuthRejected != (test.status == http.StatusUnauthorized) {
+				t.Fatalf("expected preserved HTTP status and headers, got %#v", err)
+			}
+			if status.Code != "" || strings.Contains(status.Message, "large upstream failure") {
+				t.Fatalf("oversized error body was decoded: %#v", status)
+			}
+		})
+	}
+
 	t.Run("bad JSON", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

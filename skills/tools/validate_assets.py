@@ -206,10 +206,17 @@ def read_yaml(path: Path) -> Any:
     return SimpleYAMLParser(path.read_text(), path).parse()
 
 
+_SCHEMA_CACHE: dict[str, dict[str, Any]] = {}
+
+
 def load_schema(name: str) -> dict[str, Any]:
+    cached = _SCHEMA_CACHE.get(name)
+    if cached is not None:
+        return cached
     schema = read_json(SCHEMA_DIR / name)
     if not isinstance(schema, dict):
         raise ValidationError(f"schemas/{name}: schema must be a JSON object")
+    _SCHEMA_CACHE[name] = schema
     return schema
 
 
@@ -1342,10 +1349,14 @@ def release_manifest(version: str) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
     for root_dir in RELEASE_INCLUDE_DIRS:
         for path in sorted((ROOT / root_dir).glob("**/*")):
+            if path.is_symlink():
+                raise ValidationError(f"{rel(path)}: symbolic links are not allowed in release assets")
             if path.is_file():
                 files.append(release_file_entry(path))
     for file_name in RELEASE_INCLUDE_FILES:
         path = ROOT / file_name
+        if path.is_symlink():
+            raise ValidationError(f"{rel(path)}: symbolic links are not allowed in release assets")
         if path.exists():
             files.append(release_file_entry(path))
     files.sort(key=lambda item: item["path"])
@@ -1437,7 +1448,15 @@ def verify_release_package(artifact_path: Path, expected_version: str) -> dict[s
 
     embedded_manifest_name = f"soha-skills/{manifest_path.name}"
     expected_members = {embedded_manifest_name}
-    expected_members.update(f"soha-skills/{item['path']}" for item in manifest["files"])
+    seen_manifest_paths: set[str] = set()
+    for item in manifest["files"]:
+        rel_path = item["path"]
+        if rel_path in seen_manifest_paths:
+            raise ValidationError(f"{manifest_path}: duplicate manifest file path {rel_path!r}")
+        if rel_path.startswith("/") or ".." in Path(rel_path).parts:
+            raise ValidationError(f"{manifest_path}: unsafe manifest file path {rel_path!r}")
+        seen_manifest_paths.add(rel_path)
+        expected_members.add(f"soha-skills/{rel_path}")
 
     with tarfile.open(artifact_path, "r:gz") as archive:
         member_names = release_member_names(archive, artifact_path)
@@ -1489,6 +1508,8 @@ def verify_release_package(artifact_path: Path, expected_version: str) -> dict[s
 def release_member_names(archive: tarfile.TarFile, artifact_path: Path) -> set[str]:
     names: set[str] = set()
     for member in archive.getmembers():
+        if not member.isfile():
+            raise ValidationError(f"{artifact_path}: member {member.name!r} is not a regular file")
         if member.name in names:
             raise ValidationError(f"{artifact_path}: duplicate release member {member.name!r}")
         names.add(member.name)

@@ -629,9 +629,11 @@ describe('storage detail pages', () => {
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('确认删除 claim-a？')
     expect(dialog?.textContent).toContain('selected-ns / claim-a')
-    expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
-      'Synthetic PVC delete conflict',
-    )
+    await vi.waitFor(() => {
+      expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
+        'Synthetic PVC delete conflict',
+      )
+    })
     expect(apiDeleteMock).toHaveBeenCalledTimes(1)
     expect(container.querySelector('h1')?.textContent).toBe('claim-a')
   })

@@ -20,7 +20,7 @@ Use for:
 - hosts where Compose is intentionally unavailable
 - validating image startup and environment-variable overrides
 
-Follow the `docker run` commands in `README.md` or `README-cn.md`. Provide a database host reachable from the container and override the four public system-key defaults before public exposure. No SecretStore volume or initialization command is required.
+Follow the standalone `docker run` guidance in `soha-docs` (`operations/deployment.md`). Provide a database host reachable from the container and override the four public system-key defaults before public exposure. No SecretStore volume or initialization command is required.
 
 ### Docker Compose
 

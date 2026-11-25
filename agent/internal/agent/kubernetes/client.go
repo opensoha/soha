@@ -90,6 +90,10 @@ func (c *Client) SetExecutionClaimCapabilities(capabilities []string) {
 	c.executionClaimCapabilities = slices.Clone(capabilities)
 }
 
+func (c *Client) ClusterID() string {
+	return c.cfg.ID
+}
+
 func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	summary := domaincluster.Summary{
 		Capabilities: []string{
@@ -127,12 +131,14 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
 	)
 	capabilities = append(capabilities, c.executionClaimCapabilities...)
+	addedGroups := 0
 	for _, group := range groups.Groups {
 		if strings.TrimSpace(group.Name) == "" {
 			continue
 		}
 		capabilities = append(capabilities, group.Name)
-		if len(capabilities) >= 9 {
+		addedGroups++
+		if addedGroups >= 9 {
 			break
 		}
 	}

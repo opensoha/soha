@@ -26873,14 +26873,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentDestinationsEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
   /network-access/content-transfers/destinations/admin:
@@ -26902,14 +26922,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentAdminDestinationsEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_destinations.view
   /network-access/content-transfers/destinations/{destinationID}:
@@ -26938,14 +26978,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentDestinationEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_destinations.view
     put:
@@ -26973,16 +27033,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentDestinationEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_destinations.update
       requestBody:
@@ -27017,16 +27101,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentDestinationEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_destinations.publish
       requestBody:
@@ -27054,16 +27162,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentResultEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.create
       requestBody:
@@ -27091,16 +27223,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentResultEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.create
       requestBody:
@@ -27140,14 +27296,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordPageEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
   /network-access/content-transfers/files/{fileID}/read:
@@ -27176,16 +27352,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentResultEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.download
       requestBody:
@@ -27220,16 +27420,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentResultEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.create
       requestBody:
@@ -27264,16 +27488,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentResultEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.delete
       requestBody:
@@ -27313,14 +27561,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordPageEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
   /network-access/content-transfers/records/{recordID}:
@@ -27349,14 +27617,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
   /network-access/content-transfers/destinations/{destinationID}/cases:
@@ -27397,14 +27685,34 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordPageEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfer_events.view
   /network-access/content-transfers/records/{recordID}/authorize:
@@ -27433,16 +27741,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentAuthorizationEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
       requestBody:
@@ -27477,16 +27809,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfers.view
       requestBody:
@@ -27521,16 +27877,40 @@ paths:
                 $ref: "#/components/schemas/ManagedContentRecordEnvelope"
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       x-permission-keys:
         - network_access.content_transfer_appeals.review
       requestBody:
@@ -27566,16 +27946,40 @@ paths:
           description: Current record or decision. A blocked/unknown record is not a completed transfer.
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       security:
         - bearerAuth: []
       summary: Compare saved draft with active policy on bounded samples
@@ -27611,16 +28015,40 @@ paths:
           description: Current record or decision. A blocked/unknown record is not a completed transfer.
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: JSON request body exceeds 512 KiB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       security:
         - bearerAuth: []
       summary: Compare saved draft with active policy on bounded samples
@@ -27650,16 +28078,40 @@ paths:
           description: Current record or decision. A blocked/unknown record is not a completed transfer.
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: Record or network hold not found in the authorized scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       security:
         - bearerAuth: []
       summary: Read source-owned network hold and execution receipts
@@ -27682,14 +28134,34 @@ paths:
           description: Current record or decision. A blocked/unknown record is not a completed transfer.
         "400":
           description: Invalid or over-limit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: Permission or object scope denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "409":
           description: Version, identity or single-use conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Dependency or reliable recording unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
       security:
         - bearerAuth: []
       summary: List authorized destinations for content case review

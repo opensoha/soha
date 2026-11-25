@@ -183,7 +183,7 @@ export function AccessControlResourceDetailPage<TDetail extends AccessControlDet
   }
   if (detailQuery.isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )

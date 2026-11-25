@@ -117,32 +117,49 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		return nil, err
 	}
 
+	type appLookup struct {
+		app domainapp.App
+		err error
+	}
+	type connLookup struct {
+		conn domaincluster.Connection
+		err  error
+	}
+	appCache := make(map[string]appLookup)
+	connCache := make(map[string]connLookup)
+
 	allowed := make([]domainrelease.Record, 0, len(items))
 	staleIDs := make([]string, 0)
 	for _, item := range items {
-		if strings.TrimSpace(item.ClusterID) == "" {
+		if strings.TrimSpace(item.ClusterID) == "" || strings.TrimSpace(item.ApplicationID) == "" {
 			staleIDs = append(staleIDs, item.ID)
 			continue
 		}
-		exists, checkErr := s.applicationExists(ctx, item.ApplicationID)
-		if checkErr != nil {
-			continue
+		cachedApp, ok := appCache[item.ApplicationID]
+		if !ok {
+			app, appErr := s.apps.Get(ctx, item.ApplicationID)
+			cachedApp = appLookup{app: app, err: normalizeApplicationError(appErr)}
+			appCache[item.ApplicationID] = cachedApp
 		}
-		if !exists {
-			staleIDs = append(staleIDs, item.ID)
-			continue
-		}
-		if _, checkErr := s.loadConnection(ctx, item.ClusterID); checkErr != nil {
-			if errors.Is(checkErr, apperrors.ErrNotFound) {
+		if cachedApp.err != nil {
+			if errors.Is(cachedApp.err, apperrors.ErrNotFound) {
 				staleIDs = append(staleIDs, item.ID)
 			}
 			continue
 		}
-		app, appErr := s.apps.Get(ctx, item.ApplicationID)
-		if appErr != nil {
+		cachedConn, ok := connCache[item.ClusterID]
+		if !ok {
+			conn, connErr := s.loadConnection(ctx, item.ClusterID)
+			cachedConn = connLookup{conn: conn, err: connErr}
+			connCache[item.ClusterID] = cachedConn
+		}
+		if cachedConn.err != nil {
+			if errors.Is(cachedConn.err, apperrors.ErrNotFound) {
+				staleIDs = append(staleIDs, item.ID)
+			}
 			continue
 		}
-		if err := s.authorize(ctx, principal, item.ClusterID, item.Namespace, "Release", item.DeploymentName, app.BusinessLineID, app.Group, item.ApplicationID, domainaccess.ActionList); err != nil {
+		if err := s.authorizeWithConnection(ctx, principal, cachedConn.conn, item.Namespace, "Release", item.DeploymentName, cachedApp.app.BusinessLineID, cachedApp.app.Group, item.ApplicationID, domainaccess.ActionList); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -850,21 +867,6 @@ func (s *Service) loadConnection(ctx context.Context, clusterID string) (domainc
 	return domaincluster.Connection{Summary: summary}, nil
 }
 
-func (s *Service) applicationExists(ctx context.Context, applicationID string) (bool, error) {
-	if strings.TrimSpace(applicationID) == "" {
-		return false, nil
-	}
-	_, err := s.apps.Get(ctx, applicationID)
-	if err == nil {
-		return true, nil
-	}
-	normalized := normalizeApplicationError(err)
-	if errors.Is(normalized, apperrors.ErrNotFound) {
-		return false, nil
-	}
-	return false, normalized
-}
-
 func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string) {
 	if s.apps == nil || strings.TrimSpace(applicationID) == "" {
 		return "", ""
@@ -931,6 +933,13 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	connection, err := s.loadConnection(ctx, clusterID)
 	if err != nil {
 		return err
+	}
+	return s.authorizeWithConnection(ctx, principal, connection, namespace, kind, name, businessLineID, applicationGroup, applicationID, action)
+}
+
+func (s *Service) authorizeWithConnection(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind, name, businessLineID, applicationGroup, applicationID string, action domainaccess.Action) error {
+	if s.authorizer == nil {
+		return nil
 	}
 	permissionKey := ""
 	if kind == "Release" && (action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch) {

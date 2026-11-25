@@ -442,29 +442,6 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 	})
 }
 
-func resolveBuildImageRef(metadata map[string]any, imageTag string) string {
-	if len(metadata) == 0 {
-		return strings.TrimSpace(imageTag)
-	}
-	if artifacts, ok := metadata["artifacts"].([]map[string]any); ok {
-		for _, item := range artifacts {
-			if ref := strings.TrimSpace(fmt.Sprint(item["ref"])); ref != "" {
-				return ref
-			}
-		}
-	}
-	if artifacts, ok := metadata["artifacts"].([]any); ok {
-		for _, item := range artifacts {
-			if value, ok := item.(map[string]any); ok {
-				if ref := strings.TrimSpace(fmt.Sprint(value["ref"])); ref != "" {
-					return ref
-				}
-			}
-		}
-	}
-	return strings.TrimSpace(imageTag)
-}
-
 func resolveBuildSource(app domainapp.App, sourceID string) *domainapp.BuildSource {
 	sourceID = strings.TrimSpace(sourceID)
 	for _, item := range app.BuildSources {

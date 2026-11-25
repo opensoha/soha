@@ -270,26 +270,33 @@ func (p *DatabaseProjector) deactivatePerson(tx *gorm.DB, connection domain.Conn
 			lastEventAt = now
 		}
 		preferences, _ := json.Marshal(map[string]any{"directoryStatus": person.Status, "employmentStatus": "suspended", "departedAt": nil, "lastDirectoryEventAt": lastEventAt})
-		return tx.Exec(`UPDATE users SET status='disabled',preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error
+		if err := tx.Exec(`UPDATE users SET status='disabled',authz_version=authz_version+1,preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error; err != nil {
+			return err
+		}
+		return revokeInteractiveUserSessions(tx, now, userID)
 	}
 	departedAt := now
 	if person.DepartedAt != nil {
 		departedAt = person.DepartedAt.UTC()
 	}
 	preferences, _ := json.Marshal(map[string]any{"directoryStatus": person.Status, "employmentStatus": "departed", "departedAt": departedAt, "lastDirectoryEventAt": departedAt})
-	if err := tx.Exec(`UPDATE users SET status='disabled',preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error; err != nil {
+	if err := tx.Exec(`UPDATE users SET status='disabled',authz_version=authz_version+1,preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error; err != nil {
 		return err
 	}
+	if err := revokeInteractiveUserSessions(tx, now, userID); err != nil {
+		return err
+	}
+	return tx.Exec(`UPDATE personal_access_tokens SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE user_id=?`, now, now, userID).Error
+}
+
+func revokeInteractiveUserSessions(tx *gorm.DB, now time.Time, userID string) error {
 	if err := tx.Exec(`UPDATE sessions SET status='revoked',updated_at=? WHERE user_id=? AND status='active'`, now, userID).Error; err != nil {
 		return err
 	}
 	if err := tx.Exec(`UPDATE identity_oidc_refresh_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE session_id IN (SELECT id FROM identity_oidc_sessions WHERE user_id=?)`, now, userID).Error; err != nil {
 		return err
 	}
-	if err := tx.Exec(`UPDATE identity_oidc_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?`, now, userID).Error; err != nil {
-		return err
-	}
-	return tx.Exec(`UPDATE personal_access_tokens SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE user_id=?`, now, now, userID).Error
+	return tx.Exec(`UPDATE identity_oidc_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?`, now, userID).Error
 }
 
 func applyDeltaProjection(tx *gorm.DB, connectionID string, delta domain.Delta, now time.Time) error {

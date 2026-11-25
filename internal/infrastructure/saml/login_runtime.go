@@ -17,6 +17,7 @@ import (
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	"github.com/opensoha/soha/internal/platform/netguard"
 )
 
 type LoginRuntime struct {
@@ -180,7 +181,10 @@ func secureMetadataClient() *http.Client {
 	return &http.Client{
 		Transport: transport,
 		Timeout:   10 * time.Second,
-		CheckRedirect: func(request *http.Request, _ []*http.Request) error {
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
 			_, err := safeMetadataURL(request.URL.String())
 			return err
 		},
@@ -204,5 +208,5 @@ func validateMetadataURL(value string) error {
 }
 
 func publicIP(address net.IP) bool {
-	return address.IsGlobalUnicast() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast() && !address.IsLinkLocalMulticast()
+	return !netguard.BlockedOutboundIP(address)
 }

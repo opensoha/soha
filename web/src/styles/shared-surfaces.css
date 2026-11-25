@@ -1283,3 +1283,250 @@
     width: 100% !important;
   }
 }
+
+/* Semantic layout & surface helpers */
+.soha-viewport-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.soha-section-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+}
+
+.soha-section-center--compact {
+  min-height: 192px;
+}
+
+.soha-auth-state-card {
+  max-width: 520px;
+}
+
+.soha-full-width {
+  width: 100%;
+}
+
+.soha-stack-xs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-stack-md {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-inline-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-inline-wrap--tight {
+  gap: 4px;
+}
+
+.soha-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-row-end {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.soha-mt-md {
+  margin-top: 16px;
+}
+
+.soha-mb-sm {
+  margin-bottom: 8px;
+}
+
+.soha-mb-md {
+  margin-bottom: 12px;
+}
+
+.soha-mb-lg {
+  margin-bottom: 16px;
+}
+
+.soha-disc-list {
+  list-style-type: disc;
+  padding-left: 20px;
+}
+
+.soha-evidence-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soha-evidence-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ant-color-split);
+}
+
+.soha-evidence-item:last-child {
+  border-bottom: 0;
+}
+
+.soha-bordered-box {
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+}
+
+.soha-section-callout {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+  font-size: 14px;
+}
+
+.soha-section-callout__title {
+  font-weight: 500;
+}
+
+.soha-section-callout__desc {
+  margin-top: 4px;
+  color: var(--ant-colorTextSecondary);
+}
+
+.soha-secondary-caption {
+  font-size: 12px;
+  color: var(--ant-colorTextSecondary);
+}
+
+.soha-secondary-note {
+  font-size: 14px;
+  color: var(--ant-colorTextSecondary);
+}
+
+.soha-compact-metric-card {
+  padding: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.soha-vm-console-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--soha-terminal-border);
+  border-radius: var(--soha-radius);
+  background: var(--soha-terminal-bg);
+}
+
+.soha-form-grid-2,
+.soha-form-grid-2--sm,
+.soha-form-grid-3,
+.soha-form-grid-4,
+.soha-docker-env-grid,
+.soha-metrics-grid,
+.soha-pod-exec-grid,
+.soha-pod-result-grid,
+.soha-copilot-context-grid,
+.soha-gateway-models-grid,
+.soha-gateway-governance-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.soha-metrics-grid,
+.soha-pod-exec-grid,
+.soha-pod-result-grid {
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .soha-form-grid-2--sm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .soha-form-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-form-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .soha-form-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .soha-docker-env-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+    align-items: start;
+  }
+
+  .soha-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .soha-metrics-grid,
+  .soha-gateway-governance-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .soha-gateway-models-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .soha-pod-exec-grid {
+    grid-template-columns: 220px minmax(0, 1fr) 160px;
+  }
+
+  .soha-pod-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-copilot-context-grid {
+    grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+  }
+}

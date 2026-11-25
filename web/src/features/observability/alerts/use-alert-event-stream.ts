@@ -100,7 +100,9 @@ export function useAlertEventStream({
     }
 
     const fallbackTimer = setInterval(() => {
-      if (!stopped && statusRef.current !== 'live') onFallbackRef.current?.()
+      if (!stopped && !document.hidden && statusRef.current !== 'live') {
+        onFallbackRef.current?.()
+      }
     }, fallbackIntervalMs)
     void connect()
     return () => {

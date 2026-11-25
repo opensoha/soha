@@ -55,7 +55,7 @@ export function ResourceFinder({
       className="soha-overview-runtime-card soha-platform-resource-finder"
       title={localeCode === 'zh_CN' ? '资源快速定位' : 'Resource Finder'}
       extra={
-        <Text type="secondary" className="text-xs">
+        <Text type="secondary">
           {clusterName || clusterId || '-'}
         </Text>
       }

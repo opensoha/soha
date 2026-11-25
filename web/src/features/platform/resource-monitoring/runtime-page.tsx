@@ -250,9 +250,13 @@ export function ResourceMonitoringRuntimePage() {
     rangeMinutes: Number(params.get('rangeMinutes') || 60),
     stepSeconds: 60,
   }
-  const [autoRefresh, setAutoRefresh] = useState(
-    () => localStorage.getItem('soha-resource-monitoring-auto') !== '0',
-  )
+  const [autoRefresh, setAutoRefresh] = useState(() => {
+    try {
+      return localStorage.getItem('soha-resource-monitoring-auto') !== '0'
+    } catch {
+      return true
+    }
+  })
   const [coverageOpen, setCoverageOpen] = useState(false)
   const chartScope = JSON.stringify([principal, clusterId, input.node])
   const [highlighted, setHighlighted] = useState({ scope: chartScope, names: [] as string[] })
@@ -429,8 +433,13 @@ export function ResourceMonitoringRuntimePage() {
                 data-refresh-state={refreshState}
                 className="soha-monitoring-refresh-dot"
                 onClick={() => {
-                  setAutoRefresh(!autoRefresh)
-                  localStorage.setItem('soha-resource-monitoring-auto', autoRefresh ? '0' : '1')
+                  const next = !autoRefresh
+                  setAutoRefresh(next)
+                  try {
+                    localStorage.setItem('soha-resource-monitoring-auto', next ? '1' : '0')
+                  } catch {
+                    // Ignore storage restrictions for non-essential UI preference.
+                  }
                 }}
               >
                 <span aria-hidden />
