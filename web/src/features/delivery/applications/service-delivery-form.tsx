@@ -80,6 +80,7 @@ export function ServiceDeliveryForm({
             key={`${service.id}/${applicationEnvironmentId ?? ''}`}
             embedded
             fixed
+            requireWritableLocalTarget
             pending={create.isPending}
             target={{
               id: 'service',

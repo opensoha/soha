@@ -1,0 +1,12 @@
+{
+  "data": {
+    "environment": {
+      "applicationEnvironmentId": "binding-1",
+      "environmentId": "dev",
+      "requiresApproval": false,
+      "status": "unavailable"
+    },
+    "observationStatus": "forbidden",
+    "observedAt": "2026-11-22T00:00:00Z"
+  }
+}

@@ -117,6 +117,29 @@ func (s stubApplicationReader) ListServices(context.Context, domainidentity.Prin
 	return s.services, nil
 }
 
+func (s stubApplicationReader) ListServiceIdentities(context.Context, domainidentity.Principal, string) ([]domainapp.ServiceIdentity, error) {
+	items := make([]domainapp.ServiceIdentity, 0, len(s.services))
+	for _, service := range s.services {
+		items = append(items, domainapp.ServiceIdentity{
+			ID: service.ID, ApplicationID: service.ApplicationID, Key: service.Key, Name: service.Name,
+			ServiceKind: service.ServiceKind, Enabled: service.Enabled,
+		})
+	}
+	return items, nil
+}
+
+func (s stubApplicationReader) GetService(ctx context.Context, principal domainidentity.Principal, appID, serviceID string) (domainapp.Service, error) {
+	if _, err := s.Get(ctx, principal, appID); err != nil {
+		return domainapp.Service{}, err
+	}
+	for _, service := range s.services {
+		if service.ID == serviceID && service.ApplicationID == appID {
+			return service, nil
+		}
+	}
+	return domainapp.Service{}, apperrors.ErrNotFound
+}
+
 func (s stubApplicationReader) CreateService(_ context.Context, _ domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
 	if s.createServiceCount != nil {
 		*s.createServiceCount = *s.createServiceCount + 1
@@ -163,9 +186,41 @@ func (s stubCatalogReader) ListEnvironments(context.Context, domainidentity.Prin
 	return s.envs, nil
 }
 
+func (s stubCatalogReader) GetEnvironment(_ context.Context, _ domainidentity.Principal, id string) (domaincatalog.Environment, error) {
+	for _, item := range s.envs {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return domaincatalog.Environment{}, apperrors.ErrNotFound
+}
+
 func (s stubCatalogReader) ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
 	s.readGate.wait("bindings")
 	return s.bindings, nil
+}
+
+func (s stubCatalogReader) ListApplicationEnvironmentsByApplication(ctx context.Context, principal domainidentity.Principal, appID string) ([]domaincatalog.ApplicationEnvironment, error) {
+	bindings, err := s.ListApplicationEnvironments(ctx, principal)
+	items := make([]domaincatalog.ApplicationEnvironment, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding.ApplicationID == appID {
+			items = append(items, binding)
+		}
+	}
+	return items, err
+}
+
+func (s stubCatalogReader) ListEnvironmentNavigation(_ context.Context, _ domainidentity.Principal, applicationID string) ([]domaincatalog.EnvironmentNavigationRow, error) {
+	items := make([]domaincatalog.EnvironmentNavigationRow, 0, len(s.bindings))
+	for _, binding := range s.bindings {
+		if binding.ApplicationID == applicationID {
+			items = append(items, domaincatalog.EnvironmentNavigationRow{
+				Binding: binding, Environment: domaincatalog.Environment{ID: binding.EnvironmentID},
+			})
+		}
+	}
+	return items, nil
 }
 
 func (s stubCatalogReader) GetApplicationEnvironment(_ context.Context, _ domainidentity.Principal, bindingID string) (domaincatalog.ApplicationEnvironment, error) {

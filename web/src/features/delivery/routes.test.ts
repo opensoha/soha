@@ -45,8 +45,8 @@ vi.mock('./deployment-templates/page', () => ({
 }))
 vi.mock('./applications/list-page', () => ({ ApplicationsPage: routePages.applications }))
 vi.mock('./workbench/overview-page', () => ({ DeliveryOverviewPage: routePages.overview }))
-vi.mock('./applications/detail-page', () => ({
-  ApplicationDetailPage: routePages.applicationDetail,
+vi.mock('./applications/workspace-page', () => ({
+  ApplicationWorkspacePage: routePages.applicationDetail,
 }))
 vi.mock('./runtime/workload-detail-page', () => ({
   ApplicationWorkloadDetailPage: routePages.workloadDetail,

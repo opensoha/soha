@@ -271,21 +271,25 @@ it('saves a selected historical Helm revision and clears it when switching back 
     namespace: 'test',
     name: 'api-release',
   })
-  await click('保存目标')
-  expect(onSave).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      helmRevision: 1,
-      releaseTargetId: 'helm-target',
-      action: 'config_update',
-    }),
+  await clickReady('保存目标')
+  await vi.waitFor(() =>
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        helmRevision: 1,
+        releaseTargetId: 'helm-target',
+        action: 'config_update',
+      }),
+    ),
   )
   const configuration = document.querySelector<HTMLInputElement>(
     'input[type="radio"][value="configuration"]',
   )!
   await act(async () => configuration.click())
-  await click('保存目标')
-  expect(onSave).toHaveBeenLastCalledWith(
-    expect.objectContaining({ helmRevision: undefined, releaseTargetId: 'helm-target' }),
+  await clickReady('保存目标')
+  await vi.waitFor(() =>
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ helmRevision: undefined, releaseTargetId: 'helm-target' }),
+    ),
   )
 })
 async function renderEditor(saved?: DeliveryWorkflow) {
@@ -439,6 +443,31 @@ it('keeps a Git workflow read-only while allowing its saved version to run and a
 }, 15_000)
 
 it('checks service delivery inputs before execution and retains its idempotency key on an uncertain retry', async () => {
+  const application = await deliveryApi.applications.detail('app-0')
+  vi.mocked(deliveryApi.applications.detail).mockResolvedValue({
+    ...application,
+    bindings: [
+      {
+        applicationEnvironmentId: 'dev',
+        environmentId: 'dev',
+        targetCount: 1,
+        requiresApproval: false,
+        targets: [
+          {
+            id: 'local-dev-target',
+            clusterId: 'cluster',
+            namespace: 'test',
+            enabled: true,
+            targetKind: 'kubernetes_workload',
+            executorKind: 'manifest_ssa',
+            workloadKind: 'Deployment',
+            workloadName: 'service-0',
+            metadata: { serviceId: 'service-0' },
+          },
+        ],
+      },
+    ],
+  })
   const service = (await deliveryApi.applications.services('app-0'))[0]
   vi.spyOn(deliveryApi.batches, 'list').mockResolvedValue([])
   await act(async () => {
@@ -471,6 +500,7 @@ it('checks service delivery inputs before execution and retains its idempotency 
       serviceId: service.id,
       applicationEnvironmentId: 'dev',
       action: 'config_update',
+      releaseTargetId: 'local-dev-target',
     }),
   ])
   expect(calls[1][0].idempotencyKey).toBe(calls[0][0].idempotencyKey)

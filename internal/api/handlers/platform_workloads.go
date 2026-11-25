@@ -124,15 +124,26 @@ func (h *podResourceHandler) ApplyPodYAML(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *podResourceHandler) GetPodMetrics(c *gin.Context) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || !singleNonemptyPodMetricFilter(query, "expectedUid") || !singleNonemptyPodMetricFilter(query, "container") {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "Pod metrics filters must be specified once and non-empty")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes, stepSeconds := parseMetricsWindow(c)
-	item, err := h.diagnostics.GetPodMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), rangeMinutes, stepSeconds)
+	item, err := h.diagnostics.GetPodMetricsForIdentity(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), query.Get("expectedUid"), query.Get("container"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func singleNonemptyPodMetricFilter(query url.Values, key string) bool {
+	values, present := query[key]
+	return !present || (len(values) == 1 && strings.TrimSpace(values[0]) != "")
 }
 func (h *podResourceHandler) ExecPod(c *gin.Context) {
 	var req dto.ExecPodRequest

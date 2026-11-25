@@ -39,6 +39,9 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	}
 	v1.POST("/auth/login", deps.Auth.Login)
 	v1.POST("/auth/refresh", deps.Auth.Refresh)
+	v1.POST("/auth/refresh/application-workbench", limits.Middleware("application-workbench-refresh", 120, time.Minute, nil, func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+	}), deps.Auth.RefreshApplicationWorkbench)
 	v1.GET("/auth/oidc/login", deps.Auth.OIDCLogin)
 	v1.GET("/auth/oidc/callback", deps.Auth.OIDCCallback)
 	v1.GET("/auth/providers/:providerID/login", deps.Auth.ProviderLogin)

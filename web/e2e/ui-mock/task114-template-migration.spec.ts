@@ -152,6 +152,18 @@ for (const initialization of [false, true]) {
           createdAt: '2026-10-23T00:00:00Z',
           updatedAt: '2026-10-23T00:00:00Z',
         })
+      if (path === '/delivery/plans/migration-plan/service-reference-impact' && method === 'GET')
+        return {
+          body: {
+            planId: 'migration-plan',
+            sourceApplicationEnvironmentId: 'retail-test',
+            revision: 'a'.repeat(64),
+            currentRevision: 'a'.repeat(64),
+            isCurrent: true,
+            items: [],
+            hasRestrictedConsumers: false,
+          },
+        }
       if (path === '/delivery/plans/migration-plan' && method === 'GET') return data(plan())
       if (path === '/delivery/plans/migration-plan/approval' && method === 'POST') {
         decisions.push(request.postDataJSON())

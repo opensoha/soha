@@ -27,11 +27,17 @@ import (
 )
 
 type DeliveryApplicationService interface {
+	ListApplicationEnvironmentNavigation(context.Context, domainidentity.Principal, string) ([]domaindelivery.ApplicationEnvironmentNavigation, error)
+	GetApplicationEnvironmentRuntimeSummary(context.Context, domainidentity.Principal, string, string) (domaindelivery.ApplicationEnvironmentRuntimeSummary, error)
 	GetApplicationDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationDetail, error)
 	GetApplicationRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationRuntimeDetail, error)
 	GetApplicationWorkloadRuntimeDetail(context.Context, domainidentity.Principal, string, string, string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error)
 	GetApplicationEnvironmentDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationEnvironmentDetail, error)
 	TriggerApplicationDeliveryAction(context.Context, domainidentity.Principal, string, domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error)
+}
+
+type DeliveryApplicationPodsService interface {
+	GetApplicationServicePods(context.Context, domainidentity.Principal, string, string, string) (domaindelivery.ApplicationServicePods, error)
 }
 
 type DeliveryReleaseService interface {
@@ -125,6 +131,7 @@ type DeliveryServices struct {
 	Helm         DeliveryHelmService
 	Agents       DeliveryAgentAuthenticator
 	Applications DeliveryApplicationService
+	Pods         DeliveryApplicationPodsService
 	Releases     DeliveryReleaseService
 	Imports      DeliveryKubernetesImportService
 	Executions   DeliveryExecutionQueryService
@@ -140,6 +147,7 @@ type DeliveryHandler struct {
 	helm         DeliveryHelmService
 	agents       DeliveryAgentAuthenticator
 	applications DeliveryApplicationService
+	pods         DeliveryApplicationPodsService
 	releases     DeliveryReleaseService
 	imports      DeliveryKubernetesImportService
 	executions   DeliveryExecutionQueryService
@@ -157,9 +165,10 @@ func NewDeliveryHandler(service DeliveryService, runnerToken string) *DeliveryHa
 }
 
 func NewDeliveryHandlerWithRunnerKeys(service DeliveryService, keys keyring.Ring) *DeliveryHandler {
+	pods, _ := service.(DeliveryApplicationPodsService)
 	return NewDeliveryHandlerWithServices(DeliveryServices{
 		Applications: service, Releases: service, Executions: service, Runtime: service,
-		Imports: service, Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
+		Imports: service, Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service, Pods: pods,
 	}, keys)
 }
 
@@ -167,7 +176,7 @@ func NewDeliveryHandlerWithServices(services DeliveryServices, keys keyring.Ring
 	return &DeliveryHandler{
 		helm:         services.Helm,
 		agents:       services.Agents,
-		applications: services.Applications, releases: services.Releases, executions: services.Executions,
+		applications: services.Applications, pods: services.Pods, releases: services.Releases, executions: services.Executions,
 		imports: services.Imports, runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
 		actions: services.Actions, runner: services.Runner, logs: services.Logs, runnerKeys: keys,
 	}
@@ -191,6 +200,41 @@ func (h *DeliveryHandler) GetApplicationRuntimeDetail(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) ListApplicationEnvironmentNavigation(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.applications.ListApplicationEnvironmentNavigation(c.Request.Context(), principal, c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, items)
+}
+
+func (h *DeliveryHandler) GetApplicationEnvironmentRuntimeSummary(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.applications.GetApplicationEnvironmentRuntimeSummary(c.Request.Context(), principal, c.Param("applicationID"), c.Param("applicationEnvironmentID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.GzipItem(c, item)
+}
+
+func (h *DeliveryHandler) GetApplicationServicePods(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.pods == nil {
+		writeError(c, apperrors.ErrUnsupportedOperation)
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.pods.GetApplicationServicePods(c.Request.Context(), principal, c.Param("applicationID"), c.Param("applicationEnvironmentID"), c.Param("serviceID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.GzipItem(c, item)
 }
 
 func (h *DeliveryHandler) GetApplicationWorkloadRuntimeDetail(c *gin.Context) {

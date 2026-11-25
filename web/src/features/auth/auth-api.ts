@@ -1,4 +1,6 @@
 import { useAuthStore } from '@/stores/auth-store'
+import type { ApplicationWorkbenchRefreshEnvelope } from '@opensoha/contracts/gen/ts/sohaapi'
+import { clearWorkbenchReads, prepareWorkbenchReads } from './workbench-startup-reads'
 import {
   advanceAuthSession,
   assertAuthSession,
@@ -144,18 +146,26 @@ async function fetchAuthJSON<T>(
     path,
     options.method ?? 'GET',
     async (signal) => {
-      const response = await sendAuthRequest(path, { ...options, signal: signal ?? options.signal }, owner)
+      const response = await sendAuthRequest(
+        path,
+        { ...options, signal: signal ?? options.signal },
+        owner,
+      )
       return readAuthJSON<T>(response, owner)
     },
     options.signal,
   )
 }
 
-function requestAuthResult(path: string, options: AuthFetchOptions, owner: AuthSessionOwner) {
+function requestAuthResult<Result = AuthResult>(
+  path: string,
+  options: AuthFetchOptions,
+  owner: AuthSessionOwner,
+) {
   return withAuthCookieRequest(path, options.method ?? 'POST', async (signal) => {
     const response = await sendAuthRequest(path, { ...options, signal }, owner)
     // A queued logout may need these credentials even after the local owner is signed out.
-    return (await readAuthJSON<ApiResponse<AuthResult>>(response, null)).data
+    return (await readAuthJSON<ApiResponse<Result>>(response, null)).data
   })
 }
 
@@ -332,17 +342,22 @@ export async function fetchPermissionSnapshot() {
 async function restoreOwnedSession(
   owner: AuthSessionOwner,
   refreshResult: Promise<AuthResult>,
+  beforeRestore?: (nextOwner: AuthSessionOwner) => void,
 ): Promise<AuthRefreshStatus> {
   try {
     const result = await refreshResult
     assertAuthSession(owner)
-    useAuthStore.setState((state) => ({
+    const state = useAuthStore.getState()
+    const generation = isSameBrowserSession(state.accessToken, state.user?.userId, result)
+      ? state.sessionGeneration
+      : state.sessionGeneration + 1
+    clearWorkbenchReads()
+    beforeRestore?.({ ...owner, generation })
+    useAuthStore.setState({
       accessToken: result.tokens.accessToken,
       user: result.user,
-      sessionGeneration: isSameBrowserSession(state.accessToken, state.user?.userId, result)
-        ? state.sessionGeneration
-        : state.sessionGeneration + 1,
-    }))
+      sessionGeneration: generation,
+    })
     return 'authenticated'
   } catch (error) {
     if (!isCurrentAuthSession(owner)) return 'superseded'
@@ -358,6 +373,19 @@ async function restoreOwnedSession(
 }
 
 export function restoreAuthSession(owner = captureAuthSession()): Promise<AuthRefreshStatus> {
+  return restoreSession(owner)
+}
+
+export function restoreApplicationWorkbenchSession(
+  applicationId: string,
+): Promise<AuthRefreshStatus> {
+  return restoreSession(captureAuthSession(), applicationId)
+}
+
+function restoreSession(
+  owner: AuthSessionOwner,
+  applicationId?: string,
+): Promise<AuthRefreshStatus> {
   if (!isCurrentAuthSession(owner) || authSessionChangePending(owner))
     return Promise.resolve('superseded')
   if (
@@ -365,8 +393,28 @@ export function restoreAuthSession(owner = captureAuthSession()): Promise<AuthRe
     refreshInFlight.owner.revision === owner.revision
   )
     return refreshInFlight.promise
-  const result = requestAuthResult('/auth/refresh', { method: 'POST' }, owner)
-  const promise = restoreOwnedSession(owner, result).finally(() => {
+  let startup: ApplicationWorkbenchRefreshEnvelope['data'] | undefined
+  const refresh = () => requestAuthResult('/auth/refresh', { method: 'POST' }, owner)
+  const result = applicationId
+    ? requestAuthResult<ApplicationWorkbenchRefreshEnvelope['data']>(
+        '/auth/refresh/application-workbench',
+        { method: 'POST', body: JSON.stringify({ applicationId }) },
+        owner,
+      )
+        .then((data) => {
+          startup = data
+          return data.session
+        })
+        .catch((error) => {
+          if (error instanceof AuthApiError && [403, 404, 405, 429].includes(error.status)) {
+            return refresh()
+          }
+          throw error
+        })
+    : refresh()
+  const promise = restoreOwnedSession(owner, result, (nextOwner) => {
+    if (applicationId && startup) prepareWorkbenchReads(nextOwner, applicationId, startup)
+  }).finally(() => {
     if (refreshInFlight?.promise === promise) refreshInFlight = undefined
   })
   refreshInFlight = { owner, result, promise }

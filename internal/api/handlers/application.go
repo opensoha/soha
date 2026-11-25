@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -21,6 +22,7 @@ type ApplicationCatalogService interface {
 }
 
 type ApplicationComponentService interface {
+	ListServiceIdentities(context.Context, domainidentity.Principal, string) ([]domainapp.ServiceIdentity, error)
 	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
 	GetService(context.Context, domainidentity.Principal, string, string) (domainapp.Service, error)
 	CreateService(context.Context, domainidentity.Principal, string, domainapp.ServiceInput) (domainapp.Service, error)
@@ -127,6 +129,27 @@ func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *ApplicationHandler) ListApplicationServiceDirectory(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.components.ListServiceIdentities(c.Request.Context(), principal, c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.GzipJSON(c, sohaapi.ApplicationServiceDirectoryEnvelope{Data: applicationServiceDirectory(items)})
+}
+
+func applicationServiceDirectory(items []domainapp.ServiceIdentity) []sohaapi.ApplicationServiceDirectoryItem {
+	directory := make([]sohaapi.ApplicationServiceDirectoryItem, 0, len(items))
+	for _, item := range items {
+		directory = append(directory, sohaapi.ApplicationServiceDirectoryItem{
+			ID: item.ID, ApplicationID: item.ApplicationID, Key: item.Key,
+			Name: item.Name, Enabled: item.Enabled, ServiceKind: sohaapi.ApplicationServiceDirectoryItemServiceKind(item.ServiceKind),
+		})
+	}
+	return directory
+}
+
 func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.components.ListServices(c.Request.Context(), principal, c.Param("applicationID"))
@@ -134,7 +157,7 @@ func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	writeDeliveryList(c, items)
+	apiresponse.GzipJSON(c, deliveryList(items))
 }
 
 func (h *ApplicationHandler) GetApplicationService(c *gin.Context) {

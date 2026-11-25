@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import { z } from 'zod'
 import {
   normalizeRealtimeSession,
+  sessionReferenceMatchesScope,
   type RealtimeSession,
   type RealtimeSessionWorkbench,
 } from './types'
@@ -12,6 +13,16 @@ interface DockState {
   activeSessionKeys: Record<string, string>
   selectedClusterId: string | null
 }
+const referenceDescriptor = z.object({
+  applicationId: z.string().min(1),
+  viewEnvironmentId: z.string().min(1),
+  sourceEnvironmentId: z.string().min(1),
+  serviceId: z.string().min(1),
+  referenceId: z.string().min(1),
+  referenceRevision: z.number().int().positive(),
+  targetId: z.string().min(1),
+  rootUid: z.string().min(1),
+})
 const descriptor = z.object({
   kind: z.enum(['logs', 'terminal']),
   clusterId: z.string(),
@@ -19,6 +30,7 @@ const descriptor = z.object({
   podName: z.string(),
   podUid: z.string().min(1).optional(),
   container: z.string().optional(),
+  reference: referenceDescriptor.optional(),
   shell: z.string().optional(),
 })
 const savedState = z.object({
@@ -66,7 +78,10 @@ export function createSessionDockStore(
         activeSessionKeys: state.activeSessionKeys,
         selectedClusterId: state.selectedClusterId,
         // Only allowlisted resource descriptors survive reload; never tickets, output or runtime hints.
-        sessions: state.sessions.map((session) => descriptor.parse(session)),
+        sessions: state.sessions.flatMap((session) => {
+          const parsed = descriptor.safeParse(session)
+          return parsed.success ? [parsed.data] : []
+        }),
       }),
       merge: (saved, current) => {
         const result = savedState.safeParse(saved)
@@ -75,7 +90,9 @@ export function createSessionDockStore(
           .flatMap((value) => {
             const parsed = descriptor.safeParse(value)
             const session = parsed.success ? normalizeRealtimeSession(parsed.data) : null
-            return session ? [session] : []
+            if (!session || !sessionReferenceMatchesScope(session.reference, workbench, scopeKey))
+              return []
+            return [session]
           })
           .filter(
             (session, index, list) => list.findIndex((item) => item.id === session.id) === index,

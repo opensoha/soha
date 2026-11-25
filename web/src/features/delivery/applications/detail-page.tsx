@@ -1,12 +1,23 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { MigrationAssessment, planMigrations } from '../template-migration'
+import { PlanReferenceImpact, usePlanReferenceImpact } from '../plan-reference-impact'
+import { ServiceReferenceEntry } from './service-reference-drawer'
+import { environmentReferenceQuery, serviceReferenceApi } from './service-reference-api'
+import { computeServiceSlots } from './service-slot-projection'
 import { ManifestDeploymentState } from './manifest-deployment-state'
 import { WorkflowProgress, WorkloadProgress } from './delivery-progress'
 import { ServiceCards, ServiceWorkflowCard } from './service-cards'
-import { visibleServiceInventory } from './helm-service-inventory'
-import { serviceDeliveryKind } from './service-workflow'
 import { EnvironmentNotice } from './environment-notice'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import './styles.css'
 import './workspace.css'
@@ -41,10 +52,9 @@ import {
   MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
-  SettingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ManagementIconButton,
   ManagementRefreshButton,
@@ -54,10 +64,9 @@ import { visuallyHiddenModalTitleStyle } from '@/components/modal-styles'
 import { OverviewMetricCard, OverviewSectionBar } from '@/components/overview-visuals'
 import { analyzeReleaseDagDefinition } from '@/components/release-flow-dag-definition'
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
-import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
+import { queryAccessDenied, readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
-import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { ScopeGrantManager } from '@/features/access'
+import { hasPermission } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
 import { buildClusterScopedPath, useClusterCapabilityForCluster } from '@/features/platform'
 import { isApiError } from '@/services/api-error'
@@ -72,7 +81,6 @@ import {
 } from '../application-center-model'
 import { deliveryMutations } from '../mutations'
 import { deliveryApi } from '../api'
-import { ManifestLibraryWorkspace } from '../manifests'
 import { deliveryQueries } from '../queries'
 import { deliveryKeys } from '../keys'
 import { buildSourceRepositoryBindings as buildRepositoryBindings } from '../service-setup'
@@ -80,7 +88,6 @@ import type {
   ApplicationDeliveryActionKind,
   ApplicationEnvironment,
   ApplicationRuntimeEnvironment,
-  ApplicationRuntimeWorkload,
   ApplicationServiceComponent,
   BuildRepositoryBinding,
   BuildRepositoryRefInput,
@@ -91,6 +98,7 @@ import type {
   DeliveryPlan,
   DeliveryPlanConfirmResult,
   DeliveryPlanRequest,
+  ReleaseTarget,
   WorkflowTemplate,
 } from '../types'
 import {
@@ -101,14 +109,27 @@ import {
 } from './workspace-navigation'
 
 import { BuildSourceFields } from './build-source-fields'
-import { ServiceEditor, SERVICE_KIND_OPTIONS } from './service-editor'
 import { RepositoryFields } from './repository-fields'
 import { environmentRuntimeStatus } from './runtime-status'
 import { formatDateTime } from '@/utils/time'
-import { ApplicationEnvironmentNavigation } from '../navigation'
+import { serviceKindLabel } from './service-workspace-model'
+import {
+  ApplicationWorkspaceRoute,
+  ServiceSlotBadge,
+  type ApplicationWorkspaceDetailProps,
+} from './workspace-shell'
 
 const ServiceDeliveryForm = lazy(() =>
   import('./service-delivery-form').then((module) => ({ default: module.ServiceDeliveryForm })),
+)
+const ServiceEditor = lazy(() =>
+  import('./service-editor').then((module) => ({ default: module.ServiceEditor })),
+)
+const ManifestLibraryWorkspace = lazy(() =>
+  import('../manifests').then((module) => ({ default: module.ManifestLibraryWorkspace })),
+)
+const ScopeGrantManager = lazy(() =>
+  import('@/features/access').then((module) => ({ default: module.ScopeGrantManager })),
 )
 const ImportedSourceBrowser = lazy(async () => {
   const module = await import('./imported-source-browser')
@@ -125,6 +146,15 @@ const ServiceRuntimeActions = lazy(async () => {
 const ServicePodWorkspace = lazy(async () => {
   const module = await import('../runtime/service-pod-workspace')
   return { default: module.ServicePodWorkspace }
+})
+
+const ObservedManifestInventoryWorkbench = lazy(async () => {
+  const module = await import('../manifests/observed-inventory-workbench')
+  return { default: module.ObservedManifestInventoryWorkbench }
+})
+const ReferencedPodSessions = lazy(async () => {
+  const module = await import('./referenced-pod-sessions')
+  return { default: module.ReferencedPodSessions }
 })
 
 const { Text } = Typography
@@ -190,10 +220,6 @@ const DELIVERY_ACTION_LABELS: Record<ApplicationDeliveryActionKind, string> = {
   workflow: '工作流',
   verify: '测试',
   rollback: '回滚',
-}
-
-function serviceKindLabel(value?: string) {
-  return SERVICE_KIND_OPTIONS.find((item) => item.value === value)?.label ?? value ?? '-'
 }
 
 function summarizeBindingStatus(binding?: DeliveryApplicationBindingSummary | null) {
@@ -459,10 +485,71 @@ function disabledReason(reasons: Array<string | false | undefined>) {
   return reasons.find(Boolean) || ''
 }
 
+function isWritableLocalTarget(target: ReleaseTarget) {
+  return (
+    target.enabled &&
+    target.executorKind !== 'observe_only' &&
+    target.metadata?.ownershipMode !== 'observe_only'
+  )
+}
+
 export function ApplicationDetailPage() {
+  return <ApplicationWorkspaceRoute Detail={ApplicationDetailWorkspace} />
+}
+
+export function ApplicationDetailWorkspace({
+  applicationId,
+  workspace,
+  application,
+  focusedSlot,
+  environmentReferences,
+  refreshEnvironmentReferences,
+  actions,
+  onActionsReady,
+}: ApplicationWorkspaceDetailProps) {
+  const {
+    permissionSnapshotQuery,
+    environmentQuery,
+    activeNavigation,
+    servicesQuery,
+    services,
+    serviceData,
+    servicesPending,
+    servicesUnavailable,
+    servicesDenied,
+    activeEnvironment,
+    activeEnvironmentId,
+    invalidEnvironment,
+    activeRuntimeBinding,
+    activeBindingQuery,
+    environments,
+    runtimeQuery,
+    runtimeSummary,
+    runtimePending,
+    focusedServiceId,
+    focusedService,
+    serviceTab,
+    requestedEnvironmentId,
+    runtimeWorkloads,
+    selectedWorkloads,
+    canReadPodSummary,
+    metricRoot,
+    verifiedService,
+    projectPods,
+    servicePodsQuery,
+    currentServiceCard,
+    selectionValue,
+    serviceOverview,
+    serviceCards,
+    visibleServiceCards,
+    filteredServiceCards,
+    nestedServices,
+    serviceStatus,
+    setFocusedService,
+    selectService,
+  } = workspace
   const { localeCode } = useI18n()
   const settingsLabel = localeText(localeCode, '应用设置', 'Application settings')
-  const { applicationId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
@@ -470,22 +557,6 @@ export function ApplicationDetailPage() {
   const requestedTab = searchParams.get('tab')
   const requestedLaunch = searchParams.get('launch')
   const requestedBuildSourceId = searchParams.get('buildSourceId') || ''
-  const requestedEnvironmentId = searchParams.get('applicationEnvironmentId')?.trim() ?? ''
-  const focusedServiceId = searchParams.get('serviceId')?.trim() ?? ''
-  const defaultServiceTab = 'pods'
-  const requestedServiceTab = searchParams.get('serviceTab') || defaultServiceTab
-  const serviceTab = [
-    'runtime',
-    'pods',
-    'metrics',
-    'related-resources',
-    'build',
-    'resources',
-    'configuration',
-    'events',
-  ].includes(requestedServiceTab)
-    ? requestedServiceTab
-    : defaultServiceTab
   const [observedPodCount, setObservedPodCount] = useState<{
     scope: string
     count?: number
@@ -505,6 +576,7 @@ export function ApplicationDetailPage() {
     : ''
   const activeTab = requestedTab === 'delivery' ? 'delivery' : 'services'
   const [serviceModalVisible, setServiceModalVisible] = useState(false)
+  const [overviewApplicationId, setOverviewApplicationId] = useState<string>()
   const [serviceSettingsTab, setServiceSettingsTab] = useState('services')
   const serviceEditorReturnToSettings = useRef(false)
   const settingsContentRef = useRef<HTMLElement>(null)
@@ -554,8 +626,6 @@ export function ApplicationDetailPage() {
       setSearchParams(next, { replace: true })
     }
   }
-  const [serviceSearch, setServiceSearch] = useState('')
-  const [serviceKindFilter, setServiceKindFilter] = useState('all')
   const [editingService, setEditingService] = useState<ApplicationServiceComponent | null>(null)
   const [repositoryModalVisible, setRepositoryModalVisible] = useState(false)
   const [editingRepositoryId, setEditingRepositoryId] = useState('')
@@ -567,7 +637,14 @@ export function ApplicationDetailPage() {
     null,
   )
   const [workflowCreateModalVisible, setWorkflowCreateModalVisible] = useState(false)
+  const [environmentWorkflowExpanded, setEnvironmentWorkflowExpanded] = useState(false)
   const [deliveryActionModalVisible, setDeliveryActionModalVisible] = useState(false)
+  const [manifestLaunch, setManifestLaunch] = useState<{
+    applicationId: string
+    bindingId: string
+    targetId: string
+    revision?: number
+  }>()
   const [deliveryActionKind, setDeliveryActionKind] = useState<'build' | 'build_deploy' | 'deploy'>(
     'build_deploy',
   )
@@ -596,76 +673,78 @@ export function ApplicationDetailPage() {
     }
     setSearchParams(next)
   }
-  const setFocusedService = (
-    serviceId?: string,
-    nextServiceTab = 'pods',
-    nextSettings?: string,
-  ) => {
-    const next = new URLSearchParams(searchParams)
-    next.delete('pod')
-    next.delete('podCluster')
-    next.delete('podNamespace')
-    next.delete('tool')
-    next.delete('container')
-    next.delete('workload')
-    next.delete('serviceEditor')
-    next.delete('metricPod')
-    next.delete('metricCluster')
-    next.delete('metricNamespace')
-    next.delete('metricRange')
-    next.delete('metricUid')
-    next.delete('metricRoot')
-    if (serviceId) {
-      next.delete('settings')
-      next.set('tab', 'services')
-      next.set('serviceId', serviceId)
-      next.set('serviceTab', nextServiceTab)
-      if (nextSettings) next.set('settings', nextSettings)
-      if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
-    } else {
-      next.set('tab', 'services')
-      next.delete('settings')
-      next.delete('serviceId')
-      next.delete('serviceTab')
-    }
-    setSearchParams(next)
-  }
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const runtimeQuery = useQuery(
-    deliveryQueries.applications.runtime(
-      applicationId ?? '',
-      Boolean(applicationId),
-      ['services', 'delivery'].includes(activeTab) ? 5_000 : false,
-    ),
+  const bindingSettings = settingsKey === 'environment-bindings'
+  const showOverview = Boolean(
+    application && overviewApplicationId === applicationId && bindingSettings,
   )
+  useEffect(() => {
+    if (!bindingSettings) setOverviewApplicationId(undefined)
+  }, [bindingSettings])
+  const overviewQuery = useQuery(
+    deliveryQueries.applications.runtime(applicationId ?? '', showOverview),
+  )
+  const deliveryLaunch = activeTab === 'delivery' && Boolean(requestedLaunch)
+  const applicationSettings = settingsKey === 'application'
+  const serviceWorkflowTab =
+    activeTab === 'services' && Boolean(focusedServiceId) && serviceTab === 'build'
+  const permissionSnapshot = readableQueryData(permissionSnapshotQuery)?.data
+  const canViewWorkflows = hasPermission(permissionSnapshot, 'delivery.workflows.view')
+  const canReadServiceWorkflowTemplate =
+    serviceWorkflowTab &&
+    canViewWorkflows &&
+    hasPermission(permissionSnapshot, 'delivery.releases.view')
   const detailQuery = useQuery(
     deliveryQueries.applications.detail(
       applicationId ?? '',
-      Boolean(applicationId),
-      ['services', 'delivery'].includes(activeTab) ? 5_000 : false,
+      Boolean(application) &&
+        (showOverview ||
+          activeTab === 'delivery' ||
+          canReadServiceWorkflowTemplate ||
+          bindingSettings ||
+          applicationSettings ||
+          deliveryActionModalVisible),
+      activeTab === 'delivery' && environmentWorkflowExpanded && canViewWorkflows ? 5_000 : false,
     ),
   )
-  const servicesQuery = useQuery(
-    deliveryQueries.applications.services(applicationId ?? '', Boolean(applicationId)),
+  const configuredServiceQuery = useQuery(
+    deliveryQueries.applications.service(
+      applicationId,
+      focusedService?.id ?? '',
+      serviceTab === 'configuration' || activeTab === 'delivery' || deliveryActionModalVisible,
+    ),
   )
+  const configuredService = configuredServiceQuery.isEnabled
+    ? readableQueryData(configuredServiceQuery)
+    : undefined
+  const serviceSettingsQuery = useQuery(
+    deliveryQueries.applications.services(
+      applicationId,
+      serviceModalVisible || (applicationSettings && serviceSettingsTab === 'services'),
+    ),
+  )
+  const serviceSettingsData = readableQueryData(serviceSettingsQuery)
+  const serviceSettings = serviceSettingsData ?? []
   const repositoriesQuery = useQuery(
-    deliveryQueries.repositories.list({ applicationId }, Boolean(applicationId)),
+    deliveryQueries.repositories.list(
+      { applicationId },
+      Boolean(application) &&
+        (applicationSettings ||
+          buildSourceModalVisible ||
+          deliveryLaunch ||
+          deliveryActionModalVisible ||
+          Boolean(focusedServiceId && serviceTab === 'configuration')),
+    ),
   )
-  const runtime = readableQueryData(runtimeQuery)
-  const detail = readableQueryData(detailQuery)
-  const accessDenied = [runtimeQuery, detailQuery].some(
-    (query) => isApiError(query.error) && [401, 403].includes(query.error.status),
-  )
-  const application = accessDenied ? undefined : (runtime?.application ?? detail?.application)
-  const runtimePending = !runtime && runtimeQuery.isLoading
-  const runtimeUnavailable = !runtime && runtimeQuery.isError
+  const detail = detailQuery.isEnabled ? readableQueryData(detailQuery) : undefined
   const managementState = useApplicationCenterState({
     currentApplication: application,
     loadApplications: false,
-    loadWorkflowTemplates: workflowCreateModalVisible && workflowCreateSource === 'template',
-    loadClusters: activeTab === 'services',
+    loadBindings: Boolean(application) && bindingSettings,
+    loadWorkflowTemplates:
+      Boolean(application) &&
+      (bindingSettings || (workflowCreateModalVisible && workflowCreateSource === 'template')),
+    loadClusters: false,
   })
-  const permissionSnapshot = permissionSnapshotQuery.data?.data
   const canCreateService = hasPermission(permissionSnapshot, 'delivery.application-services.create')
   const canUpdateService = hasPermission(permissionSnapshot, 'delivery.application-services.update')
   const canDeleteService = hasPermission(permissionSnapshot, 'delivery.application-services.delete')
@@ -675,72 +754,54 @@ export function ApplicationDetailPage() {
   )
   const canManageRepositories = managementState.canUpdateApplication
   const canViewBuilds = hasPermission(permissionSnapshot, 'delivery.applications.view')
-  const canViewWorkflows = hasPermission(permissionSnapshot, 'delivery.workflows.view')
-  const canTriggerBuild = hasPermission(
-    permissionSnapshotQuery.data?.data,
-    'delivery.builds.trigger',
-  )
-  const canTriggerWorkflow = hasPermission(
-    permissionSnapshotQuery.data?.data,
-    'delivery.workflows.trigger',
-  )
-  const canTriggerRelease = hasPermission(
-    permissionSnapshotQuery.data?.data,
-    'delivery.releases.trigger',
-  )
+  const canTriggerBuild = hasPermission(permissionSnapshot, 'delivery.builds.trigger')
+  const canTriggerWorkflow = hasPermission(permissionSnapshot, 'delivery.workflows.trigger')
+  const canTriggerRelease = hasPermission(permissionSnapshot, 'delivery.releases.trigger')
   const canApproveDelivery = hasPermission(
-    permissionSnapshotQuery.data?.data,
+    permissionSnapshot,
     'delivery.application-environments.approve',
   )
   const canViewScopeGrants = hasPermission(permissionSnapshot, 'access.scope-grants.view')
-  const environmentCatalogQuery = useQuery(deliveryQueries.environmentCatalog.list())
-  const catalogEnvironment = (id?: string) =>
-    environmentCatalogQuery.isError
-      ? undefined
-      : environmentCatalogQuery.data?.find((item) => item.id === id)
-  const environments = runtime?.environments ?? []
-  const activeEnvironment = requestedEnvironmentId
-    ? environments.find((item) => item.applicationEnvironmentId === requestedEnvironmentId)
-    : environments[0]
-  const activeEnvironmentId = activeEnvironment?.applicationEnvironmentId ?? ''
-  const workflowReadsEnabled = Boolean(applicationId && activeEnvironmentId && canViewWorkflows)
+  const workflowReadsEnabled = Boolean(
+    application && activeEnvironmentId && canViewWorkflows && serviceWorkflowTab,
+  )
   const serviceWorkflowsQuery = useQuery(
     deliveryQueries.workflows.list(
       { applicationId, applicationEnvironmentId: activeEnvironmentId, limit: 200 },
       { enabled: workflowReadsEnabled, refetchInterval: 5_000 },
     ),
   )
-  const serviceWorkflows = readableQueryData(serviceWorkflowsQuery) ?? []
-  useEffect(() => {
-    if (requestedEnvironmentId || !activeEnvironmentId) return
-    const next = new URLSearchParams(searchParams)
-    next.set('applicationEnvironmentId', activeEnvironmentId)
-    setSearchParams(next, { replace: true })
-  }, [requestedEnvironmentId, activeEnvironmentId, searchParams, setSearchParams])
-  const planBinding = managementState.filteredBindings.find(
-    (item) => item.id === pendingDeliveryPlan?.applicationEnvironmentId,
-  )
-  const planProduction = catalogEnvironment(planBinding?.environmentId)?.isProduction
-  const invalidEnvironment = Boolean(requestedEnvironmentId && runtime && !activeEnvironment)
-  const services = servicesQuery.data ?? runtime?.services ?? []
-  const servicesPending = !servicesQuery.data && !runtime?.services && servicesQuery.isLoading
-  const servicesUnavailable = !servicesQuery.data && !runtime?.services && servicesQuery.isError
+  const scopedWorkflows = workflowReadsEnabled
+    ? readableQueryData(serviceWorkflowsQuery)
+    : undefined
+  const workflowHistoryRestricted = !canViewWorkflows || queryAccessDenied(serviceWorkflowsQuery)
+  const productionIds = environments
+    .filter((item) => item.isProduction)
+    .map((item) => item.environmentId)
+  const planProduction = environments.find(
+    (item) => item.applicationEnvironmentId === pendingDeliveryPlan?.applicationEnvironmentId,
+  )?.isProduction
   const serviceRecordsState =
     servicesPending || servicesUnavailable ? (
       <ManagementState
         compact
         bordered={false}
-        kind={servicesPending ? 'loading' : 'error'}
-        title={servicesPending ? '正在加载服务档案' : '服务档案加载失败'}
-        description="运行实例仍可查看；服务配置将在档案恢复后显示。"
+        kind={servicesPending ? 'loading' : servicesDenied ? 'no-permission' : 'error'}
+        title={
+          servicesPending
+            ? '正在加载服务档案'
+            : servicesDenied
+              ? '无服务档案查看权限'
+              : '服务档案加载失败'
+        }
         actions={
-          servicesUnavailable ? (
+          servicesUnavailable && !servicesDenied ? (
             <Button onClick={() => void servicesQuery.refetch()}>重试服务档案</Button>
           ) : undefined
         }
       />
     ) : null
-  const repositories = repositoriesQuery.data ?? []
+  const repositories = readableQueryData(repositoriesQuery) ?? []
   const bindings = detail?.bindings ?? []
   const fixedScopeGrantApplication = useMemo(
     () =>
@@ -759,9 +820,9 @@ export function ApplicationDetailPage() {
   const selectedImageTag = Form.useWatch('imageTag', deliveryForm)
   useAIPageContext({
     sourceWorkbench: 'delivery',
-    sourceTitle: detail?.application?.name ? `应用 ${detail.application.name}` : '应用详情',
+    sourceTitle: application?.name ? `应用 ${application.name}` : '应用详情',
     entityKind: 'delivery.application',
-    entityName: detail?.application?.name ?? detail?.application?.key ?? applicationId,
+    entityName: application?.name ?? application?.key ?? applicationId,
     applicationId,
     visibleFilters: {
       tab: activeTab,
@@ -787,7 +848,7 @@ export function ApplicationDetailPage() {
       const binding = bindingId
         ? bindings.find((item) => item.applicationEnvironmentId === bindingId)
         : bindings[0]
-      const target = binding?.targets?.find((item) => item.enabled) ?? binding?.targets?.[0]
+      const target = binding?.targets?.find(isWritableLocalTarget)
       const source =
         application?.buildSources?.find((item) => item.id === sourceId) ??
         binding?.buildSource ??
@@ -884,9 +945,10 @@ export function ApplicationDetailPage() {
     ...deliveryQueries.plans.detail(pendingDeliveryPlan?.id || ''),
     enabled: false,
   })
+  const referenceImpact = usePlanReferenceImpact(pendingDeliveryPlan, deliveryPlanModalVisible)
   const actOnPlan = async (action: 'confirm' | 'approve' | 'reject') => {
     if (planSubmitting.current || planLocked || !pendingDeliveryPlan) return
-    if (action !== 'reject' && migrationBlocked) return
+    if (action !== 'reject' && (migrationBlocked || referenceImpact.changed)) return
     if (action !== 'confirm' && !canApproveDelivery) return
     planSubmitting.current = true
     try {
@@ -1040,7 +1102,7 @@ export function ApplicationDetailPage() {
   }
 
   const reloadBuildSource = useMutation({
-    mutationFn: async () => (await deliveryApi.applications.detail(applicationId!)).application,
+    mutationFn: () => deliveryApi.applications.get(applicationId!),
     onSuccess: (latest) => {
       const source = latest.buildSources?.find((item) => item.id === editingBuildSourceId)
       if (editingBuildSourceId && !source) {
@@ -1065,11 +1127,38 @@ export function ApplicationDetailPage() {
 
   useEffect(() => {
     if (
+      !deliveryActionModalVisible ||
+      !manifestLaunch ||
+      manifestLaunch.applicationId !== applicationId ||
+      manifestLaunch.bindingId !== activeEnvironmentId ||
+      !detail ||
+      repositoriesQuery.isPending
+    )
+      return
+    populateDeliveryBinding(manifestLaunch.bindingId)
+    deliveryForm.setFieldsValue({
+      targetId: manifestLaunch.targetId,
+      manifestRevision: manifestLaunch.revision,
+    })
+    setManifestLaunch(undefined)
+  }, [
+    applicationId,
+    activeEnvironmentId,
+    deliveryActionModalVisible,
+    manifestLaunch,
+    detail,
+    repositoriesQuery.isPending,
+    populateDeliveryBinding,
+    deliveryForm,
+  ])
+
+  useEffect(() => {
+    if (
       !['build', 'workflow'].includes(requestedLaunch || '') ||
       activeTab !== 'delivery' ||
       (!activeEnvironmentId && requestedLaunch !== 'build') ||
       !detail ||
-      (runtimeUnavailable && requestedLaunch !== 'build') ||
+      repositoriesQuery.isPending ||
       invalidEnvironment
     )
       return
@@ -1095,7 +1184,7 @@ export function ApplicationDetailPage() {
     activeTab,
     activeEnvironmentId,
     detail,
-    runtimeUnavailable,
+    repositoriesQuery.isPending,
     invalidEnvironment,
     canViewBuilds,
     canTriggerBuild,
@@ -1108,19 +1197,39 @@ export function ApplicationDetailPage() {
     setSearchParams,
   ])
 
-  const workloads = activeEnvironment?.workloads ?? []
-  const runtimeWorkloads = workloads
-  const activeRuntimeBinding = managementState.filteredBindings.find(
-    (item) => item.id === activeEnvironmentId,
-  )
-  const activeRuntimeClusterId =
-    activeRuntimeBinding?.clusterId ||
-    runtimeWorkloads[0]?.clusterId ||
-    activeEnvironment?.targets?.[0]?.clusterId ||
-    ''
-  const activeRuntimeClusterName =
-    managementState.clustersQuery.data?.find((item) => item.id === activeRuntimeClusterId)?.name ||
-    activeRuntimeClusterId
+  const focusedReference = focusedSlot?.kind === 'reference' ? focusedSlot.reference : undefined
+  const sourceQuery = useQuery({
+    queryKey: deliveryKeys.focusedServiceReference(
+      activeEnvironmentId,
+      focusedServiceId,
+      focusedReference?.id,
+      focusedReference?.revision,
+    ),
+    queryFn: () => serviceReferenceApi.active(activeEnvironmentId, focusedServiceId),
+    enabled: activeTab === 'services' && Boolean(focusedReference),
+    gcTime: 0,
+    retry: false,
+  })
+  const checkedSource = readableQueryData(sourceQuery)
+  const source =
+    checkedSource &&
+    focusedReference &&
+    checkedSource.id === focusedReference.id &&
+    checkedSource.revision === focusedReference.revision &&
+    checkedSource.preview.applicationId === applicationId &&
+    checkedSource.preview.serviceId === focusedServiceId &&
+    checkedSource.preview.consumer.applicationEnvironmentId === activeEnvironmentId
+      ? checkedSource
+      : undefined
+  const refreshCurrentEnvironment = () => {
+    if (runtimeQuery.isEnabled) void runtimeQuery.refetch()
+    refreshEnvironmentReferences?.()
+    if (sourceQuery.isEnabled) void sourceQuery.refetch()
+    if (servicePodsQuery.isEnabled) void servicePodsQuery.refetch()
+    if (detailQuery.isEnabled) void detailQuery.refetch()
+    if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
+    if (activeBindingQuery.isEnabled) void activeBindingQuery.refetch()
+  }
   const selectedBindingId = deliveryActionModalVisible
     ? selectedDeliveryBindingId
     : activeEnvironmentId || requestedEnvironmentId
@@ -1129,12 +1238,34 @@ export function ApplicationDetailPage() {
     : invalidEnvironment
       ? undefined
       : bindings[0]
-  const enabledTargets = selectedDeliveryBinding?.targets?.filter((item) => item.enabled) ?? []
-  const selectedDeliveryTarget =
-    selectedDeliveryBinding?.targets?.find((item) => item.id === selectedTargetId) ??
-    enabledTargets[0] ??
-    selectedDeliveryBinding?.targets?.[0]
+  const alternateReleaseReferenceQuery = useQuery(
+    environmentReferenceQuery(
+      selectedBindingId ?? '',
+      canUpdateApplicationEnvironment &&
+        deliveryActionModalVisible &&
+        selectedBindingId !== activeEnvironmentId,
+    ),
+  )
+  const skippedReferences = computeServiceSlots(
+    services.map(({ id }) => id),
+    selectedDeliveryBinding ? (selectedDeliveryBinding.targets ?? []) : undefined,
+    selectedBindingId === activeEnvironmentId
+      ? environmentReferences
+      : alternateReleaseReferenceQuery.isEnabled
+        ? readableQueryData(alternateReleaseReferenceQuery)
+        : undefined,
+  ).counts.reference
   const manifestDelivery = deliveryActionKind === 'deploy'
+  const deliveryTargets = (selectedDeliveryBinding?.targets ?? []).filter(
+    (target) =>
+      isWritableLocalTarget(target) &&
+      (!manifestDelivery || target.executorKind === 'manifest_ssa'),
+  )
+  const selectedDeliveryTarget = selectedTargetId
+    ? deliveryTargets.find((item) => item.id === selectedTargetId)
+    : manifestDelivery
+      ? undefined
+      : deliveryTargets[0]
   const deliveryActionLabel = manifestDelivery
     ? '发布清单'
     : deliveryActionKind === 'build'
@@ -1187,6 +1318,15 @@ export function ApplicationDetailPage() {
     managementState.bindingForm.resetFields()
     managementState.setBindingModalVisible(true)
   }
+  useImperativeHandle(actions, () => ({
+    createService: () => openServiceModal(),
+    createEnvironment: openBindingCreate,
+    refreshRuntime: refreshCurrentEnvironment,
+  }))
+  useEffect(() => {
+    onActionsReady(true)
+    return () => onActionsReady(false)
+  }, [onActionsReady])
   const openBindingEdit = (binding: ApplicationEnvironment) => {
     managementState.setEditingBinding(binding)
     managementState.setBindingModalVisible(true)
@@ -1223,6 +1363,7 @@ export function ApplicationDetailPage() {
     : ''
   const triggerDeliveryAction = async (action: ApplicationDeliveryActionKind) => {
     if (
+      manifestLaunch ||
       deliverySubmitting.current ||
       deliveryUnknown ||
       directBuildMutation.isPending ||
@@ -1241,6 +1382,14 @@ export function ApplicationDetailPage() {
       deliverySubmitting.current = true
       const values = await deliveryForm.validateFields()
       if (!applicationId) return
+      if (
+        action !== 'build' &&
+        (action === 'deploy' || values.targetId) &&
+        !deliveryTargets.some((target) => target.id === values.targetId)
+      ) {
+        deliveryForm.setFields([{ name: 'targetId', errors: ['请选择当前环境可发布的本地目标'] }])
+        return
+      }
       if (action === 'build' && !values.applicationEnvironmentId) {
         const payload = buildDeliveryActionPayload(action, values)
         await directBuildMutation.mutateAsync({
@@ -1292,113 +1441,25 @@ export function ApplicationDetailPage() {
         ],
   )
 
-  if (!application && (runtimeQuery.isLoading || detailQuery.isLoading)) {
-    return (
-      <div className="soha-page">
-        <ManagementState kind="loading" title="正在加载应用" />
-      </div>
-    )
-  }
-
-  if (!application) {
-    const notFound = [runtimeQuery.error, detailQuery.error].some(
-      (error) => isApiError(error) && error.status === 404,
-    )
-    return (
-      <div className="soha-page">
-        <ManagementState
-          kind={notFound ? 'not-found' : 'error'}
-          title={notFound ? '应用不存在' : '应用加载失败'}
-          description={notFound ? '应用不存在或已被删除' : '暂时无法读取应用，请重试。'}
-          actions={
-            notFound ? undefined : (
-              <Button
-                aria-label="重试"
-                onClick={() => {
-                  void runtimeQuery.refetch()
-                  void detailQuery.refetch()
-                }}
-              >
-                重试
-              </Button>
-            )
-          }
-        />
-      </div>
-    )
-  }
-
-  const requestedWorkload = searchParams.get('workload') || ''
-  const focusedService = focusedServiceId
-    ? services.find((service) => service.id === focusedServiceId)
-    : undefined
-  const serviceOverview = !focusedServiceId && !requestedWorkload
   const focusedRepository = repositories.find(
-    (repository) => repository.id === focusedService?.repositoryId,
+    (repository) => repository.id === configuredService?.repositoryId,
   )
-  const orphanWorkloads = runtimeWorkloads.filter(
-    (workload) =>
-      !services.some(
-        (service) => service.id === workload.serviceId || service.key === workload.serviceKey,
-      ),
+  const helmNestedServices = focusedService ? nestedServices.get(focusedService.id) : undefined
+  const manifestTargets = (activeEnvironment?.targets ?? []).filter(
+    (target) =>
+      focusedService &&
+      target.enabled &&
+      target.executorKind === 'manifest_ssa' &&
+      (target.serviceId || target.metadata?.serviceId) === focusedService.id,
   )
-  const selectedWorkloads = requestedWorkload
-    ? runtimeWorkloads.filter((workload) => workload.workloadName === requestedWorkload)
-    : focusedService
-      ? runtimeWorkloads.filter(
-          (workload) =>
-            workload.serviceId === focusedService.id || workload.serviceKey === focusedService.key,
-        )
-      : focusedServiceId
-        ? []
-        : orphanWorkloads.slice(0, 1)
+  const selectedManifestDeployments = (activeEnvironment?.manifestDeployments ?? []).filter(
+    (deployment) => manifestTargets.some((target) => target.configRef === deployment.bindingId),
+  )
   const selectedPodWorkloads = selectedWorkloads.filter(
     (item) =>
       item.workloadKind === 'Deployment' &&
       (!item.sourceStatus || ['linked', 'changed'].includes(item.sourceStatus)),
   )
-  const serviceManifestDeployments = (serviceId?: string) =>
-    (activeEnvironment?.manifestDeployments ?? []).filter(
-      (deployment) =>
-        serviceId &&
-        (activeRuntimeBinding?.targets ?? []).some(
-          (target) =>
-            target.enabled &&
-            target.executorKind === 'manifest_ssa' &&
-            target.configRef === deployment.bindingId &&
-            target.metadata?.serviceId === serviceId,
-        ),
-    )
-  const selectedManifestDeployments = serviceManifestDeployments(focusedService?.id)
-  const serviceStatus = (
-    items: ApplicationRuntimeWorkload[],
-    serviceId?: string,
-  ): { tone: string; label: string; description?: string } => {
-    if (runtimePending || runtimeUnavailable || invalidEnvironment)
-      return { tone: 'default', label: runtimePending ? '读取状态' : '状态读取失败' }
-    if (!activeEnvironment) return { tone: 'default', label: '未关联环境' }
-    for (const [state, label] of [
-      ['forbidden', '无资源查看权限'],
-      ['replaced', '资源身份已变化'],
-      ['missing', '未发现关联资源'],
-      ['unavailable', '运行状态读取失败'],
-    ]) {
-      if (items.some((item) => item.sourceStatus === state))
-        return {
-          tone: 'default',
-          label,
-          description:
-            state === 'unavailable'
-              ? '暂时无法从集群读取运行状态，当前无法判断服务是否正常。请检查集群连接后刷新重试。'
-              : undefined,
-        }
-    }
-    return environmentRuntimeStatus({
-      ...activeEnvironment!,
-      workloads: items,
-      manifestDeployments: serviceManifestDeployments(serviceId),
-    })
-  }
   const selectedNativeImports = selectedWorkloads.some(
     (workload) =>
       workload.sourceStatus &&
@@ -1408,46 +1469,13 @@ export function ApplicationDetailPage() {
             target.id === workload.targetId && target.metadata?.importSource === 'kubernetes',
         )),
   )
-  const selectionValue =
-    (serviceOverview ? 'all' : focusedService?.id) ||
-    (selectedWorkloads[0] ? `workload:${selectedWorkloads[0].workloadName}` : undefined)
-  const selectService = (value: string) => {
-    if (value === 'all') {
-      setFocusedService()
-      return
-    }
-    if (!value.startsWith('workload:')) {
-      setFocusedService(value, serviceTab)
-      return
-    }
-    const next = new URLSearchParams(searchParams)
-    next.set('tab', 'services')
-    next.set('workload', value.slice(9))
-    next.set('serviceTab', serviceTab)
-    next.delete('serviceId')
-    next.delete('pod')
-    next.delete('podCluster')
-    next.delete('podNamespace')
-    next.delete('tool')
-    next.delete('container')
-    for (const key of [
-      'metricPod',
-      'metricCluster',
-      'metricNamespace',
-      'metricRange',
-      'metricUid',
-      'metricRoot',
-    ])
-      next.delete(key)
-    if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
-    setSearchParams(next)
-  }
   const openServiceTab = (nextTab: string) => {
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'services')
     next.set('serviceTab', nextTab)
     if (focusedService) next.set('serviceId', focusedService.id)
     next.delete('pod')
+    next.delete('podUid')
     next.delete('podCluster')
     next.delete('podNamespace')
     next.delete('tool')
@@ -1455,19 +1483,20 @@ export function ApplicationDetailPage() {
     if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
     setSearchParams(next)
   }
-  const configuredWorkflowBindings = bindings.filter(
-    (binding) =>
-      binding.workflowTemplateId && binding.applicationEnvironmentId === activeEnvironmentId,
+  const workflowBindings = bindings
+    .filter((binding) => binding.workflowTemplateId)
+    .map((binding) => (canViewWorkflows ? binding : { ...binding, latestWorkflow: undefined }))
+  const configuredWorkflowBindings = workflowBindings.filter(
+    (binding) => binding.applicationEnvironmentId === activeEnvironmentId,
   )
   const serviceWorkflowBinding = bindings.find(
     (binding) => binding.applicationEnvironmentId === activeEnvironmentId,
   )
-  const workflowReadState =
-    detailQuery.isError || serviceWorkflowsQuery.isError
-      ? 'error'
-      : !detail || (workflowReadsEnabled && serviceWorkflowsQuery.isLoading)
-        ? 'loading'
-        : 'ready'
+  const workflowReadState = serviceWorkflowsQuery.isError
+    ? 'error'
+    : workflowReadsEnabled && serviceWorkflowsQuery.isLoading
+      ? 'loading'
+      : 'ready'
   const openServiceWorkflow = (serviceId: string) => {
     const path = applicationWorkspacePath(
       application.id,
@@ -1502,45 +1531,10 @@ export function ApplicationDetailPage() {
     { key: 'delivery.application-services.update', label: '修改服务', enabled: canUpdateService },
     { key: 'delivery.application-services.delete', label: '删除服务', enabled: canDeleteService },
   ]
-  const attentionEnvironments = environments.filter((environment) =>
+  const overviewRuntime = showOverview ? readableQueryData(overviewQuery) : undefined
+  const overviewEnvironments = overviewRuntime?.environments ?? []
+  const attentionEnvironments = overviewEnvironments.filter((environment) =>
     ['danger', 'warning'].includes(environmentRuntimeStatus(environment).tone),
-  )
-  const serviceCards = [
-    ...services.map((service) => ({
-      id: service.id,
-      name: service.name || service.key,
-      kind:
-        serviceDeliveryKind(
-          service,
-          activeRuntimeBinding?.targets ?? activeEnvironment?.targets ?? [],
-          runtimeWorkloads.filter(
-            (workload) => workload.serviceId === service.id || workload.serviceKey === service.key,
-          ),
-        ) || serviceKindLabel(service.serviceKind),
-      service,
-      workloads: runtimeWorkloads.filter(
-        (workload) => workload.serviceId === service.id || workload.serviceKey === service.key,
-      ),
-    })),
-    ...orphanWorkloads.map((workload) => ({
-      id: `workload:${workload.workloadName}`,
-      name: workload.workloadName,
-      kind: workload.workloadKind,
-      workloads: [workload],
-    })),
-  ]
-  const currentServiceCard = serviceCards.find((service) => service.id === selectionValue)
-  const { visibleCards: visibleServiceCards, nestedServices } = visibleServiceInventory(
-    serviceCards,
-    activeRuntimeBinding?.targets ?? activeEnvironment?.targets ?? [],
-  )
-  const helmNestedServices = focusedService ? nestedServices.get(focusedService.id) : undefined
-  const filteredServiceCards = visibleServiceCards.filter(
-    (service) =>
-      (serviceKindFilter === 'all' || service.kind === serviceKindFilter) &&
-      [service.name, service.id].some((value) =>
-        value.toLowerCase().includes(serviceSearch.trim().toLowerCase()),
-      ),
   )
   const selectedStatus = serviceStatus(selectedWorkloads, focusedService?.id)
   const serviceName = currentServiceCard?.name || focusedService?.name
@@ -1559,38 +1553,45 @@ export function ApplicationDetailPage() {
     : serviceTab === 'pods' || serviceTab === 'metrics'
       ? serviceTab
       : 'summary'
-  const runtimeReadable =
-    !runtimePending &&
-    !runtimeUnavailable &&
-    !invalidEnvironment &&
-    activeEnvironment?.status !== 'unavailable'
+  const runtimeReadable = Boolean(activeEnvironment && activeEnvironment.status !== 'unavailable')
   const podScope = JSON.stringify([
+    application.id,
     activeEnvironmentId,
     selectionValue,
-    selectedPodWorkloads
-      .map(({ clusterId, namespace, workloadName, applicationEnvironmentId }) => [
-        clusterId,
-        namespace,
-        workloadName,
-        applicationEnvironmentId,
-      ])
-      .sort(),
+    verifiedService
+      ? 'verified'
+      : selectedPodWorkloads
+          .map(({ clusterId, namespace, workloadName, applicationEnvironmentId }) => [
+            clusterId,
+            namespace,
+            workloadName,
+            applicationEnvironmentId,
+          ])
+          .sort(),
   ])
-  const canReadPodSummary =
-    !permissionSnapshotQuery.isError && hasPermission(permissionSnapshot, 'platform.pods.view')
   const podCount =
     canReadPodSummary &&
-    runtimeReadable &&
-    selectedPodWorkloads.length > 0 &&
+    (verifiedService
+      ? servicePodsQuery.isSuccess && servicePodsQuery.data.status === 'available'
+      : runtimeReadable && selectedPodWorkloads.length > 0) &&
     observedPodCount?.scope === podScope
       ? observedPodCount.count
       : undefined
-  const hasOtherPodSources = selectedWorkloads.some(
-    (workload) =>
-      workload.workloadKind !== 'HelmRelease' && !selectedPodWorkloads.includes(workload),
-  )
+  const hasOtherPodSources =
+    !verifiedService &&
+    selectedWorkloads.some(
+      (workload) =>
+        workload.workloadKind !== 'HelmRelease' && !selectedPodWorkloads.includes(workload),
+    )
   const serviceNamespaces = [
-    ...new Set(selectedWorkloads.map((item) => item.namespace).filter(Boolean)),
+    ...new Set(
+      [
+        ...selectedWorkloads.map((item) => item.namespace),
+        ...(projectPods && canReadPodSummary && servicePodsQuery.isSuccess
+          ? servicePodsQuery.data.items.map((item) => item.pod.namespace)
+          : []),
+      ].filter(Boolean),
+    ),
   ]
   const runtimeActionUnavailable =
     selectedWorkloads.length > 0 &&
@@ -1601,7 +1602,6 @@ export function ApplicationDetailPage() {
   const runtimeActionReason = selectedWorkloads.some((workload) => workload.source)
     ? '外部来源关联：变更须经过配置来源、Plan 与发布控制权校验；不会直接修改 Helm 或 Operator 的子资源。'
     : '当前没有支持直接变更的 Deployment；请通过配置来源或对应 K8s 工作台操作。'
-  const metricRoot = searchParams.get('metricRoot')
   const renderImportedServiceRuntime = (view: 'resources' | 'metrics') => (
     <ImportedSourceBrowser
       key={`${activeEnvironmentId}/${selectionValue}/${view === 'metrics' ? metricRoot : ''}`}
@@ -1617,17 +1617,22 @@ export function ApplicationDetailPage() {
       }
     />
   )
-  const manifestReleaseTarget = (activeRuntimeBinding?.targets ?? []).find(
+  const manifestReleaseTarget = (activeEnvironment?.targets ?? []).find(
     (target) =>
-      target.enabled &&
+      isWritableLocalTarget(target) &&
       target.executorKind === 'manifest_ssa' &&
-      (!focusedService || target.metadata?.serviceId === focusedService.id),
+      (!focusedService || (target.serviceId || target.metadata?.serviceId) === focusedService.id),
   )
   const canOpenManifestRelease = canTriggerRelease && Boolean(manifestReleaseTarget)
   const handleOpenManifestRelease = (targetId = manifestReleaseTarget?.id, revision?: number) => {
-    if (!canTriggerRelease || !targetId) return
-    populateDeliveryBinding(activeEnvironmentId)
-    deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
+    if (!canTriggerRelease || !targetId || !activeEnvironmentId) return
+    deliveryForm.resetFields()
+    setManifestLaunch({
+      applicationId: application.id,
+      bindingId: activeEnvironmentId,
+      targetId,
+      revision,
+    })
     setDeliveryActionKind('deploy')
     setDeliveryActionModalVisible(true)
   }
@@ -1672,6 +1677,28 @@ export function ApplicationDetailPage() {
                 </Tooltip>
               ) : null}
               {currentServiceCard?.kind ? <MetadataTag label={currentServiceCard.kind} /> : null}
+              <ServiceSlotBadge slot={focusedSlot} />
+              {source ? (
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() =>
+                    setActiveTab('services', source.preview.source.applicationEnvironmentId)
+                  }
+                >
+                  {`引用自 ${source.preview.source.environmentKey}`}
+                </Button>
+              ) : null}
+              {focusedReference && sourceQuery.isError ? (
+                <MetadataTag
+                  label={
+                    isApiError(sourceQuery.error) && sourceQuery.error.status === 403
+                      ? '无源访问权限'
+                      : '来源待核对'
+                  }
+                  tone="orange"
+                />
+              ) : null}
               <span className="soha-service-location__stat">
                 就绪{' '}
                 <strong>
@@ -1688,7 +1715,7 @@ export function ApplicationDetailPage() {
                     : '—'}
                 </strong>
               </span>
-              {catalogEnvironment(activeEnvironment?.environmentId)?.isProduction ? (
+              {activeNavigation?.isProduction ? (
                 <StatusTag value="warning" label="生产环境 PROD" />
               ) : null}
             </div>
@@ -1696,12 +1723,9 @@ export function ApplicationDetailPage() {
           <Space size={8} className="soha-service-actions" wrap>
             <ManagementRefreshButton
               tooltip="刷新当前环境"
-              loading={runtimeQuery.isFetching || detailQuery.isFetching}
-              onClick={() => {
-                void runtimeQuery.refetch()
-                void detailQuery.refetch()
-                if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
-              }}
+              disabled={!runtimeQuery.isEnabled}
+              loading={runtimeQuery.isFetching}
+              onClick={refreshCurrentEnvironment}
             />
             {runtimeActionUnavailable ? (
               <>
@@ -1720,10 +1744,11 @@ export function ApplicationDetailPage() {
                   </span>
                 </Tooltip>
               </>
-            ) : selectedWorkloads.length > 0 &&
-              !runtimePending &&
-              !runtimeUnavailable &&
-              !invalidEnvironment ? (
+            ) : selectedWorkloads.length > 0 && runtimeReadable && projectPods ? (
+              hasPermission(permissionSnapshot, 'delivery.application.update') ? (
+                <Button onClick={() => openServiceTab('runtime')}>运行操作</Button>
+              ) : null
+            ) : selectedWorkloads.length > 0 && runtimeReadable ? (
               <Suspense fallback={null}>
                 <ServiceRuntimeActions
                   key={`${activeEnvironmentId}/${selectionValue}`}
@@ -1835,59 +1860,73 @@ export function ApplicationDetailPage() {
           <div className="soha-service-section-heading">
             <h2>服务配置</h2>
             <Space wrap>
-              {focusedService && canUpdateService ? (
-                <Button onClick={() => openServiceModal(focusedService)}>编辑服务配置</Button>
+              {configuredService && canUpdateService ? (
+                <Button onClick={() => openServiceModal(configuredService)}>编辑服务配置</Button>
               ) : null}
-              {focusedService?.deploymentTemplate && !focusedService.deploymentTemplate.detached ? (
+              {focusedService && activeEnvironmentId && canUpdateApplicationEnvironment ? (
+                <ServiceReferenceEntry
+                  key={`${activeEnvironmentId}/${focusedService.id}`}
+                  applicationId={application.id}
+                  bindingId={activeEnvironmentId}
+                  serviceId={focusedService.id}
+                  serviceName={focusedService.name}
+                  canEditReference={canUpdateService}
+                  onConfigureLocal={openBindingEdit}
+                  onOpenSource={(bindingId) => setActiveTab('services', bindingId)}
+                />
+              ) : null}
+              {configuredService?.deploymentTemplate &&
+              !configuredService.deploymentTemplate.detached ? (
                 <TemplateUpdateEntry
                   kind="deployment"
-                  templateId={focusedService.deploymentTemplate.templateId}
+                  templateId={configuredService.deploymentTemplate.templateId}
                   applicationId={application.id}
-                  serviceId={focusedService.id}
+                  serviceId={configuredService.id}
                   environmentId={activeEnvironmentId}
                 />
               ) : null}
               <Button onClick={() => openServiceTab('resources')}>资源清单</Button>
             </Space>
           </div>
-          {focusedService ? (
+          {configuredService ? (
             <dl className="soha-service-summary__facts">
               <div>
                 <dt>服务 Key</dt>
-                <dd>{focusedService.key}</dd>
+                <dd>{configuredService.key}</dd>
               </div>
               <div>
                 <dt>状态</dt>
                 <dd>
-                  <StatusTag value={focusedService.enabled ? 'enabled' : 'disabled'} />
+                  <StatusTag value={configuredService.enabled ? 'enabled' : 'disabled'} />
                 </dd>
               </div>
               <div>
                 <dt>类型</dt>
-                <dd>{serviceKindLabel(focusedService.serviceKind)}</dd>
+                <dd>{serviceKindLabel(configuredService.serviceKind)}</dd>
               </div>
               <div>
                 <dt>负责人 / 团队</dt>
-                <dd>{focusedService.ownerTeam || '未设置'}</dd>
+                <dd>{configuredService.ownerTeam || '未设置'}</dd>
               </div>
               <div>
                 <dt>代码仓库</dt>
                 <dd>
                   {focusedRepository?.path ||
-                    focusedService.repositoryPath ||
+                    configuredService.repositoryPath ||
                     focusedRepository?.name ||
-                    focusedService.repositoryId ||
+                    configuredService.repositoryId ||
                     '未关联'}
                 </dd>
               </div>
               <div>
                 <dt>分支</dt>
                 <dd>
-                  {focusedService.defaultBranch || focusedRepository?.defaultBranch || '未配置'}
+                  {configuredService.defaultBranch || focusedRepository?.defaultBranch || '未配置'}
                 </dd>
               </div>
             </dl>
           ) : null}
+          <ReadFeedback query={configuredServiceQuery} label="服务配置" />
           <p>
             <Text type="secondary">
               更新模板绑定或变量与实际部署分开；发布继续经过原
@@ -1913,7 +1952,7 @@ export function ApplicationDetailPage() {
             {focusedService && canDeleteService ? (
               <Popconfirm
                 title={`确认删除服务组件 ${focusedService.name || focusedService.key}？`}
-                description={`${environments.some((environment) => catalogEnvironment(environment.environmentId)?.isProduction) ? '此应用包含生产环境。' : ''}这是应用级服务配置，删除范围不限于当前环境。`}
+                description={`${productionIds.length ? '此应用包含生产环境。' : ''}这是应用级服务配置，删除范围不限于当前环境。`}
                 okText="删除服务组件"
                 onConfirm={() => {
                   setFocusedService()
@@ -1937,10 +1976,13 @@ export function ApplicationDetailPage() {
             <ServiceWorkflowCard
               service={focusedService}
               environmentId={activeEnvironmentId}
-              binding={serviceWorkflowBinding}
-              runs={serviceWorkflows}
+              binding={{
+                ...serviceWorkflowBinding,
+                targets: serviceWorkflowBinding?.targets ?? runtimeSummary?.environment.targets,
+              }}
+              runs={workflowHistoryRestricted ? [] : scopedWorkflows}
               workloads={selectedWorkloads}
-              canView={canViewWorkflows}
+              canView={!workflowHistoryRestricted}
               state={workflowReadState}
               onSelectStage={openWorkflowStage}
             />
@@ -1961,18 +2003,12 @@ export function ApplicationDetailPage() {
         </section>
       ) : serviceTab === 'events' ? (
         <section className="soha-service-state" aria-label="状态">
-          {!runtimePending &&
-          !runtimeUnavailable &&
-          !invalidEnvironment &&
-          activeEnvironment?.status !== 'unavailable'
+          {runtimeReadable
             ? selectedManifestDeployments.map((deployment) => (
                 <ManifestDeploymentState key={deployment.id} deployment={deployment} />
               ))
             : null}
-          {!runtimePending &&
-          !runtimeUnavailable &&
-          !invalidEnvironment &&
-          activeEnvironment?.status !== 'unavailable'
+          {runtimeReadable
             ? selectedWorkloads.map((workload) => (
                 <section
                   key={`${workload.clusterId}/${workload.namespace}/${workload.workloadName}`}
@@ -1992,18 +2028,82 @@ export function ApplicationDetailPage() {
         </section>
       ) : null}
 
-      {podView !== 'summary' || (runtimeReadable && selectedPodWorkloads.length > 0) ? (
+      <Suspense fallback={<ManagementState compact kind="loading" title="正在加载清单关系" />}>
+        {runtimeTab && runtimeReadable
+          ? selectedManifestDeployments.map((deployment) => {
+              const locations = manifestTargets.filter(
+                (target) => target.configRef === deployment.bindingId,
+              )
+              const scope = locations.length === 1 ? locations[0] : undefined
+              return (
+                <ObservedManifestInventoryWorkbench
+                  key={deployment.id}
+                  deployment={deployment}
+                  scope={scope}
+                />
+              )
+            })
+          : null}
+      </Suspense>
+      {podView !== 'summary' ||
+      (!verifiedService && runtimeReadable && selectedPodWorkloads.length > 0) ? (
         <section
           className="soha-service-pods-panel"
           hidden={podView === 'summary'}
           aria-label={podView === 'metrics' ? '服务指标' : runtimeTab ? '资源关系' : 'Pods'}
         >
+          {projectPods && selectedManifestDeployments.length > 0 ? (
+            <Button type="link" onClick={() => openServiceTab('events')}>
+              查看状态
+            </Button>
+          ) : null}
           <Suspense fallback={<ManagementState compact kind="loading" />}>
-            {!runtimeReadable ? (
+            {focusedReference && podView === 'pods' ? (
+              source ? (
+                <ReferencedPodSessions key={`${source.id}/${source.revision}`} reference={source} />
+              ) : (
+                <ManagementState
+                  compact
+                  bordered={false}
+                  kind={
+                    sourceQuery.isPending
+                      ? 'loading'
+                      : queryAccessDenied(sourceQuery)
+                        ? 'no-permission'
+                        : 'error'
+                  }
+                  title={
+                    sourceQuery.isPending
+                      ? '正在核对引用来源'
+                      : queryAccessDenied(sourceQuery)
+                        ? '无源访问权限'
+                        : '无法核对引用来源'
+                  }
+                  actions={
+                    sourceQuery.isPending || queryAccessDenied(sourceQuery) ? undefined : (
+                      <Button onClick={() => void sourceQuery.refetch()}>重试核对引用来源</Button>
+                    )
+                  }
+                />
+              )
+            ) : projectPods &&
+              activeEnvironmentId &&
+              (podView === 'pods' || podView === 'metrics') ? (
+              <ServicePodWorkspace
+                key={podScope}
+                applicationId={application.id}
+                workloads={[]}
+                view={podView}
+                projection={servicePodsQuery}
+                onOpenRelations={() => openServiceTab('runtime')}
+                podScope={podScope}
+                onPodCount={setObservedPodCount}
+              />
+            ) : !runtimeReadable ? (
               <ManagementState
                 compact
-                kind={runtimePending ? 'loading' : 'error'}
-                actions={<Button onClick={() => void runtimeQuery.refetch()}>重试</Button>}
+                kind={runtimePending || environmentQuery.isPending ? 'loading' : 'not-configured'}
+                title={runtimePending || environmentQuery.isPending ? '待观测' : '暂无可用运行实例'}
               />
             ) : runtimeTab &&
               (selectedNativeImports ||
@@ -2029,7 +2129,7 @@ export function ApplicationDetailPage() {
                     </Text>
                   </div>
                   <ArrowRightOutlined aria-hidden="true" />
-                  {selectedPodWorkloads.length ? (
+                  {verifiedService || selectedPodWorkloads.length ? (
                     <button type="button" onClick={() => openServiceTab('pods')}>
                       <Text type="secondary">运行实例</Text>
                       <Text strong>
@@ -2072,13 +2172,14 @@ export function ApplicationDetailPage() {
                       applicationId={application.id}
                       workloads={selectedPodWorkloads}
                       view="runtime"
-                      podScope={podScope}
-                      onPodCount={setObservedPodCount}
+                      podScope={verifiedService ? undefined : podScope}
+                      onPodCount={verifiedService ? undefined : setObservedPodCount}
                     />
                   ) : null}
                 </details>
               </section>
-            ) : selectedPodWorkloads.length > 0 ||
+            ) : runtimeTab &&
+              selectedManifestDeployments.length > 0 ? null : selectedPodWorkloads.length > 0 ||
               (selectedNativeImports && podView === 'metrics') ? (
               <>
                 {selectedNativeImports && podView === 'metrics'
@@ -2091,8 +2192,8 @@ export function ApplicationDetailPage() {
                     workloads={selectedPodWorkloads}
                     view={podView}
                     deploymentPodsOnly={hasOtherPodSources}
-                    podScope={podScope}
-                    onPodCount={setObservedPodCount}
+                    podScope={verifiedService ? undefined : podScope}
+                    onPodCount={verifiedService ? undefined : setObservedPodCount}
                   />
                 ) : null}
               </>
@@ -2160,150 +2261,160 @@ export function ApplicationDetailPage() {
       ) : null}
     </div>
   )
-  const applicationEnvironmentOverview = (
-    <details className="soha-application-inline-disclosure">
-      <summary>查看环境运行概览</summary>
-      <div className="soha-application-overview">
-        <div className="soha-overview-metric-grid">
-          <OverviewMetricCard
-            label="服务"
-            value={servicesQuery.isError ? '不可用' : services.length}
-            loading={servicesQuery.isLoading}
-            helper="应用中的服务定义"
-          />
-          <OverviewMetricCard
-            label="环境"
-            value={runtimeUnavailable ? '不可用' : environments.length}
-            loading={runtimePending}
-            helper="可访问的应用环境"
-          />
-          <OverviewMetricCard
-            label="运行需关注"
-            value={runtimeUnavailable ? '不可用' : attentionEnvironments.length}
-            loading={runtimePending}
-            tone={attentionEnvironments.length ? 'warning' : 'default'}
-            helper="异常或部分就绪的环境"
-          />
-          <OverviewMetricCard
-            label="最新版本包"
-            value={detailQuery.isError ? '不可用' : detail?.latestBundle?.version || '—'}
-            loading={detailQuery.isLoading}
-            helper={
-              detail?.latestBundle
-                ? formatDateTime(detail.latestBundle.createdAt)
-                : '尚无版本包记录'
+  const environmentOverviewContents = (
+    <div className="soha-application-overview">
+      <div className="soha-overview-metric-grid">
+        <OverviewMetricCard
+          label="服务"
+          value={servicesQuery.isError ? '不可用' : services.length}
+          loading={servicesQuery.isLoading}
+          helper="应用中的服务定义"
+        />
+        <OverviewMetricCard
+          label="环境"
+          value={environmentQuery.isError ? '不可用' : environments.length}
+          loading={environmentQuery.isPending}
+          helper="可访问的应用环境"
+        />
+        <OverviewMetricCard
+          label="运行需关注"
+          value={overviewQuery.isError ? '不可用' : attentionEnvironments.length}
+          loading={overviewQuery.isPending}
+          tone={attentionEnvironments.length ? 'warning' : 'default'}
+          helper="异常或部分就绪的环境"
+        />
+        <OverviewMetricCard
+          label="最新版本包"
+          value={detailQuery.isError ? '不可用' : detail?.latestBundle?.version || '—'}
+          loading={detailQuery.isLoading}
+          helper={
+            detail?.latestBundle ? formatDateTime(detail.latestBundle.createdAt) : '尚无版本包记录'
+          }
+        />
+      </div>
+      <Card
+        title="环境与版本"
+        extra={
+          <Button type="link" onClick={() => setActiveTab('services')}>
+            查看环境
+          </Button>
+        }
+      >
+        {overviewQuery.isPending ? (
+          <ManagementState bordered={false} compact kind="loading" title="正在加载运行态" />
+        ) : !overviewRuntime && overviewQuery.isError ? (
+          <ManagementState
+            bordered={false}
+            compact
+            kind={queryAccessDenied(overviewQuery) ? 'no-permission' : 'error'}
+            title="运行态加载失败"
+            description="应用基础信息仍可使用，可重试获取环境与服务状态。"
+            actions={
+              queryAccessDenied(overviewQuery) ? undefined : (
+                <Button onClick={() => void overviewQuery.refetch()}>重试运行态</Button>
+              )
             }
           />
-        </div>
-        <Card
-          title="环境与版本"
-          extra={
-            <Button type="link" onClick={() => setActiveTab('services')}>
-              查看环境
-            </Button>
-          }
-        >
-          {runtimePending ? (
-            <ManagementState bordered={false} compact kind="loading" title="正在加载运行态" />
-          ) : runtimeUnavailable ? (
-            <ManagementState
-              bordered={false}
-              compact
-              kind="error"
-              title="运行态加载失败"
-              description="应用基础信息仍可使用，可重试获取环境与服务状态。"
-              actions={<Button onClick={() => void runtimeQuery.refetch()}>重试运行态</Button>}
-            />
-          ) : (
-            <DeliveryTable
-              rowKey="applicationEnvironmentId"
-              pagination={false}
-              enableDensity={false}
-              showColumnSettings={false}
-              dataSource={environments}
-              empty={
-                <ManagementState
-                  compact
-                  bordered={false}
-                  kind="not-configured"
-                  title="暂无应用环境"
-                  description="在环境配置中接入测试、预发或生产环境。"
-                />
-              }
-              columns={[
-                {
-                  title: '环境',
-                  key: 'name',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) => (
-                    <Link
-                      to={applicationWorkspacePath(
-                        application.id,
-                        'services',
-                        environment.applicationEnvironmentId,
-                      )}
-                    >
-                      {environment.environmentName ||
-                        environment.environmentKey ||
-                        environment.environmentId}
-                    </Link>
-                  ),
+        ) : (
+          <DeliveryTable
+            rowKey="applicationEnvironmentId"
+            pagination={false}
+            enableDensity={false}
+            showColumnSettings={false}
+            dataSource={overviewEnvironments}
+            empty={
+              <ManagementState
+                compact
+                bordered={false}
+                kind="not-configured"
+                title="暂无应用环境"
+                description="在环境配置中接入测试、预发或生产环境。"
+              />
+            }
+            columns={[
+              {
+                title: '环境',
+                key: 'name',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) => (
+                  <Link
+                    to={applicationWorkspacePath(
+                      application.id,
+                      'services',
+                      environment.applicationEnvironmentId,
+                    )}
+                  >
+                    {environment.environmentName ||
+                      environment.environmentKey ||
+                      environment.environmentId}
+                  </Link>
+                ),
+              },
+              {
+                title: '运行状态',
+                key: 'health',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) => {
+                  const status = environmentRuntimeStatus(environment)
+                  return <StatusTag value={status.value} label={status.label} />
                 },
-                {
-                  title: '运行状态',
-                  key: 'health',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) => {
-                    const status = environmentRuntimeStatus(environment)
-                    return <StatusTag value={status.value} label={status.label} />
-                  },
+              },
+              {
+                title: '运行实例',
+                key: 'count',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) =>
+                  environment.status === 'unavailable'
+                    ? '不可用'
+                    : (environment.workloads ?? []).length,
+              },
+              {
+                title: '最近版本包',
+                key: 'version',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) =>
+                  bindingSummaryById[environment.applicationEnvironmentId]?.latestBundle?.version ||
+                  '—',
+              },
+              {
+                title: '最近交付',
+                key: 'delivery',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) => {
+                  const binding = bindingSummaryById[environment.applicationEnvironmentId]
+                  const status = summarizeBindingStatus(binding)
+                  return (
+                    <StatusTag
+                      value={status}
+                      label={status === 'unknown' ? '尚无记录' : undefined}
+                    />
+                  )
                 },
-                {
-                  title: '运行实例',
-                  key: 'count',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) =>
-                    environment.status === 'unavailable'
-                      ? '不可用'
-                      : (environment.workloads ?? []).length,
-                },
-                {
-                  title: '最近版本包',
-                  key: 'version',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) =>
-                    bindingSummaryById[environment.applicationEnvironmentId]?.latestBundle
-                      ?.version || '—',
-                },
-                {
-                  title: '最近交付',
-                  key: 'delivery',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) => {
-                    const binding = bindingSummaryById[environment.applicationEnvironmentId]
-                    const status = summarizeBindingStatus(binding)
-                    return (
-                      <StatusTag
-                        value={status}
-                        label={status === 'unknown' ? '尚无记录' : undefined}
-                      />
-                    )
-                  },
-                },
-                {
-                  title: '操作',
-                  key: 'actions',
-                  render: (_: unknown, environment: ApplicationRuntimeEnvironment) => (
-                    <Button
-                      type="link"
-                      onClick={() =>
-                        setActiveTab('verification', environment.applicationEnvironmentId)
-                      }
-                    >
-                      测试验证
-                    </Button>
-                  ),
-                },
-              ]}
-            />
-          )}
-        </Card>
-      </div>
+              },
+              {
+                title: '操作',
+                key: 'actions',
+                render: (_: unknown, environment: ApplicationRuntimeEnvironment) => (
+                  <Button
+                    type="link"
+                    onClick={() =>
+                      setActiveTab('verification', environment.applicationEnvironmentId)
+                    }
+                  >
+                    测试验证
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Card>
+    </div>
+  )
+  const applicationEnvironmentOverview = (
+    <details
+      className="soha-application-inline-disclosure"
+      onToggle={(event) =>
+        setOverviewApplicationId(event.currentTarget.open ? application.id : undefined)
+      }
+    >
+      <summary>查看环境运行概览</summary>
+      {showOverview ? environmentOverviewContents : null}
     </details>
   )
   const applicationWorkflowOverview = (
@@ -2318,7 +2429,7 @@ export function ApplicationDetailPage() {
         error={detailQuery.error}
         hasReadData={detailQuery.data !== undefined}
         onRetry={() => detailQuery.refetch()}
-        dataSource={bindings.filter((binding) => binding.workflowTemplateId)}
+        dataSource={workflowBindings}
         empty={
           <ManagementState
             compact
@@ -2363,16 +2474,7 @@ export function ApplicationDetailPage() {
   )
 
   return (
-    <div className="soha-page soha-application-workbench">
-      <ApplicationEnvironmentNavigation
-        environments={environments}
-        activeId={activeEnvironmentId}
-        productionIds={(environmentCatalogQuery.data ?? [])
-          .filter((environment) => environment.isProduction)
-          .map((environment) => environment.id)}
-        clusterName={activeRuntimeClusterName}
-        onCreate={managementState.canCreateBinding ? openBindingCreate : undefined}
-      />
+    <>
       {!buildSourceModalVisible && !managementState.appModalVisible ? (
         <MutationFeedback
           operations={[
@@ -2384,7 +2486,6 @@ export function ApplicationDetailPage() {
           ]}
         />
       ) : null}
-      <ReadFeedback query={runtimeQuery} label="应用运行状态" />
       <ReadFeedback query={detailQuery} label="应用配置" />
       <Modal
         width={820}
@@ -2412,6 +2513,7 @@ export function ApplicationDetailPage() {
                   disabled={
                     planLocked ||
                     migrationBlocked ||
+                    referenceImpact.changed ||
                     (migrationApprovalRequired && !migrationComment.trim())
                   }
                   loading={approvalMutation.isPending}
@@ -2427,6 +2529,7 @@ export function ApplicationDetailPage() {
             disabled={
               planLocked ||
               migrationBlocked ||
+              referenceImpact.changed ||
               !pendingDeliveryPlan ||
               pendingDeliveryPlan.status !== 'draft' ||
               !manifestPreflightReady
@@ -2662,6 +2765,7 @@ export function ApplicationDetailPage() {
                 ) : null}
               </Card>
             ))}
+            <PlanReferenceImpact view={referenceImpact} />
             <Card size="small" title="影响范围">
               <pre className="soha-json-block">
                 {JSON.stringify(pendingDeliveryPlan.impact ?? {}, null, 2)}
@@ -2766,25 +2870,6 @@ export function ApplicationDetailPage() {
         </Form>
       </Modal>
       <div className="soha-application-pane">
-        {invalidEnvironment ? (
-          <ManagementState
-            kind="not-found"
-            compact
-            title="所选环境不存在或不可访问"
-            description="请重新选择环境；不会自动切换到其他环境。"
-            actions={
-              <Button
-                onClick={() => {
-                  const next = new URLSearchParams(searchParams)
-                  next.delete('applicationEnvironmentId')
-                  setSearchParams(next)
-                }}
-              >
-                重新选择环境
-              </Button>
-            }
-          />
-        ) : null}
         {(() => {
           const existingTabs = [
             {
@@ -2812,9 +2897,10 @@ export function ApplicationDetailPage() {
                               </Button>
                             ) : null}
                           </div>
-                          {services.length > 0 ? (
+                          <ReadFeedback query={serviceSettingsQuery} label="服务档案" />
+                          {serviceSettings.length > 0 ? (
                             <ul className="soha-service-settings-list" aria-label="服务配置列表">
-                              {services.map((service) => {
+                              {serviceSettings.map((service) => {
                                 const repository = repositories.find(
                                   (item) => item.id === service.repositoryId,
                                 )
@@ -2877,16 +2963,14 @@ export function ApplicationDetailPage() {
                                 )
                               })}
                             </ul>
-                          ) : (
-                            serviceRecordsState || (
-                              <ManagementState
-                                bordered={false}
-                                compact
-                                kind="not-configured"
-                                description="尚未配置服务。"
-                              />
-                            )
-                          )}
+                          ) : serviceSettingsQuery.isSuccess ? (
+                            <ManagementState
+                              bordered={false}
+                              compact
+                              kind="not-configured"
+                              description="尚未配置服务。"
+                            />
+                          ) : null}
                         </section>
                       ),
                     },
@@ -3148,13 +3232,13 @@ export function ApplicationDetailPage() {
                                 {managementState.canDeleteBinding ? (
                                   <Popconfirm
                                     title={
-                                      catalogEnvironment(record.environmentId)?.isProduction
+                                      productionIds.includes(record.environmentId)
                                         ? '确认删除生产环境绑定？'
                                         : '确认删除绑定？'
                                     }
                                     description={`环境：${record.alias || record.environmentKey || record.environmentId} · 目标：${(record.targets ?? []).map((target) => `${target.clusterId}/${target.namespace}`).join('、') || '-'}`}
                                     okText={
-                                      catalogEnvironment(record.environmentId)?.isProduction
+                                      productionIds.includes(record.environmentId)
                                         ? '删除生产绑定'
                                         : '删除绑定'
                                     }
@@ -3329,7 +3413,7 @@ export function ApplicationDetailPage() {
                           key: 'scope',
                           label: '范围',
                           children:
-                            bindings
+                            environments
                               .map((binding) => binding.environmentKey || binding.environmentId)
                               .filter(Boolean)
                               .join(', ') || 'default',
@@ -3359,151 +3443,46 @@ export function ApplicationDetailPage() {
               key: 'services',
               label: '服务',
               children: (
-                <section aria-label="服务工作台" className="soha-service-console" data-scroll-view>
-                  <aside className="soha-service-selector">
-                    <div className="soha-service-selector__heading">
-                      <strong>
-                        服务{' '}
-                        <Text type="secondary">
-                          {filteredServiceCards.length} / {visibleServiceCards.length}
-                        </Text>
-                      </strong>
-                      <ManagementIconButton
-                        icon={<SettingOutlined />}
-                        aria-label={settingsLabel}
-                        tooltip={settingsLabel}
-                        onClick={() => {
-                          const next = new URLSearchParams(searchParams)
-                          next.set('tab', 'services')
-                          next.set('settings', 'application')
-                          if (activeEnvironmentId)
-                            next.set('applicationEnvironmentId', activeEnvironmentId)
-                          if (focusedServiceId) next.set('serviceId', focusedServiceId)
-                          setSearchParams(next)
-                        }}
-                      />
-                    </div>
-                    <Button
-                      className="soha-service-selector__overview"
-                      aria-current={serviceOverview ? 'page' : undefined}
-                      onClick={() => selectService('all')}
-                    >
-                      服务总览
-                    </Button>
-                    <Input
-                      aria-label="搜索服务"
-                      placeholder="搜索名称或标识"
-                      value={serviceSearch}
-                      onChange={(event) => setServiceSearch(event.target.value)}
-                      allowClear
+                <>
+                  {serviceRecordsState}
+                  {serviceOverview && visibleServiceCards.length ? (
+                    <ServiceCards
+                      refreshAction={
+                        <ManagementRefreshButton
+                          aria-label="刷新当前环境"
+                          tooltip="刷新当前环境"
+                          loading={runtimeQuery.isFetching || servicesQuery.isFetching}
+                          onClick={() => {
+                            refreshCurrentEnvironment()
+                            void servicesQuery.refetch()
+                          }}
+                        />
+                      }
+                      cards={filteredServiceCards}
+                      statusFor={serviceStatus}
+                      runtimeReady={runtimeReadable}
+                      canConfigure={canViewWorkflows || canViewBuilds}
+                      onSelect={selectService}
+                      onConfigure={openServiceWorkflow}
                     />
-                    <Select
-                      aria-label="筛选服务类型"
-                      value={serviceKindFilter}
-                      options={[
-                        { value: 'all', label: '全部服务类型' },
-                        ...Array.from(
-                          new Set(visibleServiceCards.map((service) => service.kind)),
-                        ).map((kind) => ({ value: kind, label: kind })),
-                      ]}
-                      onChange={setServiceKindFilter}
+                  ) : serviceCards.length || focusedService ? (
+                    serviceDetails
+                  ) : focusedServiceId && serviceData ? (
+                    <ManagementState
+                      compact
+                      bordered={false}
+                      kind="not-found"
+                      title="所选服务不存在或不可访问"
                     />
-                    <nav aria-label="服务列表" className="soha-service-selector__list">
-                      {filteredServiceCards.map((service) => {
-                        const status = serviceStatus(service.workloads, service.id)
-                        return (
-                          <button
-                            key={service.id}
-                            type="button"
-                            aria-current={selectionValue === service.id ? 'page' : undefined}
-                            onClick={() => selectService(service.id)}
-                            title={service.name}
-                          >
-                            <span className="soha-service-selector__icon" aria-hidden="true">
-                              <DeploymentUnitOutlined />
-                            </span>
-                            <span className="soha-service-selector__identity">
-                              <strong>{service.name}</strong>
-                              <small>{service.kind}</small>
-                            </span>
-                            <span
-                              className={`soha-service-status-dot is-${status.tone}`}
-                              role="img"
-                              aria-label={status.label}
-                              title={status.label}
-                            />
-                          </button>
-                        )
-                      })}
-                    </nav>
-                    {!filteredServiceCards.length && visibleServiceCards.length ? (
-                      <ManagementState
-                        compact
-                        bordered={false}
-                        kind="empty"
-                        title="没有匹配的服务"
-                      />
-                    ) : null}
-                    <Select
-                      className="soha-service-selector__mobile"
-                      aria-label="选择服务"
-                      value={selectionValue}
-                      showSearch={{ optionFilterProp: 'label' }}
-                      options={filteredServiceCards
-                        .map((service) => ({
-                          value: service.id,
-                          label: service.name,
-                        }))
-                        .concat([{ value: 'all', label: '服务总览' }])}
-                      onChange={selectService}
+                  ) : serviceData ? (
+                    <ManagementState
+                      compact
+                      kind="not-configured"
+                      title="暂无服务"
+                      description="添加服务后，在当前环境中查看运行实例。"
                     />
-                    {canCreateService ? (
-                      <Button block icon={<PlusOutlined />} onClick={() => openServiceModal()}>
-                        添加服务
-                      </Button>
-                    ) : null}
-                  </aside>
-                  <div className="soha-service-console__body">
-                    {serviceRecordsState}
-                    {serviceOverview && visibleServiceCards.length ? (
-                      <ServiceCards
-                        refreshAction={
-                          <ManagementRefreshButton
-                            aria-label="刷新当前环境"
-                            tooltip="刷新当前环境"
-                            loading={runtimeQuery.isFetching}
-                            onClick={() => {
-                              void runtimeQuery.refetch()
-                              void detailQuery.refetch()
-                              if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
-                              void servicesQuery.refetch()
-                            }}
-                          />
-                        }
-                        cards={filteredServiceCards}
-                        statusFor={serviceStatus}
-                        runtimeReady={
-                          !runtimePending &&
-                          !runtimeUnavailable &&
-                          !invalidEnvironment &&
-                          activeEnvironment?.status !== 'unavailable'
-                        }
-                        canConfigure={canViewWorkflows || canViewBuilds}
-                        onSelect={selectService}
-                        onConfigure={openServiceWorkflow}
-                      />
-                    ) : serviceCards.length || focusedServiceId ? (
-                      serviceDetails
-                    ) : (
-                      <ManagementState
-                        compact
-                        kind="not-configured"
-                        title="暂无服务"
-                        description="添加服务后，在当前环境中查看运行实例。"
-                      />
-                    )}
-                  </div>
-                </section>
+                  ) : null}
+                </>
               ),
             },
             {
@@ -3516,7 +3495,10 @@ export function ApplicationDetailPage() {
                   width={960}
                   forceRender
                   footer={null}
-                  onCancel={() => setDeliveryActionModalVisible(false)}
+                  onCancel={() => {
+                    setDeliveryActionModalVisible(false)
+                    setManifestLaunch(undefined)
+                  }}
                 >
                   <MutationFeedback
                     operations={[
@@ -3532,6 +3514,33 @@ export function ApplicationDetailPage() {
                       },
                     ]}
                   />
+                  {deliveryActionModalVisible && manifestLaunch ? (
+                    <ManagementState
+                      compact
+                      bordered={false}
+                      kind={
+                        queryAccessDenied(detailQuery)
+                          ? 'no-permission'
+                          : detailQuery.isError
+                            ? 'error'
+                            : 'loading'
+                      }
+                      title={
+                        queryAccessDenied(detailQuery)
+                          ? '无发布配置查看权限'
+                          : detailQuery.isError
+                            ? '发布配置加载失败'
+                            : '正在加载发布配置'
+                      }
+                      actions={
+                        detailQuery.isError && !queryAccessDenied(detailQuery) ? (
+                          <Button onClick={() => void detailQuery.refetch()}>
+                            重试读取发布配置
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  ) : null}
                   {writeOutcomeUnknown(directBuildMutation.error) ? (
                     <Button
                       onClick={() =>
@@ -3556,7 +3565,7 @@ export function ApplicationDetailPage() {
                     layout="vertical"
                     size="middle"
                     className="soha-application-delivery-actions__form"
-                    disabled={deliveryActionPending}
+                    disabled={deliveryActionPending || Boolean(manifestLaunch)}
                   >
                     <div className="soha-application-delivery-actions__grid">
                       <Form.Item
@@ -3573,7 +3582,9 @@ export function ApplicationDetailPage() {
                           options={(manifestDelivery
                             ? bindings.filter((binding) =>
                                 binding.targets?.some(
-                                  (target) => target.executorKind === 'manifest_ssa',
+                                  (target) =>
+                                    isWritableLocalTarget(target) &&
+                                    target.executorKind === 'manifest_ssa',
                                 ),
                               )
                             : deliveryActionKind === 'build'
@@ -3598,7 +3609,8 @@ export function ApplicationDetailPage() {
                                   .find((binding) => binding.applicationEnvironmentId === id)
                                   ?.targets?.find(
                                     (target) =>
-                                      target.enabled && target.executorKind === 'manifest_ssa',
+                                      isWritableLocalTarget(target) &&
+                                      target.executorKind === 'manifest_ssa',
                                   )?.id,
                               )
                           }}
@@ -3607,6 +3619,11 @@ export function ApplicationDetailPage() {
                       <Form.Item
                         name="targetId"
                         label={manifestDelivery ? '资源包目标' : '服务 / Workload'}
+                        extra={
+                          skippedReferences
+                            ? `已跳过 ${skippedReferences} 个跨环境引用服务。请前往源环境发布。`
+                            : '这里只列出当前环境可发布的本地目标。'
+                        }
                         hidden={deliveryActionKind === 'build'}
                         rules={
                           manifestDelivery ? [{ required: true, message: '请选择资源包目标' }] : []
@@ -3616,39 +3633,34 @@ export function ApplicationDetailPage() {
                           allowClear
                           placeholder="选择服务或 Workload"
                           onChange={() => deliveryForm.setFieldValue('manifestRevision', undefined)}
-                          options={(selectedDeliveryBinding?.targets ?? [])
-                            .filter(
-                              (target) =>
-                                !manifestDelivery || target.executorKind === 'manifest_ssa',
+                          options={deliveryTargets.map((target) => {
+                            const workload =
+                              selectedDeliveryBinding?.applicationEnvironmentId ===
+                              activeEnvironmentId
+                                ? runtimeWorkloads.find(
+                                    (item) =>
+                                      item.workloadName === target.workloadName &&
+                                      item.namespace === target.namespace &&
+                                      item.clusterId === target.clusterId,
+                                  )
+                                : undefined
+                            const service = services.find(
+                              (item) =>
+                                item.id ===
+                                  (target.serviceId ||
+                                    target.metadata?.serviceId ||
+                                    workload?.serviceId) || item.key === workload?.serviceKey,
                             )
-                            .map((target) => {
-                              const workload = environments
-                                .find(
-                                  (environment) =>
-                                    environment.applicationEnvironmentId ===
-                                    selectedDeliveryBinding?.applicationEnvironmentId,
-                                )
-                                ?.workloads?.find(
-                                  (item) =>
-                                    item.workloadName === target.workloadName &&
-                                    item.namespace === target.namespace,
-                                )
-                              const service = services.find(
-                                (item) =>
-                                  item.id === workload?.serviceId ||
-                                  item.key === workload?.serviceKey,
-                              )
-                              return {
-                                value: target.id,
-                                disabled: !target.enabled,
-                                label:
-                                  target.executorKind === 'manifest_ssa'
-                                    ? String(
-                                        target.metadata?.manifestPackageName || target.workloadName,
-                                      )
-                                    : deliveryTargetSummary(target, service?.name),
-                              }
-                            })}
+                            return {
+                              value: target.id,
+                              label:
+                                target.executorKind === 'manifest_ssa'
+                                  ? String(
+                                      target.metadata?.manifestPackageName || target.workloadName,
+                                    )
+                                  : deliveryTargetSummary(target, service?.name),
+                            }
+                          })}
                         />
                       </Form.Item>
                       {manifestDelivery ? (
@@ -3785,12 +3797,23 @@ export function ApplicationDetailPage() {
                         )}
                       </div>
                       <Space>
-                        <Button onClick={() => setDeliveryActionModalVisible(false)}>取消</Button>
+                        <Button
+                          onClick={() => {
+                            setDeliveryActionModalVisible(false)
+                            setManifestLaunch(undefined)
+                          }}
+                        >
+                          取消
+                        </Button>
                         <Tooltip title={buildDeployDisabledReason || '按工作流模板执行'}>
                           <Button
                             type="primary"
                             icon={<PlayCircleOutlined />}
-                            disabled={deliveryUnknown || !!buildDeployDisabledReason}
+                            disabled={
+                              Boolean(manifestLaunch) ||
+                              deliveryUnknown ||
+                              !!buildDeployDisabledReason
+                            }
                             loading={deliveryActionPending}
                             onClick={() => void triggerDeliveryAction(deliveryActionKind)}
                           >
@@ -3824,9 +3847,9 @@ export function ApplicationDetailPage() {
                         ) : null
                       }
                     />
-                    {runtimePending || (!detail && detailQuery.isPending) ? (
+                    {environmentQuery.isPending || (!detail && detailQuery.isPending) ? (
                       <ManagementState compact kind="loading" title="正在读取环境工作流" />
-                    ) : runtimeUnavailable || (!detail && detailQuery.isError) ? (
+                    ) : environmentQuery.isError || (!detail && detailQuery.isError) ? (
                       <ManagementState
                         compact
                         kind="error"
@@ -3834,8 +3857,9 @@ export function ApplicationDetailPage() {
                         actions={
                           <Button
                             onClick={() => {
-                              void runtimeQuery.refetch()
-                              void detailQuery.refetch()
+                              if (environmentQuery.isError) void environmentQuery.refetch()
+                              if (detailQuery.isEnabled && detailQuery.isError)
+                                void detailQuery.refetch()
                             }}
                           >
                             重试
@@ -3879,16 +3903,18 @@ export function ApplicationDetailPage() {
                                     setDeliveryActionKind('build_deploy')
                                     populateDeliveryBinding(
                                       binding.applicationEnvironmentId,
-                                      focusedService?.buildSourceId,
+                                      configuredService?.buildSourceId,
                                     )
-                                    const target = binding.targets?.find((item) =>
-                                      selectedWorkloads.some(
-                                        (workload) =>
-                                          workload.workloadName === item.workloadName &&
-                                          workload.namespace === item.namespace &&
-                                          workload.clusterId === item.clusterId,
-                                      ),
-                                    )
+                                    const target = binding.targets
+                                      ?.filter(isWritableLocalTarget)
+                                      .find((item) =>
+                                        selectedWorkloads.some(
+                                          (workload) =>
+                                            workload.workloadName === item.workloadName &&
+                                            workload.namespace === item.namespace &&
+                                            workload.clusterId === item.clusterId,
+                                        ),
+                                      )
                                     if (target) deliveryForm.setFieldValue('targetId', target.id)
                                     setDeliveryActionModalVisible(true)
                                   }}
@@ -3946,17 +3972,22 @@ export function ApplicationDetailPage() {
               label: APPLICATION_WORKSPACE_LABELS.delivery,
               children: (
                 <div className="soha-application-workflow-workspace">
-                  {focusedService ? (
+                  <ReadFeedback query={configuredServiceQuery} label="服务档案" />
+                  {configuredService ? (
                     <Suspense fallback={<ManagementState compact kind="loading" />}>
                       <ServiceDeliveryForm
-                        service={focusedService}
+                        service={configuredService}
                         applicationEnvironmentId={activeEnvironmentId}
                         onClose={() => setActiveTab('services')}
                       />
                     </Suspense>
                   ) : null}
                   {!focusedService ? (
-                    <details className="soha-application-inline-disclosure">
+                    <details
+                      className="soha-application-inline-disclosure"
+                      open={environmentWorkflowExpanded}
+                      onToggle={(event) => setEnvironmentWorkflowExpanded(event.currentTarget.open)}
+                    >
                       <summary>环境工作流</summary>
                       {tab('pipeline').children}
                       {applicationWorkflowOverview}
@@ -4109,24 +4140,32 @@ export function ApplicationDetailPage() {
                         serviceModalVisible ? undefined : `application-settings-${settingsKey}`
                       }
                     >
-                      {serviceModalVisible ? (
-                        <ServiceEditor
-                          application={application}
-                          service={editingService}
-                          services={services}
-                          repositories={repositories}
-                          canManageBuild={canManageRepositories}
-                          closeGuardRef={serviceEditorCloseGuard}
-                          onCancel={leaveServiceEditor}
-                          onSaved={(id) => {
-                            setServiceModalVisible(false)
-                            setEditingService(null)
-                            setFocusedService(id, 'pods')
-                          }}
-                        />
-                      ) : (
-                        sections.find((item) => item.key === settingsKey)?.children
-                      )}
+                      <Suspense fallback={<ManagementState kind="loading" title="正在加载设置" />}>
+                        {serviceModalVisible && !serviceSettingsData ? (
+                          serviceSettingsQuery.isPending ? (
+                            <ManagementState kind="loading" title="正在加载服务档案" />
+                          ) : (
+                            <ReadFeedback query={serviceSettingsQuery} label="服务档案" />
+                          )
+                        ) : serviceModalVisible ? (
+                          <ServiceEditor
+                            application={application}
+                            service={editingService}
+                            services={serviceSettings}
+                            repositories={repositories}
+                            canManageBuild={canManageRepositories}
+                            closeGuardRef={serviceEditorCloseGuard}
+                            onCancel={leaveServiceEditor}
+                            onSaved={(id) => {
+                              setServiceModalVisible(false)
+                              setEditingService(null)
+                              setFocusedService(id, 'pods')
+                            }}
+                          />
+                        ) : (
+                          sections.find((item) => item.key === settingsKey)?.children
+                        )}
+                      </Suspense>
                     </section>
                   </div>
                 )}
@@ -4304,6 +4343,6 @@ export function ApplicationDetailPage() {
         </Form>
       </Modal>
       <ApplicationCenterModals state={managementState} />
-    </div>
+    </>
   )
 }

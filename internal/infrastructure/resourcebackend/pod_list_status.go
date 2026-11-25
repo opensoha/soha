@@ -35,6 +35,10 @@ func buildPodListContainerStatuses(pod corev1.Pod) ([]domainresource.PodContaine
 				code := status.State.Terminated.ExitCode
 				view.ExitCode = &code
 			}
+			if previous := status.LastTerminationState.Terminated; previous != nil {
+				view.LastTerminationReason = previous.Reason
+				view.LastTerminationExitCode = &previous.ExitCode
+			}
 			views = append(views, view)
 		}
 	}

@@ -282,11 +282,19 @@ type TemplateUsageSummary struct {
 	LastExecutionSummary       map[string]any             `json:"lastExecutionSummary,omitempty"`
 }
 
+// EnvironmentNavigationRow pairs the binding authorization scope with its catalog label.
+type EnvironmentNavigationRow struct {
+	Binding     ApplicationEnvironment
+	Environment Environment
+}
+
 type Repository interface {
 	TemplateVersionRepository
 	ListEnvironments(context.Context) ([]Environment, error)
+	GetEnvironment(context.Context, string) (Environment, error)
 
 	ListApplicationEnvironments(context.Context) ([]ApplicationEnvironment, error)
+	ListEnvironmentNavigation(context.Context, string) ([]EnvironmentNavigationRow, error)
 	ListApplicationEnvironmentsByApplication(context.Context, string) ([]ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, string) (ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, ApplicationEnvironmentInput) (ApplicationEnvironment, error)

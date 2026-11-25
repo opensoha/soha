@@ -314,6 +314,9 @@
   padding: 0 24px 24px;
   background: var(--soha-bg-surface-muted);
 }
+.soha-service-console[data-invalid-environment] {
+  display: contents;
+}
 .soha-service-selector {
   display: flex;
   flex-direction: column;
@@ -369,6 +372,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.soha-service-selector__identity > .ant-tag {
+  align-self: flex-start;
+  margin-top: 3px;
 }
 .soha-service-selector__list strong {
   font-weight: 600;
@@ -1270,10 +1277,18 @@
   margin-bottom: 12px;
 }
 @media (min-width: 768px) and (min-height: 720px) {
+  .soha-content:has(> .soha-content-inner > .soha-application-workbench) {
+    display: flex;
+    flex-direction: column;
+  }
+  .soha-content-inner:has(> .soha-application-workbench),
+  .soha-page.soha-application-workbench {
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .soha-service-console[data-scroll-view] {
-    height: calc(
-      100dvh - var(--soha-application-header-height, var(--soha-app-chrome-height)) - 88px
-    );
+    flex: 1 1 0;
+    min-height: 0;
     grid-template-rows: minmax(0, 1fr);
   }
   .soha-service-console[data-scroll-view] .soha-service-selector {
@@ -1291,6 +1306,10 @@
     overscroll-behavior: contain;
     scrollbar-width: thin;
   }
+  .soha-service-console[data-scroll-view] .soha-service-console__body > .soha-application-pane {
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .soha-service-console[data-scroll-view] .soha-service-console__body,
   .soha-service-console[data-scroll-view] .soha-service-overview-grid,
   .soha-service-detail[data-service-tab='pods'],
@@ -1301,8 +1320,9 @@
     flex-direction: column;
     min-height: 0;
   }
-  .soha-service-catalog__scroll,
-  .soha-pod-list-scroll {
+  .soha-service-console[data-scroll-view]
+    :is(.soha-service-catalog__scroll, .soha-pod-list-scroll) {
+    flex: 1 1 0;
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;

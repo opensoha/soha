@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "applicationEnvironmentId": "binding-1",
+      "environmentId": "dev",
+      "environmentName": "Development",
+      "environmentKey": "dev",
+      "isProduction": false,
+      "requiresApproval": false
+    }
+  ]
+}

@@ -1766,7 +1766,11 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 	)
 	dependencies.SystemIntegrations = apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService)
 	dependencies.Secrets = apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys)
-	dependencies.Auth = newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth)
+	dependencies.Auth = newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth).
+		WithApplicationWorkbench(apiHandlers.AuthApplicationWorkbenchServices{
+			Tokens: core.identityService, Applications: core.applicationService,
+			Environments: delivery.deliveryService, Modules: core.runtimeConfigService,
+		})
 	dependencies.MFA = apiHandlers.NewMFAHandler(core.identityMFAService)
 	dependencies.OutpostLifecycle = outpostruntimehandler.New(core.outpostLifecycle, core.outpostExecutor)
 	dependencies.ProviderPortal = providerportalhandler.New(providerportalhandler.Services{
@@ -1792,7 +1796,7 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 
 func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring, agents apiHandlers.DeliveryAgentAuthenticator) *apiHandlers.DeliveryHandler {
 	return apiHandlers.NewDeliveryHandlerWithServices(apiHandlers.DeliveryServices{
-		Agents: agents, Helm: service,
+		Agents: agents, Helm: service, Pods: service,
 		Applications: service, Releases: service, Executions: service, Runtime: service,
 		Imports: service, Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
 	}, keys)

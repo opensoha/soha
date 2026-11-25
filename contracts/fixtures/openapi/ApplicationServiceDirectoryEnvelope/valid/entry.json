@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "id": "service-1",
+      "applicationId": "app-1",
+      "key": "api",
+      "name": "API",
+      "serviceKind": "kubernetes_workload",
+      "enabled": true
+    }
+  ]
+}

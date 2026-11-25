@@ -1,25 +1,25 @@
 export function baselineResponse(path: string) {
-  if (path === '/api/v1/auth/refresh') {
-    return {
-      data: {
-        tokens: {
-          accessToken: 'browser-regression-token',
-          refreshToken: 'browser-regression-refresh-token',
-          tokenType: 'Bearer',
-          expiresIn: 3600,
-          expiresAt: '2099-01-01T00:00:00Z',
-        },
-        user: {
-          userId: 'browser-regression-user',
-          userName: 'browser-regression',
-          email: 'browser-regression@soha.local',
-          roles: [],
-          teams: [],
-          projects: [],
-          tags: [],
-        },
+  const workbenchRefresh = path === '/api/v1/auth/refresh/application-workbench'
+  if (path === '/api/v1/auth/refresh' || workbenchRefresh) {
+    const session = {
+      tokens: {
+        accessToken: 'browser-regression-token',
+        refreshToken: 'browser-regression-refresh-token',
+        tokenType: 'Bearer',
+        expiresIn: 3600,
+        expiresAt: '2099-01-01T00:00:00Z',
+      },
+      user: {
+        userId: 'browser-regression-user',
+        userName: 'browser-regression',
+        email: 'browser-regression@soha.local',
+        roles: [],
+        teams: [],
+        projects: [],
+        tags: [],
       },
     }
+    return { data: workbenchRefresh ? { session } : session }
   }
   if (path === '/api/v1/access/permission-snapshot') {
     return {

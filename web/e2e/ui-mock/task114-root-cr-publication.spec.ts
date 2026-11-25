@@ -111,6 +111,8 @@ for (const width of [1440, 390]) {
           visibleMenus: [{ id: 'applications', path: '/applications', labelZh: '应用中心' }],
         })
       if (path === '/application-environments' && method === 'GET') return data([binding])
+      if (path === '/application-environments/retail-test/detail' && method === 'GET')
+        return data({ binding })
       if (path === '/application-environments/retail-test' && method === 'PUT') {
         writes.push(path)
         const body = request.postDataJSON()
@@ -197,29 +199,32 @@ for (const width of [1440, 390]) {
         const body = base.body as { data: Record<string, unknown> }
         return data({ ...body.data, bindings: [binding] })
       }
-      if (base && path === '/applications/retail/runtime') {
-        const body = base.body as {
-          data: { environments: Array<{ environmentId: string; workloads: unknown[] }> }
+      if (
+        base &&
+        path === '/applications/retail/application-environments/retail-test/runtime-summary'
+      ) {
+        const body = structuredClone(base.body) as {
+          data: { environment: { targets: unknown; workloads: unknown[] } }
         }
-        for (const environment of body.data.environments)
-          if (environment.environmentId === 'test')
-            environment.workloads = [
-              {
-                applicationEnvironmentId: 'retail-test',
-                targetId: 'root-test',
-                serviceId: 'search',
-                ...source.resource,
-                workloadKind: 'CustomResource',
-                workloadName: 'search',
-                sourceStatus: 'linked',
-                healthStatus: 'unknown',
-                desiredReplicas: 0,
-                readyReplicas: 0,
-                updatedReplicas: 0,
-                availableReplicas: 0,
-                source,
-              },
-            ]
+        body.data.environment.targets = binding.targets
+        body.data.environment.workloads = [
+          {
+            applicationEnvironmentId: 'retail-test',
+            targetId: 'root-test',
+            serviceId: 'search',
+            ...source.resource,
+            workloadKind: 'CustomResource',
+            workloadName: 'search',
+            sourceStatus: 'linked',
+            healthStatus: 'unknown',
+            desiredReplicas: 0,
+            readyReplicas: 0,
+            updatedReplicas: 0,
+            availableReplicas: 0,
+            source,
+          },
+        ]
+        return { ...base, body }
       }
       return base
     })
@@ -263,7 +268,7 @@ for (const width of [1440, 390]) {
     await plan.getByRole('button', { name: /^取\s*消$/ }).click()
     await page.getByRole('button', { name: '配置与发布控制', exact: true }).click()
     await expect(drawer).toContainText('Soha 发布根配置 · Operator 协调子资源')
-    await drawer.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.keyboard.press('Escape')
     await expect(drawer).not.toBeVisible()
     expect(writes).toHaveLength(3)
     expect(runtimeErrors, 'root CR editor and Plan lifecycle').toEqual([])

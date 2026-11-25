@@ -185,17 +185,96 @@ export const deliveryKeys = {
     list: () => [...APPLICATIONS, 'list'] as const,
     details: [...APPLICATIONS, 'detail'] as const,
     detail: (id: string) => [...APPLICATIONS, 'detail', normalizeDeliveryId(id)] as const,
+    record: (id: string) => [...APPLICATIONS, 'detail', normalizeDeliveryId(id), 'record'] as const,
+    environmentNavigation: (id: string) =>
+      [...APPLICATIONS, 'detail', normalizeDeliveryId(id), 'environments'] as const,
+    environmentRuntimeSummary: (id: string, bindingId: string) =>
+      [
+        ...APPLICATIONS,
+        'detail',
+        normalizeDeliveryId(id),
+        'runtime-summary',
+        normalizeDeliveryId(bindingId),
+      ] as const,
     runtime: (id: string) =>
       [...APPLICATIONS, 'detail', normalizeDeliveryId(id), 'runtime'] as const,
+    serviceDirectory: (id: string) =>
+      [...APPLICATIONS, 'detail', normalizeDeliveryId(id), 'service-directory'] as const,
+    service: (id: string, serviceId: string) =>
+      [
+        ...APPLICATIONS,
+        'detail',
+        normalizeDeliveryId(id),
+        'services',
+        normalizeDeliveryId(serviceId),
+      ] as const,
     services: (id: string) =>
       [...APPLICATIONS, 'detail', normalizeDeliveryId(id), 'services'] as const,
   },
+  focusedServiceReference: (
+    environmentId: string,
+    serviceId: string,
+    referenceId?: string,
+    revision?: number,
+  ) =>
+    [
+      ...ROOT,
+      'focused-service-reference',
+      environmentId,
+      serviceId,
+      referenceId,
+      revision,
+    ] as const,
+  referenceOwnedPods: (
+    environmentId: string,
+    referenceId: string,
+    revision: number,
+    targetKey?: string,
+  ) => [...ROOT, 'reference-owned-pods', environmentId, referenceId, revision, targetKey] as const,
   environmentCatalog: {
     all: ENVIRONMENT_CATALOG,
     list: () => [...ENVIRONMENT_CATALOG, 'list'] as const,
   },
   environments: {
     all: ENVIRONMENTS,
+    referenceBindings: (applicationId: string) =>
+      [...ENVIRONMENTS, 'reference-bindings', applicationId] as const,
+    serviceReference: (bindingId: string, serviceId: string) =>
+      [...ENVIRONMENTS, 'service-reference', bindingId, serviceId] as const,
+    serviceReferenceIdentities: (bindingId: string, serviceId: string) =>
+      [...ENVIRONMENTS, 'service-reference', bindingId, serviceId, 'identities'] as const,
+    serviceReferenceCandidate: (
+      bindingId: string,
+      serviceId: string,
+      candidateId?: string,
+      revision?: number,
+    ) =>
+      [
+        ...ENVIRONMENTS,
+        'service-reference',
+        bindingId,
+        serviceId,
+        'candidate',
+        candidateId,
+        revision,
+      ] as const,
+    serviceReferenceActive: (
+      bindingId: string,
+      serviceId: string,
+      activeId?: string,
+      revision?: number,
+    ) =>
+      [
+        ...ENVIRONMENTS,
+        'service-reference',
+        bindingId,
+        serviceId,
+        'active',
+        activeId,
+        revision,
+      ] as const,
+    serviceReferencePreview: (bindingId: string, serviceId: string, request?: unknown) =>
+      [...ENVIRONMENTS, 'service-reference', bindingId, serviceId, 'preview', request] as const,
     lists: [...ENVIRONMENTS, 'list'] as const,
     list: () => [...ENVIRONMENTS, 'list'] as const,
     details: [...ENVIRONMENTS, 'detail'] as const,
@@ -295,6 +374,14 @@ export const deliveryKeys = {
   },
   workloads: {
     all: WORKLOADS,
+    servicePods: (applicationId: string, bindingId: string, serviceId: string) =>
+      [
+        ...WORKLOADS,
+        'service-pods',
+        normalizeDeliveryId(applicationId),
+        normalizeDeliveryId(bindingId),
+        normalizeDeliveryId(serviceId),
+      ] as const,
     runtime: (ref: DeliveryWorkloadRef) =>
       [...WORKLOADS, 'runtime', normalizeWorkloadRef(ref)] as const,
     metrics: (ref: DeliveryWorkloadMetricsRef) =>
@@ -313,6 +400,9 @@ export const deliveryKeys = {
   plans: {
     all: PLANS,
     detail: (id: string) => [...PLANS, 'detail', normalizeDeliveryId(id)] as const,
+    referenceImpacts: [...PLANS, 'reference-impact'] as const,
+    referenceImpact: (id: string, cursor: string) =>
+      [...PLANS, 'reference-impact', normalizeDeliveryId(id), cursor] as const,
   },
   dependencies: {
     all: DEPENDENCIES,

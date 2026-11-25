@@ -1,6 +1,6 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { MutationFeedback } from '@/components/request-feedback'
-import { writeOutcomeUnknown } from '@/utils/query-feedback'
+import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { App, Button, Form, Input, Modal, Select, Switch } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -67,11 +67,13 @@ export function buildApplicationGroupOptions(apps: DeliveryApplication[] = []) {
 export function useApplicationCenterState({
   currentApplication,
   loadApplications = true,
+  loadBindings = true,
   loadWorkflowTemplates = true,
   loadClusters = true,
 }: {
   currentApplication?: DeliveryApplication
   loadApplications?: boolean
+  loadBindings?: boolean
   loadWorkflowTemplates?: boolean
   loadClusters?: boolean
 } = {}) {
@@ -90,7 +92,7 @@ export function useApplicationCenterState({
   const [selectedApplicationId, setSelectedApplicationId] = useState<string>('')
 
   const applicationsQuery = useQuery(deliveryQueries.applications.list(loadApplications))
-  const bindingsQuery = useQuery(deliveryQueries.environments.list())
+  const bindingsQuery = useQuery(deliveryQueries.environments.list(loadBindings))
   const workflowTemplatesQuery = useQuery(
     deliveryQueries.workflowTemplates.list(loadWorkflowTemplates),
   )
@@ -140,12 +142,14 @@ export function useApplicationCenterState({
       ) ?? null,
     [applicationsQuery.data, currentApplication, selectedApplicationId],
   )
+  const bindings = readableQueryData(bindingsQuery)
+  const bindingApplicationId = applicationId || selectedApplicationId
   const filteredBindings = useMemo(
     () =>
-      (bindingsQuery.data ?? []).filter(
-        (item) => !selectedApplicationId || item.applicationId === selectedApplicationId,
+      (loadBindings ? (bindings ?? []) : []).filter(
+        (item) => !bindingApplicationId || item.applicationId === bindingApplicationId,
       ),
-    [bindingsQuery.data, selectedApplicationId],
+    [bindings, bindingApplicationId, loadBindings],
   )
   const workflowTemplateMap = useMemo(
     () => Object.fromEntries((workflowTemplatesQuery.data ?? []).map((item) => [item.id, item])),

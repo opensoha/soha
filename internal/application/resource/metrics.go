@@ -87,10 +87,22 @@ type workloadMetricsRequest struct {
 }
 
 func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, podName string, rangeMinutes, stepSeconds int) (domainresource.PodMetricsView, error) {
+	return w.GetPodMetricsForIdentity(ctx, principal, clusterID, namespace, podName, "", "", rangeMinutes, stepSeconds)
+}
+
+func (w *Workloads) GetPodMetricsForIdentity(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, podName, expectedUID, container string, rangeMinutes, stepSeconds int) (domainresource.PodMetricsView, error) {
+	if !validPodMetricSelection(expectedUID, container) {
+		return domainresource.PodMetricsView{}, fmt.Errorf("%w: invalid Pod metrics identity or container", apperrors.ErrInvalidArgument)
+	}
 	s := w
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionList)
 	if err != nil {
 		return domainresource.PodMetricsView{}, err
+	}
+	if expectedUID != "" {
+		if err := w.checkPodMetricIdentity(ctx, principal, clusterID, namespace, podName, expectedUID, container); err != nil {
+			return domainresource.PodMetricsView{}, err
+		}
 	}
 	view := domainresource.PodMetricsView{
 		PodName:      podName,
@@ -125,17 +137,43 @@ func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.
 
 	view.Configured = true
 	queryRange := time.Duration(rangeMinutes) * time.Minute
-	definitions := buildPodMetricDefinitions(namespace, podName, prometheusClusterValue(settings, clusterID), settings.ClusterLabel)
-	series, firstError := s.queryMetricSeries(ctx, settings.BaseURL, settings.BearerToken, definitions, queryRange, time.Duration(stepSeconds)*time.Second)
-	view.Series = series
-	if firstError != "" && len(series) == 0 {
-		view.Message = firstError
+	clusterLabelValue := prometheusClusterValue(settings, clusterID)
+	definitions := buildPodMetricDefinitions(namespace, podName, clusterLabelValue, settings.ClusterLabel)
+	if expectedUID != "" {
+		definitions = buildIdentityPodMetrics(namespace, podName, expectedUID, container, clusterLabelValue, settings.ClusterLabel)
 	}
-	if firstError == "" && len(series) == 0 {
-		view.Message = "prometheus returned no pod metrics for the selected range"
+	series, firstError := s.queryMetricSeries(ctx, settings.BaseURL, settings.BearerToken, definitions, queryRange, time.Duration(stepSeconds)*time.Second)
+	if expectedUID != "" {
+		if err := w.checkPodMetricIdentity(ctx, principal, clusterID, namespace, podName, expectedUID, container); err != nil {
+			return domainresource.PodMetricsView{}, err
+		}
+	}
+	if err := setPodMetricResults(&view, expectedUID != "", series, firstError); err != nil {
+		return domainresource.PodMetricsView{}, err
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", podName, "metrics", "success", fmt.Sprintf("read pod metrics via prometheus with %d series", len(series)))
 	return view, nil
+}
+
+func setPodMetricResults(view *domainresource.PodMetricsView, scoped bool, series []domainresource.MetricSeriesView, firstError string) error {
+	view.Series = series
+	if len(series) != 0 {
+		if scoped && firstError != "" {
+			view.Message = "partial Pod metrics: some Prometheus queries were unavailable"
+		}
+		return nil
+	}
+	if firstError != "" {
+		if scoped {
+			return fmt.Errorf("%w: Prometheus could not read Pod metrics", apperrors.ErrClusterUnready)
+		}
+		view.Message = firstError
+	} else if scoped {
+		view.Message = "prometheus returned no UID-confirmed samples for the selected Pod and range"
+	} else {
+		view.Message = "prometheus returned no pod metrics for the selected range"
+	}
+	return nil
 }
 
 func (w *Workloads) GetDeploymentMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, deploymentName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {

@@ -103,6 +103,16 @@ type Service struct {
 	UpdatedAt           time.Time                                `json:"updatedAt"`
 }
 
+// ServiceIdentity is the service directory projection used by delivery reads.
+type ServiceIdentity struct {
+	ID            string
+	ApplicationID string
+	Key           string
+	Name          string
+	ServiceKind   ServiceKind
+	Enabled       bool
+}
+
 type ServiceInput struct {
 	ExpectedVersion     *int64                                   `json:"expectedVersion,omitempty"`
 	DeploymentTemplate  *domaincatalog.DeploymentTemplateBinding `json:"deploymentTemplate,omitempty"`
@@ -264,6 +274,7 @@ type Repository interface {
 	Update(context.Context, string, UpsertInput) (App, error)
 	Delete(context.Context, string) error
 	ListServices(context.Context, string) ([]Service, error)
+	ListServiceIdentities(context.Context, string) ([]ServiceIdentity, error)
 	GetService(context.Context, string, string) (Service, error)
 	CreateService(context.Context, string, ServiceInput) (Service, error)
 	UpdateService(context.Context, string, string, ServiceInput) (Service, error)

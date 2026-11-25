@@ -15,7 +15,8 @@ type RolePermissionReader interface {
 }
 
 type PermissionResolver struct {
-	roles RolePermissionReader
+	roles           RolePermissionReader
+	requestSnapshot bool
 }
 
 func NewPermissionResolver(roles RolePermissionReader) *PermissionResolver {
@@ -101,7 +102,9 @@ func (r *PermissionResolver) rolePermissionKeys(ctx context.Context, roles []str
 	if len(matrix) == 0 {
 		return PermissionKeysForRoles(roles), nil
 	}
-	SetRolePermissionMatrix(matrix)
+	if !r.requestSnapshot {
+		SetRolePermissionMatrix(matrix)
+	}
 	keys := make([]string, 0)
 	for _, roleID := range roles {
 		for _, permissionKey := range matrix[strings.TrimSpace(roleID)] {

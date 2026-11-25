@@ -126,6 +126,7 @@ test('service details refresh recorded workflow stages for the selected service'
   await expect(order).toContainText('运行正常')
   await expect(order).not.toContainText('订单发布')
   await expect(payment).not.toContainText('支付发布')
+  expect(evidence.requests).not.toContain('/api/v1/applications/retail/detail')
   await order.getByRole('button', { name: '订单 API', exact: true }).click()
   await page.getByRole('tab', { name: '发布与工作流', exact: true }).click()
   const workflow = page.getByRole('region', { name: '当前服务工作流', exact: true })
@@ -133,6 +134,9 @@ test('service details refresh recorded workflow stages for the selected service'
     workflow.getByRole('button', { name: '发布服务，执行中', exact: true }),
   ).toBeEnabled()
   await expect(workflow).not.toContainText('支付发布')
+  // Workflow-only viewers can inspect runs without permission to read release history.
+  expect(evidence.requests).not.toContain('/api/v1/applications/retail/detail')
+  expect(evidence.requests.some((path) => path.startsWith('/api/v1/workflows?'))).toBe(true)
   completed = true
   await page.getByRole('button', { name: '刷新当前环境', exact: true }).click()
   await expect(

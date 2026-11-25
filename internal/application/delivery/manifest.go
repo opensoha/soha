@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
@@ -20,9 +21,14 @@ type ManifestDelivery interface {
 }
 
 func (s *Service) manifestRuntimeBinding(ctx context.Context, principal domainidentity.Principal, binding domaincatalog.ApplicationEnvironment) (domaincatalog.ApplicationEnvironment, []domainmanifest.Deployment, error) {
+	return s.resolveManifestRuntimeBinding(ctx, principal, binding, false)
+}
+
+func (s *Service) resolveManifestRuntimeBinding(ctx context.Context, principal domainidentity.Principal, binding domaincatalog.ApplicationEnvironment, allowPartial bool) (domaincatalog.ApplicationEnvironment, []domainmanifest.Deployment, error) {
 	resolved := binding
 	resolved.Targets = nil
 	var deployments []domainmanifest.Deployment
+	var observationErr error
 	for _, target := range binding.Targets {
 		if target.WorkloadKind == "CustomResource" && target.Metadata["importSource"] == "kubernetes" {
 			resolved.Targets = append(resolved.Targets, target)
@@ -36,14 +42,23 @@ func (s *Service) manifestRuntimeBinding(ctx context.Context, principal domainid
 			continue
 		}
 		if s.manifestDelivery == nil {
-			return resolved, nil, fmt.Errorf("%w: Manifest runtime is unavailable", apperrors.ErrClusterUnready)
+			err := fmt.Errorf("%w: Manifest runtime is unavailable", apperrors.ErrClusterUnready)
+			if !allowPartial {
+				return resolved, nil, err
+			}
+			observationErr = errors.Join(observationErr, err)
+			continue
 		}
 		deployment, err := s.manifestDelivery.DeliveryDeployment(ctx, principal, binding.ApplicationID, binding.ID, target)
 		if errors.Is(err, apperrors.ErrNotFound) {
 			continue
 		}
 		if err != nil {
-			return resolved, nil, err
+			if !allowPartial {
+				return resolved, nil, err
+			}
+			observationErr = errors.Join(observationErr, err)
+			continue
 		}
 		deployments = append(deployments, deployment)
 		for _, resource := range deployment.Status.Inventory {
@@ -53,10 +68,17 @@ func (s *Service) manifestRuntimeBinding(ctx context.Context, principal domainid
 			actual := target
 			actual.ExecutorKind = "manifest_inventory"
 			actual.WorkloadKind, actual.WorkloadName = resource.Kind, resource.Name
+			if allowPartial {
+				actual.Metadata = maps.Clone(target.Metadata)
+				if actual.Metadata == nil {
+					actual.Metadata = make(map[string]any)
+				}
+				actual.Metadata[runtimeInventoryUID] = resource.UID
+			}
 			resolved.Targets = append(resolved.Targets, actual)
 		}
 	}
-	return resolved, deployments, nil
+	return resolved, deployments, observationErr
 }
 
 func (s *Service) prepareManifestDelivery(ctx context.Context, principal domainidentity.Principal, applicationID, environmentID string, targets []domaincatalog.ReleaseTarget, input domaindelivery.DeliveryPlanInput) ([]domainmanifest.DeliverySnapshot, error) {

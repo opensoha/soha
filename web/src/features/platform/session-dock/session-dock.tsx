@@ -19,6 +19,7 @@ import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import {
   normalizeRealtimeSession,
+  sessionReferenceMatchesScope,
   type RealtimeSession,
   type RealtimeSessionInput,
   type RealtimeSessionWorkbench,
@@ -60,12 +61,14 @@ export function RealtimeSessionDockProvider({
   ownerKey,
   workbench,
   scopeKey,
+  validateReference,
 }: {
   children: ReactNode
   visible: boolean
   ownerKey?: string
   workbench: RealtimeSessionWorkbench
   scopeKey?: string
+  validateReference?: (session: RealtimeSession, localeCode: string) => Promise<void>
 }) {
   return (
     <SessionDockOwner
@@ -74,6 +77,7 @@ export function RealtimeSessionDockProvider({
       visible={visible}
       workbench={workbench}
       scopeKey={scopeKey}
+      validateReference={validateReference}
     >
       {children}
     </SessionDockOwner>
@@ -86,12 +90,14 @@ function SessionDockOwner({
   ownerKey,
   workbench,
   scopeKey,
+  validateReference,
 }: {
   children: ReactNode
   visible: boolean
   ownerKey?: string
   workbench: RealtimeSessionWorkbench
   scopeKey?: string
+  validateReference?: (session: RealtimeSession, localeCode: string) => Promise<void>
 }) {
   const platformClusterId = usePlatformScopeStore((state) => state.clusterId)
   const store = useMemo(
@@ -149,11 +155,15 @@ function SessionDockOwner({
       const session = normalizeRealtimeSession(input)
       if (workbench === 'delivery' && !scopeKey) return
       if (!session || (workbench === 'platform' && session.clusterId !== platformClusterId)) return
+      if (!sessionReferenceMatchesScope(session.reference, workbench, scopeKey)) return
 
       setSessions((current) => {
-        const existing = current.findIndex((item) => item.id === session.id)
-        if (existing < 0) return [...current, session]
-        return current.map((item, index) => (index === existing ? session : item))
+        const existing = current.find((item) => item.id === session.id)
+        if (!existing) return [...current, session]
+        // The key contains the connection and reference identity. Showing the same session
+        // must keep that object stable so the terminal does not reconnect.
+        if (existing.streamingDisabledReason === session.streamingDisabledReason) return current
+        return current.map((item) => (item === existing ? session : item))
       })
       setActiveSessionKeys((current) => ({ ...current, [session.clusterId]: session.id }))
       if (workbench === 'delivery') store.setState({ selectedClusterId: session.clusterId })
@@ -169,7 +179,8 @@ function SessionDockOwner({
   const replaceSession = useCallback(
     (sessionId: string, input: RealtimeSessionInput) => {
       const replacement = normalizeRealtimeSession(input)
-      if (!replacement) return
+      if (!replacement || !sessionReferenceMatchesScope(replacement.reference, workbench, scopeKey))
+        return
 
       setConnectRequests((current) => current.map((id) => (id === sessionId ? replacement.id : id)))
       setSessions((current) => {
@@ -186,7 +197,7 @@ function SessionDockOwner({
         [replacement.clusterId]: replacement.id,
       }))
     },
-    [setSessions, setActiveSessionKeys],
+    [setSessions, setActiveSessionKeys, workbench, scopeKey],
   )
 
   const closeSession = useCallback(
@@ -301,6 +312,7 @@ function SessionDockOwner({
             onMaximize={maximizeDock}
             onMinimize={minimizeDock}
             onReplaceSession={replaceSession}
+            validateReference={validateReference}
           />
         </Suspense>
       ) : null}

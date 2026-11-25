@@ -198,15 +198,21 @@ function analyze(manifestPath) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const root = outputRoot(manifestPath)
   const entries = Object.entries(manifest).filter(([, chunk]) => chunk.isEntry)
-  if (entries.length !== 1) throw new Error(`Expected one Vite entry, found ${entries.length}`)
-  const [entryKey] = entries[0]
-  const initialKeys = collectStaticClosure(manifest, [entryKey])
+  const startupEntry = 'src/features/auth/workbench-session-start.ts'
+  const pageEntries = entries.filter(([key]) => key !== startupEntry)
+  if (pageEntries.length !== 1)
+    throw new Error(`Expected one Vite page entry, found ${pageEntries.length}`)
+  const [entryKey] = pageEntries[0]
+  const initialKeys = collectStaticClosure(
+    manifest,
+    entries.map(([key]) => key),
+  )
   const initialFiles = closureFiles(manifest, initialKeys)
   const initialMeasurement = measureFiles(root, initialFiles)
   const routeSourceKeys = new Set(
-    (manifest[entryKey].dynamicImports ?? []).filter(
-      (key) => key.startsWith('src/features/') && /\/(?:[^/]+-)?pages?\.tsx$/.test(key),
-    ),
+    [...initialKeys]
+      .flatMap((key) => manifest[key].dynamicImports ?? [])
+      .filter((key) => key.startsWith('src/features/') && /\/(?:[^/]+-)?pages?\.tsx$/.test(key)),
   )
   const routeEntries = Object.entries(manifest)
     .filter(([key, chunk]) => routeSourceKeys.has(key) && chunk.isDynamicEntry)

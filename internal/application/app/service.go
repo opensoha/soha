@@ -27,6 +27,7 @@ type Repository interface {
 	Update(context.Context, string, domainapp.UpsertInput) (domainapp.App, error)
 	Delete(context.Context, string) error
 	ListServices(context.Context, string) ([]domainapp.Service, error)
+	ListServiceIdentities(context.Context, string) ([]domainapp.ServiceIdentity, error)
 	GetService(context.Context, string, string) (domainapp.Service, error)
 	CreateService(context.Context, string, domainapp.ServiceInput) (domainapp.Service, error)
 	UpdateService(context.Context, string, string, domainapp.ServiceInput) (domainapp.Service, error)
@@ -187,10 +188,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domainapp.Service, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesView); err != nil {
-		return nil, err
-	}
-	app, err := s.Get(ctx, principal, applicationID)
+	app, err := s.applicationForServiceList(ctx, principal, applicationID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +198,26 @@ func (s *Service) ListServices(ctx context.Context, principal domainidentity.Pri
 	}
 	_ = s.recordAudit(ctx, principal, "", "ApplicationService", app.Name, string(domainaccess.ActionList), "success", "listed application services")
 	return items, nil
+}
+
+func (s *Service) ListServiceIdentities(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domainapp.ServiceIdentity, error) {
+	app, err := s.applicationForServiceList(ctx, principal, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListServiceIdentities(ctx, app.ID)
+	if err != nil {
+		return nil, normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", app.Name, string(domainaccess.ActionList), "success", "listed application services")
+	return items, nil
+}
+
+func (s *Service) applicationForServiceList(ctx context.Context, principal domainidentity.Principal, applicationID string) (domainapp.App, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesView); err != nil {
+		return domainapp.App{}, err
+	}
+	return s.Get(ctx, principal, applicationID)
 }
 
 func (s *Service) GetService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {

@@ -161,13 +161,9 @@ func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity
 }
 
 func (s *resourceAccess) authorizeResourceGroup(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
-	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, resourceGroup, kind, action)
+	connection, decision, err := s.authorizeResourceGate(ctx, principal, clusterID, namespace, resourceGroup, kind, action)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
-	}
-	if !decision.Allowed {
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
-		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	if isResourceReadAction(action) {
 		actions := s.allowedActionsForResourceGroup(ctx, principal, connection, namespace, resourceGroup, kind, action)
@@ -175,6 +171,18 @@ func (s *resourceAccess) authorizeResourceGroup(ctx context.Context, principal d
 		for _, allowedAction := range actions {
 			decision.AllowedActions = append(decision.AllowedActions, domainaccess.Action(allowedAction))
 		}
+	}
+	return connection, decision, nil
+}
+
+func (s *resourceAccess) authorizeResourceGate(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, resourceGroup, kind, action)
+	if err != nil {
+		return domaincluster.Connection{}, domainaccess.Decision{}, err
+	}
+	if !decision.Allowed {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
+		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return connection, decision, nil
 }
@@ -198,7 +206,8 @@ func (s *resourceAccess) decideWithPermission(ctx context.Context, principal dom
 	request.RequireNamespaceLabels = namespace != "" && ctx.Value(graphNamespacePolicyKey{}) != nil
 	request.Resource.Name, _ = ctx.Value(graphResourceNameKey{}).(string)
 	request.FailClosedOnUnknownResourceLabels = request.Resource.Name != ""
-	decision, err := s.authorizer.Authorize(ctx, request)
+	authorizer := s.readAuthorizer(ctx)
+	decision, err := authorizer.Authorize(ctx, request)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
@@ -212,7 +221,7 @@ func (s *resourceAccess) decideWithPermission(ctx context.Context, principal dom
 				labels = map[string]string{}
 			}
 			request.Namespace.Labels = labels
-			decision, err = s.authorizer.Authorize(ctx, request)
+			decision, err = authorizer.Authorize(ctx, request)
 			if err != nil {
 				return domaincluster.Connection{}, domainaccess.Decision{}, err
 			}
@@ -272,17 +281,18 @@ func (s *resourceAccess) allowedActionsForResourceGroup(ctx context.Context, pri
 		return nil
 	}
 	candidates := resourceActionCandidates(resourceGroup, kind)
+	authorizer := s.readAuthorizer(ctx)
 	if len(candidates) > 0 {
 		allowed := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
-			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, candidate))
+			decision, err := authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, candidate))
 			if err == nil && decision.Allowed {
 				allowed = append(allowed, string(candidate))
 			}
 		}
 		return allowed
 	}
-	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, action))
+	decision, err := authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, action))
 	if err != nil || !decision.Allowed {
 		return nil
 	}

@@ -46,6 +46,35 @@ func TestRegisterSettingsRoutesDoesNotExposeGlobalPrometheusSettings(t *testing.
 	}
 }
 
+func TestApplicationWorkbenchRefreshIsRateLimitedIndependentlyOfRegularRefresh(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerPublicRoutes(router.Group("/api/v1"), cfgpkg.Config{}, routeTestDependencies())
+
+	const workbench = "/api/v1/auth/refresh/application-workbench"
+	for i := 0; i < 120; i++ {
+		request := httptest.NewRequest(http.MethodPost, "https://console.example"+workbench, strings.NewReader(`{"applicationId":"app-1"}`))
+		request.Header.Set("Origin", "https://console.example")
+		request.Header.Set("Content-Type", "application/json")
+		result := httptest.NewRecorder()
+		router.ServeHTTP(result, request)
+		if result.Code != http.StatusUnauthorized {
+			t.Fatalf("workbench refresh without cookie after %d attempts returned %d", i+1, result.Code)
+		}
+	}
+	result := httptest.NewRecorder()
+	router.ServeHTTP(result, httptest.NewRequest(http.MethodPost, workbench, nil))
+	if result.Code != http.StatusTooManyRequests || result.Header().Get("Cache-Control") != "no-store" ||
+		result.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate limited refresh returned %d with headers %v", result.Code, result.Header())
+	}
+	result = httptest.NewRecorder()
+	router.ServeHTTP(result, httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil))
+	if result.Code != http.StatusUnauthorized {
+		t.Fatalf("regular refresh without credentials returned %d", result.Code)
+	}
+}
+
 func TestRegisterAlertRuleRoutesIncludesDetail(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

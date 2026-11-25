@@ -62,7 +62,7 @@ func TestManifestRuntimeUsesInventoryInsteadOfPackageNameOrApplicationSelector(t
 	if err != nil || len(workloads) != 1 || workloads[0].WorkloadName != "api" || workloads[0].ServiceID != "svc-api" {
 		t.Fatalf("runtime workloads = %#v, %v", workloads, err)
 	}
-	service := runtimeServiceForWorkload(workloads[0], []domainapp.Service{{ID: "wrong", Key: "wrong-service"}, {ID: "svc-api"}})
+	service := runtimeServiceForWorkload(workloads[0], []domainapp.ServiceIdentity{{ID: "wrong", Key: "wrong-service"}, {ID: "svc-api"}})
 	if service == nil || service.ID != "svc-api" {
 		t.Fatalf("explicit service association lost: %#v", service)
 	}

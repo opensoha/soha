@@ -157,12 +157,21 @@ test('Task114 imported CR opens source YAML on demand and withdraws it across en
           },
         },
       }
-    if (path === '/applications/retail/runtime') {
+    if (
+      path === '/applications/retail/runtime' ||
+      /^\/applications\/retail\/application-environments\/retail-(test|prod)\/runtime-summary$/.test(
+        path,
+      )
+    ) {
       const base = task114Response(url, method)!
       const body = base.body as {
-        data: { environments: Array<{ environmentId: string; workloads: unknown[] }> }
+        data: {
+          environments?: Array<{ environmentId: string; workloads: unknown[] }>
+          environment?: { environmentId: string; workloads: unknown[] }
+        }
       }
-      for (const env of body.data.environments) {
+      const environments = body.data.environment ? [body.data.environment] : body.data.environments!
+      for (const env of environments) {
         if (env.environmentId === 'test' || env.environmentId === 'prod')
           env.workloads = [
             {
@@ -191,6 +200,46 @@ test('Task114 imported CR opens source YAML on demand and withdraws it across en
           ]
       }
       return base
+    }
+    const bindingDetail = path.match(/^\/application-environments\/retail-(test|prod)\/detail$/)
+    if (bindingDetail) {
+      const environment = bindingDetail[1]
+      const importedSource = {
+        ...source,
+        resource: {
+          ...source.resource,
+          namespace: `retail-${environment}`,
+          uid: `uid-${environment}`,
+        },
+      }
+      return {
+        body: {
+          data: {
+            binding: {
+              id: `retail-${environment}`,
+              applicationId: 'retail',
+              environmentId: environment,
+              clusterId: 'cluster-a',
+              namespace: `retail-${environment}`,
+              targets: [
+                {
+                  id: `root-${environment}`,
+                  clusterId: 'cluster-a',
+                  namespace: `retail-${environment}`,
+                  workloadKind: 'CustomResource',
+                  workloadName: 'search',
+                  enabled: true,
+                  metadata: {
+                    serviceId: 'search',
+                    importSource: 'kubernetes',
+                    resourceSource: JSON.stringify(importedSource),
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }
     }
     if (
       /^\/application-environments\/retail-(test|prod)\/targets\/root-(test|prod)\/relations$/.test(

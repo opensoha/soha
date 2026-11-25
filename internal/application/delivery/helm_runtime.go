@@ -38,11 +38,9 @@ func (s *Service) helmRuntimeWorkloads(ctx context.Context, principal domainiden
 		if errors.Is(err, apperrors.ErrNotFound) {
 			root.SourceStatus = "missing"
 		}
-		return []domaindelivery.ApplicationRuntimeWorkload{root}
 	}
-	if len(sources) == 0 {
+	if len(sources) == 0 && err == nil {
 		root.SourceStatus = "linked"
-		return []domaindelivery.ApplicationRuntimeWorkload{root}
 	}
 	var result []domaindelivery.ApplicationRuntimeWorkload
 	for _, source := range sources {
@@ -60,8 +58,8 @@ func (s *Service) helmRuntimeWorkloads(ctx context.Context, principal domainiden
 		}
 		result = append(result, item)
 	}
-	if len(result) == 0 {
-		return []domaindelivery.ApplicationRuntimeWorkload{root}
+	if len(result) == 0 || err != nil {
+		result = append(result, root)
 	}
 	return result
 }
@@ -69,5 +67,5 @@ func (s *Service) helmRuntimeWorkloads(ctx context.Context, principal domainiden
 func validHelmRuntimeSource(source domainresource.ResourceSourceSnapshot, target domaincatalog.ReleaseTarget) bool {
 	r := source.Resource
 	return r.UID != "" && r.Name != "" && r.ClusterID == target.ClusterID && r.Namespace == target.Namespace &&
-		r.APIVersion == "apps/v1" && (r.Kind == "Deployment" || r.Kind == "StatefulSet" || r.Kind == "DaemonSet")
+		r.APIVersion != "" && r.APIVersion == deliveryNativeControllerVersion(r.Kind)
 }

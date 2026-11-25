@@ -15,12 +15,14 @@ for (const height of [1206, 800]) {
         return task114Response(metricURL, method)
       }
       const response = task114Response(url, method)
-      if (url.pathname.endsWith('/workloads/order-api/runtime') && response) {
-        const body = response.body as { data: { pods: Array<{ name: string }> } }
-        const pod = body.data.pods[0]
-        body.data.pods = Array.from({ length: 24 }, (_, index) => ({
-          ...pod,
-          name: `order-api-pod-${index}`,
+      if (url.pathname.endsWith('/services/order-api/pods') && response) {
+        const body = response.body as {
+          data: { items: Array<{ pod: { name: string; uid: string } }> }
+        }
+        const item = body.data.items[0]
+        body.data.items = Array.from({ length: 24 }, (_, index) => ({
+          ...item,
+          pod: { ...item.pod, name: `order-api-pod-${index}`, uid: `pod-uid-${index}` },
         }))
       }
       return response

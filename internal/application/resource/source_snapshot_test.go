@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -54,13 +55,39 @@ func TestImportSourceDigestTracksConfigurationAndOwnershipNotStatus(t *testing.T
 	}
 }
 
+func TestDeliveryImportSourceUsesSingleNamedReadDecision(t *testing.T) {
+	var checks int
+	direct := &snapshotSourceDirect{}
+	service := New(Dependencies{
+		DirectWorkloads: direct, Audit: noopResourceAuditRecorder{},
+		Connections: stubConnectionResolver{connection: domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster"}}},
+		Authorizer: creationAuthorizeFunc(func(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+			checks++
+			if request.Action != domainaccess.ActionView || request.Resource.Name != "api" || request.Namespace.Namespace != "team" ||
+				!request.RequireNamespaceLabels || !request.FailClosedOnUnknownResourceLabels {
+				t.Errorf("unexpected authorization request: %+v", request)
+			}
+			return domainaccess.Decision{Allowed: true}, nil
+		}),
+	})
+	runtime := service.Runtime()
+	ctx := runtime.WithDeliveryObservation(t.Context())
+	// The fixture returns non-Kubernetes YAML, so the identity check must still fail.
+	_, err := runtime.GetImportSource(ctx, domainidentity.Principal{}, "cluster", "team", "Deployment", "api", "")
+	if !errors.Is(err, apperrors.ErrConflict) || checks != 1 || !direct.called {
+		t.Fatalf("reads=%t authorization checks=%d identity error=%v", direct.called, checks, err)
+	}
+}
+
 type importSourceDirect struct {
 	DirectCustomResource
-	content string
-	reads   int
+	content     string
+	reads       int
+	definitions int
 }
 
 func (d *importSourceDirect) ResolveCRD(context.Context, string, string) (domainresource.CRDResourceDefinition, error) {
+	d.definitions++
 	return domainresource.CRDResourceDefinition{Group: "example.com", Version: "v1", Kind: "Widget", Resource: "widgets", Namespaced: true}, nil
 }
 func (d *importSourceDirect) GetCustomResourceYAML(_ context.Context, _ string, definition domainresource.CRDResourceDefinition, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -79,8 +106,8 @@ func TestImportedCRSourceReusesScopeSensitiveReadAndUIDFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if direct.reads != 1 || source.Resource.UID != "uid-1" || source.Plural != "widgets" {
-		t.Fatalf("source=%+v reads=%d", source, direct.reads)
+	if direct.reads != 1 || direct.definitions != 1 || source.Resource.UID != "uid-1" || source.Plural != "widgets" {
+		t.Fatalf("source=%+v CR reads=%d definition reads=%d", source, direct.reads, direct.definitions)
 	}
 	if _, err := service.Runtime().GetApplicationSourceYAML(context.Background(), domainidentity.Principal{}, source); !errors.Is(err, apperrors.ErrAccessDenied) || direct.reads != 1 {
 		t.Fatalf("sensitive read=%v reads=%d", err, direct.reads)

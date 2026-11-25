@@ -9,6 +9,7 @@ for (const width of [1440, 390]) {
   }, testInfo) => {
     let deployed = false
     let canViewWorkflows = true
+    let historyVisible = true
     const run = () => ({
       id: 'retail-run',
       applicationId: 'retail',
@@ -45,7 +46,7 @@ for (const width of [1440, 390]) {
       workflowTemplateName: '零售交付',
       targetCount: 0,
       requiresApproval: false,
-      latestWorkflow: run(),
+      latestWorkflow: historyVisible ? run() : undefined,
     })
     await page.setViewportSize({ width, height: 1000 })
     if (width === 390)
@@ -159,14 +160,18 @@ for (const width of [1440, 390]) {
       scroll: document.documentElement.scrollWidth,
     }))
     expect(geometry.scroll).toBe(geometry.width)
+    historyVisible = false
+    await expect(stages).toHaveCount(0, { timeout: 10_000 })
     await page.goto('/workflows/retail-run?stage=removed-node')
     await expect(page.getByRole('alert')).toContainText('所选节点不在本次执行记录中')
+    historyVisible = true
     canViewWorkflows = false
     await page.goto(appUrl)
     await page.getByText('环境工作流', { exact: true }).click()
     await expect(
-      stages.getByRole('button', { name: '构建镜像，已完成', exact: true }),
-    ).toBeDisabled()
+      page.locator('.soha-application-workflow-card').getByText('零售交付', { exact: true }),
+    ).toBeVisible()
+    await expect(stages).toHaveCount(0)
     verifyBrowserEvidence(evidence)
   })
 }

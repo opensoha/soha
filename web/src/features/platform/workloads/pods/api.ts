@@ -1,5 +1,6 @@
 import { api } from '@/services/api-client'
-import { buildWorkloadItemPath } from '../shared/paths'
+import { buildWorkloadItemPath, buildWorkloadMetricsPath } from '../shared/paths'
+import type { ApiResponse } from '@/types'
 import { requireWorkloadNamespace } from '../shared/scope'
 import {
   getWorkloadDetail,
@@ -29,8 +30,20 @@ export function getPodDetail(target: PodTarget): Promise<PodDetail> {
   return getWorkloadDetail<PodDetail>(podKind, target.scope, target.name)
 }
 
-export function getPodMetrics(target: PodTarget, rangeMinutes: number): Promise<PodMetrics> {
-  return getWorkloadMetrics(podKind, target.scope, target.name, rangeMinutes)
+export async function getPodMetrics(
+  target: PodTarget,
+  rangeMinutes: number,
+  container?: string,
+): Promise<PodMetrics> {
+  if (!target.uid) return getWorkloadMetrics(podKind, target.scope, target.name, rangeMinutes)
+  const response = await api.get<ApiResponse<PodMetrics>>(
+    buildWorkloadMetricsPath(podKind, target.scope, target.name, {
+      rangeMinutes,
+      expectedUid: target.uid,
+      container,
+    }),
+  )
+  return response.data
 }
 
 export async function getPodContainerConfiguration(target: PodTarget) {

@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ApiResponse, PermissionSnapshot } from '@/types'
+import { permissionSnapshotStaleTime, readPermissionSnapshot } from './permission-snapshot-request'
 
 export const permissionSnapshotQueryKey = ['access/permission-snapshot'] as const
 
@@ -11,9 +12,12 @@ export function usePermissionSnapshot() {
 
   return useQuery({
     queryKey: permissionSnapshotQueryKey,
-    queryFn: () => api.get<ApiResponse<PermissionSnapshot>>('/access/permission-snapshot'),
+    queryFn: () =>
+      readPermissionSnapshot(() =>
+        api.get<ApiResponse<PermissionSnapshot>>('/access/permission-snapshot'),
+      ),
     enabled: isAuthenticated,
-    staleTime: 30_000,
+    staleTime: permissionSnapshotStaleTime,
   })
 }
 

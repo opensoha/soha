@@ -90,13 +90,15 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
           ? url.search === ''
           : !url.pathname.includes('/workloads/deployments/api/') ||
             url.searchParams.get('namespace') === 'monitoring'
+    const isRefresh =
+      url.pathname === '/api/v1/auth/refresh' ||
+      url.pathname === '/api/v1/auth/refresh/application-workbench'
     const response =
       selected ??
-      (body && scoped && request.method() === 'GET' ? { body } : undefined) ??
+      (body && scoped && !isRefresh && request.method() === 'GET' ? { body } : undefined) ??
       defaultHeyaReads(url, request.method())
     // Refresh is POST in the actual API client; mock authentication never proves real login.
-    const refresh: MockResponse =
-      url.pathname === '/api/v1/auth/refresh' && request.method() === 'POST' ? { body } : undefined
+    const refresh: MockResponse = isRefresh && request.method() === 'POST' ? { body } : undefined
     if (!response && !refresh)
       evidence.missing.push(`${request.method()} ${url.pathname}${url.search}`)
     await route.fulfill({

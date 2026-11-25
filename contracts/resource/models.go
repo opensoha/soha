@@ -133,12 +133,14 @@ type PodView struct {
 }
 
 type PodContainerStatusView struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Ready    bool   `json:"ready"`
-	State    string `json:"state"`
-	Reason   string `json:"reason,omitempty"`
-	ExitCode *int32 `json:"exitCode,omitempty"`
+	Name                    string `json:"name"`
+	Kind                    string `json:"kind"`
+	Ready                   bool   `json:"ready"`
+	State                   string `json:"state"`
+	Reason                  string `json:"reason,omitempty"`
+	ExitCode                *int32 `json:"exitCode,omitempty"`
+	LastTerminationReason   string `json:"lastTerminationReason,omitempty"`
+	LastTerminationExitCode *int32 `json:"lastTerminationExitCode,omitempty"`
 }
 
 type WorkloadOverviewNamespaceView struct {

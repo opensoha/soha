@@ -86,8 +86,10 @@ export function ResourceRelationWorkbench({
   references,
   renderActions,
   runtimeSnapshot = false,
+  manifestInventory = false,
 }: {
   runtimeSnapshot?: boolean
+  manifestInventory?: boolean
   data: RelationWorkbenchData
   references?: WorkloadRelation[]
   renderActions: (node: RelationDisplayNode) => ReactNode
@@ -105,9 +107,13 @@ export function ResourceRelationWorkbench({
   const runtime = nodes.filter((node) => !entries.includes(node) && !configuration.includes(node))
   const levels = [...new Set(runtime.map((node) => node.depth))].sort((a, b) => a - b)
   const roleLabel = (node: RelationDisplayNode) =>
-    runtimeSnapshot && node.role === 'reference' && node.resource.kind === 'Pod'
-      ? '运行快照关联'
-      : relationRoleLabels[node.role]
+    manifestInventory
+      ? node.role === 'root'
+        ? '清单部署'
+        : '清单成员'
+      : runtimeSnapshot && node.role === 'reference' && node.resource.kind === 'Pod'
+        ? '运行快照关联'
+        : relationRoleLabels[node.role]
   const evidence = (node: RelationDisplayNode) => {
     const incoming = node.resource.uid
       ? data.edges.filter((edge) => edge.toUid === node.resource.uid)
@@ -121,9 +127,11 @@ export function ResourceRelationWorkbench({
         })
         .join('；') ||
       (node.role === 'root'
-        ? node.resource.uid
-          ? '已登记的配置根，按 UID 核验'
-          : '当前工作负载运行快照；未提供配置根 UID'
+        ? manifestInventory
+          ? 'Soha 清单部署记录'
+          : node.resource.uid
+            ? '已登记的配置根，按 UID 核验'
+            : '当前工作负载运行快照；未提供配置根 UID'
         : roleLabel(node))
     )
   }
@@ -216,7 +224,8 @@ export function ResourceRelationWorkbench({
               {
                 title: '关系',
                 key: 'role',
-                render: (_: unknown, node: RelationDisplayNode) => relationRoleLabels[node.role],
+                render: (_: unknown, node: RelationDisplayNode) =>
+                  manifestInventory ? roleLabel(node) : relationRoleLabels[node.role],
               },
               {
                 title: '关联依据',
@@ -227,7 +236,11 @@ export function ResourceRelationWorkbench({
           />
         )}
         <footer className="soha-relation-canvas__footer">
-          <span>实线节点：配置根 / 拥有 · 虚线节点：引用 / 人工关联 / 候选</span>
+          <span>
+            {manifestInventory
+              ? '关联依据：清单部署的已观察资源'
+              : '实线节点：配置根 / 拥有 · 虚线节点：引用 / 人工关联 / 候选'}
+          </span>
           <span>
             {data.observedAt
               ? `${formatDateTime(data.observedAt)} 观察`
@@ -251,8 +264,12 @@ export function ResourceRelationWorkbench({
               <dd>{selected.resource.namespace || '—'}</dd>
               <dt>API 版本</dt>
               <dd>{selected.resource.apiVersion || '引用快照未提供'}</dd>
-              <dt>UID</dt>
-              <dd>{selected.resource.uid || '按名称引用，未固定 UID'}</dd>
+              {(!manifestInventory || selected.role !== 'root') && (
+                <>
+                  <dt>UID</dt>
+                  <dd>{selected.resource.uid || '按名称引用，未固定 UID'}</dd>
+                </>
+              )}
             </dl>
             <section>
               <strong>关联依据</strong>

@@ -24,7 +24,7 @@ type PodResourceEditor interface {
 }
 
 type PodDiagnostics interface {
-	GetPodMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.PodMetricsView, error)
+	GetPodMetricsForIdentity(context.Context, domainidentity.Principal, string, string, string, string, string, int, int) (domainresource.PodMetricsView, error)
 	ExecPod(context.Context, domainidentity.Principal, string, string, string, string, string, int64) (domainresource.PodExecView, error)
 }
 

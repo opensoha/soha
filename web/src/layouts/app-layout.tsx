@@ -36,7 +36,6 @@ import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
 import { AnnouncementBell } from '@/features/announcements/announcement-center'
 import { logoutAuthSession } from '@/features/auth/auth-api'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { AssistantCompanionOverlay } from '@/features/companion'
 import { deliveryQueries } from '@/features/delivery/queries'
 import {
   isComputeWorkbenchMenuGroup,
@@ -55,6 +54,7 @@ import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import {
   RealtimeSessionDockProvider,
   RealtimeSessionDockTrigger,
+  type RealtimeSession,
 } from '@/features/platform/session-dock'
 import { useI18n } from '@/i18n'
 import {
@@ -101,6 +101,10 @@ const ApplicationNavigation = lazy(async () => {
 const ApplicationIdentity = lazy(async () => {
   const module = await import('@/features/delivery/navigation')
   return { default: module.ApplicationIdentity }
+})
+const AssistantCompanionOverlay = lazy(async () => {
+  const module = await import('@/features/companion')
+  return { default: module.AssistantCompanionOverlay }
 })
 const GlobalResourceCreateModal = lazy(async () => {
   const module =
@@ -568,32 +572,19 @@ function WorkbenchSwitcher({
 }
 
 function ApplicationHeaderFrame({ brand, children }: { brand?: ReactNode; children: ReactNode }) {
-  const topbarRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const topbar = topbarRef.current
-    const container = topbar?.parentElement
-    if (!topbar || !container) return
-    const updateHeight = () => {
-      const height = `${topbar.getBoundingClientRect().height}px`
-      if (container.style.getPropertyValue('--soha-application-header-height') !== height) {
-        container.style.setProperty('--soha-application-header-height', height)
-      }
-    }
-    updateHeight()
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(topbar)
-    return () => {
-      observer.disconnect()
-      container.style.removeProperty('--soha-application-header-height')
-    }
-  }, [brand != null])
   if (!brand) return children
   return (
-    <div className="soha-application-topbar" ref={topbarRef}>
+    <div className="soha-application-topbar">
       <div className="soha-sider-topbar soha-application-brand">{brand}</div>
       {children}
     </div>
   )
+}
+
+async function validateSessionReference(session: RealtimeSession, localeCode: string) {
+  const { validateDeliverySessionReference } =
+    await import('@/features/delivery/applications/reference-session')
+  await validateDeliverySessionReference(session, localeCode)
 }
 
 interface CommandEntry {
@@ -852,20 +843,18 @@ export function AppLayout() {
     (currentMeta.id === 'application-workflow-designer' ? applicationSearch.get('bindingId') : '')
   const canReadApplicationSessions =
     isApplicationWorkspace && hasPermission(snapshot, 'delivery.applications.view')
-  const sessionRuntime = useQuery(
-    deliveryQueries.applications.runtime(
-      applicationMatch?.params.applicationId || '',
-      canReadApplicationSessions,
-    ),
+  const applicationId = applicationMatch?.params.applicationId ?? ''
+  const sessionEnvironmentQuery = useQuery(
+    deliveryQueries.applications.environmentNavigation(applicationId, canReadApplicationSessions),
   )
   const sessionEnvironment = sessionEnvironmentId
-    ? sessionRuntime.data?.environments?.find(
+    ? sessionEnvironmentQuery.data?.find(
         (environment) => environment.applicationEnvironmentId === sessionEnvironmentId,
       )
-    : sessionRuntime.data?.environments?.[0]
+    : sessionEnvironmentQuery.data?.[0]
   const deliverySessionScope =
     canReadApplicationSessions &&
-    !sessionRuntime.isError &&
+    !sessionEnvironmentQuery.isError &&
     applicationMatch?.params.applicationId &&
     sessionEnvironment
       ? JSON.stringify([
@@ -1370,7 +1359,9 @@ export function AppLayout() {
       permissionSnapshot={snapshot}
       renderCompanion={(props) =>
         currentWorkbenchId === 'settings' || currentWorkbenchId === 'ai' ? null : (
-          <AssistantCompanionOverlay {...props} />
+          <Suspense fallback={null}>
+            <AssistantCompanionOverlay {...props} />
+          </Suspense>
         )
       }
     >
@@ -1378,6 +1369,7 @@ export function AppLayout() {
         ownerKey={user?.userId}
         workbench={currentWorkbenchId === 'delivery' ? 'delivery' : 'platform'}
         scopeKey={currentWorkbenchId === 'delivery' ? deliverySessionScope : undefined}
+        validateReference={validateSessionReference}
         visible={currentWorkbenchId === 'platform' || currentWorkbenchId === 'delivery'}
       >
         <Layout className="soha-shell" hasSider={!isApplicationWorkspace}>

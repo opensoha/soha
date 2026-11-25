@@ -82,6 +82,24 @@ func TestHelmRuntimeCountsOnlyObservedNativeReplicas(t *testing.T) {
 	}
 }
 
+func TestHelmRuntimeRetainsObservedWorkloadsWhenAnotherReadIsForbidden(t *testing.T) {
+	source := helmRuntimeSource("Deployment", "api", "observed-uid")
+	source.Replicas = &domainresource.SourceReplicaObservation{Desired: 1, Ready: 1, Updated: 1, Available: 1}
+	s := &Service{targets: &helmRuntimeTargets{
+		sources: []domainresource.ResourceSourceSnapshot{source},
+		err:     apperrors.ErrAccessDenied,
+	}}
+	items := s.helmRuntimeWorkloads(t.Context(), domainidentity.Principal{}, "env", domaincatalog.ReleaseTarget{
+		ClusterID: "cluster", Namespace: "ns", WorkloadName: "release",
+	})
+	if len(items) != 2 || runtimeWorkloadHealth(items[0]) != runtimeHealthHealthy || items[1].SourceStatus != "forbidden" {
+		t.Fatalf("lost authorized observation or error status: %#v", items)
+	}
+	if got := runtimeObservationStatus(items, 0, 1, nil); got != "partial" {
+		t.Fatalf("runtime summary status = %q, want partial", got)
+	}
+}
+
 func TestRuntimeSelectionAllowsTwoAssociationsOfTheSameUIDButRejectsAmbiguity(t *testing.T) {
 	first := domaindelivery.ApplicationRuntimeWorkload{WorkloadName: "api", ServiceID: "helm", Source: ptrHelmSource(helmRuntimeSource("Deployment", "api", "uid"))}
 	second := first
