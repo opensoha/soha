@@ -6832,16 +6832,16 @@ func (e KubernetesConditionalWorkloadActionReceiptKind) Valid() bool {
 
 // Defines values for KubernetesConnectionMode.
 const (
-	Agent            KubernetesConnectionMode = "agent"
-	DirectKubeconfig KubernetesConnectionMode = "direct_kubeconfig"
+	KubernetesConnectionModeAgent            KubernetesConnectionMode = "agent"
+	KubernetesConnectionModeDirectKubeconfig KubernetesConnectionMode = "direct_kubeconfig"
 )
 
 // Valid indicates whether the value is a known member of the KubernetesConnectionMode enum.
 func (e KubernetesConnectionMode) Valid() bool {
 	switch e {
-	case Agent:
+	case KubernetesConnectionModeAgent:
 		return true
-	case DirectKubeconfig:
+	case KubernetesConnectionModeDirectKubeconfig:
 		return true
 	default:
 		return false

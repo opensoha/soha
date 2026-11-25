@@ -354,6 +354,18 @@ function applyGoCompatibility(spec) {
     "WorkflowRequestReceiptSubmissionStatusRejected",
   ];
 
+  // Preserve the published connection-mode names and the browser-control Agent alias.
+  const connectionMode = schemas.KubernetesConnectionMode;
+  const connectionModeNames = new Map([
+    ["direct_kubeconfig", "KubernetesConnectionModeDirectKubeconfig"],
+    ["agent", "KubernetesConnectionModeAgent"],
+  ]);
+  connectionMode["x-enum-varnames"] = connectionMode.enum.map((value) => {
+    const name = connectionModeNames.get(value);
+    if (!name) throw new Error(`unmapped Kubernetes connection mode: ${value}`);
+    return name;
+  });
+
   // Keep Unavailable available for the published RuntimeNetworkUsageScope.
   schemas.WorkbenchRuntimeAssetStatus.properties.status["x-enum-varnames"] = [
     "WorkbenchRuntimeAssetStatusStatusLoaded",
