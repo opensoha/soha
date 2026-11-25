@@ -9,7 +9,7 @@ import (
 )
 
 func TestReleaseWorkflowRunsBinarySmokeBeforeChecksums(t *testing.T) {
-	workflow := readCLIReleaseWorkflow(t)
+	workflow := strings.ReplaceAll(readCLIReleaseWorkflow(t), "\r\n", "\n")
 
 	required := []string{
 		"release-smoke:",
@@ -22,7 +22,7 @@ func TestReleaseWorkflowRunsBinarySmokeBeforeChecksums(t *testing.T) {
 		"environment: release-cli",
 		"release-control.py verify --component cli",
 		"--mode declared --consumer cli",
-		"REQUESTED_CONTRACTS_REF: v0.2.2",
+		"REQUESTED_CONTRACTS_REF: " + declaredCLIContractsVersion(t) + "\n",
 		"id-token: write",
 		"npm@12.2.2",
 		"verify-public-npm-release.mjs verify",
@@ -43,6 +43,24 @@ func TestReleaseWorkflowRunsBinarySmokeBeforeChecksums(t *testing.T) {
 			t.Fatalf("Root CLI release retains forbidden route or credential %q", forbidden)
 		}
 	}
+}
+
+func declaredCLIContractsVersion(t *testing.T) string {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatalf("read CLI go.mod: %v", err)
+	}
+	for line := range strings.SplitSeq(string(content), "\n") {
+		requirement := strings.TrimPrefix(strings.TrimSpace(line), "require ")
+		fields := strings.Fields(requirement)
+		if len(fields) >= 2 && fields[0] == "github.com/opensoha/soha/contracts" && strings.HasPrefix(fields[1], "v") {
+			return fields[1]
+		}
+	}
+	t.Fatal("CLI go.mod does not declare a Contracts module version")
+	return ""
 }
 
 func readCLIReleaseWorkflow(t *testing.T) string {

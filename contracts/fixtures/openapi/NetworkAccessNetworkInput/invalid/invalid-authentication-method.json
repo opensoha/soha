@@ -1,0 +1,17 @@
+{
+  "siteId": "site-hq",
+  "name": "HQ staff Wi-Fi",
+  "accessMedium": "wifi",
+  "kind": "standard",
+  "enabled": true,
+  "nasBindingIds": ["nas-hq-wifi"],
+  "priority": 100,
+  "autoConnect": true,
+  "rules": [
+    {
+      "effect": "allow",
+      "subjects": { "users": [], "teams": [], "tags": [] },
+      "authenticationMethods": ["eap_mschapv2"]
+    }
+  ]
+}

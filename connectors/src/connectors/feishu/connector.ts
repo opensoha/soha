@@ -41,6 +41,9 @@ interface SendTextInput {
   text: string;
 }
 
+// Core-owned Heya deliveries carry their own retry authorization and dedupe key.
+const MANAGED_DELIVERY_REQUEST_ID = /^heya-[a-f0-9]{32}$/;
+
 interface FeishuApiResponse {
   code: number;
   msg?: string;
@@ -234,6 +237,11 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
           };
         }
 
+        const managedUuid = managedDeliveryUuid(request.requestId);
+        if (managedUuid && request.event?.payload.appId !== config.appId) {
+          throw new Error("managed delivery request is not authorized");
+        }
+
         let input: SendTextInput;
         try {
           input = this.parseSendTextInput(request.input);
@@ -256,6 +264,13 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
               retryable: true
             }
           };
+        }
+
+        if (managedUuid) {
+          const output = await this.sendText(input, signal, managedUuid);
+          signal.throwIfAborted();
+          this.metrics.actionsSucceeded += 1;
+          return { ok: true, output };
         }
 
         const output = await executeWithRetry(() => this.sendText(input, signal), {
@@ -281,7 +296,7 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
     } catch (error) {
       const result = actionResultFromError(error);
       this.metrics.actionsFailed += 1;
-      if (result.error?.retryable) {
+      if (result.error?.retryable && !managedDeliveryUuid(request.requestId)) {
         this.deadLetters.record({
           connectorId: this.id,
           action: request.action,
@@ -305,7 +320,7 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
     }
   }
 
-  private async sendText(input: SendTextInput, signal: AbortSignal): Promise<Record<string, unknown>> {
+  private async sendText(input: SendTextInput, signal: AbortSignal, uuid?: string): Promise<Record<string, unknown>> {
     if (!this.auth) {
       throw new Error("Feishu auth client is not configured");
     }
@@ -329,7 +344,8 @@ export class FeishuConnector extends BaseConnector<NormalizedFeishuConfig> {
         msg_type: "text",
         content: JSON.stringify({
           text: input.text
-        })
+        }),
+        ...(uuid ? { uuid } : {})
       })
     });
     signal.throwIfAborted();
@@ -423,6 +439,10 @@ function emptyMetrics(): FeishuConnectorMetrics {
     deadLetters: 0,
     retryQueueDepth: 0
   };
+}
+
+function managedDeliveryUuid(requestId: string | undefined): string | undefined {
+  return requestId && MANAGED_DELIVERY_REQUEST_ID.test(requestId) ? requestId : undefined;
 }
 
 function retryAfterMs(value: string | null): number | undefined {

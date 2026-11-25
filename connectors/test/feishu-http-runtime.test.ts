@@ -9,7 +9,8 @@ import { test } from "node:test";
 import { FeishuConnector } from "../src/connectors/feishu/connector.js";
 import {
   loadFeishuHttpRuntimeConfigFromEnv,
-  startFeishuConnectorServer
+  startFeishuConnectorServer,
+  type FeishuHttpRuntimeConfig
 } from "../src/connectors/feishu/server.js";
 import type { ConnectorLogger } from "../src/sdk/types.js";
 
@@ -320,6 +321,7 @@ test("Feishu runtime config loads from environment with secret conventions", () 
   assert.equal(config.http.eventSink?.url, "https://soha.example.test/api/v1/connectors/events");
   assert.equal(config.http.eventSink?.token, "sink-token");
   assert.equal(config.http.eventSink?.timeoutMs, 1234);
+  assert.equal(config.http.heyaMeshEnabled, false);
   assert.equal(config.logLevel, "debug");
   assert.equal(config.connector.encryptKey, "encrypt-key");
   assert.equal(config.connector.autoReply?.enabled, true);
@@ -328,6 +330,87 @@ test("Feishu runtime config loads from environment with secret conventions", () 
   assert.equal(config.connector.reliability?.retryBackoffMs, 5);
   assert.equal(config.connector.reliability?.actionRateLimitPerMinute, 9);
   assert.equal(config.connector.reliability?.persistenceDir, "/var/lib/soha-connectors/feishu");
+});
+
+test("Feishu Heya mesh runtime env is opt-in and rejects non-boolean values", () => {
+  const env = {
+    SOHA_FEISHU_APP_ID: "cli_a",
+    SOHA_FEISHU_APP_SECRET: "app-secret",
+    SOHA_FEISHU_VERIFICATION_TOKEN: "verification-token"
+  };
+  assert.equal(loadFeishuHttpRuntimeConfigFromEnv(env).http.heyaMeshEnabled, false);
+  assert.equal(
+    loadFeishuHttpRuntimeConfigFromEnv({ ...env, SOHA_FEISHU_HEYA_MESH_ENABLED: "true" }).http.heyaMeshEnabled,
+    true
+  );
+  assert.throws(
+    () => loadFeishuHttpRuntimeConfigFromEnv({ ...env, SOHA_FEISHU_HEYA_MESH_ENABLED: "maybe" }),
+    /SOHA_FEISHU_HEYA_MESH_ENABLED must be a boolean/
+  );
+});
+
+test("Feishu Heya mesh runtime fails closed unless Core delivery isolation is configured", async (t) => {
+  const valid: FeishuHttpRuntimeConfig = {
+    connector: {
+      appId: "cli_a",
+      appSecret: "app-secret",
+      verificationToken: "verification-token",
+      encryptKey: "encrypt-key"
+    },
+    http: {
+      host: "127.0.0.1",
+      port: 0,
+      actionToken: "runtime-token",
+      eventSink: {
+        url: "https://soha.example.test/api/v1/connectors/events",
+        token: "sink-token"
+      },
+      maxBodyBytes: 1024 * 1024,
+      heyaMeshEnabled: true
+    },
+    logLevel: "error"
+  };
+  const { actionToken: _actionToken, ...httpWithoutActionToken } = valid.http;
+  const { eventSink: _eventSink, ...httpWithoutEventSink } = valid.http;
+  const { token: _sinkToken, ...eventSinkWithoutToken } = valid.http.eventSink!;
+  const { encryptKey: _encryptKey, ...connectorWithoutEncryptKey } = valid.connector;
+
+  await assert.rejects(
+    startFeishuConnectorServer({ ...valid, http: httpWithoutActionToken }, silentLogger),
+    /SOHA_CONNECTOR_HTTP_TOKEN/
+  );
+  await assert.rejects(
+    startFeishuConnectorServer({ ...valid, http: httpWithoutEventSink }, silentLogger),
+    /SOHA_CONNECTOR_EVENT_SINK_URL/
+  );
+  await assert.rejects(
+    startFeishuConnectorServer(
+      { ...valid, http: { ...valid.http, eventSink: eventSinkWithoutToken } },
+      silentLogger
+    ),
+    /SOHA_CONNECTOR_EVENT_SINK_TOKEN/
+  );
+  await assert.rejects(
+    startFeishuConnectorServer(
+      { ...valid, connector: connectorWithoutEncryptKey },
+      silentLogger
+    ),
+    /SOHA_FEISHU_ENCRYPT_KEY/
+  );
+  await assert.rejects(
+    startFeishuConnectorServer(
+      { ...valid, connector: { ...valid.connector, autoReply: { enabled: true, text: "legacy" } } },
+      silentLogger
+    ),
+    /autoReply\.enabled/
+  );
+
+  const handle = await startFeishuConnectorServer(valid, silentLogger);
+  t.after(async () => {
+    await handle.close();
+  });
+  const health = await fetchJson(`${handle.url}/healthz`);
+  assert.equal(health.status, 200);
 });
 
 test("Feishu connector records retry-exhausted action failures in dead letter queue", async () => {

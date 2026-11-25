@@ -15,6 +15,7 @@ import (
 )
 
 type SystemIntegrationService interface {
+	ListStorageDrivers(context.Context, domainidentity.Principal) ([]sohaapi.StorageDriverDescriptor, error)
 	List(context.Context, domainidentity.Principal, domain.Filter) ([]sohaapi.SystemIntegration, error)
 	Get(context.Context, domainidentity.Principal, string) (sohaapi.SystemIntegration, error)
 	Create(context.Context, domainidentity.Principal, sohaapi.SystemIntegrationCreateRequest) (sohaapi.SystemIntegration, error)
@@ -49,6 +50,15 @@ func NewSystemIntegrationHandler(service interface {
 	SourceConnectionService
 }) *SystemIntegrationHandler {
 	return &SystemIntegrationHandler{integrations: service, oauth: service, sources: service}
+}
+
+func (h *SystemIntegrationHandler) ListStorageDrivers(c *gin.Context) {
+	items, err := h.integrations.ListStorageDrivers(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }
 
 func (h *SystemIntegrationHandler) List(c *gin.Context) {

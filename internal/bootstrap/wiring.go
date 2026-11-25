@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
@@ -560,6 +561,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
 	settingsService := appsettings.New(repos.settingsRepository, permissionResolver, auditService, operationService)
+	settingsService.SetAssistantMeshSettingsDependencies(repos.settingsRepository, repos.identityRepository)
 	settingsService.SetInstrumentation(infra.logger.Named("settings").With(
 		zap.String("event", "settings.evidence.record_failed"),
 	))
@@ -610,6 +612,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build network access service: %w", err)
 	}
+	networkAccessService.SetAccessNetworkCatalog(repos.networkAccessRepository)
 	networkEnrollmentService, err := appnetworkaccess.NewEnrollmentService(repos.networkRuntimeRepository, repos.networkProxyRepository, permissionResolver, auditService, operationService)
 	if err != nil {
 		infra.cancel()
@@ -1547,6 +1550,14 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		DirectorySync:       directorySyncHandler,
 	}
 	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	if cfg.AIGateway.FeishuMesh.Enabled && (!cfg.Modules.AI.Enabled || !cfg.Modules.AIGateway.Enabled) {
+		return apiRoutes.Dependencies{}, errors.New("the Heya Feishu channel requires AI and AI Gateway modules")
+	}
+	if cfg.Modules.AI.Enabled {
+		if err := wireAssistantMeshRoutes(cfg, &dependencies, infra, repos, core, delivery, gateway); err != nil {
+			return apiRoutes.Dependencies{}, err
+		}
+	}
 	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
 	return dependencies, nil
 }
@@ -1719,7 +1730,8 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 	dependencies.Virtualization = newVirtualizationHandler(delivery.virtualizationService)
 	dependencies.Docker = newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys)
 	dependencies.NetworkAccess = apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
-		Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
+		AccessNetwork: core.networkAccessService,
+		Device:        core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
 		Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
 		NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
 		Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,

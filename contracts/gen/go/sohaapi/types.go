@@ -901,6 +901,426 @@ func (e ApplicationServiceInputServiceKind) Valid() bool {
 	}
 }
 
+// Defines values for AssistantMeshAssetKind.
+const (
+	AssistantMeshAssetKindExperienceCard AssistantMeshAssetKind = "experience_card"
+	AssistantMeshAssetKindMCP            AssistantMeshAssetKind = "mcp"
+	AssistantMeshAssetKindSkill          AssistantMeshAssetKind = "skill"
+	AssistantMeshAssetKindWorkPulse      AssistantMeshAssetKind = "work_pulse"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshAssetKind enum.
+func (e AssistantMeshAssetKind) Valid() bool {
+	switch e {
+	case AssistantMeshAssetKindExperienceCard:
+		return true
+	case AssistantMeshAssetKindMCP:
+		return true
+	case AssistantMeshAssetKindSkill:
+		return true
+	case AssistantMeshAssetKindWorkPulse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshAssetInputKind.
+const (
+	AssistantMeshAssetInputKindExperienceCard AssistantMeshAssetInputKind = "experience_card"
+	AssistantMeshAssetInputKindMCP            AssistantMeshAssetInputKind = "mcp"
+	AssistantMeshAssetInputKindSkill          AssistantMeshAssetInputKind = "skill"
+	AssistantMeshAssetInputKindWorkPulse      AssistantMeshAssetInputKind = "work_pulse"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshAssetInputKind enum.
+func (e AssistantMeshAssetInputKind) Valid() bool {
+	switch e {
+	case AssistantMeshAssetInputKindExperienceCard:
+		return true
+	case AssistantMeshAssetInputKindMCP:
+		return true
+	case AssistantMeshAssetInputKindSkill:
+		return true
+	case AssistantMeshAssetInputKindWorkPulse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshAssetInputParametersType.
+const (
+	AssistantMeshAssetInputParametersTypeBoolean AssistantMeshAssetInputParametersType = "boolean"
+	AssistantMeshAssetInputParametersTypeInteger AssistantMeshAssetInputParametersType = "integer"
+	AssistantMeshAssetInputParametersTypeNumber  AssistantMeshAssetInputParametersType = "number"
+	AssistantMeshAssetInputParametersTypeString  AssistantMeshAssetInputParametersType = "string"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshAssetInputParametersType enum.
+func (e AssistantMeshAssetInputParametersType) Valid() bool {
+	switch e {
+	case AssistantMeshAssetInputParametersTypeBoolean:
+		return true
+	case AssistantMeshAssetInputParametersTypeInteger:
+		return true
+	case AssistantMeshAssetInputParametersTypeNumber:
+		return true
+	case AssistantMeshAssetInputParametersTypeString:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshAssetPagePublishingDefaultsVisibility.
+const (
+	AssistantMeshAssetPagePublishingDefaultsVisibilityPrivate  AssistantMeshAssetPagePublishingDefaultsVisibility = "private"
+	AssistantMeshAssetPagePublishingDefaultsVisibilityProjects AssistantMeshAssetPagePublishingDefaultsVisibility = "projects"
+	AssistantMeshAssetPagePublishingDefaultsVisibilityTeams    AssistantMeshAssetPagePublishingDefaultsVisibility = "teams"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshAssetPagePublishingDefaultsVisibility enum.
+func (e AssistantMeshAssetPagePublishingDefaultsVisibility) Valid() bool {
+	switch e {
+	case AssistantMeshAssetPagePublishingDefaultsVisibilityPrivate:
+		return true
+	case AssistantMeshAssetPagePublishingDefaultsVisibilityProjects:
+		return true
+	case AssistantMeshAssetPagePublishingDefaultsVisibilityTeams:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshAudienceVisibility.
+const (
+	AssistantMeshAudienceVisibilityOrganization AssistantMeshAudienceVisibility = "organization"
+	AssistantMeshAudienceVisibilityPrivate      AssistantMeshAudienceVisibility = "private"
+	AssistantMeshAudienceVisibilityProjects     AssistantMeshAudienceVisibility = "projects"
+	AssistantMeshAudienceVisibilityTeams        AssistantMeshAudienceVisibility = "teams"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshAudienceVisibility enum.
+func (e AssistantMeshAudienceVisibility) Valid() bool {
+	switch e {
+	case AssistantMeshAudienceVisibilityOrganization:
+		return true
+	case AssistantMeshAudienceVisibilityPrivate:
+		return true
+	case AssistantMeshAudienceVisibilityProjects:
+		return true
+	case AssistantMeshAudienceVisibilityTeams:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationCapability.
+const (
+	AssistantMeshDelegationCapabilityDesktopOsVersionV1 AssistantMeshDelegationCapability = "desktop.os-version.v1"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationCapability enum.
+func (e AssistantMeshDelegationCapability) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationCapabilityDesktopOsVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationField.
+const (
+	AssistantMeshDelegationFieldBuildVersion   AssistantMeshDelegationField = "buildVersion"
+	AssistantMeshDelegationFieldProductVersion AssistantMeshDelegationField = "productVersion"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationField enum.
+func (e AssistantMeshDelegationField) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationFieldBuildVersion:
+		return true
+	case AssistantMeshDelegationFieldProductVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationStatus.
+const (
+	AssistantMeshDelegationStatusApproved              AssistantMeshDelegationStatus = "approved"
+	AssistantMeshDelegationStatusAwaitingConfirmation  AssistantMeshDelegationStatus = "awaiting_confirmation"
+	AssistantMeshDelegationStatusAwaitingOwnerApproval AssistantMeshDelegationStatus = "awaiting_owner_approval"
+	AssistantMeshDelegationStatusCompleted             AssistantMeshDelegationStatus = "completed"
+	AssistantMeshDelegationStatusDeclined              AssistantMeshDelegationStatus = "declined"
+	AssistantMeshDelegationStatusExecuting             AssistantMeshDelegationStatus = "executing"
+	AssistantMeshDelegationStatusExpired               AssistantMeshDelegationStatus = "expired"
+	AssistantMeshDelegationStatusFailed                AssistantMeshDelegationStatus = "failed"
+	AssistantMeshDelegationStatusInvalidated           AssistantMeshDelegationStatus = "invalidated"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationStatus enum.
+func (e AssistantMeshDelegationStatus) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationStatusApproved:
+		return true
+	case AssistantMeshDelegationStatusAwaitingConfirmation:
+		return true
+	case AssistantMeshDelegationStatusAwaitingOwnerApproval:
+		return true
+	case AssistantMeshDelegationStatusCompleted:
+		return true
+	case AssistantMeshDelegationStatusDeclined:
+		return true
+	case AssistantMeshDelegationStatusExecuting:
+		return true
+	case AssistantMeshDelegationStatusExpired:
+		return true
+	case AssistantMeshDelegationStatusFailed:
+		return true
+	case AssistantMeshDelegationStatusInvalidated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationApproveInputMode.
+const (
+	AssistantMeshDelegationApproveInputModeDirect  AssistantMeshDelegationApproveInputMode = "direct"
+	AssistantMeshDelegationApproveInputModePreview AssistantMeshDelegationApproveInputMode = "preview"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationApproveInputMode enum.
+func (e AssistantMeshDelegationApproveInputMode) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationApproveInputModeDirect:
+		return true
+	case AssistantMeshDelegationApproveInputModePreview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationInputCapability.
+const (
+	AssistantMeshDelegationInputCapabilityDesktopOsVersionV1 AssistantMeshDelegationInputCapability = "desktop.os-version.v1"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationInputCapability enum.
+func (e AssistantMeshDelegationInputCapability) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationInputCapabilityDesktopOsVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshDelegationInputField.
+const (
+	AssistantMeshDelegationInputFieldBuildVersion   AssistantMeshDelegationInputField = "buildVersion"
+	AssistantMeshDelegationInputFieldProductVersion AssistantMeshDelegationInputField = "productVersion"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshDelegationInputField enum.
+func (e AssistantMeshDelegationInputField) Valid() bool {
+	switch e {
+	case AssistantMeshDelegationInputFieldBuildVersion:
+		return true
+	case AssistantMeshDelegationInputFieldProductVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshExtractRequestKind.
+const (
+	AssistantMeshExtractRequestKindExperienceCard AssistantMeshExtractRequestKind = "experience_card"
+	AssistantMeshExtractRequestKindSkill          AssistantMeshExtractRequestKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshExtractRequestKind enum.
+func (e AssistantMeshExtractRequestKind) Valid() bool {
+	switch e {
+	case AssistantMeshExtractRequestKindExperienceCard:
+		return true
+	case AssistantMeshExtractRequestKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshInheritanceAssetKind.
+const (
+	AssistantMeshInheritanceAssetKindExperienceCard AssistantMeshInheritanceAssetKind = "experience_card"
+	AssistantMeshInheritanceAssetKindSkill          AssistantMeshInheritanceAssetKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInheritanceAssetKind enum.
+func (e AssistantMeshInheritanceAssetKind) Valid() bool {
+	switch e {
+	case AssistantMeshInheritanceAssetKindExperienceCard:
+		return true
+	case AssistantMeshInheritanceAssetKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshInquiryStatus.
+const (
+	AssistantMeshInquiryStatusAnswered    AssistantMeshInquiryStatus = "answered"
+	AssistantMeshInquiryStatusExpired     AssistantMeshInquiryStatus = "expired"
+	AssistantMeshInquiryStatusInvalidated AssistantMeshInquiryStatus = "invalidated"
+	AssistantMeshInquiryStatusPending     AssistantMeshInquiryStatus = "pending"
+	AssistantMeshInquiryStatusProcessing  AssistantMeshInquiryStatus = "processing"
+	AssistantMeshInquiryStatusReplied     AssistantMeshInquiryStatus = "replied"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInquiryStatus enum.
+func (e AssistantMeshInquiryStatus) Valid() bool {
+	switch e {
+	case AssistantMeshInquiryStatusAnswered:
+		return true
+	case AssistantMeshInquiryStatusExpired:
+		return true
+	case AssistantMeshInquiryStatusInvalidated:
+		return true
+	case AssistantMeshInquiryStatusPending:
+		return true
+	case AssistantMeshInquiryStatusProcessing:
+		return true
+	case AssistantMeshInquiryStatusReplied:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshInquiryShareReplyInputKind.
+const (
+	AssistantMeshInquiryShareReplyInputKindExperienceCard AssistantMeshInquiryShareReplyInputKind = "experience_card"
+	AssistantMeshInquiryShareReplyInputKindWorkPulse      AssistantMeshInquiryShareReplyInputKind = "work_pulse"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshInquiryShareReplyInputKind enum.
+func (e AssistantMeshInquiryShareReplyInputKind) Valid() bool {
+	switch e {
+	case AssistantMeshInquiryShareReplyInputKindExperienceCard:
+		return true
+	case AssistantMeshInquiryShareReplyInputKindWorkPulse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshPublicationReviewStatus.
+const (
+	AssistantMeshPublicationReviewStatusApproved  AssistantMeshPublicationReviewStatus = "approved"
+	AssistantMeshPublicationReviewStatusPending   AssistantMeshPublicationReviewStatus = "pending"
+	AssistantMeshPublicationReviewStatusRejected  AssistantMeshPublicationReviewStatus = "rejected"
+	AssistantMeshPublicationReviewStatusWithdrawn AssistantMeshPublicationReviewStatus = "withdrawn"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshPublicationReviewStatus enum.
+func (e AssistantMeshPublicationReviewStatus) Valid() bool {
+	switch e {
+	case AssistantMeshPublicationReviewStatusApproved:
+		return true
+	case AssistantMeshPublicationReviewStatusPending:
+		return true
+	case AssistantMeshPublicationReviewStatusRejected:
+		return true
+	case AssistantMeshPublicationReviewStatusWithdrawn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshSettingsDefaultVisibility.
+const (
+	AssistantMeshSettingsDefaultVisibilityPrivate  AssistantMeshSettingsDefaultVisibility = "private"
+	AssistantMeshSettingsDefaultVisibilityProjects AssistantMeshSettingsDefaultVisibility = "projects"
+	AssistantMeshSettingsDefaultVisibilityTeams    AssistantMeshSettingsDefaultVisibility = "teams"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshSettingsDefaultVisibility enum.
+func (e AssistantMeshSettingsDefaultVisibility) Valid() bool {
+	switch e {
+	case AssistantMeshSettingsDefaultVisibilityPrivate:
+		return true
+	case AssistantMeshSettingsDefaultVisibilityProjects:
+		return true
+	case AssistantMeshSettingsDefaultVisibilityTeams:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshTrialStatus.
+const (
+	AssistantMeshTrialStatusCanceled  AssistantMeshTrialStatus = "canceled"
+	AssistantMeshTrialStatusCompleted AssistantMeshTrialStatus = "completed"
+	AssistantMeshTrialStatusExpired   AssistantMeshTrialStatus = "expired"
+	AssistantMeshTrialStatusFailed    AssistantMeshTrialStatus = "failed"
+	AssistantMeshTrialStatusQueued    AssistantMeshTrialStatus = "queued"
+	AssistantMeshTrialStatusRunning   AssistantMeshTrialStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshTrialStatus enum.
+func (e AssistantMeshTrialStatus) Valid() bool {
+	switch e {
+	case AssistantMeshTrialStatusCanceled:
+		return true
+	case AssistantMeshTrialStatusCompleted:
+		return true
+	case AssistantMeshTrialStatusExpired:
+		return true
+	case AssistantMeshTrialStatusFailed:
+		return true
+	case AssistantMeshTrialStatusQueued:
+		return true
+	case AssistantMeshTrialStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantMeshWorkStatus.
+const (
+	AssistantMeshWorkStatusBlocked    AssistantMeshWorkStatus = "blocked"
+	AssistantMeshWorkStatusDone       AssistantMeshWorkStatus = "done"
+	AssistantMeshWorkStatusInProgress AssistantMeshWorkStatus = "in_progress"
+)
+
+// Valid indicates whether the value is a known member of the AssistantMeshWorkStatus enum.
+func (e AssistantMeshWorkStatus) Valid() bool {
+	switch e {
+	case AssistantMeshWorkStatusBlocked:
+		return true
+	case AssistantMeshWorkStatusDone:
+		return true
+	case AssistantMeshWorkStatusInProgress:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BrowserHandoffStatus.
 const (
 	BrowserHandoffStatusPending BrowserHandoffStatus = "pending"
@@ -2481,22 +2901,22 @@ func (e DeliveryBatchTemplateDefinitionStages) Valid() bool {
 
 // Defines values for DeliveryBuildVariableSchemaType.
 const (
-	Boolean DeliveryBuildVariableSchemaType = "boolean"
-	Integer DeliveryBuildVariableSchemaType = "integer"
-	Number  DeliveryBuildVariableSchemaType = "number"
-	String  DeliveryBuildVariableSchemaType = "string"
+	DeliveryBuildVariableSchemaTypeBoolean DeliveryBuildVariableSchemaType = "boolean"
+	DeliveryBuildVariableSchemaTypeInteger DeliveryBuildVariableSchemaType = "integer"
+	DeliveryBuildVariableSchemaTypeNumber  DeliveryBuildVariableSchemaType = "number"
+	DeliveryBuildVariableSchemaTypeString  DeliveryBuildVariableSchemaType = "string"
 )
 
 // Valid indicates whether the value is a known member of the DeliveryBuildVariableSchemaType enum.
 func (e DeliveryBuildVariableSchemaType) Valid() bool {
 	switch e {
-	case Boolean:
+	case DeliveryBuildVariableSchemaTypeBoolean:
 		return true
-	case Integer:
+	case DeliveryBuildVariableSchemaTypeInteger:
 		return true
-	case Number:
+	case DeliveryBuildVariableSchemaTypeNumber:
 		return true
-	case String:
+	case DeliveryBuildVariableSchemaTypeString:
 		return true
 	default:
 		return false
@@ -8878,6 +9298,63 @@ func (e NetworkAccessMode) Valid() bool {
 	}
 }
 
+// Defines values for NetworkAccessNetworkKind.
+const (
+	NetworkAccessNetworkKindOpenGuestBootstrap NetworkAccessNetworkKind = "open_guest_bootstrap"
+	NetworkAccessNetworkKindStandard           NetworkAccessNetworkKind = "standard"
+	NetworkAccessNetworkKindStrictOnline       NetworkAccessNetworkKind = "strict_online"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkKind enum.
+func (e NetworkAccessNetworkKind) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkKindOpenGuestBootstrap:
+		return true
+	case NetworkAccessNetworkKindStandard:
+		return true
+	case NetworkAccessNetworkKindStrictOnline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkAccessNetworkPreviewInputAuthenticationMethod.
+const (
+	NetworkAccessNetworkPreviewInputAuthenticationMethodEapTLS     NetworkAccessNetworkPreviewInputAuthenticationMethod = "eap_tls"
+	NetworkAccessNetworkPreviewInputAuthenticationMethodEapTtlsPap NetworkAccessNetworkPreviewInputAuthenticationMethod = "eap_ttls_pap"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkPreviewInputAuthenticationMethod enum.
+func (e NetworkAccessNetworkPreviewInputAuthenticationMethod) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkPreviewInputAuthenticationMethodEapTLS:
+		return true
+	case NetworkAccessNetworkPreviewInputAuthenticationMethodEapTtlsPap:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkAccessNetworkRuleAuthenticationMethods.
+const (
+	NetworkAccessNetworkRuleAuthenticationMethodsEapTLS     NetworkAccessNetworkRuleAuthenticationMethods = "eap_tls"
+	NetworkAccessNetworkRuleAuthenticationMethodsEapTtlsPap NetworkAccessNetworkRuleAuthenticationMethods = "eap_ttls_pap"
+)
+
+// Valid indicates whether the value is a known member of the NetworkAccessNetworkRuleAuthenticationMethods enum.
+func (e NetworkAccessNetworkRuleAuthenticationMethods) Valid() bool {
+	switch e {
+	case NetworkAccessNetworkRuleAuthenticationMethodsEapTLS:
+		return true
+	case NetworkAccessNetworkRuleAuthenticationMethodsEapTtlsPap:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkAccessProfile.
 const (
 	NetworkAccessProfileDeny       NetworkAccessProfile = "deny"
@@ -8971,6 +9448,30 @@ const (
 func (e NetworkConnectionAuthentication) Valid() bool {
 	switch e {
 	case NetworkConnectionAuthenticationRadius8021X:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkConnectionNASSessionState.
+const (
+	NetworkConnectionNASSessionStateEnded    NetworkConnectionNASSessionState = "ended"
+	NetworkConnectionNASSessionStateObserved NetworkConnectionNASSessionState = "observed"
+	NetworkConnectionNASSessionStatePending  NetworkConnectionNASSessionState = "pending"
+	NetworkConnectionNASSessionStateUnknown  NetworkConnectionNASSessionState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkConnectionNASSessionState enum.
+func (e NetworkConnectionNASSessionState) Valid() bool {
+	switch e {
+	case NetworkConnectionNASSessionStateEnded:
+		return true
+	case NetworkConnectionNASSessionStateObserved:
+		return true
+	case NetworkConnectionNASSessionStatePending:
+		return true
+	case NetworkConnectionNASSessionStateUnknown:
 		return true
 	default:
 		return false
@@ -12174,19 +12675,19 @@ func (e PersonalVMEnvironmentPolicyProvider) Valid() bool {
 
 // Defines values for PersonalWorkspaceRuntimeBrowserControlOwner.
 const (
-	Agent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
-	Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
-	User     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+	PersonalWorkspaceRuntimeBrowserControlOwnerAgent    PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+	PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+	PersonalWorkspaceRuntimeBrowserControlOwnerUser     PersonalWorkspaceRuntimeBrowserControlOwner = "user"
 )
 
 // Valid indicates whether the value is a known member of the PersonalWorkspaceRuntimeBrowserControlOwner enum.
 func (e PersonalWorkspaceRuntimeBrowserControlOwner) Valid() bool {
 	switch e {
-	case Agent:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerAgent:
 		return true
-	case Released:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerReleased:
 		return true
-	case User:
+	case PersonalWorkspaceRuntimeBrowserControlOwnerUser:
 		return true
 	default:
 		return false
@@ -15264,19 +15765,19 @@ func (e SohaCacheModeHeader) Valid() bool {
 
 // Defines values for DecideAIGatewayApprovalRequestParamsAction.
 const (
-	Approve DecideAIGatewayApprovalRequestParamsAction = "approve"
-	Cancel  DecideAIGatewayApprovalRequestParamsAction = "cancel"
-	Reject  DecideAIGatewayApprovalRequestParamsAction = "reject"
+	DecideAIGatewayApprovalRequestParamsActionApprove DecideAIGatewayApprovalRequestParamsAction = "approve"
+	DecideAIGatewayApprovalRequestParamsActionCancel  DecideAIGatewayApprovalRequestParamsAction = "cancel"
+	DecideAIGatewayApprovalRequestParamsActionReject  DecideAIGatewayApprovalRequestParamsAction = "reject"
 )
 
 // Valid indicates whether the value is a known member of the DecideAIGatewayApprovalRequestParamsAction enum.
 func (e DecideAIGatewayApprovalRequestParamsAction) Valid() bool {
 	switch e {
-	case Approve:
+	case DecideAIGatewayApprovalRequestParamsActionApprove:
 		return true
-	case Cancel:
+	case DecideAIGatewayApprovalRequestParamsActionCancel:
 		return true
-	case Reject:
+	case DecideAIGatewayApprovalRequestParamsActionReject:
 		return true
 	default:
 		return false
@@ -16354,6 +16855,153 @@ func (e ListComputeTasksParamsSortOrder) Valid() bool {
 	}
 }
 
+// Defines values for ListAssistantMeshAssetsParamsView.
+const (
+	Mine   ListAssistantMeshAssetsParamsView = "mine"
+	Review ListAssistantMeshAssetsParamsView = "review"
+	Shared ListAssistantMeshAssetsParamsView = "shared"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshAssetsParamsView enum.
+func (e ListAssistantMeshAssetsParamsView) Valid() bool {
+	switch e {
+	case Mine:
+		return true
+	case Review:
+		return true
+	case Shared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAssistantMeshAssetsParamsKind.
+const (
+	ListAssistantMeshAssetsParamsKindExperienceCard ListAssistantMeshAssetsParamsKind = "experience_card"
+	ListAssistantMeshAssetsParamsKindMCP            ListAssistantMeshAssetsParamsKind = "mcp"
+	ListAssistantMeshAssetsParamsKindSkill          ListAssistantMeshAssetsParamsKind = "skill"
+	ListAssistantMeshAssetsParamsKindWorkPulse      ListAssistantMeshAssetsParamsKind = "work_pulse"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshAssetsParamsKind enum.
+func (e ListAssistantMeshAssetsParamsKind) Valid() bool {
+	switch e {
+	case ListAssistantMeshAssetsParamsKindExperienceCard:
+		return true
+	case ListAssistantMeshAssetsParamsKindMCP:
+		return true
+	case ListAssistantMeshAssetsParamsKindSkill:
+		return true
+	case ListAssistantMeshAssetsParamsKindWorkPulse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetAssistantMeshAssetParamsKind.
+const (
+	GetAssistantMeshAssetParamsKindMCP GetAssistantMeshAssetParamsKind = "mcp"
+)
+
+// Valid indicates whether the value is a known member of the GetAssistantMeshAssetParamsKind enum.
+func (e GetAssistantMeshAssetParamsKind) Valid() bool {
+	switch e {
+	case GetAssistantMeshAssetParamsKindMCP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActOnAssistantMeshAssetParamsKind.
+const (
+	ActOnAssistantMeshAssetParamsKindMCP ActOnAssistantMeshAssetParamsKind = "mcp"
+)
+
+// Valid indicates whether the value is a known member of the ActOnAssistantMeshAssetParamsKind enum.
+func (e ActOnAssistantMeshAssetParamsKind) Valid() bool {
+	switch e {
+	case ActOnAssistantMeshAssetParamsKindMCP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActOnAssistantMeshAssetParamsAction.
+const (
+	ActOnAssistantMeshAssetParamsActionApprove  ActOnAssistantMeshAssetParamsAction = "approve"
+	ActOnAssistantMeshAssetParamsActionInvoke   ActOnAssistantMeshAssetParamsAction = "invoke"
+	ActOnAssistantMeshAssetParamsActionPublish  ActOnAssistantMeshAssetParamsAction = "publish"
+	ActOnAssistantMeshAssetParamsActionReject   ActOnAssistantMeshAssetParamsAction = "reject"
+	ActOnAssistantMeshAssetParamsActionRevoke   ActOnAssistantMeshAssetParamsAction = "revoke"
+	ActOnAssistantMeshAssetParamsActionRun      ActOnAssistantMeshAssetParamsAction = "run"
+	ActOnAssistantMeshAssetParamsActionTrial    ActOnAssistantMeshAssetParamsAction = "trial"
+	ActOnAssistantMeshAssetParamsActionWithdraw ActOnAssistantMeshAssetParamsAction = "withdraw"
+)
+
+// Valid indicates whether the value is a known member of the ActOnAssistantMeshAssetParamsAction enum.
+func (e ActOnAssistantMeshAssetParamsAction) Valid() bool {
+	switch e {
+	case ActOnAssistantMeshAssetParamsActionApprove:
+		return true
+	case ActOnAssistantMeshAssetParamsActionInvoke:
+		return true
+	case ActOnAssistantMeshAssetParamsActionPublish:
+		return true
+	case ActOnAssistantMeshAssetParamsActionReject:
+		return true
+	case ActOnAssistantMeshAssetParamsActionRevoke:
+		return true
+	case ActOnAssistantMeshAssetParamsActionRun:
+		return true
+	case ActOnAssistantMeshAssetParamsActionTrial:
+		return true
+	case ActOnAssistantMeshAssetParamsActionWithdraw:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAssistantMeshDelegationsParamsDirection.
+const (
+	ListAssistantMeshDelegationsParamsDirectionInbox ListAssistantMeshDelegationsParamsDirection = "inbox"
+	ListAssistantMeshDelegationsParamsDirectionSent  ListAssistantMeshDelegationsParamsDirection = "sent"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshDelegationsParamsDirection enum.
+func (e ListAssistantMeshDelegationsParamsDirection) Valid() bool {
+	switch e {
+	case ListAssistantMeshDelegationsParamsDirectionInbox:
+		return true
+	case ListAssistantMeshDelegationsParamsDirectionSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAssistantMeshInquiriesParamsDirection.
+const (
+	ListAssistantMeshInquiriesParamsDirectionInbox ListAssistantMeshInquiriesParamsDirection = "inbox"
+	ListAssistantMeshInquiriesParamsDirectionSent  ListAssistantMeshInquiriesParamsDirection = "sent"
+)
+
+// Valid indicates whether the value is a known member of the ListAssistantMeshInquiriesParamsDirection enum.
+func (e ListAssistantMeshInquiriesParamsDirection) Valid() bool {
+	switch e {
+	case ListAssistantMeshInquiriesParamsDirectionInbox:
+		return true
+	case ListAssistantMeshInquiriesParamsDirectionSent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SearchWorkbenchMessagesParamsWorkspace.
 const (
 	SearchWorkbenchMessagesParamsWorkspaceChat SearchWorkbenchMessagesParamsWorkspace = "chat"
@@ -16374,16 +17022,16 @@ func (e SearchWorkbenchMessagesParamsWorkspace) Valid() bool {
 
 // Defines values for ExportDeliveryDocumentParamsFormat.
 const (
-	ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
-	ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
+	JSON ExportDeliveryDocumentParamsFormat = "json"
+	Yaml ExportDeliveryDocumentParamsFormat = "yaml"
 )
 
 // Valid indicates whether the value is a known member of the ExportDeliveryDocumentParamsFormat enum.
 func (e ExportDeliveryDocumentParamsFormat) Valid() bool {
 	switch e {
-	case ExportDeliveryDocumentParamsFormatJSON:
+	case JSON:
 		return true
-	case ExportDeliveryDocumentParamsFormatYaml:
+	case Yaml:
 		return true
 	default:
 		return false
@@ -18422,6 +19070,577 @@ type ApprovalTrace struct {
 	TeamApprovedCounts     map[string]int          `json:"teamApprovedCounts,omitempty"`
 	WorkflowRunID          string                  `json:"workflowRunId,omitempty"`
 }
+
+// AssistantMeshActionEnvelope defines model for AssistantMeshActionEnvelope.
+type AssistantMeshActionEnvelope struct {
+	Data AssistantMeshActionResult `json:"data"`
+}
+
+// AssistantMeshActionRequest defines model for AssistantMeshActionRequest.
+type AssistantMeshActionRequest struct {
+	Audience *AssistantMeshAudience `json:"audience,omitempty"`
+
+	// ExpectedDigest Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke.
+	ExpectedDigest string `json:"expectedDigest,omitempty"`
+	LifetimeDays   int    `json:"lifetimeDays,omitempty"`
+
+	// LifetimeHours Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
+	LifetimeHours int                                                                   `json:"lifetimeHours,omitempty"`
+	Parameters    map[string]AssistantMeshActionRequest_Parameters_AdditionalProperties `json:"parameters,omitempty"`
+	Permanent     bool                                                                  `json:"permanent,omitempty"`
+	Prompt        string                                                                `json:"prompt,omitempty"`
+	Reason        string                                                                `json:"reason,omitempty"`
+	RequestID     string                                                                `json:"requestId,omitempty"`
+	ResourceID    openapi_types.UUID                                                    `json:"resourceId,omitempty"`
+	SessionID     openapi_types.UUID                                                    `json:"sessionId,omitempty"`
+}
+
+// AssistantMeshActionRequestParameters0 defines model for .
+type AssistantMeshActionRequestParameters0 = string
+
+// AssistantMeshActionRequestParameters1 defines model for .
+type AssistantMeshActionRequestParameters1 = float32
+
+// AssistantMeshActionRequestParameters2 defines model for .
+type AssistantMeshActionRequestParameters2 = bool
+
+// AssistantMeshActionRequest_Parameters_AdditionalProperties defines model for AssistantMeshActionRequest.parameters.AdditionalProperties.
+type AssistantMeshActionRequest_Parameters_AdditionalProperties struct {
+	union json.RawMessage
+}
+
+// AssistantMeshActionResult defines model for AssistantMeshActionResult.
+type AssistantMeshActionResult struct {
+	Asset   AssistantMeshAsset          `json:"asset"`
+	Project *AssistantMeshProjectResult `json:"project,omitempty"`
+	RunID   string                      `json:"runId,omitempty"`
+}
+
+// AssistantMeshAsset defines model for AssistantMeshAsset.
+type AssistantMeshAsset struct {
+	Draft       *AssistantMeshAssetInput `json:"draft,omitempty"`
+	DraftDigest string                   `json:"draftDigest,omitempty"`
+	Findings    []string                 `json:"findings,omitempty"`
+	ID          openapi_types.UUID       `json:"id"`
+	Kind        AssistantMeshAssetKind   `json:"kind"`
+
+	// OriginalAuthorUserID Original author of an inherited publication.
+	OriginalAuthorUserID openapi_types.UUID              `json:"originalAuthorUserId,omitempty"`
+	OwnerUserID          openapi_types.UUID              `json:"ownerUserId"`
+	Published            *AssistantMeshVersion           `json:"published,omitempty"`
+	Review               *AssistantMeshPublicationReview `json:"review,omitempty"`
+	Trial                *AssistantMeshTrial             `json:"trial,omitempty"`
+}
+
+// AssistantMeshAssetKind defines model for AssistantMeshAsset.Kind.
+type AssistantMeshAssetKind string
+
+// AssistantMeshAssetEnvelope defines model for AssistantMeshAssetEnvelope.
+type AssistantMeshAssetEnvelope struct {
+	Data AssistantMeshAsset `json:"data"`
+}
+
+// AssistantMeshAssetInput defines model for AssistantMeshAssetInput.
+type AssistantMeshAssetInput struct {
+	Applicability string `json:"applicability,omitempty"`
+
+	// BlockerReason Optional short blockers for a work pulse.
+	BlockerReason string `json:"blockerReason,omitempty"`
+	Body          string `json:"body"`
+	Dependencies  []struct {
+		ID      string `json:"id"`
+		Version string `json:"version"`
+	} `json:"dependencies,omitempty"`
+
+	// Files Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes.
+	Files      map[string]string           `json:"files,omitempty"`
+	Kind       AssistantMeshAssetInputKind `json:"kind"`
+	Parameters map[string]struct {
+		Description string                                `json:"description,omitempty"`
+		Required    bool                                  `json:"required,omitempty"`
+		Type        AssistantMeshAssetInputParametersType `json:"type"`
+	} `json:"parameters,omitempty"`
+	Title      string                  `json:"title"`
+	WorkStatus AssistantMeshWorkStatus `json:"workStatus,omitempty"`
+}
+
+// AssistantMeshAssetInputKind defines model for AssistantMeshAssetInput.Kind.
+type AssistantMeshAssetInputKind string
+
+// AssistantMeshAssetInputParametersType defines model for AssistantMeshAssetInput.Parameters.Type.
+type AssistantMeshAssetInputParametersType string
+
+// AssistantMeshAssetPage defines model for AssistantMeshAssetPage.
+type AssistantMeshAssetPage struct {
+	Items              []AssistantMeshAsset `json:"items"`
+	NextOffset         int                  `json:"nextOffset,omitempty"`
+	PublishingDefaults *struct {
+		AllowPermanentExperienceCards bool                                               `json:"allowPermanentExperienceCards"`
+		LifetimeDays                  int                                                `json:"lifetimeDays"`
+		Visibility                    AssistantMeshAssetPagePublishingDefaultsVisibility `json:"visibility"`
+
+		// WorkPulseDefaultLifetimeHours Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.
+		WorkPulseDefaultLifetimeHours int `json:"workPulseDefaultLifetimeHours,omitempty"`
+
+		// WorkPulseMaxLifetimeDays Maximum Work Pulse lifetime in days for publication and inquiry sharing.
+		WorkPulseMaxLifetimeDays int `json:"workPulseMaxLifetimeDays,omitempty"`
+	} `json:"publishingDefaults,omitempty"`
+}
+
+// AssistantMeshAssetPagePublishingDefaultsVisibility defines model for AssistantMeshAssetPage.PublishingDefaults.Visibility.
+type AssistantMeshAssetPagePublishingDefaultsVisibility string
+
+// AssistantMeshAudience defines model for AssistantMeshAudience.
+type AssistantMeshAudience struct {
+	Projects   []string                        `json:"projects,omitempty"`
+	Teams      []string                        `json:"teams,omitempty"`
+	Visibility AssistantMeshAudienceVisibility `json:"visibility"`
+}
+
+// AssistantMeshAudienceVisibility defines model for AssistantMeshAudience.Visibility.
+type AssistantMeshAudienceVisibility string
+
+// AssistantMeshDelegation defines model for AssistantMeshDelegation.
+type AssistantMeshDelegation struct {
+	CallerID   openapi_types.UUID                `json:"callerId"`
+	CallerName string                            `json:"callerName"`
+	Capability AssistantMeshDelegationCapability `json:"capability"`
+	ClosedAt   *time.Time                        `json:"closedAt,omitempty"`
+	CreatedAt  time.Time                         `json:"createdAt"`
+	ExpiresAt  time.Time                         `json:"expiresAt"`
+	Field      AssistantMeshDelegationField      `json:"field"`
+	ID         openapi_types.UUID                `json:"id"`
+	InputHash  string                            `json:"inputHash"`
+	OwnerID    openapi_types.UUID                `json:"ownerId"`
+	OwnerName  string                            `json:"ownerName"`
+	Result     string                            `json:"result,omitempty"`
+	Status     AssistantMeshDelegationStatus     `json:"status"`
+}
+
+// AssistantMeshDelegationCapability defines model for AssistantMeshDelegation.Capability.
+type AssistantMeshDelegationCapability string
+
+// AssistantMeshDelegationField defines model for AssistantMeshDelegation.Field.
+type AssistantMeshDelegationField string
+
+// AssistantMeshDelegationStatus defines model for AssistantMeshDelegation.Status.
+type AssistantMeshDelegationStatus string
+
+// AssistantMeshDelegationApproval defines model for AssistantMeshDelegationApproval.
+type AssistantMeshDelegationApproval struct {
+	Delegation AssistantMeshDelegation `json:"delegation"`
+	Fence      int                     `json:"fence"`
+	Ticket     string                  `json:"ticket"`
+}
+
+// AssistantMeshDelegationApprovalEnvelope defines model for AssistantMeshDelegationApprovalEnvelope.
+type AssistantMeshDelegationApprovalEnvelope struct {
+	Data AssistantMeshDelegationApproval `json:"data"`
+}
+
+// AssistantMeshDelegationApproveInput defines model for AssistantMeshDelegationApproveInput.
+type AssistantMeshDelegationApproveInput struct {
+	DeviceID  openapi_types.UUID                      `json:"deviceId"`
+	InputHash string                                  `json:"inputHash"`
+	Mode      AssistantMeshDelegationApproveInputMode `json:"mode"`
+	Proof     string                                  `json:"proof"`
+}
+
+// AssistantMeshDelegationApproveInputMode defines model for AssistantMeshDelegationApproveInput.Mode.
+type AssistantMeshDelegationApproveInputMode string
+
+// AssistantMeshDelegationClaimInput defines model for AssistantMeshDelegationClaimInput.
+type AssistantMeshDelegationClaimInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	Fence     int                `json:"fence"`
+	InputHash string             `json:"inputHash"`
+	Proof     string             `json:"proof"`
+	Ticket    string             `json:"ticket"`
+}
+
+// AssistantMeshDelegationDeclineInput defines model for AssistantMeshDelegationDeclineInput.
+type AssistantMeshDelegationDeclineInput = map[string]any
+
+// AssistantMeshDelegationDeliverInput defines model for AssistantMeshDelegationDeliverInput.
+type AssistantMeshDelegationDeliverInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	Fence     int                `json:"fence"`
+	InputHash string             `json:"inputHash"`
+
+	// Nonce Device-held nonce for the preview commitment.
+	Nonce  string `json:"nonce"`
+	Proof  string `json:"proof"`
+	Result string `json:"result"`
+}
+
+// AssistantMeshDelegationEnvelope defines model for AssistantMeshDelegationEnvelope.
+type AssistantMeshDelegationEnvelope struct {
+	Data AssistantMeshDelegation `json:"data"`
+}
+
+// AssistantMeshDelegationInput defines model for AssistantMeshDelegationInput.
+type AssistantMeshDelegationInput struct {
+	Capability AssistantMeshDelegationInputCapability `json:"capability"`
+	Field      AssistantMeshDelegationInputField      `json:"field"`
+	OwnerID    openapi_types.UUID                     `json:"ownerId"`
+	RequestID  openapi_types.UUID                     `json:"requestId"`
+}
+
+// AssistantMeshDelegationInputCapability defines model for AssistantMeshDelegationInput.Capability.
+type AssistantMeshDelegationInputCapability string
+
+// AssistantMeshDelegationInputField defines model for AssistantMeshDelegationInput.Field.
+type AssistantMeshDelegationInputField string
+
+// AssistantMeshDelegationListEnvelope defines model for AssistantMeshDelegationListEnvelope.
+type AssistantMeshDelegationListEnvelope struct {
+	Items []AssistantMeshDelegation `json:"items"`
+}
+
+// AssistantMeshDelegationReportInput defines model for AssistantMeshDelegationReportInput.
+type AssistantMeshDelegationReportInput struct {
+	DeviceID   openapi_types.UUID `json:"deviceId"`
+	Failed     bool               `json:"failed,omitempty"`
+	Fence      int                `json:"fence"`
+	InputHash  string             `json:"inputHash"`
+	Proof      string             `json:"proof"`
+	Result     string             `json:"result,omitempty"`
+	ResultHash string             `json:"resultHash,omitempty"`
+}
+
+// AssistantMeshDiscoveredAssistant defines model for AssistantMeshDiscoveredAssistant.
+type AssistantMeshDiscoveredAssistant struct {
+	Away    bool               `json:"away"`
+	Intro   string             `json:"intro"`
+	Name    string             `json:"name"`
+	OwnerID openapi_types.UUID `json:"ownerId"`
+
+	// Topics Titles of admitted published topics only.
+	Topics []string `json:"topics"`
+}
+
+// AssistantMeshDiscoveredAssistantListEnvelope defines model for AssistantMeshDiscoveredAssistantListEnvelope.
+type AssistantMeshDiscoveredAssistantListEnvelope struct {
+	Items []AssistantMeshDiscoveredAssistant `json:"items"`
+}
+
+// AssistantMeshDiscoveryInput defines model for AssistantMeshDiscoveryInput.
+type AssistantMeshDiscoveryInput struct {
+	Query string `json:"query,omitempty"`
+}
+
+// AssistantMeshDraftUpdate defines model for AssistantMeshDraftUpdate.
+type AssistantMeshDraftUpdate struct {
+	ExpectedDigest string                  `json:"expectedDigest"`
+	Input          AssistantMeshAssetInput `json:"input"`
+}
+
+// AssistantMeshExtractRequest defines model for AssistantMeshExtractRequest.
+type AssistantMeshExtractRequest struct {
+	Kind       AssistantMeshExtractRequestKind `json:"kind"`
+	MessageIDs []openapi_types.UUID            `json:"messageIds,omitempty"`
+	RunID      string                          `json:"runId,omitempty"`
+	SessionID  openapi_types.UUID              `json:"sessionId"`
+	Title      string                          `json:"title"`
+}
+
+// AssistantMeshExtractRequestKind defines model for AssistantMeshExtractRequest.Kind.
+type AssistantMeshExtractRequestKind string
+
+// AssistantMeshInheritanceAsset defines model for AssistantMeshInheritanceAsset.
+type AssistantMeshInheritanceAsset struct {
+	ID               openapi_types.UUID                `json:"id"`
+	Kind             AssistantMeshInheritanceAssetKind `json:"kind"`
+	OriginalAuthorID openapi_types.UUID                `json:"originalAuthorId"`
+	OwnerID          openapi_types.UUID                `json:"ownerId"`
+	Title            string                            `json:"title"`
+	Version          int                               `json:"version"`
+}
+
+// AssistantMeshInheritanceAssetKind defines model for AssistantMeshInheritanceAsset.Kind.
+type AssistantMeshInheritanceAssetKind string
+
+// AssistantMeshInheritanceInput defines model for AssistantMeshInheritanceInput.
+type AssistantMeshInheritanceInput struct {
+	// AssetIDs Omission selects all eligible assets of the owner. An explicit list must be nonempty.
+	AssetIDs []openapi_types.UUID `json:"assetIds,omitempty"`
+	HeirID   openapi_types.UUID   `json:"heirId"`
+	OwnerID  openapi_types.UUID   `json:"ownerId"`
+}
+
+// AssistantMeshInheritancePage defines model for AssistantMeshInheritancePage.
+type AssistantMeshInheritancePage struct {
+	Items     []AssistantMeshInheritanceAsset `json:"items"`
+	NextAfter openapi_types.UUID              `json:"nextAfter,omitempty"`
+}
+
+// AssistantMeshInheritancePageEnvelope defines model for AssistantMeshInheritancePageEnvelope.
+type AssistantMeshInheritancePageEnvelope struct {
+	Data AssistantMeshInheritancePage `json:"data"`
+}
+
+// AssistantMeshInheritanceResult defines model for AssistantMeshInheritanceResult.
+type AssistantMeshInheritanceResult struct {
+	Transferred int `json:"transferred"`
+}
+
+// AssistantMeshInheritanceResultEnvelope defines model for AssistantMeshInheritanceResultEnvelope.
+type AssistantMeshInheritanceResultEnvelope struct {
+	Data AssistantMeshInheritanceResult `json:"data"`
+}
+
+// AssistantMeshInheritanceRetirement defines model for AssistantMeshInheritanceRetirement.
+type AssistantMeshInheritanceRetirement struct {
+	// AssetIDs Omit to retire all eligible assets for the owner.
+	AssetIDs []openapi_types.UUID `json:"assetIds,omitempty"`
+	OwnerID  openapi_types.UUID   `json:"ownerId"`
+}
+
+// AssistantMeshInheritanceRetirementEnvelope defines model for AssistantMeshInheritanceRetirementEnvelope.
+type AssistantMeshInheritanceRetirementEnvelope struct {
+	Data struct {
+		Retired int `json:"retired"`
+	} `json:"data"`
+}
+
+// AssistantMeshInquiry defines model for AssistantMeshInquiry.
+type AssistantMeshInquiry struct {
+	Answer     string                         `json:"answer,omitempty"`
+	CallerID   openapi_types.UUID             `json:"callerId"`
+	CallerName string                         `json:"callerName"`
+	Citations  []AssistantMeshInquiryCitation `json:"citations,omitempty"`
+	ClosedAt   *time.Time                     `json:"closedAt,omitempty"`
+	CreatedAt  time.Time                      `json:"createdAt"`
+	DueAt      time.Time                      `json:"dueAt"`
+	ID         openapi_types.UUID             `json:"id"`
+	OwnerID    openapi_types.UUID             `json:"ownerId"`
+	OwnerName  string                         `json:"ownerName"`
+
+	// Question Empty after content expiry.
+	Question string                     `json:"question"`
+	Status   AssistantMeshInquiryStatus `json:"status"`
+}
+
+// AssistantMeshInquiryStatus defines model for AssistantMeshInquiry.Status.
+type AssistantMeshInquiryStatus string
+
+// AssistantMeshInquiryAudit defines model for AssistantMeshInquiryAudit.
+type AssistantMeshInquiryAudit struct {
+	Answer     string             `json:"answer"`
+	CallerID   openapi_types.UUID `json:"callerId"`
+	CreatedAt  time.Time          `json:"createdAt"`
+	ID         openapi_types.UUID `json:"id"`
+	OwnerID    openapi_types.UUID `json:"ownerId"`
+	PurgeAfter *time.Time         `json:"purgeAfter,omitempty"`
+	Question   string             `json:"question"`
+	Status     string             `json:"status"`
+}
+
+// AssistantMeshInquiryAuditEnvelope defines model for AssistantMeshInquiryAuditEnvelope.
+type AssistantMeshInquiryAuditEnvelope struct {
+	Data AssistantMeshInquiryAudit `json:"data"`
+}
+
+// AssistantMeshInquiryAuditInput defines model for AssistantMeshInquiryAuditInput.
+type AssistantMeshInquiryAuditInput struct {
+	InquiryID openapi_types.UUID `json:"inquiryId"`
+	Reason    string             `json:"reason"`
+}
+
+// AssistantMeshInquiryCitation defines model for AssistantMeshInquiryCitation.
+type AssistantMeshInquiryCitation struct {
+	AssetID    openapi_types.UUID `json:"assetId"`
+	ObservedAt time.Time          `json:"observedAt"`
+	Title      string             `json:"title"`
+	Version    int                `json:"version"`
+}
+
+// AssistantMeshInquiryEnvelope defines model for AssistantMeshInquiryEnvelope.
+type AssistantMeshInquiryEnvelope struct {
+	Data AssistantMeshInquiry `json:"data"`
+}
+
+// AssistantMeshInquiryInput defines model for AssistantMeshInquiryInput.
+type AssistantMeshInquiryInput struct {
+	OwnerID   openapi_types.UUID `json:"ownerId"`
+	Question  string             `json:"question"`
+	RequestID openapi_types.UUID `json:"requestId"`
+}
+
+// AssistantMeshInquiryListEnvelope defines model for AssistantMeshInquiryListEnvelope.
+type AssistantMeshInquiryListEnvelope struct {
+	Items []AssistantMeshInquiry `json:"items"`
+}
+
+// AssistantMeshInquiryReplyInput defines model for AssistantMeshInquiryReplyInput.
+type AssistantMeshInquiryReplyInput struct {
+	Answer string `json:"answer"`
+}
+
+// AssistantMeshInquiryShareReplyInput defines model for AssistantMeshInquiryShareReplyInput.
+type AssistantMeshInquiryShareReplyInput struct {
+	Answer       string                                  `json:"answer"`
+	Audience     AssistantMeshAudience                   `json:"audience"`
+	Kind         AssistantMeshInquiryShareReplyInputKind `json:"kind"`
+	LifetimeDays int                                     `json:"lifetimeDays,omitempty"`
+
+	// LifetimeHours Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
+	LifetimeHours int                     `json:"lifetimeHours,omitempty"`
+	Summary       string                  `json:"summary"`
+	Title         string                  `json:"title"`
+	WorkStatus    AssistantMeshWorkStatus `json:"workStatus,omitempty"`
+}
+
+// AssistantMeshInquiryShareReplyInputKind defines model for AssistantMeshInquiryShareReplyInput.Kind.
+type AssistantMeshInquiryShareReplyInputKind string
+
+// AssistantMeshManagedDevice defines model for AssistantMeshManagedDevice.
+type AssistantMeshManagedDevice struct {
+	DeviceID openapi_types.UUID `json:"deviceId"`
+	OwnerID  openapi_types.UUID `json:"ownerId"`
+}
+
+// AssistantMeshManagedDeviceEnvelope defines model for AssistantMeshManagedDeviceEnvelope.
+type AssistantMeshManagedDeviceEnvelope struct {
+	Data AssistantMeshManagedDevice `json:"data"`
+}
+
+// AssistantMeshManagedDeviceInput defines model for AssistantMeshManagedDeviceInput.
+type AssistantMeshManagedDeviceInput struct {
+	DeviceID  openapi_types.UUID `json:"deviceId"`
+	ProofHash string             `json:"proofHash"`
+}
+
+// AssistantMeshProjectResult defines model for AssistantMeshProjectResult.
+type AssistantMeshProjectResult struct {
+	ID     openapi_types.UUID `json:"id"`
+	Name   string             `json:"name"`
+	Status string             `json:"status"`
+}
+
+// AssistantMeshPublicationReview defines model for AssistantMeshPublicationReview.
+type AssistantMeshPublicationReview struct {
+	Candidate AssistantMeshVersion                 `json:"candidate"`
+	Reason    string                               `json:"reason,omitempty"`
+	Status    AssistantMeshPublicationReviewStatus `json:"status"`
+}
+
+// AssistantMeshPublicationReviewStatus defines model for AssistantMeshPublicationReview.Status.
+type AssistantMeshPublicationReviewStatus string
+
+// AssistantMeshQuestionInput defines model for AssistantMeshQuestionInput.
+type AssistantMeshQuestionInput struct {
+	Question string `json:"question"`
+}
+
+// AssistantMeshQuestionPreview defines model for AssistantMeshQuestionPreview.
+type AssistantMeshQuestionPreview struct {
+	// Blocked The built-in sensitive-content scan rejects this question when true.
+	Blocked  bool   `json:"blocked"`
+	Question string `json:"question"`
+}
+
+// AssistantMeshQuestionPreviewEnvelope defines model for AssistantMeshQuestionPreviewEnvelope.
+type AssistantMeshQuestionPreviewEnvelope struct {
+	Data AssistantMeshQuestionPreview `json:"data"`
+}
+
+// AssistantMeshReceptionProfile defines model for AssistantMeshReceptionProfile.
+type AssistantMeshReceptionProfile struct {
+	Away          bool   `json:"away"`
+	Intro         string `json:"intro"`
+	Open          bool   `json:"open"`
+	RetentionDays int    `json:"retentionDays"`
+}
+
+// AssistantMeshReceptionProfileEnvelope defines model for AssistantMeshReceptionProfileEnvelope.
+type AssistantMeshReceptionProfileEnvelope struct {
+	Data AssistantMeshReceptionProfile `json:"data"`
+}
+
+// AssistantMeshReceptionProfileInput defines model for AssistantMeshReceptionProfileInput.
+type AssistantMeshReceptionProfileInput struct {
+	Away  bool   `json:"away"`
+	Intro string `json:"intro"`
+	Open  bool   `json:"open"`
+}
+
+// AssistantMeshSettings defines model for AssistantMeshSettings.
+type AssistantMeshSettings struct {
+	AllowPermanentExperienceCards bool `json:"allowPermanentExperienceCards"`
+
+	// DefaultProfileOpen Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.
+	DefaultProfileOpen bool `json:"defaultProfileOpen,omitempty"`
+
+	// DefaultVisibility The suggested initial audience kind. Specific teams or projects must be selected during publication.
+	DefaultVisibility AssistantMeshSettingsDefaultVisibility `json:"defaultVisibility"`
+
+	// DelegationLifetimeHours Deadline for newly created L3 delegations. Omission preserves the existing value on update.
+	DelegationLifetimeHours    int  `json:"delegationLifetimeHours,omitempty"`
+	Enabled                    bool `json:"enabled"`
+	ExperienceCardLifetimeDays int  `json:"experienceCardLifetimeDays"`
+
+	// InquiryCallerLimitPerDay Daily limit for a caller across recipients. Omission preserves the existing value on update.
+	InquiryCallerLimitPerDay int `json:"inquiryCallerLimitPerDay,omitempty"`
+
+	// InquiryMergeWindowHours Window for merging equivalent open inquiries. Omission preserves the existing value on update.
+	InquiryMergeWindowHours int `json:"inquiryMergeWindowHours,omitempty"`
+
+	// InquiryPairLimitPerHour Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.
+	InquiryPairLimitPerHour int `json:"inquiryPairLimitPerHour,omitempty"`
+
+	// InquiryPendingLimit Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.
+	InquiryPendingLimit int `json:"inquiryPendingLimit,omitempty"`
+
+	// InquiryRetentionDays Body retention recorded when inquiries close. Omission preserves the existing value on update.
+	InquiryRetentionDays int `json:"inquiryRetentionDays,omitempty"`
+
+	// InquiryTimeoutHours Deadline applied to new inquiries. Omission preserves the existing value on update.
+	InquiryTimeoutHours int `json:"inquiryTimeoutHours,omitempty"`
+
+	// OrganizationApproverUserIDs Explicit reviewer user IDs. An empty list uses platform administrators.
+	OrganizationApproverUserIDs []openapi_types.UUID `json:"organizationApproverUserIds"`
+
+	// ReceptionMinScore Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.
+	ReceptionMinScore float32 `json:"receptionMinScore,omitempty"`
+
+	// WorkPulseDefaultLifetimeHours Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.
+	WorkPulseDefaultLifetimeHours int `json:"workPulseDefaultLifetimeHours,omitempty"`
+
+	// WorkPulseMaxLifetimeDays Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.
+	WorkPulseMaxLifetimeDays int `json:"workPulseMaxLifetimeDays,omitempty"`
+}
+
+// AssistantMeshSettingsDefaultVisibility The suggested initial audience kind. Specific teams or projects must be selected during publication.
+type AssistantMeshSettingsDefaultVisibility string
+
+// AssistantMeshSettingsEnvelope defines model for AssistantMeshSettingsEnvelope.
+type AssistantMeshSettingsEnvelope struct {
+	Data AssistantMeshSettings `json:"data"`
+}
+
+// AssistantMeshTrial defines model for AssistantMeshTrial.
+type AssistantMeshTrial struct {
+	Digest string                   `json:"digest"`
+	RunID  string                   `json:"runId"`
+	Status AssistantMeshTrialStatus `json:"status"`
+}
+
+// AssistantMeshTrialStatus defines model for AssistantMeshTrial.Status.
+type AssistantMeshTrialStatus string
+
+// AssistantMeshVersion defines model for AssistantMeshVersion.
+type AssistantMeshVersion struct {
+	Audience    AssistantMeshAudience   `json:"audience"`
+	Digest      string                  `json:"digest"`
+	ExpiresAt   *time.Time              `json:"expiresAt,omitempty"`
+	Input       AssistantMeshAssetInput `json:"input"`
+	PublishedAt *time.Time              `json:"publishedAt,omitempty"`
+	Version     int                     `json:"version"`
+}
+
+// AssistantMeshWorkStatus defines model for AssistantMeshWorkStatus.
+type AssistantMeshWorkStatus string
 
 // AuditLog defines model for AuditLog.
 type AuditLog struct {
@@ -30825,6 +32044,16 @@ type MultiAgentSubtaskCompletionInput struct {
 // NativeProviderObject Native provider-compatible JSON. Unknown fields are preserved and responses are not wrapped in an OpenSoha envelope.
 type NativeProviderObject map[string]any
 
+// NetworkAccessBootstrapOption Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers.
+type NetworkAccessBootstrapOption struct {
+	AccessNetworkID string `json:"accessNetworkId"`
+	AutoConnect     bool   `json:"autoConnect"`
+	Name            string `json:"name"`
+	Priority        int    `json:"priority"`
+	SiteID          string `json:"siteId"`
+	Ssid            string `json:"ssid"`
+}
+
 // NetworkAccessDeviceType defines model for NetworkAccessDeviceType.
 type NetworkAccessDeviceType string
 
@@ -30896,6 +32125,107 @@ type NetworkAccessMedium string
 
 // NetworkAccessMode defines model for NetworkAccessMode.
 type NetworkAccessMode string
+
+// NetworkAccessNetwork defines model for NetworkAccessNetwork.
+type NetworkAccessNetwork struct {
+	Configuration NetworkAccessNetworkInput `json:"configuration"`
+	CreatedAt     time.Time                 `json:"createdAt"`
+	ID            string                    `json:"id"`
+	UpdatedAt     time.Time                 `json:"updatedAt"`
+}
+
+// NetworkAccessNetworkDecision defines model for NetworkAccessNetworkDecision.
+type NetworkAccessNetworkDecision struct {
+	AccessNetworkID string               `json:"accessNetworkId"`
+	AccessProfile   NetworkAccessProfile `json:"accessProfile,omitempty"`
+	Allowed         bool                 `json:"allowed"`
+
+	// MatchedRuleIndex One-based index of the first matching rule that determined the decision, when applicable.
+	MatchedRuleIndex int    `json:"matchedRuleIndex,omitempty"`
+	Name             string `json:"name"`
+	ReasonCode       string `json:"reasonCode"`
+}
+
+// NetworkAccessNetworkDecisionListEnvelope defines model for NetworkAccessNetworkDecisionListEnvelope.
+type NetworkAccessNetworkDecisionListEnvelope struct {
+	Items []NetworkAccessNetworkDecision `json:"items"`
+}
+
+// NetworkAccessNetworkEnvelope defines model for NetworkAccessNetworkEnvelope.
+type NetworkAccessNetworkEnvelope struct {
+	Data NetworkAccessNetwork `json:"data"`
+}
+
+// NetworkAccessNetworkInput defines model for NetworkAccessNetworkInput.
+type NetworkAccessNetworkInput struct {
+	AccessMedium NetworkAccessMedium `json:"accessMedium"`
+	AutoConnect  bool                `json:"autoConnect"`
+
+	// Bssids Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks.
+	Bssids   []string `json:"bssids,omitempty"`
+	Enabled  bool     `json:"enabled"`
+	FilterID string   `json:"filterId,omitempty"`
+
+	// Kind strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+	Kind          NetworkAccessNetworkKind `json:"kind"`
+	Name          string                   `json:"name"`
+	NasBindingIDs []string                 `json:"nasBindingIds"`
+
+	// PortEnd Wired port range end. Core restricts this to wired access networks and validates the range order.
+	PortEnd *int64 `json:"portEnd,omitempty"`
+
+	// PortIDs Wired port identifiers. Core restricts this to wired access networks.
+	PortIDs []string `json:"portIds,omitempty"`
+
+	// PortStart Wired port range start. Core restricts this to wired access networks and validates the range order.
+	PortStart             *int64                     `json:"portStart,omitempty"`
+	Priority              int                        `json:"priority"`
+	Rules                 []NetworkAccessNetworkRule `json:"rules"`
+	SessionTimeoutSeconds int                        `json:"sessionTimeoutSeconds,omitempty"`
+	SiteID                string                     `json:"siteId"`
+
+	// Ssid Wi-Fi SSID. Core restricts this to Wi-Fi access networks.
+	Ssid   string `json:"ssid,omitempty"`
+	VlanID int    `json:"vlanId,omitempty"`
+}
+
+// NetworkAccessNetworkKind strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+type NetworkAccessNetworkKind string
+
+// NetworkAccessNetworkListEnvelope defines model for NetworkAccessNetworkListEnvelope.
+type NetworkAccessNetworkListEnvelope struct {
+	Items []NetworkAccessNetwork `json:"items"`
+}
+
+// NetworkAccessNetworkPreviewInput defines model for NetworkAccessNetworkPreviewInput.
+type NetworkAccessNetworkPreviewInput struct {
+	AuthenticationMethod NetworkAccessNetworkPreviewInputAuthenticationMethod `json:"authenticationMethod,omitempty"`
+	DeviceID             string                                               `json:"deviceId"`
+	Draft                *NetworkAccessNetworkInput                           `json:"draft,omitempty"`
+	SiteID               string                                               `json:"siteId"`
+	UserID               string                                               `json:"userId"`
+}
+
+// NetworkAccessNetworkPreviewInputAuthenticationMethod defines model for NetworkAccessNetworkPreviewInput.AuthenticationMethod.
+type NetworkAccessNetworkPreviewInputAuthenticationMethod string
+
+// NetworkAccessNetworkRule Empty subject arrays match any subject. Core applies deny precedence before allow.
+type NetworkAccessNetworkRule struct {
+	AuthenticationMethods []NetworkAccessNetworkRuleAuthenticationMethods `json:"authenticationMethods,omitempty"`
+	DeviceIDs             []string                                        `json:"deviceIds,omitempty"`
+	DeviceStatuses        []EndpointDeviceStatus                          `json:"deviceStatuses,omitempty"`
+	Effect                NetworkPolicyEffect                             `json:"effect"`
+	FilterID              string                                          `json:"filterId,omitempty"`
+	PostureStatuses       []EndpointDevicePostureStatus                   `json:"postureStatuses,omitempty"`
+	ScheduleEndMinute     *int                                            `json:"scheduleEndMinute,omitempty"`
+	ScheduleStartMinute   *int                                            `json:"scheduleStartMinute,omitempty"`
+	SessionTimeoutSeconds int                                             `json:"sessionTimeoutSeconds,omitempty"`
+	Subjects              NetworkPolicySubjects                           `json:"subjects"`
+	VlanID                int                                             `json:"vlanId,omitempty"`
+}
+
+// NetworkAccessNetworkRuleAuthenticationMethods defines model for NetworkAccessNetworkRule.AuthenticationMethods.
+type NetworkAccessNetworkRuleAuthenticationMethods string
 
 // NetworkAccessPolicy defines model for NetworkAccessPolicy.
 type NetworkAccessPolicy struct {
@@ -31018,24 +32348,48 @@ type NetworkConflictSourceType string
 // NetworkConnectionAuthentication defines model for NetworkConnectionAuthentication.
 type NetworkConnectionAuthentication string
 
+// NetworkConnectionNASSession Last Core observation of the NAS session bound to this access network and registered device.
+type NetworkConnectionNASSession struct {
+	LastReceivedAt *time.Time `json:"lastReceivedAt,omitempty"`
+
+	// State Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+	State NetworkConnectionNASSessionState `json:"state"`
+}
+
+// NetworkConnectionNASSessionState Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+type NetworkConnectionNASSessionState string
+
 // NetworkConnectionOption defines model for NetworkConnectionOption.
 type NetworkConnectionOption struct {
-	AccessMedium          NetworkAccessMedium             `json:"accessMedium"`
-	AccessProfile         NetworkAccessProfile            `json:"accessProfile"`
-	Authentication        NetworkConnectionAuthentication `json:"authentication"`
-	PolicyVersion         int                             `json:"policyVersion"`
-	ProvisioningAvailable bool                            `json:"provisioningAvailable,omitempty"`
-	ProvisioningReason    string                          `json:"provisioningReason,omitempty"`
-	SiteID                string                          `json:"siteId"`
-	SiteName              string                          `json:"siteName"`
+	AccessMedium    NetworkAccessMedium             `json:"accessMedium"`
+	AccessNetworkID string                          `json:"accessNetworkId,omitempty"`
+	AccessProfile   NetworkAccessProfile            `json:"accessProfile"`
+	Authentication  NetworkConnectionAuthentication `json:"authentication"`
+	AutoConnect     bool                            `json:"autoConnect,omitempty"`
+
+	// NasSession Last Core observation of the NAS session bound to this access network and registered device.
+	NasSession             *NetworkConnectionNASSession `json:"nasSession,omitempty"`
+	NetworkName            string                       `json:"networkName,omitempty"`
+	PolicyVersion          int                          `json:"policyVersion"`
+	ProvisioningAvailable  bool                         `json:"provisioningAvailable,omitempty"`
+	ProvisioningReason     string                       `json:"provisioningReason,omitempty"`
+	RecommendationPriority int                          `json:"recommendationPriority,omitempty"`
+	SiteID                 string                       `json:"siteId"`
+	SiteName               string                       `json:"siteName"`
 
 	// Ssid Present only for Wi-Fi options.
 	Ssid string `json:"ssid,omitempty"`
+
+	// StrictOnline Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+	StrictOnline *struct {
+		LeaseUntil *time.Time `json:"leaseUntil,omitempty"`
+	} `json:"strictOnline,omitempty"`
 }
 
 // NetworkConnectionOptionListEnvelope defines model for NetworkConnectionOptionListEnvelope.
 type NetworkConnectionOptionListEnvelope struct {
-	Items []NetworkConnectionOption `json:"items"`
+	BootstrapNetworks []NetworkAccessBootstrapOption `json:"bootstrapNetworks,omitempty"`
+	Items             []NetworkConnectionOption      `json:"items"`
 }
 
 // NetworkDeviceGovernanceMode Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
@@ -42424,6 +43778,62 @@ type ListWorkbenchAnalysisRunsParams struct {
 	Limit     int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListAssistantMeshAssetsParams defines parameters for ListAssistantMeshAssets.
+type ListAssistantMeshAssetsParams struct {
+	View   ListAssistantMeshAssetsParamsView `form:"view,omitempty" json:"view,omitempty"`
+	Kind   ListAssistantMeshAssetsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+	Offset int                               `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListAssistantMeshAssetsParamsView defines parameters for ListAssistantMeshAssets.
+type ListAssistantMeshAssetsParamsView string
+
+// ListAssistantMeshAssetsParamsKind defines parameters for ListAssistantMeshAssets.
+type ListAssistantMeshAssetsParamsKind string
+
+// GetAssistantMeshAssetParams defines parameters for GetAssistantMeshAsset.
+type GetAssistantMeshAssetParams struct {
+	// Kind Select the managed MCP proposal collection.
+	Kind GetAssistantMeshAssetParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// GetAssistantMeshAssetParamsKind defines parameters for GetAssistantMeshAsset.
+type GetAssistantMeshAssetParamsKind string
+
+// ActOnAssistantMeshAssetParams defines parameters for ActOnAssistantMeshAsset.
+type ActOnAssistantMeshAssetParams struct {
+	// Kind Select the managed MCP proposal collection.
+	Kind ActOnAssistantMeshAssetParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// ActOnAssistantMeshAssetParamsKind defines parameters for ActOnAssistantMeshAsset.
+type ActOnAssistantMeshAssetParamsKind string
+
+// ActOnAssistantMeshAssetParamsAction defines parameters for ActOnAssistantMeshAsset.
+type ActOnAssistantMeshAssetParamsAction string
+
+// ListAssistantMeshDelegationsParams defines parameters for ListAssistantMeshDelegations.
+type ListAssistantMeshDelegationsParams struct {
+	Direction ListAssistantMeshDelegationsParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
+}
+
+// ListAssistantMeshDelegationsParamsDirection defines parameters for ListAssistantMeshDelegations.
+type ListAssistantMeshDelegationsParamsDirection string
+
+// ListAssistantMeshInheritanceParams defines parameters for ListAssistantMeshInheritance.
+type ListAssistantMeshInheritanceParams struct {
+	OwnerID openapi_types.UUID `form:"ownerId" json:"ownerId"`
+	After   openapi_types.UUID `form:"after,omitempty" json:"after,omitempty"`
+}
+
+// ListAssistantMeshInquiriesParams defines parameters for ListAssistantMeshInquiries.
+type ListAssistantMeshInquiriesParams struct {
+	Direction ListAssistantMeshInquiriesParamsDirection `form:"direction,omitempty" json:"direction,omitempty"`
+}
+
+// ListAssistantMeshInquiriesParamsDirection defines parameters for ListAssistantMeshInquiries.
+type ListAssistantMeshInquiriesParamsDirection string
+
 // ListPersonalFeedParams defines parameters for ListPersonalFeed.
 type ListPersonalFeedParams struct {
 	Before string `form:"before,omitempty" json:"before,omitempty"`
@@ -42790,9 +44200,20 @@ type ListNetworkAccessGrantsParams struct {
 	Limit     int                      `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListNetworkAccessNetworksParams defines parameters for ListNetworkAccessNetworks.
+type ListNetworkAccessNetworksParams struct {
+	SiteID string `form:"siteId" json:"siteId"`
+}
+
 // ListCurrentNetworkConnectionOptionsParams defines parameters for ListCurrentNetworkConnectionOptions.
 type ListCurrentNetworkConnectionOptionsParams struct {
 	DeviceID string `form:"deviceId" json:"deviceId"`
+
+	// IncludeBootstrap When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
+	IncludeBootstrap bool `form:"includeBootstrap,omitempty" json:"includeBootstrap,omitempty"`
+
+	// IncludeNasSession Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+	IncludeNasSession bool `form:"includeNasSession,omitempty" json:"includeNasSession,omitempty"`
 }
 
 // ListManagedContentCasesParams defines parameters for ListManagedContentCases.
@@ -43950,6 +45371,66 @@ type UpdateWorkbenchAnalysisProfileJSONRequestBody = WorkbenchAnalysisProfileInp
 // UpdatePersonalAssistantJSONRequestBody defines body for UpdatePersonalAssistant for application/json ContentType.
 type UpdatePersonalAssistantJSONRequestBody = PersonalAssistantUpdateRequest
 
+// CreateAssistantMeshAssetJSONRequestBody defines body for CreateAssistantMeshAsset for application/json ContentType.
+type CreateAssistantMeshAssetJSONRequestBody = AssistantMeshAssetInput
+
+// ExtractAssistantMeshAssetJSONRequestBody defines body for ExtractAssistantMeshAsset for application/json ContentType.
+type ExtractAssistantMeshAssetJSONRequestBody = AssistantMeshExtractRequest
+
+// UpdateAssistantMeshDraftJSONRequestBody defines body for UpdateAssistantMeshDraft for application/json ContentType.
+type UpdateAssistantMeshDraftJSONRequestBody = AssistantMeshDraftUpdate
+
+// ActOnAssistantMeshAssetJSONRequestBody defines body for ActOnAssistantMeshAsset for application/json ContentType.
+type ActOnAssistantMeshAssetJSONRequestBody = AssistantMeshActionRequest
+
+// SearchAssistantMeshAssistantsJSONRequestBody defines body for SearchAssistantMeshAssistants for application/json ContentType.
+type SearchAssistantMeshAssistantsJSONRequestBody = AssistantMeshDiscoveryInput
+
+// CreateAssistantMeshDelegationJSONRequestBody defines body for CreateAssistantMeshDelegation for application/json ContentType.
+type CreateAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationInput
+
+// RegisterAssistantMeshManagedDeviceJSONRequestBody defines body for RegisterAssistantMeshManagedDevice for application/json ContentType.
+type RegisterAssistantMeshManagedDeviceJSONRequestBody = AssistantMeshManagedDeviceInput
+
+// ApproveAssistantMeshDelegationJSONRequestBody defines body for ApproveAssistantMeshDelegation for application/json ContentType.
+type ApproveAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationApproveInput
+
+// ClaimAssistantMeshDelegationJSONRequestBody defines body for ClaimAssistantMeshDelegation for application/json ContentType.
+type ClaimAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationClaimInput
+
+// DeclineAssistantMeshDelegationJSONRequestBody defines body for DeclineAssistantMeshDelegation for application/json ContentType.
+type DeclineAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationDeclineInput
+
+// DeliverAssistantMeshDelegationJSONRequestBody defines body for DeliverAssistantMeshDelegation for application/json ContentType.
+type DeliverAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationDeliverInput
+
+// ReportAssistantMeshDelegationJSONRequestBody defines body for ReportAssistantMeshDelegation for application/json ContentType.
+type ReportAssistantMeshDelegationJSONRequestBody = AssistantMeshDelegationReportInput
+
+// TransferAssistantMeshInheritanceJSONRequestBody defines body for TransferAssistantMeshInheritance for application/json ContentType.
+type TransferAssistantMeshInheritanceJSONRequestBody = AssistantMeshInheritanceInput
+
+// RetireAssistantMeshInheritanceJSONRequestBody defines body for RetireAssistantMeshInheritance for application/json ContentType.
+type RetireAssistantMeshInheritanceJSONRequestBody = AssistantMeshInheritanceRetirement
+
+// ReadAssistantMeshInquiryAuditJSONRequestBody defines body for ReadAssistantMeshInquiryAudit for application/json ContentType.
+type ReadAssistantMeshInquiryAuditJSONRequestBody = AssistantMeshInquiryAuditInput
+
+// CreateAssistantMeshInquiryJSONRequestBody defines body for CreateAssistantMeshInquiry for application/json ContentType.
+type CreateAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryInput
+
+// PreviewAssistantMeshInquiryJSONRequestBody defines body for PreviewAssistantMeshInquiry for application/json ContentType.
+type PreviewAssistantMeshInquiryJSONRequestBody = AssistantMeshQuestionInput
+
+// ReplyAssistantMeshInquiryJSONRequestBody defines body for ReplyAssistantMeshInquiry for application/json ContentType.
+type ReplyAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryReplyInput
+
+// ReplyAndPublishAssistantMeshInquiryJSONRequestBody defines body for ReplyAndPublishAssistantMeshInquiry for application/json ContentType.
+type ReplyAndPublishAssistantMeshInquiryJSONRequestBody = AssistantMeshInquiryShareReplyInput
+
+// UpdateAssistantMeshReceptionProfileJSONRequestBody defines body for UpdateAssistantMeshReceptionProfile for application/json ContentType.
+type UpdateAssistantMeshReceptionProfileJSONRequestBody = AssistantMeshReceptionProfileInput
+
 // DecidePersonalAgentAccessJSONRequestBody defines body for DecidePersonalAgentAccess for application/json ContentType.
 type DecidePersonalAgentAccessJSONRequestBody = PersonalAgentAccessDecision
 
@@ -44370,6 +45851,15 @@ type UpdateMenuJSONRequestBody = MenuInput
 // CreateNetworkAccessGrantJSONRequestBody defines body for CreateNetworkAccessGrant for application/json ContentType.
 type CreateNetworkAccessGrantJSONRequestBody = NetworkAccessGrantInput
 
+// CreateNetworkAccessNetworkJSONRequestBody defines body for CreateNetworkAccessNetwork for application/json ContentType.
+type CreateNetworkAccessNetworkJSONRequestBody = NetworkAccessNetworkInput
+
+// PreviewNetworkAccessNetworksJSONRequestBody defines body for PreviewNetworkAccessNetworks for application/json ContentType.
+type PreviewNetworkAccessNetworksJSONRequestBody = NetworkAccessNetworkPreviewInput
+
+// UpdateNetworkAccessNetworkJSONRequestBody defines body for UpdateNetworkAccessNetwork for application/json ContentType.
+type UpdateNetworkAccessNetworkJSONRequestBody = NetworkAccessNetworkInput
+
 // PreviewNetworkAdmissionJSONRequestBody defines body for PreviewNetworkAdmission for application/json ContentType.
 type PreviewNetworkAdmissionJSONRequestBody = NetworkAdmissionPreviewRequest
 
@@ -44693,6 +46183,9 @@ type UpdateSecretJSONRequestBody = SecretUpdateRequest
 
 // RotateSecretJSONRequestBody defines body for RotateSecret for application/json ContentType.
 type RotateSecretJSONRequestBody = SecretRotateRequest
+
+// UpdateAssistantMeshSettingsJSONRequestBody defines body for UpdateAssistantMeshSettings for application/json ContentType.
+type UpdateAssistantMeshSettingsJSONRequestBody = AssistantMeshSettings
 
 // UpdateAISkillsRegistryJSONRequestBody defines body for UpdateAISkillsRegistry for application/json ContentType.
 type UpdateAISkillsRegistryJSONRequestBody = UpdateAISkillsRequest
@@ -50235,6 +51728,94 @@ func (t *AgentRunCallbackWorkbenchStreamEvent) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsAssistantMeshActionRequestParameters0 returns the union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as a AssistantMeshActionRequestParameters0
+func (t AssistantMeshActionRequest_Parameters_AdditionalProperties) AsAssistantMeshActionRequestParameters0() (AssistantMeshActionRequestParameters0, error) {
+	var body AssistantMeshActionRequestParameters0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAssistantMeshActionRequestParameters0 overwrites any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as the provided AssistantMeshActionRequestParameters0
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) FromAssistantMeshActionRequestParameters0(v AssistantMeshActionRequestParameters0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAssistantMeshActionRequestParameters0 performs a merge with any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties, using the provided AssistantMeshActionRequestParameters0
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) MergeAssistantMeshActionRequestParameters0(v AssistantMeshActionRequestParameters0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAssistantMeshActionRequestParameters1 returns the union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as a AssistantMeshActionRequestParameters1
+func (t AssistantMeshActionRequest_Parameters_AdditionalProperties) AsAssistantMeshActionRequestParameters1() (AssistantMeshActionRequestParameters1, error) {
+	var body AssistantMeshActionRequestParameters1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAssistantMeshActionRequestParameters1 overwrites any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as the provided AssistantMeshActionRequestParameters1
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) FromAssistantMeshActionRequestParameters1(v AssistantMeshActionRequestParameters1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAssistantMeshActionRequestParameters1 performs a merge with any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties, using the provided AssistantMeshActionRequestParameters1
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) MergeAssistantMeshActionRequestParameters1(v AssistantMeshActionRequestParameters1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAssistantMeshActionRequestParameters2 returns the union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as a AssistantMeshActionRequestParameters2
+func (t AssistantMeshActionRequest_Parameters_AdditionalProperties) AsAssistantMeshActionRequestParameters2() (AssistantMeshActionRequestParameters2, error) {
+	var body AssistantMeshActionRequestParameters2
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAssistantMeshActionRequestParameters2 overwrites any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties as the provided AssistantMeshActionRequestParameters2
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) FromAssistantMeshActionRequestParameters2(v AssistantMeshActionRequestParameters2) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAssistantMeshActionRequestParameters2 performs a merge with any union data inside the AssistantMeshActionRequest_Parameters_AdditionalProperties, using the provided AssistantMeshActionRequestParameters2
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) MergeAssistantMeshActionRequestParameters2(v AssistantMeshActionRequestParameters2) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t AssistantMeshActionRequest_Parameters_AdditionalProperties) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *AssistantMeshActionRequest_Parameters_AdditionalProperties) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsBuildSourceConfigBuildArgs0 returns the union data inside the BuildSourceConfig_BuildArgs_AdditionalProperties as a BuildSourceConfigBuildArgs0
 func (t BuildSourceConfig_BuildArgs_AdditionalProperties) AsBuildSourceConfigBuildArgs0() (BuildSourceConfigBuildArgs0, error) {
 	var body BuildSourceConfigBuildArgs0
@@ -53104,10 +54685,10 @@ const FileRead PersonalGuestRuntimeInputKind = "file_read"
 const FileWrite PersonalGuestRuntimeInputKind = "file_write"
 
 // Retained for Go SDK source compatibility.
-const JSON ExportDeliveryDocumentParamsFormat = "json"
+const ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
 
 // Retained for Go SDK source compatibility.
-const Yaml ExportDeliveryDocumentParamsFormat = "yaml"
+const ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
 
 // Retained for Go SDK source compatibility.
 const ExternalService DeliveryDraftServiceServiceKind = "external_service"
@@ -53137,13 +54718,22 @@ const Container PersonalEnvironmentTemplateBackend = "container"
 const VM PersonalEnvironmentTemplateBackend = "vm"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerAgent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+const Agent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+const Released PersonalWorkspaceRuntimeBrowserControlOwner = "released"
 
 // Retained for Go SDK source compatibility.
-const PersonalWorkspaceRuntimeBrowserControlOwnerUser PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+const User PersonalWorkspaceRuntimeBrowserControlOwner = "user"
+
+// Retained for Go SDK source compatibility.
+const Approve DecideAIGatewayApprovalRequestParamsAction = "approve"
+
+// Retained for Go SDK source compatibility.
+const Cancel DecideAIGatewayApprovalRequestParamsAction = "cancel"
+
+// Retained for Go SDK source compatibility.
+const Reject DecideAIGatewayApprovalRequestParamsAction = "reject"
 
 // Retained for Go SDK source compatibility.
 const Active ListAIGatewayRelayUpstreamsParamsStatus = "active"

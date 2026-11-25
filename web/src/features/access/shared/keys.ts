@@ -22,6 +22,8 @@ export const accessKeys = {
     [...accessKeys.dependencies(), 'application-environments'] as const,
   clusterOptions: () => [...accessKeys.dependencies(), 'clusters'] as const,
   loginProviders: () => [...accessKeys.dependencies(), 'login-providers'] as const,
+  heyaInheritance: (session: number, ownerId: string) =>
+    ['heya-inheritance', session, ownerId] as const,
 }
 
 export const accessMutationKeys = {

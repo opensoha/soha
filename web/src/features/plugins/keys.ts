@@ -29,6 +29,7 @@ export const pluginMutationKeys = {
   install: () => [...pluginKeys.all, 'mutation', 'install'] as const,
   repositoryInstall: () => [...pluginKeys.all, 'mutation', 'repository-install'] as const,
   repositoryUpgrade: () => [...pluginKeys.all, 'mutation', 'repository-upgrade'] as const,
+  repositoryRollback: () => [...pluginKeys.all, 'mutation', 'repository-rollback'] as const,
   lifecycle: (action: 'disable' | 'enable' | 'remove' | 'upgrade') =>
     [...pluginKeys.all, 'mutation', 'lifecycle', action] as const,
   configure: () => [...pluginKeys.all, 'mutation', 'configure'] as const,

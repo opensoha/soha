@@ -134,6 +134,8 @@ make init          # or: make init DEV_DB_MODE=local (starts Compose PostgreSQL)
 make               # starts Go API (:8080) and Vite console (:5173)
 ```
 
+Run `npm ci` from the repository root. The root lockfile covers `contracts/`, `web/`, `connectors/`, `cli/npm/cli/`, and `plugin-sdk/ui/`.
+
 - Console: `http://localhost:5173` · API: `http://localhost:8080`
 - Run separately: `make dev-api` / `make dev-web` (or `cd agent && go run ./cmd/agent` for the agent runtime)
 - Full setup & database notes: [Local Development](https://docs.opensoha.com/en/docs/development/local-development)

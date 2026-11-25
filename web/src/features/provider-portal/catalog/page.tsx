@@ -425,7 +425,7 @@ export function SohaProviderPortalPage() {
       receipt: (_, v) => ({ message: v.favorite ? '已取消收藏' : '已收藏' }),
     },
   )
-  const announcementQuery = useAnnouncementInbox(10, true)
+  const announcementQuery = useAnnouncementInbox()
 
   const launchApplication = (application: IdentityApplication) => {
     launchMutation.mutate(application, {

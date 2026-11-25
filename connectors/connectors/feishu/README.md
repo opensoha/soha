@@ -130,6 +130,42 @@ The auto-reply loop is intentionally small. It proves config, auth, webhook
 verification, event normalization, tenant token exchange, and outbound action
 execution without taking a dependency on the Soha core source tree.
 
+## Heya Assistant Mesh Bot Channel
+
+Configure a dedicated Feishu self-built app in the same tenant as the linked
+Soha directory connection. The directory login provider must use the same app
+ID because Feishu `open_id` is app-scoped. Users must have a current Feishu
+identity binding and Heya access. A group question mentions the bot and one
+employee using structured Feishu mentions. In a direct chat with the bot, the
+question includes the target employee's structured mention.
+
+Enable `SOHA_FEISHU_HEYA_MESH_ENABLED=true` on the connector. Configure the
+webhook verification token and Encrypt Key, the Core sink URL
+`/api/v1/connectors/events` with its dedicated token, and the connector action
+token. Keep `SOHA_FEISHU_AUTO_REPLY_ENABLED=false`. Subscribe only to bot
+message events needed for group mentions and bot direct chats. Grant the bot
+permission to send messages.
+
+In Core configure the following settings under `ai_gateway.feishu_mesh`.
+The Core options also accept the corresponding `SOHA_AI_GATEWAY_FEISHU_MESH_*`
+environment variables.
+
+| Setting | Value |
+| --- | --- |
+| `enabled` | `true` |
+| `app_id`, `tenant_key`, `bot_open_id` | Test or deployment app, tenant and bot identity |
+| `connection_id` | Enabled same-app Feishu directory connection with People sync |
+| `endpoint` | Connector runtime base URL. Use HTTPS unless connecting over loopback |
+| `ingress_token` | Matches `SOHA_CONNECTOR_EVENT_SINK_TOKEN`. Use a separate secret from the generic event sink |
+| `runtime_token` | Matches `SOHA_CONNECTOR_HTTP_TOKEN`. Use a distinct secret from the ingress token |
+
+The group receives one fixed acknowledgment per incoming bot mention. Core stores
+questions in a private queue and sends answers only to the questioner's bot
+direct chat. A failed private delivery leaves the authorized answer in Heya.
+Core rechecks the current binding and Heya visibility before each retry.
+The managed send UUID is stable through the bounded retry window. Connector
+retry and dead-letter files do not retain managed answers.
+
 ## Reliability Boundary
 
 The current reliability implementation defaults to memory, with file-backed
@@ -156,8 +192,8 @@ work.
 - Retry and rate-limit state is process-local and resets on restart.
 - The HTTP event sink is synchronous and does not provide durable buffering by
   itself.
-- Feishu webhook idempotency can record an event before event sink delivery
-  succeeds. If the sink fails and the provider retries, the retry may be
-  treated as a duplicate and not forwarded to the sink again.
+- When an event sink is configured, the connector records the event ID after
+  the sink succeeds. A sink failure returns HTTP 503 and leaves the event
+  eligible for redelivery.
 - Message content is not deeply parsed or redacted.
 - Only one event type and one action are implemented.

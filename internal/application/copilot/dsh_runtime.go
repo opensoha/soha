@@ -72,6 +72,7 @@ func (s *Service) ConfigureDSHRuntime(client DSHRuntime, store DSHRunStore) erro
 		return apperrors.ErrInvalidArgument
 	}
 	s.dshRuntime, s.dshRuns = client, store
+	s.dshReception = &dshReceptionRounds{active: make(map[string]*dshReceptionRound)}
 	return nil
 }
 func dshHash(v any) string {
@@ -152,6 +153,9 @@ func (s *Service) prepareDSH(ctx context.Context, lease domaincopilot.NativeLeas
 	if err != nil {
 		return lease, err
 	}
+	if err := s.reauthorizeAssistantMeshRun(ctx, principal, lease.Run); err != nil {
+		return lease, err
+	}
 	input, err := s.nativeModelContext(ctx, lease, &cp.nativeCheckpoint, principal)
 	if err != nil {
 		return lease, err
@@ -169,6 +173,9 @@ func (s *Service) prepareDSH(ctx context.Context, lease domaincopilot.NativeLeas
 		start.Profile = "heya"
 	}
 	if err := s.attachDSHAssembly(ctx, lease.Run, &start); err != nil {
+		return lease, err
+	}
+	if err := s.requireAssistantMeshDependencies(ctx, principal, lease.Run, &start); err != nil {
 		return lease, err
 	}
 	for _, message := range input.Messages {
@@ -616,6 +623,9 @@ func (s *Service) authorizeDSHCallback(ctx context.Context, grant string, id dom
 		err = s.authorizeDSHProfileBinding(ctx, principal, lease.Run, cp.Start)
 	}
 	if err == nil {
+		err = s.reauthorizeAssistantMeshRun(ctx, principal, lease.Run)
+	}
+	if err == nil {
 		ctx, err = s.nativeAuthorizationContext(ctx, principal, lease.Run, true)
 	}
 	return lease, cp, principal, ctx, err
@@ -628,6 +638,9 @@ func (s *Service) InvokeDSHModelStream(ctx context.Context, grant string, in DSH
 	return s.invokeDSHModel(ctx, grant, in, emit)
 }
 func (s *Service) invokeDSHModel(ctx context.Context, grant string, in DSHModelCall, emit func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error) {
+	if isDSHReception(in.RunID) {
+		return s.invokeDSHReception(ctx, grant, in)
+	}
 	s.dshLock(in.RunID).Lock()
 	defer s.dshLock(in.RunID).Unlock()
 	lease, cp, principal, ctx, err := s.authorizeDSHCallback(ctx, grant, in.DSHIdentity)
@@ -965,6 +978,9 @@ func (d dshGovernedStore) AdvanceNativeRun(ctx context.Context, lease domaincopi
 	return saved, err
 }
 func (s *Service) InvokeDSHTool(ctx context.Context, grant string, in domaincopilot.DSHToolCall) (domaincopilot.DSHToolResult, error) {
+	if isDSHReception(in.RunID) {
+		return domaincopilot.DSHToolResult{}, apperrors.ErrAccessDenied
+	}
 	s.dshLock(in.RunID).Lock()
 	defer s.dshLock(in.RunID).Unlock()
 	id := domaincopilot.DSHIdentity{RunID: in.RunID, Attempt: in.Attempt, Fence: in.Fence}
@@ -994,13 +1010,24 @@ func (s *Service) InvokeDSHTool(ctx context.Context, grant string, in domaincopi
 }
 
 func (s *Service) settleDSHTool(ctx context.Context, lease domaincopilot.NativeLease, cp dshCheckpoint, principal domainidentity.Principal, in domaincopilot.DSHToolCall) (domaincopilot.DSHToolResult, error) {
+	meshRead := lease.Run.Input["_sohaAssistantMeshMCP"] != nil && in.ToolName == "docker_projects_get"
 	if result, ok := cp.ToolResults[in.CallID]; ok {
 		if result.InputHash != in.InputHash {
 			return domaincopilot.DSHToolResult{}, apperrors.ErrConflict
 		}
+		if meshRead {
+			if err := s.recheckAssistantMeshToolObservation(ctx, lease.Run, principal, in.Input, result.Output); err != nil {
+				return domaincopilot.DSHToolResult{}, err
+			}
+		}
 		return result, nil
 	}
 	output, settled := dshToolObservation(cp, in.CallID)
+	if settled && meshRead {
+		if err := s.recheckAssistantMeshToolObservation(ctx, lease.Run, principal, in.Input, output); err != nil {
+			return domaincopilot.DSHToolResult{}, err
+		}
+	}
 	if !settled {
 		if len(cp.Pending) == 0 || cp.Pending[0].Call.ID != in.CallID || nativeFunctionName(cp.Pending[0].ToolName) != in.ToolName {
 			return domaincopilot.DSHToolResult{}, apperrors.ErrConflict
@@ -1018,6 +1045,11 @@ func (s *Service) settleDSHTool(ctx context.Context, lease domaincopilot.NativeL
 		if result, ok := cp.ToolResults[in.CallID]; ok {
 			if result.InputHash != in.InputHash {
 				return domaincopilot.DSHToolResult{}, apperrors.ErrConflict
+			}
+			if meshRead {
+				if err := s.recheckAssistantMeshToolObservation(ctx, lease.Run, principal, in.Input, result.Output); err != nil {
+					return domaincopilot.DSHToolResult{}, err
+				}
 			}
 			return result, nil
 		}

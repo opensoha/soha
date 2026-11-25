@@ -76,6 +76,8 @@ export function normalizeFeishuEvent(payload: FeishuWebhookPayload, occurredAtFa
     payload: {
       schema: payload.schema,
       tenantKey: payload.header?.tenant_key,
+      ...(payload.header?.app_id ? { appId: payload.header.app_id } : {}),
+      ...(payload.header?.create_time ? { providerCreateTime: payload.header.create_time } : {}),
       event
     }
   };

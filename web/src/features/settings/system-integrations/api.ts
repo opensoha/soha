@@ -3,6 +3,7 @@ import type {
   SourceConnectionListEnvelope,
   SourceFileEnvelope,
   SourceRepositoryListEnvelope,
+  StorageDriverListEnvelope,
   SystemIntegrationEnvelope,
   SystemIntegrationListEnvelope,
   SystemIntegrationTestResultEnvelope,
@@ -61,6 +62,9 @@ export const sourceControlApi = {
 }
 
 export const systemIntegrationsApi = {
+  storageDrivers: async () =>
+    (await api.getEnvelope<StorageDriverListEnvelope>('/system-integrations/storage-drivers'))
+      .items,
   list: async (filters: SystemIntegrationFilters = {}) =>
     (await api.getEnvelope<SystemIntegrationListEnvelope>(listPath(filters))).items,
   get: async (id: string) =>

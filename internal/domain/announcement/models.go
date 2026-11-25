@@ -45,6 +45,12 @@ type Inbox struct {
 	UnreadCount int         `json:"unreadCount"`
 }
 
+type InboxViewer struct {
+	UserID    string
+	Broadcast bool
+	Personal  bool
+}
+
 type ReceiptQuery struct {
 	Keyword  string
 	State    string
@@ -79,7 +85,8 @@ type Repository interface {
 	Delete(context.Context, string) error
 	Publish(context.Context, string, time.Time, string) (Record, error)
 	Withdraw(context.Context, string, time.Time, string) (Record, error)
-	ListInbox(context.Context, string, int, time.Time) (Inbox, error)
+	ListInbox(context.Context, InboxViewer, int, time.Time) (Inbox, error)
+	MarkPersonalRead(context.Context, string, string, time.Time) (bool, error)
 	MarkRead(context.Context, string, string, time.Time) error
 	ListReceipts(context.Context, string, ReceiptQuery) (ReceiptPage, error)
 }

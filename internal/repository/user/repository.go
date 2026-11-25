@@ -733,6 +733,11 @@ func (r *Repository) DeleteUser(ctx context.Context, userID string) error {
 	result := tx.Exec(`DELETE FROM users WHERE id = ?`, userID)
 	if result.Error != nil {
 		tx.Rollback()
+		var stateErr sqlStateError
+		if errors.As(result.Error, &stateErr) && stateErr.SQLState() == "AM001" {
+			return apperrors.NewBusiness(apperrors.ErrConflict, "assistant_mesh_inheritance_required",
+				"Reassign published Heya assets before deleting this user.", "请先处理该用户已发布的 Heya 资产继承，再删除账号。")
+		}
 		return result.Error
 	}
 	if result.RowsAffected == 0 {

@@ -146,6 +146,10 @@ type connectorEventSinkAuth struct {
 }
 
 func (h *PlatformHandler) authorizeConnectorEventSink(c *gin.Context) (connectorEventSinkAuth, error) {
+	token := connectorEventSinkToken(c)
+	if receiver, ok := h.events.(interface{ ValidFeishuMeshToken(string) bool }); ok && receiver.ValidFeishuMeshToken(token) {
+		return connectorEventSinkAuth{kind: "feishu_mesh_token"}, nil
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	if accessCtx.TokenKind == "service_account_token" && accessCtx.SubjectType == "service_account" && hasAnyRunnerPermission(principal.PermissionKeys, appaccess.PermAIGatewayInvoke) {
@@ -157,7 +161,7 @@ func (h *PlatformHandler) authorizeConnectorEventSink(c *gin.Context) (connector
 			teams:     append([]string(nil), principal.Teams...),
 		}, nil
 	}
-	if err := h.events.ValidateConnectorEventSinkToken(connectorEventSinkToken(c)); err != nil {
+	if err := h.events.ValidateConnectorEventSinkToken(token); err != nil {
 		return connectorEventSinkAuth{}, err
 	}
 	return connectorEventSinkAuth{kind: "static_token"}, nil

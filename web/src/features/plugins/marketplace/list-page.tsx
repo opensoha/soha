@@ -43,13 +43,14 @@ import {
   manifestCapabilityCount,
   manifestExtensionCount,
   normalizePluginMarketplaceFilters,
+  pluginRequiresSignedRelease,
   pluginSourceLabel,
   pluginTypeLabel,
   pluginTypeOptions,
 } from '../plugin-model'
 import { pluginQueries } from '../queries'
 import { pluginRiskTag, pluginStatusBadge } from '../shared/formatters'
-import { canInstallPlugin, canUpgradePlugins } from '../shared/permissions'
+import { canInstallPlugin, canTrustPluginPublisher, canUpgradePlugins } from '../shared/permissions'
 import { useRepositoryUpgradeAction } from '../installed/repository-upgrade'
 import '../shared/styles.css'
 import { marketplaceDetailPath, useInstallPluginAction } from './install-action'
@@ -176,6 +177,7 @@ function PluginMarketplaceCard({
   const navigate = useNavigate()
   const snapshot = usePermissionSnapshot().data?.data
   const detailPath = marketplaceDetailPath(plugin)
+  const requiresRepository = pluginRequiresSignedRelease(plugin.manifest) && !plugin.repositoryUrl
 
   return (
     <Card
@@ -248,9 +250,11 @@ function PluginMarketplaceCard({
           <Button
             disabled={
               installBlocked ||
+              requiresRepository ||
               !canInstallPlugin(snapshot) ||
               Boolean(plugin.repositoryUrl && !plugin.sourceId)
             }
+            title={requiresRepository ? '可执行插件需要经过仓库签名 Release 预览' : undefined}
             icon={<CloudDownloadOutlined />}
             loading={installLoading}
             onClick={() => onInstall(plugin)}
@@ -277,7 +281,7 @@ export function PluginMarketplacePage() {
   const filterScope = isInstalledView ? 'installed' : 'market'
   const [page, setPage] = useState(1)
   const installAction = useInstallPluginAction()
-  const repositoryInstallAction = useRepositoryInstallAction()
+  const repositoryInstallAction = useRepositoryInstallAction(canTrustPluginPublisher(snapshot))
   const repositoryUpgrade = useRepositoryUpgradeAction()
   const marketplaceQuery = useQuery(pluginQueries.marketplace(filters.market, !isInstalledView))
   const installedQuery = useQuery(pluginQueries.installed())

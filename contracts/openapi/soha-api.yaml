@@ -1550,6 +1550,889 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: listAssistantMeshAssets
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - shared
+              - review
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - skill
+              - experience_card
+              - work_pulse
+              - mcp
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - assistant-mesh
+      operationId: createAssistantMeshAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshAssetInput"
+      responses:
+        "201":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/extract:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: extractAssistantMeshAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshExtractRequest"
+      responses:
+        "201":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/{assetId}:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: getAssistantMeshAsset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mcp
+          description: Select the managed MCP proposal collection.
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - assistant-mesh
+      operationId: updateAssistantMeshDraft
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDraftUpdate"
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshAssetEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assets/{assetId}/actions/{action}:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: actOnAssistantMeshAsset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - publish
+              - trial
+              - run
+              - approve
+              - reject
+              - withdraw
+              - revoke
+              - invoke
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mcp
+          description: Select the managed MCP proposal collection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshActionRequest"
+      responses:
+        "200":
+          description: Heya Assistant Mesh result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshActionEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/profile:
+    get:
+      tags:
+        - assistant-mesh
+      operationId: getAssistantMeshReceptionProfile
+      responses:
+        "200":
+          description: Assistant Mesh reception profile for the current caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - assistant-mesh
+      operationId: updateAssistantMeshReceptionProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshReceptionProfileInput"
+      responses:
+        "200":
+          description: Saved Assistant Mesh reception profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshReceptionProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/assistants/search:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: searchAssistantMeshAssistants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDiscoveryInput"
+      responses:
+        "200":
+          description: Admitted assistants matching the discovery input.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDiscoveredAssistantListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/preview:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: previewAssistantMeshInquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshQuestionInput"
+      responses:
+        "200":
+          description: Question preview after the built-in sensitive-content scan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshQuestionPreviewEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: createAssistantMeshInquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryInput"
+      responses:
+        "200":
+          description: Created inquiry, or the original item for a pending duplicate request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+    get:
+      tags:
+        - assistant-mesh
+      operationId: listAssistantMeshInquiries
+      parameters:
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - sent
+              - inbox
+            default: sent
+      responses:
+        "200":
+          description: Inquiries sent by the caller, or received in the caller's inbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/{inquiryId}/reply:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: replyAssistantMeshInquiry
+      parameters:
+        - name: inquiryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryReplyInput"
+      responses:
+        "200":
+          description: Replied inquiry. Only the exact assignee may reply to a pending, unexpired inquiry with one private answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/inquiries/{inquiryId}/reply-and-publish:
+    post:
+      tags:
+        - assistant-mesh
+      operationId: replyAndPublishAssistantMeshInquiry
+      parameters:
+        - name: inquiryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshInquiryShareReplyInput"
+      responses:
+        "200":
+          description: Privately replied to the original requester and submitted a separate, explicitly scoped publication in the same transaction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshInquiryEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: listAssistantMeshDelegations
+      parameters:
+        - name: direction
+          in: query
+          schema: { type: string, enum: [inbox, sent], default: sent }
+      responses:
+        "200":
+          description: Delegations visible to the authenticated participant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationListEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [ assistant-mesh ]
+      operationId: createAssistantMeshDelegation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationInput"
+      responses:
+        "200":
+          description: Durable, idempotent request with frozen capability inputs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/native-device:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: registerAssistantMeshManagedDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshManagedDeviceInput"
+      responses:
+        "200":
+          description: The current owner enabled this device for future delegations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshManagedDeviceEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: getAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Delegation visible to the authenticated participant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/decline:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: declineAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationDeclineInput"
+      responses:
+        "200":
+          description: The owner declined this request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/approve:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: approveAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationApproveInput"
+      responses:
+        "200":
+          description: Short-lived, single-use ticket issued after owner approval to the registered device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationApprovalEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/claim:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: claimAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationClaimInput"
+      responses:
+        "200":
+          description: Only the first valid owner claim can move the delegation to execution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/report:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: reportAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationReportInput"
+      responses:
+        "200":
+          description: State receipt for the report. With preview, the device sends a digest with a device-held random nonce.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/delegations/{id}/deliver:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: deliverAssistantMeshDelegation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMeshDelegationDeliverInput"
+      responses:
+        "200":
+          description: Private result returned to the requesting participant after owner confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMeshDelegationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inquiry-audit:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: readAssistantMeshInquiryAudit
+      description: Requires platform audit permission. A reason is recorded before retained content is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInquiryAuditInput" }
+      responses:
+        "200":
+          description: Retained inquiry content for audit. The response must not be cached.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInquiryAuditEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inheritance:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: listAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Returns metadata for published assets eligible for reassignment.
+      parameters:
+        - name: ownerId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: after
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: A page of up to 50 eligible assets. Use nextAfter to fetch the next page when present.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritancePageEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [ assistant-mesh ]
+      operationId: transferAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Reassigns published Skills or experience cards from an inactive owner to an active heir, preserving their published versions and audiences.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInheritanceInput" }
+      responses:
+        "200":
+          description: Transactionally reassigned assets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritanceResultEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /copilot/assistant-mesh/governance/inheritance/retire:
+    post:
+      tags: [ assistant-mesh ]
+      operationId: retireAssistantMeshInheritance
+      description: Requires the dedicated access.users.inherit-heya-assets permission. Retires published assets of a disabled employee without transferring ownership.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshInheritanceRetirement" }
+      responses:
+        "200":
+          description: Transactionally retired assets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshInheritanceRetirementEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /settings/ai/assistant-mesh:
+    get:
+      tags: [ assistant-mesh ]
+      operationId: getAssistantMeshSettings
+      responses:
+        "200":
+          description: Organization settings for Heya Assistant Mesh.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshSettingsEnvelope" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [ assistant-mesh ]
+      operationId: updateAssistantMeshSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantMeshSettings" }
+      responses:
+        "200":
+          description: Saved settings. The experience card lifetime applies to future publications.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantMeshSettingsEnvelope" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /settings/ai/workbench-model:
     put:
       tags: [ Settings ]
@@ -21153,6 +22036,14 @@ paths:
       operationId: listCurrentNetworkConnectionOptions
       parameters:
         - { name: deviceId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - name: includeBootstrap
+          in: query
+          description: When true, an explicitly authorized caller may also receive bootstrap Wi-Fi options.
+          schema: { type: boolean, default: false }
+        - name: includeNasSession
+          in: query
+          description: Include the latest NAS accounting status for authorized access networks and the current user's registered device.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Wi-Fi and wired 802.1X connection options authorized for the current user and endpoint.
@@ -21356,6 +22247,107 @@ paths:
               schema: { $ref: "#/components/schemas/OperationStatus" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks:
+    get:
+      tags: [ Network Access ]
+      operationId: listNetworkAccessNetworks
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.view ]
+      parameters:
+        - { name: siteId, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200":
+          description: Access networks configured for the requested site.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkListEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [ Network Access ]
+      operationId: createNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      responses:
+        "201":
+          description: Created access network.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks/preview:
+    post:
+      tags: [ Network Access ]
+      operationId: previewNetworkAccessNetworks
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.view ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkPreviewInput" }
+      responses:
+        "200":
+          description: Read-only per-network allow or deny decisions for the requested user and device. No access network is mutated.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: Always no-store because the result is user and device scoped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkDecisionListEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /network-access/access-networks/{accessNetworkId}:
+    put:
+      tags: [ Network Access ]
+      operationId: updateNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      parameters:
+        - { name: accessNetworkId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      responses:
+        "200":
+          description: Updated access network.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkAccessNetworkEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [ Network Access ]
+      operationId: deleteNetworkAccessNetwork
+      x-soha-permissions:
+        mode: all
+        keys: [ network_access.sites.update ]
+      parameters:
+        - { name: accessNetworkId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "204":
+          description: Access network deleted.
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /network-access/sessions:
     get:
       tags: [ Network Access ]
@@ -37580,6 +38572,944 @@ components:
       required: [ data ]
       properties:
         data: { $ref: "#/components/schemas/AIContextInspection" }
+      additionalProperties: false
+    AssistantMeshAssetInput:
+      type: object
+      required:
+        - kind
+        - title
+        - body
+      properties:
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+            - work_pulse
+            - mcp
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        body:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        applicability:
+          type: string
+          maxLength: 4096
+        workStatus:
+          $ref: "#/components/schemas/AssistantMeshWorkStatus"
+        blockerReason:
+          type: string
+          description: Optional short blockers for a work pulse.
+          maxLength: 1000
+        files:
+          type: object
+          description: Named UTF-8 text attachments. ZIP attachment values contain base64-encoded ZIP bytes.
+          maxProperties: 31
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 16384
+        dependencies:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - version
+            properties:
+              id:
+                type: string
+                minLength: 1
+                maxLength: 48
+              version:
+                type: string
+                minLength: 1
+                maxLength: 64
+            additionalProperties: false
+          maxItems: 16
+        parameters:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: object
+            required:
+              - type
+            properties:
+              type:
+                type: string
+                enum:
+                  - string
+                  - integer
+                  - number
+                  - boolean
+              description:
+                type: string
+                maxLength: 256
+              required:
+                type: boolean
+            additionalProperties: false
+      additionalProperties: false
+    AssistantMeshDraftUpdate:
+      type: object
+      required:
+        - input
+        - expectedDigest
+      properties:
+        input:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        expectedDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+      additionalProperties: false
+    AssistantMeshAudience:
+      type: object
+      required:
+        - visibility
+      properties:
+        visibility:
+          type: string
+          enum:
+            - private
+            - teams
+            - projects
+            - organization
+        teams:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 100
+        projects:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 100
+      additionalProperties: false
+    AssistantMeshVersion:
+      type: object
+      required:
+        - input
+        - digest
+        - version
+        - audience
+      properties:
+        input:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        version:
+          type: integer
+          minimum: 1
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        expiresAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshTrial:
+      type: object
+      required:
+        - runId
+        - digest
+        - status
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+            - canceled
+            - expired
+      additionalProperties: false
+    AssistantMeshPublicationReview:
+      type: object
+      required:
+        - status
+        - candidate
+      properties:
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - rejected
+            - withdrawn
+        reason:
+          type: string
+        candidate:
+          $ref: "#/components/schemas/AssistantMeshVersion"
+      additionalProperties: false
+    AssistantMeshAsset:
+      type: object
+      required:
+        - id
+        - ownerUserId
+        - kind
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerUserId:
+          type: string
+          format: uuid
+        originalAuthorUserId:
+          type: string
+          format: uuid
+          description: Original author of an inherited publication.
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+            - work_pulse
+            - mcp
+        draft:
+          $ref: "#/components/schemas/AssistantMeshAssetInput"
+        draftDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        published:
+          $ref: "#/components/schemas/AssistantMeshVersion"
+        review:
+          $ref: "#/components/schemas/AssistantMeshPublicationReview"
+        trial:
+          $ref: "#/components/schemas/AssistantMeshTrial"
+        findings:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          maxItems: 64
+      additionalProperties: false
+    AssistantMeshAssetPage:
+      type: object
+      required:
+        - items
+      properties:
+        publishingDefaults:
+          type: object
+          required: [visibility, lifetimeDays, allowPermanentExperienceCards]
+          properties:
+            visibility:
+              type: string
+              enum: [private, teams, projects]
+            lifetimeDays:
+              type: integer
+              minimum: 7
+              maximum: 365
+            allowPermanentExperienceCards:
+              type: boolean
+            workPulseDefaultLifetimeHours:
+              type: integer
+              minimum: 1
+              maximum: 168
+              default: 24
+              description: Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24.
+            workPulseMaxLifetimeDays:
+              type: integer
+              minimum: 1
+              maximum: 90
+              default: 14
+              description: Maximum Work Pulse lifetime in days for publication and inquiry sharing.
+          additionalProperties: false
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshAsset"
+        nextOffset:
+          type: integer
+          minimum: 0
+      additionalProperties: false
+    AssistantMeshAssetEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshAsset"
+      additionalProperties: false
+    AssistantMeshExtractRequest:
+      type: object
+      required:
+        - kind
+        - title
+        - sessionId
+      properties:
+        kind:
+          type: string
+          enum:
+            - skill
+            - experience_card
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        sessionId:
+          type: string
+          format: uuid
+        messageIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 20
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+    AssistantMeshActionRequest:
+      type: object
+      properties:
+        expectedDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+          description: Use the draft digest for trial and publish, the review candidate digest for approve, reject and withdraw, and the published digest for run, invoke and revoke.
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        lifetimeDays:
+          type: integer
+          minimum: 7
+          maximum: 365
+        lifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 2160
+          description: Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
+        permanent:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        sessionId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        parameters:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            anyOf:
+              - type: string
+              - type: number
+              - type: boolean
+        resourceId:
+          type: string
+          format: uuid
+      additionalProperties: false
+    AssistantMeshProjectResult:
+      type: object
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        status:
+          type: string
+          minLength: 1
+          maxLength: 80
+      additionalProperties: false
+    AssistantMeshActionResult:
+      type: object
+      required:
+        - asset
+      properties:
+        asset:
+          $ref: "#/components/schemas/AssistantMeshAsset"
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        project:
+          $ref: "#/components/schemas/AssistantMeshProjectResult"
+      additionalProperties: false
+    AssistantMeshActionEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshActionResult"
+      additionalProperties: false
+    AssistantMeshSettings:
+      type: object
+      required: [ enabled, organizationApproverUserIds, defaultVisibility, experienceCardLifetimeDays, allowPermanentExperienceCards ]
+      properties:
+        enabled:
+          type: boolean
+        organizationApproverUserIds:
+          type: array
+          description: Explicit reviewer user IDs. An empty list uses platform administrators.
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid, pattern: '^[0-9a-f-]{36}$' }
+        defaultVisibility:
+          type: string
+          description: The suggested initial audience kind. Specific teams or projects must be selected during publication.
+          enum: [ private, teams, projects ]
+        experienceCardLifetimeDays:
+          type: integer
+          minimum: 7
+          maximum: 365
+        allowPermanentExperienceCards:
+          type: boolean
+        delegationLifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 72
+          default: 4
+          description: Deadline for newly created L3 delegations. Omission preserves the existing value on update.
+        inquiryPairLimitPerHour:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 5
+          description: Hourly limit for a caller and recipient pair. Omission preserves the existing value on update.
+        inquiryCallerLimitPerDay:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 30
+          description: Daily limit for a caller across recipients. Omission preserves the existing value on update.
+        inquiryMergeWindowHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          default: 24
+          description: Window for merging equivalent open inquiries. Omission preserves the existing value on update.
+        inquiryPendingLimit:
+          type: integer
+          minimum: 5
+          maximum: 200
+          default: 20
+          description: Maximum outstanding human inquiries per recipient. Omission preserves the existing value on update.
+        inquiryTimeoutHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 72
+          description: Deadline applied to new inquiries. Omission preserves the existing value on update.
+        inquiryRetentionDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 7
+          description: Body retention recorded when inquiries close. Omission preserves the existing value on update.
+        defaultProfileOpen:
+          type: boolean
+          default: false
+          description: Whether the initial profile is open at the first approved Heya. Omission preserves the existing value on update.
+        workPulseDefaultLifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          default: 24
+          description: Default Work Pulse lifetime in hours. Core caps it at workPulseMaxLifetimeDays * 24. Omission preserves the existing value on update.
+        workPulseMaxLifetimeDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 14
+          description: Maximum Work Pulse lifetime in days for publication and inquiry sharing. Omission preserves the existing value on update.
+        receptionMinScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0
+          description: Minimum reception score. Positive thresholds measure normalized title coverage; the deterministic lexical minimum still applies. Omission preserves the existing value on update.
+      additionalProperties: false
+    AssistantMeshInquiryAuditInput:
+      type: object
+      required: [ inquiryId, reason ]
+      properties:
+        inquiryId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+      additionalProperties: false
+    AssistantMeshInquiryAudit:
+      type: object
+      required: [ id, callerId, ownerId, status, question, answer, createdAt ]
+      properties:
+        id: { type: string, format: uuid }
+        callerId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        status: { type: string }
+        question: { type: string }
+        answer: { type: string }
+        createdAt: { type: string, format: date-time }
+        purgeAfter: { type: string, format: date-time }
+      additionalProperties: false
+    AssistantMeshInquiryAuditEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInquiryAudit" }
+    AssistantMeshInheritanceAsset:
+      type: object
+      required: [ id, ownerId, originalAuthorId, kind, title, version ]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        originalAuthorId: { type: string, format: uuid }
+        kind: { type: string, enum: [ skill, experience_card ] }
+        title: { type: string }
+        version: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshInheritancePage:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AssistantMeshInheritanceAsset" }
+        nextAfter: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshInheritancePageEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInheritancePage" }
+    AssistantMeshInheritanceInput:
+      type: object
+      required: [ ownerId, heirId ]
+      properties:
+        ownerId: { type: string, format: uuid }
+        heirId: { type: string, format: uuid }
+        assetIds:
+          type: array
+          description: Omission selects all eligible assets of the owner. An explicit list must be nonempty.
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshInheritanceResult:
+      type: object
+      required: [ transferred ]
+      properties:
+        transferred: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshInheritanceResultEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshInheritanceResult" }
+    AssistantMeshInheritanceRetirement:
+      type: object
+      required: [ ownerId ]
+      properties:
+        ownerId: { type: string, format: uuid }
+        assetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+          description: Omit to retire all eligible assets for the owner.
+      additionalProperties: false
+    AssistantMeshInheritanceRetirementEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          type: object
+          required: [ retired ]
+          properties:
+            retired: { type: integer, minimum: 1 }
+          additionalProperties: false
+      additionalProperties: false
+    AssistantMeshSettingsEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/AssistantMeshSettings" }
+      additionalProperties: false
+    AssistantMeshReceptionProfile:
+      type: object
+      required: [ open, away, intro, retentionDays ]
+      properties:
+        open:
+          type: boolean
+        away:
+          type: boolean
+        intro:
+          type: string
+          maxLength: 280
+        retentionDays:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+    AssistantMeshReceptionProfileInput:
+      type: object
+      required: [ open, away, intro ]
+      properties:
+        open:
+          type: boolean
+        away:
+          type: boolean
+        intro:
+          type: string
+          maxLength: 280
+      additionalProperties: false
+    AssistantMeshReceptionProfileEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshReceptionProfile"
+      additionalProperties: false
+    AssistantMeshDiscoveryInput:
+      type: object
+      properties:
+        query:
+          type: string
+          maxLength: 120
+      additionalProperties: false
+    AssistantMeshDiscoveredAssistant:
+      type: object
+      required: [ ownerId, name, intro, away, topics ]
+      properties:
+        ownerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        intro:
+          type: string
+        away:
+          type: boolean
+        topics:
+          type: array
+          description: Titles of admitted published topics only.
+          items:
+            type: string
+      additionalProperties: false
+    AssistantMeshDiscoveredAssistantListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshDiscoveredAssistant"
+      additionalProperties: false
+    AssistantMeshQuestionInput:
+      type: object
+      required: [ question ]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      additionalProperties: false
+    AssistantMeshQuestionPreview:
+      type: object
+      required: [ question, blocked ]
+      properties:
+        question:
+          type: string
+        blocked:
+          type: boolean
+          description: The built-in sensitive-content scan rejects this question when true.
+      additionalProperties: false
+    AssistantMeshQuestionPreviewEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshQuestionPreview"
+      additionalProperties: false
+    AssistantMeshInquiryCitation:
+      type: object
+      required: [ assetId, version, title, observedAt ]
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshInquiry:
+      type: object
+      required:
+        - id
+        - callerId
+        - ownerId
+        - callerName
+        - ownerName
+        - question
+        - status
+        - createdAt
+        - dueAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        callerId:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        callerName:
+          type: string
+        ownerName:
+          type: string
+        question:
+          type: string
+          description: Empty after content expiry.
+        status:
+          type: string
+          enum:
+            - answered
+            - processing
+            - pending
+            - replied
+            - expired
+            - invalidated
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshInquiryCitation"
+        createdAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AssistantMeshInquiryEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshInquiry"
+      additionalProperties: false
+    AssistantMeshInquiryListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshInquiry"
+      additionalProperties: false
+    AssistantMeshInquiryInput:
+      type: object
+      required: [ ownerId, requestId, question ]
+      properties:
+        ownerId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      additionalProperties: false
+    AssistantMeshWorkStatus:
+      type: string
+      enum: [in_progress, blocked, done]
+      x-enum-varnames: [AssistantMeshWorkStatusInProgress, AssistantMeshWorkStatusBlocked, AssistantMeshWorkStatusDone]
+    AssistantMeshInquiryShareReplyInput:
+      type: object
+      required: [answer, title, summary, kind, audience]
+      properties:
+        answer: { type: string, minLength: 1, maxLength: 4000 }
+        title: { type: string, minLength: 1, maxLength: 256 }
+        summary: { type: string, minLength: 1, maxLength: 16384 }
+        kind: { type: string, enum: [experience_card, work_pulse] }
+        audience:
+          $ref: "#/components/schemas/AssistantMeshAudience"
+        lifetimeHours:
+          type: integer
+          minimum: 1
+          maximum: 2160
+          description: Work Pulse lifetime in hours. Omission follows the configured default; the selected duration is limited to the configured maximum.
+        lifetimeDays: { type: integer, minimum: 7, maximum: 365 }
+        workStatus:
+          $ref: "#/components/schemas/AssistantMeshWorkStatus"
+      additionalProperties: false
+    AssistantMeshInquiryReplyInput:
+      type: object
+      required: [ answer ]
+      properties:
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      additionalProperties: false
+    AssistantMeshDelegation:
+      type: object
+      required: [id, callerId, callerName, ownerId, ownerName, capability, field, inputHash, status, createdAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        callerId: { type: string, format: uuid }
+        callerName: { type: string }
+        ownerId: { type: string, format: uuid }
+        ownerName: { type: string }
+        capability: { type: string, enum: [desktop.os-version.v1] }
+        field: { type: string, enum: [productVersion, buildVersion] }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        status: { type: string, enum: [awaiting_owner_approval, approved, executing, awaiting_confirmation, completed, declined, invalidated, expired, failed] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        result: { type: string, minLength: 1, maxLength: 128 }
+        closedAt: { type: string, format: date-time }
+      additionalProperties: false
+    AssistantMeshDelegationEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshDelegation"
+      additionalProperties: false
+    AssistantMeshDelegationListEnvelope:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantMeshDelegation"
+      additionalProperties: false
+    AssistantMeshDelegationInput:
+      type: object
+      required: [ownerId, requestId, capability, field]
+      properties:
+        ownerId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        capability: { type: string, enum: [desktop.os-version.v1] }
+        field: { type: string, enum: [productVersion, buildVersion] }
+      additionalProperties: false
+    AssistantMeshDelegationDeclineInput:
+      type: object
+      additionalProperties: false
+    AssistantMeshManagedDeviceInput:
+      type: object
+      required: [deviceId, proofHash]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proofHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+      additionalProperties: false
+    AssistantMeshManagedDevice:
+      type: object
+      required: [ownerId, deviceId]
+      properties:
+        ownerId: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+      additionalProperties: false
+    AssistantMeshManagedDeviceEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshManagedDevice"
+      additionalProperties: false
+    AssistantMeshDelegationApproveInput:
+      type: object
+      required: [deviceId, proof, inputHash, mode]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        mode: { type: string, enum: [preview, direct] }
+      additionalProperties: false
+    AssistantMeshDelegationClaimInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence, ticket]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        ticket: { type: string, pattern: "^[0-9a-f]{64}$" }
+      additionalProperties: false
+    AssistantMeshDelegationReportInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        resultHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        result: { type: string, minLength: 1, maxLength: 128 }
+        failed: { type: boolean }
+      additionalProperties: false
+    AssistantMeshDelegationDeliverInput:
+      type: object
+      required: [deviceId, proof, inputHash, fence, result, nonce]
+      properties:
+        deviceId: { type: string, format: uuid }
+        proof: { type: string, pattern: "^[0-9a-f]{64}$" }
+        inputHash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+        nonce: { type: string, pattern: "^[0-9a-f]{64}$", description: Device-held nonce for the preview commitment. }
+        result: { type: string, minLength: 1, maxLength: 128 }
+      additionalProperties: false
+    AssistantMeshDelegationApproval:
+      type: object
+      required: [delegation, ticket, fence]
+      properties:
+        delegation:
+          $ref: "#/components/schemas/AssistantMeshDelegation"
+        ticket: { type: string, pattern: "^[0-9a-f]{64}$" }
+        fence: { type: integer, minimum: 1 }
+      additionalProperties: false
+    AssistantMeshDelegationApprovalEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AssistantMeshDelegationApproval"
       additionalProperties: false
     AIWorkbenchModelSettings:
       type: object
@@ -63131,6 +65061,164 @@ components:
       type: string
       enum: [ wifi, wired ]
       x-enum-varnames: [ NetworkAccessMediumWiFi, NetworkAccessMediumWired ]
+    NetworkAccessNetworkKind:
+      type: string
+      enum: [ standard, strict_online, open_guest_bootstrap ]
+      x-enum-varnames: [ NetworkAccessNetworkKindStandard, NetworkAccessNetworkKindStrictOnline, NetworkAccessNetworkKindOpenGuestBootstrap ]
+      description: strict_online is persisted for B1 but unavailable for enforcement. open_guest_bootstrap is a Wi-Fi bootstrap network without RADIUS entitlement.
+    NetworkAccessNetworkRule:
+      type: object
+      required: [ effect, subjects ]
+      description: Empty subject arrays match any subject. Core applies deny precedence before allow.
+      properties:
+        effect: { $ref: "#/components/schemas/NetworkPolicyEffect" }
+        subjects: { $ref: "#/components/schemas/NetworkPolicySubjects" }
+        deviceIds:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128 }
+        deviceStatuses:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EndpointDeviceStatus" }
+        postureStatuses:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/EndpointDevicePostureStatus" }
+        authenticationMethods:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            enum: [ eap_tls, eap_ttls_pap ]
+        scheduleStartMinute: { type: integer, minimum: 0, maximum: 1439, x-go-pointer: true }
+        scheduleEndMinute: { type: integer, minimum: 0, maximum: 1439, x-go-pointer: true }
+        vlanId: { type: integer, minimum: 1, maximum: 4094 }
+        filterId: { type: string, minLength: 1, maxLength: 128 }
+        sessionTimeoutSeconds: { type: integer, minimum: 1, maximum: 86400 }
+      additionalProperties: false
+    NetworkAccessNetworkInput:
+      type: object
+      required: [ siteId, name, accessMedium, kind, enabled, nasBindingIds, priority, autoConnect, rules ]
+      properties:
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        accessMedium: { $ref: "#/components/schemas/NetworkAccessMedium" }
+        kind: { $ref: "#/components/schemas/NetworkAccessNetworkKind" }
+        enabled: { type: boolean }
+        nasBindingIds:
+          type: array
+          maxItems: 128
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128 }
+        priority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+        ssid:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Wi-Fi SSID. Core restricts this to Wi-Fi access networks.
+        bssids:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Wi-Fi BSSIDs. Core restricts this to Wi-Fi access networks.
+          items:
+            type: string
+            pattern: ^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$
+        portIds:
+          type: array
+          maxItems: 128
+          uniqueItems: true
+          description: Wired port identifiers. Core restricts this to wired access networks.
+          items: { type: string, minLength: 1, maxLength: 128 }
+        portStart:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+          x-go-pointer: true
+          description: Wired port range start. Core restricts this to wired access networks and validates the range order.
+        portEnd:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+          x-go-pointer: true
+          description: Wired port range end. Core restricts this to wired access networks and validates the range order.
+        vlanId: { type: integer, minimum: 1, maximum: 4094 }
+        filterId: { type: string, minLength: 1, maxLength: 128 }
+        sessionTimeoutSeconds: { type: integer, minimum: 1, maximum: 86400 }
+        rules:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/NetworkAccessNetworkRule" }
+      additionalProperties: false
+    NetworkAccessNetwork:
+      type: object
+      required: [ id, configuration, createdAt, updatedAt ]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        configuration: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    NetworkAccessNetworkEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/NetworkAccessNetwork" }
+      additionalProperties: false
+    NetworkAccessNetworkListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessNetwork" }
+      additionalProperties: false
+    NetworkAccessNetworkPreviewInput:
+      type: object
+      required: [ siteId, userId, deviceId ]
+      properties:
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        userId: { type: string, minLength: 1, maxLength: 128 }
+        deviceId: { type: string, minLength: 1, maxLength: 128 }
+        authenticationMethod:
+          type: string
+          enum: [ eap_tls, eap_ttls_pap ]
+          default: eap_tls
+        draft: { $ref: "#/components/schemas/NetworkAccessNetworkInput" }
+      additionalProperties: false
+    NetworkAccessNetworkDecision:
+      type: object
+      required: [ accessNetworkId, name, allowed, reasonCode ]
+      properties:
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        allowed: { type: boolean }
+        reasonCode: { type: string, minLength: 1, maxLength: 128 }
+        accessProfile: { $ref: "#/components/schemas/NetworkAccessProfile" }
+        matchedRuleIndex:
+          type: integer
+          minimum: 1
+          maximum: 128
+          description: One-based index of the first matching rule that determined the decision, when applicable.
+      additionalProperties: false
+    NetworkAccessNetworkDecisionListEnvelope:
+      type: object
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessNetworkDecision" }
+      additionalProperties: false
     NetworkAccessDeviceType:
       type: string
       enum: [ wireless_controller, access_point, switch, other ]
@@ -63160,6 +65248,29 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        networkName: { type: string, minLength: 1, maxLength: 200 }
+        recommendationPriority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+        nasSession: { $ref: "#/components/schemas/NetworkConnectionNASSession" }
+        strictOnline:
+          type: object
+          description: Present for strict networks when bootstrap details are requested. Lease expiry reflects the current bound device and account.
+          additionalProperties: false
+          properties:
+            leaseUntil: { type: string, format: date-time }
+      additionalProperties: false
+    NetworkConnectionNASSession:
+      type: object
+      description: Last Core observation of the NAS session bound to this access network and registered device.
+      required: [ state ]
+      properties:
+        state:
+          type: string
+          enum: [ pending, observed, ended, unknown ]
+          x-enum-varnames: [ NetworkConnectionNASSessionStatePending, NetworkConnectionNASSessionStateObserved, NetworkConnectionNASSessionStateEnded, NetworkConnectionNASSessionStateUnknown ]
+          description: Pending awaits accounting, observed has an active accounting record, ended records a stop or expired authorization, and unknown means accounting cannot confirm the session.
+        lastReceivedAt: { type: string, format: date-time }
       additionalProperties: false
     NetworkConnectionOptionListEnvelope:
       type: object
@@ -63169,6 +65280,22 @@ components:
           type: array
           maxItems: 200
           items: { $ref: "#/components/schemas/NetworkConnectionOption" }
+        bootstrapNetworks:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/NetworkAccessBootstrapOption" }
+      additionalProperties: false
+    NetworkAccessBootstrapOption:
+      type: object
+      required: [ accessNetworkId, siteId, name, ssid, priority, autoConnect ]
+      properties:
+        accessNetworkId: { type: string, minLength: 1, maxLength: 128 }
+        siteId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        ssid: { type: string, minLength: 1, maxLength: 32 }
+        priority: { type: integer, minimum: 1, maximum: 10000 }
+        autoConnect: { type: boolean }
+      description: Wi-Fi bootstrap metadata without RADIUS material. Returned only for explicitly requested authorized callers.
       additionalProperties: false
     NetworkNASBindingInput:
       type: object

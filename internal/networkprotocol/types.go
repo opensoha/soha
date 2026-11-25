@@ -84,16 +84,23 @@ type EnrollmentResult struct {
 }
 
 type EndpointPresenceRequest struct {
-	AdmissionPolicyVersion int        `json:"admissionPolicyVersion,omitempty"`
-	DeviceID               string     `json:"deviceId"`
-	BootID                 string     `json:"bootId"`
-	Sequence               int64      `json:"sequence"`
-	Status                 string     `json:"status"`
-	ConfigurationVersion   int        `json:"configurationVersion"`
-	PolicyVersion          int        `json:"policyVersion"`
-	UIState                string     `json:"uiState,omitempty"`
-	UIObservedAt           *time.Time `json:"uiObservedAt,omitempty"`
-	Capabilities           []string   `json:"capabilities,omitempty"`
+	AdmissionPolicyVersion int              `json:"admissionPolicyVersion,omitempty"`
+	DeviceID               string           `json:"deviceId"`
+	BootID                 string           `json:"bootId"`
+	Sequence               int64            `json:"sequence"`
+	Status                 string           `json:"status"`
+	ConfigurationVersion   int              `json:"configurationVersion"`
+	PolicyVersion          int              `json:"policyVersion"`
+	UIState                string           `json:"uiState,omitempty"`
+	UIObservedAt           *time.Time       `json:"uiObservedAt,omitempty"`
+	UILogin                *EndpointUILogin `json:"uiLogin,omitempty"`
+	Capabilities           []string         `json:"capabilities,omitempty"`
+}
+
+type EndpointUILogin struct {
+	SubjectID string `json:"subjectId"`
+	Epoch     string `json:"epoch"`
+	SessionID string `json:"sessionId"`
 }
 
 type EndpointPresenceResult struct {
@@ -347,9 +354,14 @@ type RadiusAttributes struct {
 	VLANID                int    `json:"vlanId,omitempty"`
 	FilterID              string `json:"filterId,omitempty"`
 	SessionTimeoutSeconds int    `json:"sessionTimeoutSeconds"`
+	Reauthenticate        bool   `json:"reauthenticate,omitempty"`
 }
 
 type NASAuthorizationRequest struct {
+	CalledStationIDBase64           string           `json:"calledStationIdBase64,omitempty"`
+	NASPortIDBase64                 string           `json:"nasPortIdBase64,omitempty"`
+	NASPort                         *int64           `json:"nasPort,omitempty"`
+	OuterIdentity                   string           `json:"outerIdentity,omitempty"`
 	RuntimeProof                    *ManagedNASProof `json:"runtimeProof,omitempty"`
 	AuthenticationReceipt           string           `json:"authenticationReceipt,omitempty"`
 	RequestID                       string           `json:"requestId"`
@@ -435,8 +447,12 @@ type RadiusAccounting struct {
 }
 
 type RadiusAccountingRequest struct {
-	SchemaVersion  string `json:"schemaVersion"`
-	EventTimestamp int64  `json:"eventTimestamp"`
+	SchemaVersion   string `json:"schemaVersion"`
+	EventTimestamp  int64  `json:"eventTimestamp"`
+	NASPortIDBase64 string `json:"nasPortIdBase64,omitempty"`
+	NASPort         *int64 `json:"nasPort,omitempty"`
+	InputGigawords  *int64 `json:"inputGigawords,omitempty"`
+	OutputGigawords *int64 `json:"outputGigawords,omitempty"`
 	RadiusAccounting
 }
 

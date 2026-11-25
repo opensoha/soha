@@ -24,6 +24,11 @@ import { ContextRows, ContextUsage } from './context-usage'
 import { modelContextSummary, formatTokens } from '../context-selection'
 import { CHAT_COMMANDS, matchingCommands, replaceSlashToken } from '../composer-commands'
 
+function parseAssistantMention(value: string) {
+  const match = value.match(/^\s*@([^\s@]{0,120})(?:\s+([\s\S]*))?$/)
+  return match ? { query: match[1], question: match[2]?.trim() || '' } : null
+}
+
 export function WorkbenchComposer({
   heldValue,
   onRestoreDraft,
@@ -62,6 +67,7 @@ export function WorkbenchComposer({
   onSettings,
   onAnalysis,
   onSession,
+  onAssistantMention,
 }: {
   heldValue?: string
   onRestoreDraft?: () => void
@@ -100,6 +106,7 @@ export function WorkbenchComposer({
   onSettings: () => void
   onAnalysis: () => void
   onSession: (id?: string) => void
+  onAssistantMention?: (query: string, question: string) => void
 }) {
   const { message } = App.useApp()
   const disabled = unavailable || contextParsing
@@ -156,7 +163,11 @@ export function WorkbenchComposer({
       })),
     [matches],
   )
-  const menuOpen = open && matches.length > 0 && !disabled && !loading
+  const mention = onAssistantMention ? parseAssistantMention(value) : null
+  const suggestions = mention
+    ? [{ value: 'assistant-discovery', label: '查找同事助手', extra: '@' }]
+    : items
+  const menuOpen = open && suggestions.length > 0 && !disabled && !loading && !readOnly
 
   return (
     <div className="soha-ai-workbench__composer">
@@ -164,8 +175,14 @@ export function WorkbenchComposer({
         block
         open={menuOpen}
         onOpenChange={setOpen}
-        items={items}
+        items={suggestions}
         onSelect={(key) => {
+          if (key === 'assistant-discovery' && mention) {
+            setOpen(false)
+            onAssistantMention?.(mention.query, mention.question)
+            return
+          }
+
           const command = CHAT_COMMANDS.find((item) => item.value === key)
           if (!command) return
           onChange(replaceSlashToken(value, 'prompt' in command ? command.prompt : ''))
@@ -339,7 +356,10 @@ export function WorkbenchComposer({
               setOpen(true)
             }}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) {
+              if (
+                event.nativeEvent.isComposing ||
+                (event.key === 'Enter' && event.keyCode === 229)
+              ) {
                 event.stopPropagation()
                 return false
               }
@@ -347,6 +367,11 @@ export function WorkbenchComposer({
               if (menuOpen && event.key === 'Enter') return false
             }}
             onSubmit={(text) => {
+              if (mention) {
+                setOpen(false)
+                onAssistantMention?.(mention.query, mention.question)
+                return
+              }
               if (menuOpen) return
               const reference = text.trim().match(/^\/session\s+(\S+)(?:\s+([\s\S]*))?$/)
               if (reference) {
@@ -486,7 +511,9 @@ export function WorkbenchComposer({
                             disabled={controlsDisabled}
                             style={{ width: '100%' }}
                             onChange={(publicModel) =>
-                              onPreferencesChange(publicModel ? { publicModel, reasoningEffort: 'auto' } : {})
+                              onPreferencesChange(
+                                publicModel ? { publicModel, reasoningEffort: 'auto' } : {},
+                              )
                             }
                             options={[
                               {
@@ -505,16 +532,36 @@ export function WorkbenchComposer({
                           <Segmented
                             block
                             aria-label="思考强度"
-                            value={profileEffort && !preferences.reasoningEffort ? 'inherit' : effectiveEffort}
-                            disabled={controlsDisabled || (!efforts.length && !unsupportedEffort && !profileEffort)}
+                            value={
+                              profileEffort && !preferences.reasoningEffort
+                                ? 'inherit'
+                                : effectiveEffort
+                            }
+                            disabled={
+                              controlsDisabled ||
+                              (!efforts.length && !unsupportedEffort && !profileEffort)
+                            }
                             options={[
                               ...['auto' as const, ...efforts].map((effort) => ({
                                 value: effort,
                                 label: effortLabels[effort],
                               })),
-                              ...(profileEffort ? [{ value: 'inherit', label: `配置 · ${effortLabels[profileEffort]}` }] : []),
+                              ...(profileEffort
+                                ? [
+                                    {
+                                      value: 'inherit',
+                                      label: `配置 · ${effortLabels[profileEffort]}`,
+                                    },
+                                  ]
+                                : []),
                               ...(unsupportedEffort && preferences.reasoningEffort
-                                ? [{ value: effectiveEffort, label: effortLabels[effectiveEffort], disabled: true }]
+                                ? [
+                                    {
+                                      value: effectiveEffort,
+                                      label: effortLabels[effectiveEffort],
+                                      disabled: true,
+                                    },
+                                  ]
                                 : []),
                             ]}
                             onChange={(reasoningEffort) =>
@@ -531,10 +578,12 @@ export function WorkbenchComposer({
                             <span className="soha-ai-workbench__menu-label" role="status">
                               当前模型未确认支持此思考强度，请调整模型或强度。
                             </span>
-                          ) : !efforts.length && (
-                            <span className="soha-ai-workbench__menu-label">
-                              当前模型自动管理思考强度
-                            </span>
+                          ) : (
+                            !efforts.length && (
+                              <span className="soha-ai-workbench__menu-label">
+                                当前模型自动管理思考强度
+                              </span>
+                            )
                           )}
                           <span className="soha-ai-workbench__menu-label">
                             配置窗口：

@@ -188,6 +188,7 @@ type AIGatewayConfig struct {
 	ConnectorRuntime   AIGatewayConnectorRuntimeConfig   `mapstructure:"connector_runtime"`
 	ConnectorRuntimes  []AIGatewayConnectorRuntimeConfig `mapstructure:"connector_runtimes"`
 	ConnectorEventSink AIGatewayConnectorEventSinkConfig `mapstructure:"connector_event_sink"`
+	FeishuMesh         AIGatewayFeishuMeshConfig         `mapstructure:"feishu_mesh"`
 }
 
 type AIGatewayRelayConfig struct {
@@ -226,6 +227,18 @@ type AIGatewayConnectorRuntimeConfig struct {
 	ConnectorID string `mapstructure:"connector_id"`
 }
 
+// AIGatewayFeishuMeshConfig binds the private channel to one app and directory.
+type AIGatewayFeishuMeshConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	AppID        string `mapstructure:"app_id"`
+	TenantKey    string `mapstructure:"tenant_key"`
+	BotOpenID    string `mapstructure:"bot_open_id"`
+	ConnectionID string `mapstructure:"connection_id"`
+	Endpoint     string `mapstructure:"endpoint"`
+	IngressToken string `mapstructure:"ingress_token"`
+	RuntimeToken string `mapstructure:"runtime_token"`
+}
+
 type AIGatewayConnectorEventSinkConfig struct {
 	Token string `mapstructure:"token"`
 }
@@ -234,6 +247,36 @@ type PluginsConfig struct {
 	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
 	Companion   PluginCompanionConfig   `mapstructure:"companion"`
 	Repository  PluginRepositoryConfig  `mapstructure:"repository"`
+	Storage     PluginStorageConfig     `mapstructure:"storage"`
+	Executable  PluginExecutableConfig  `mapstructure:"executable"`
+}
+
+type PluginExecutableConfig struct {
+	PackageRoot          string                               `mapstructure:"package_root"`
+	RuntimeRoot          string                               `mapstructure:"runtime_root"`
+	StorageAccounts      map[string][]PluginExecutableAccount `mapstructure:"-"`
+	TrustedPublisherKeys map[string]string                    `mapstructure:"-"`
+}
+
+type PluginExecutableAccount struct {
+	UID uint32 `mapstructure:"uid"`
+	GID uint32 `mapstructure:"gid"`
+}
+
+type PluginStorageConfig struct {
+	PackageRoot string                      `mapstructure:"package_root"`
+	RuntimeRoot string                      `mapstructure:"runtime_root"`
+	Drivers     []PluginStorageDriverConfig `mapstructure:"drivers"`
+}
+
+type PluginStorageDriverConfig struct {
+	PluginID      string `mapstructure:"plugin_id"`
+	Version       string `mapstructure:"version"`
+	Repository    string `mapstructure:"repository"`
+	Commit        string `mapstructure:"commit"`
+	PublicKeyPath string `mapstructure:"public_key_path"`
+	UID           uint32 `mapstructure:"uid"`
+	GID           uint32 `mapstructure:"gid"`
 }
 
 type PluginRepositoryConfig struct {
@@ -371,6 +414,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	// Decode these maps as values so Viper does not split dots in plugin IDs
+	// and repository URLs into nested configuration keys.
+	if err := v.UnmarshalKey("plugins.executable.storage_accounts", &cfg.Plugins.Executable.StorageAccounts); err != nil {
+		return Config{}, fmt.Errorf("decode executable storage accounts: %w", err)
+	}
+	if err := v.UnmarshalKey("plugins.executable.trusted_publisher_keys", &cfg.Plugins.Executable.TrustedPublisherKeys); err != nil {
+		return Config{}, fmt.Errorf("decode executable trusted publisher keys: %w", err)
+	}
+
 	cfg.expandEnv()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -428,6 +480,8 @@ func (c *Config) expandEnv() {
 		c.AIGateway.ConnectorRuntimes[i].expandEnv()
 	}
 	c.AIGateway.ConnectorEventSink.Token = os.ExpandEnv(c.AIGateway.ConnectorEventSink.Token)
+	c.AIGateway.FeishuMesh.IngressToken = os.ExpandEnv(c.AIGateway.FeishuMesh.IngressToken)
+	c.AIGateway.FeishuMesh.RuntimeToken = os.ExpandEnv(c.AIGateway.FeishuMesh.RuntimeToken)
 	c.Plugins.Marketplace.URL = os.ExpandEnv(c.Plugins.Marketplace.URL)
 	for i := range c.Plugins.Marketplace.Sources {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
@@ -921,6 +975,14 @@ var configDefaults = []struct {
 	{"ai_gateway.connector_runtime.connector_id", ""},
 	{"ai_gateway.connector_runtimes", []map[string]any{}},
 	{"ai_gateway.connector_event_sink.token", ""},
+	{"ai_gateway.feishu_mesh.enabled", false},
+	{"ai_gateway.feishu_mesh.app_id", ""},
+	{"ai_gateway.feishu_mesh.tenant_key", ""},
+	{"ai_gateway.feishu_mesh.bot_open_id", ""},
+	{"ai_gateway.feishu_mesh.connection_id", ""},
+	{"ai_gateway.feishu_mesh.endpoint", ""},
+	{"ai_gateway.feishu_mesh.ingress_token", ""},
+	{"ai_gateway.feishu_mesh.runtime_token", ""},
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},

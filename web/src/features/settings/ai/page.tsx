@@ -90,6 +90,7 @@ import type { AISettingsPageProps } from '../types'
 import './styles.css'
 import { RuntimeAssetsSettings } from './runtime-assets'
 import { RuntimeProfilesSettings } from './runtime-profiles'
+import { AssistantMeshSettings } from './assistant-mesh-settings'
 
 const { Paragraph, Text } = Typography
 
@@ -842,6 +843,9 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       {!dataSourceModalVisible ? dataSourceMutation.feedback : null}
       {!profileModalVisible ? profileMutation.feedback : null}
       {showModel ? workbenchModelCard : null}
+      {showModel && canManageAISettings && companionOwner && (
+        <AssistantMeshSettings key={companionOwner} owner={companionOwner} />
+      )}
       {showModel && canViewAISettings && companionOwner && (
         <RuntimeAssetsSettings
           key={`runtime-assets:${companionOwner}`}

@@ -9,9 +9,11 @@ import (
 	"time"
 
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	domain "github.com/opensoha/soha/internal/domain/networkaccess"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	networkruntime "github.com/opensoha/soha/internal/repository/networkruntime"
 	"gorm.io/gorm"
 )
 
@@ -31,6 +33,7 @@ func (s *accessRepositoryScenario) checkEndpointResponse(t *testing.T) {
 	credentialID := "endpoint-credential-" + x.suffix
 	x.presence = domain.PresenceRecord{EndpointPresence: domain.EndpointPresence{DeviceID: x.updatedDevice.ID, RuntimeID: "endpoint-runtime-" + x.suffix, BootID: "boot-1", Sequence: 1, ServiceState: sohaapi.NetworkEndpointPresenceServiceStateHealthy, UIState: sohaapi.NetworkEndpointPresenceUIStateUnknown, PolicyVersion: x.snapshot.PolicyVersion, LastObservedAt: &x.now, LastReceivedAt: &x.now}, CredentialID: credentialID, PayloadHash: "payload-1", HeartbeatIntervalSeconds: 30}
 	t.Run("EndpointPresenceRejectsReplayAndRetiredBoot", x.checkPresenceReplay)
+	t.Run("StrictUIRequiresActiveAuthSession", x.checkStrictAuthSession)
 	if err := x.store.Exec(x.ctx, `UPDATE network_runtime_sessions SET subject_id=$1, authentication_method='eap-tls' WHERE id=$2`, x.userID, x.sessionID); err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +98,25 @@ func (s *accessRepositoryScenario) checkEndpointResponse(t *testing.T) {
 	})
 }
 
+func (x *endpointResponseScenario) checkStrictAuthSession(t *testing.T) {
+	id := "strict-ui-session-" + x.suffix
+	deadline := x.now.Truncate(time.Second).Add(time.Minute)
+	if err := x.store.Exec(x.ctx, `INSERT INTO sessions (id,user_id,refresh_token_id,provider_type,expires_at)
+		VALUES ($1,$2,$1,'local',$3)`, id, x.userID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	repo := networkruntime.New(x.store.DB(), appnetworkaccess.VPNGovernancePolicy{})
+	if got, err := repo.StrictUISessionDeadline(x.ctx, x.userID, id, x.now); err != nil || !got.Equal(deadline) {
+		t.Fatalf("active login deadline = %v, %v", got, err)
+	}
+	if err := x.store.Exec(x.ctx, `UPDATE sessions SET status='revoked' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.StrictUISessionDeadline(x.ctx, x.userID, id, x.now); err != nil || !got.IsZero() {
+		t.Fatalf("revoked login deadline = %v, %v", got, err)
+	}
+}
+
 func (x *endpointResponseScenario) checkPresenceReplay(t *testing.T) {
 	var err error
 	first, err := x.repository.SaveEndpointPresence(x.ctx, x.presence)
@@ -115,18 +137,29 @@ func (x *endpointResponseScenario) checkPresenceReplay(t *testing.T) {
 	changed.Sequence = 2
 	changed.PayloadHash = "payload-2"
 	changed.LastObservedAt, changed.LastReceivedAt = &later, &later
+	leaseUntil := later.Add(30 * time.Second)
+	changed.StrictUI = domain.StrictUILease{SubjectID: x.userID, Epoch: strings.Repeat("a", 64), Until: &leaseUntil}
 	next, err := x.repository.SaveEndpointPresence(x.ctx, changed)
 	if err != nil || next.HealthySamples != 2 {
 		t.Fatalf("healthy continuity=%#v error=%v", next, err)
+	}
+	readBack, err := x.repository.EndpointPresence(x.ctx, changed.DeviceID)
+	if err != nil || readBack.StrictUI.Epoch != changed.StrictUI.Epoch || !readBack.StrictUI.CurrentFor(x.userID, later) {
+		t.Fatalf("strict UI lease readback=%+v error=%v", readBack.StrictUI, err)
 	}
 	bootAt := later.Add(time.Second)
 	changed.BootID = "boot-2"
 	changed.Sequence = 1
 	changed.PayloadHash = "boot-2"
 	changed.LastObservedAt, changed.LastReceivedAt = &bootAt, &bootAt
+	changed.StrictUI = domain.StrictUILease{}
 	restarted, err := x.repository.SaveEndpointPresence(x.ctx, changed)
 	if err != nil || restarted.Epoch != 2 || restarted.HealthySamples != 1 {
 		t.Fatalf("new boot=%#v error=%v", restarted, err)
+	}
+	readBack, err = x.repository.EndpointPresence(x.ctx, changed.DeviceID)
+	if err != nil || readBack.StrictUI.CurrentFor(x.userID, bootAt) {
+		t.Fatalf("strict UI lease survived new boot=%+v error=%v", readBack.StrictUI, err)
 	}
 	retiredAt := bootAt.Add(time.Second)
 	changed.BootID = "boot-1"

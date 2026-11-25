@@ -1,0 +1,17 @@
+{
+  "id": "k8s-sre",
+  "name": "Kubernetes SRE",
+  "version": "0.1.0",
+  "category": "ai-gateway",
+  "packageDigest": "7bfb0dae4ae99f57f45a9b5834a6f245e4941b2055116fbf3a979de5955edfac",
+  "parameters": {
+    "namespace": {
+      "type": "string",
+      "description": "Target Kubernetes namespace.",
+      "required": true
+    },
+    "replicas": {
+      "type": "integer"
+    }
+  }
+}

@@ -43,8 +43,45 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 	registerSoftwareRoutes(protected, deps)
 	registerCompanionRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)
+	registerAssistantMeshRoutes(protected, deps)
 	registerSystemIntegrationRoutes(protected, deps)
 	registerSecretRoutes(protected, deps)
+}
+
+func registerAssistantMeshRoutes(protected gin.IRoutes, deps Dependencies) {
+	h := deps.AssistantMesh
+	if h == nil {
+		return
+	}
+	const reception = "/copilot/assistant-mesh"
+	const assets = reception + "/assets"
+	protected.GET(assets, h.List)
+	protected.POST(assets, h.Create)
+	protected.POST(assets+"/extract", h.Extract)
+	protected.GET(assets+"/:assetId", h.Get)
+	protected.PUT(assets+"/:assetId", h.Update)
+	protected.POST(assets+"/:assetId/actions/:action", h.Act)
+	protected.GET(reception+"/profile", h.ReceptionProfile)
+	protected.PUT(reception+"/profile", h.SaveReceptionProfile)
+	protected.POST(reception+"/assistants/search", h.DiscoverAssistants)
+	protected.GET(reception+"/inquiries", h.ListInquiries)
+	protected.POST(reception+"/inquiries", h.AskAssistant)
+	protected.POST(reception+"/inquiries/preview", h.PreviewInquiry)
+	protected.POST(reception+"/inquiries/:inquiryId/reply", h.ReplyInquiry)
+	protected.POST(reception+"/inquiries/:inquiryId/reply-and-publish", h.ShareInquiryReply)
+	protected.POST(reception+"/governance/inquiry-audit", h.ReadInquiryAudit)
+	protected.GET(reception+"/governance/inheritance", h.ListInheritance)
+	protected.POST(reception+"/governance/inheritance", h.TransferInheritance)
+	protected.POST(reception+"/governance/inheritance/retire", h.RetireInheritance)
+	const delegations = reception + "/delegations"
+	protected.GET(delegations, h.ListDelegations)
+	protected.POST(delegations, h.CreateDelegation)
+	protected.POST(delegations+"/native-device", h.RegisterManagedDevice)
+	protected.GET(delegations+"/:id", h.GetDelegation)
+	protected.POST(delegations+"/:id/decline", h.DeclineDelegation)
+	for _, action := range []string{"approve", "claim", "report", "deliver"} {
+		protected.POST(delegations+"/:id/"+action, h.NativeDelegation(action))
+	}
 }
 
 func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {

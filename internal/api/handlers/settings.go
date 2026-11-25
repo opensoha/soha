@@ -21,6 +21,8 @@ type IdentitySettingsService interface {
 
 type AISettingsService interface {
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
+	GetAssistantMeshSettings(context.Context, domainidentity.Principal) (domainsettings.AssistantMeshSettings, error)
+	UpdateAssistantMeshSettings(context.Context, domainidentity.Principal, domainsettings.AssistantMeshSettings) (domainsettings.AssistantMeshSettings, error)
 	GetAISkillsRegistry(context.Context, domainidentity.Principal) ([]domainsettings.AISkillSettings, error)
 	UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error)
 	UpdateAISkillsRegistry(context.Context, domainidentity.Principal, []domainsettings.AISkillSettings) (domainsettings.AISettings, error)

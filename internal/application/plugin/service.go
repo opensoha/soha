@@ -78,6 +78,7 @@ type Service struct {
 	projectionMu  sync.Mutex
 	companions    CompanionArtifactLifecycle
 	repositories  *repositoryDistribution
+	executable    *executablePlugins
 }
 
 type Option func(*Service)
@@ -191,6 +192,10 @@ func (s *Service) ListInstalled(ctx context.Context, principal domainidentity.Pr
 		if err := s.hydrateCompanionArtifacts(ctx, &items[index]); err != nil {
 			return nil, err
 		}
+		items[index], err = s.withExecutableDetails(ctx, items[index])
+		if err != nil {
+			return nil, err
+		}
 	}
 	return items, nil
 }
@@ -206,7 +211,7 @@ func (s *Service) GetInstalled(ctx context.Context, principal domainidentity.Pri
 	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func (s *Service) GetManifest(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.PluginManifest, error) {
@@ -225,6 +230,10 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	if executableManifest(resolved.Manifest) {
+		return domainplugin.InstalledPlugin{}, errMarketplaceRepositoryPreviewRequired
+	}
+
 	return s.installResolved(ctx, principal, input, resolved)
 }
 
@@ -241,7 +250,7 @@ func (s *Service) installResolved(ctx context.Context, principal domainidentity.
 	status := statusDisabled
 	var enabledAt *time.Time
 	configured := manifestConfigReady(manifest, map[string]string{})
-	if !configured {
+	if !configured && !executableManifest(manifest) {
 		status = statusPendingConfig
 	} else if input.Enable {
 		status = statusEnabled
@@ -290,14 +299,22 @@ func (s *Service) installResolved(ctx context.Context, principal domainidentity.
 		return domainplugin.InstalledPlugin{}, err
 	}
 	if !created {
-		return item, nil
+		return s.withExecutableDetails(ctx, item)
 	}
 	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "install", item, "installed plugin manifest snapshot")
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func sameInstallation(current, candidate domainplugin.InstalledPlugin) bool {
+	if executableManifest(current.Manifest) || executableManifest(candidate.Manifest) {
+		return executableManifest(current.Manifest) && executableManifest(candidate.Manifest) &&
+			samePluginSource(current.SourceInfo, candidate.SourceInfo) && current.Version == candidate.Version &&
+			current.SourceInfo.CommitSha == candidate.SourceInfo.CommitSha &&
+			current.SourceInfo.RawManifestChecksum == candidate.SourceInfo.RawManifestChecksum &&
+			current.SourceInfo.PublisherKeyFingerprint == candidate.SourceInfo.PublisherKeyFingerprint &&
+			current.SourceInfo.ReleaseAttestationDigest == candidate.SourceInfo.ReleaseAttestationDigest
+	}
 	if current.SourceInfo != nil && candidate.SourceInfo != nil {
 		return current.Version == candidate.Version &&
 			samePluginSource(current.SourceInfo, candidate.SourceInfo) &&
@@ -316,9 +333,13 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	defer s.withExecutableMutation()()
 	item, err := s.repo.GetInstalled(ctx, pluginID)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
+	}
+	if executableManifest(item.Manifest) && item.Status == statusEnabled && s.executable != nil && s.executable.runtime.Ready(item.ID, item.Version) {
+		return s.withExecutableDetails(ctx, item)
 	}
 	expected := item
 	now := time.Now().UTC()
@@ -342,19 +363,24 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 		item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 	}
 	item.UpdatedAt = now
-	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
+	if executableManifest(item.Manifest) {
+		item, err = s.commitExecutableChange(ctx, expected, item, false)
+	} else {
+		item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
+	}
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "enable", item, "enabled plugin")
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func (s *Service) Disable(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.InstalledPlugin, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	defer s.withExecutableMutation()()
 	item, err := s.repo.GetInstalled(ctx, pluginID)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
@@ -365,13 +391,17 @@ func (s *Service) Disable(ctx context.Context, principal domainidentity.Principa
 	item.DisabledAt = &now
 	item.EnabledAt = nil
 	item.UpdatedAt = now
-	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
+	if executableManifest(item.Manifest) {
+		item, err = s.commitExecutableChange(ctx, expected, item, false)
+	} else {
+		item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
+	}
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "disable", item, "disabled plugin")
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principal, pluginID string, input domainplugin.PluginInstallRequest) (domainplugin.InstalledPlugin, error) {
@@ -398,6 +428,10 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	if current.SourceInfo != nil && !samePluginSource(current.SourceInfo, resolved.SourceInfo) {
 		return domainplugin.InstalledPlugin{}, repositorySourceConflict()
 	}
+	if executableManifest(resolved.Manifest) {
+		return domainplugin.InstalledPlugin{}, errMarketplaceRepositoryPreviewRequired
+	}
+
 	return s.upgradeResolved(ctx, principal, current, input, resolved)
 }
 
@@ -447,7 +481,12 @@ func (s *Service) upgradeResolved(ctx context.Context, principal domainidentity.
 			return s.upgradeCompanionArtifact(ctx, expected, manifest, input, resolved)
 		}
 	}
-	item, err := s.repo.UpdateInstalled(ctx, expected, current, prepare)
+	var item domainplugin.InstalledPlugin
+	if executableManifest(current.Manifest) {
+		item, err = s.commitExecutableChange(ctx, expected, current, true)
+	} else {
+		item, err = s.repo.UpdateInstalled(ctx, expected, current, prepare)
+	}
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
@@ -456,7 +495,7 @@ func (s *Service) upgradeResolved(ctx context.Context, principal domainidentity.
 	}
 	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "upgrade", item, "upgraded plugin manifest snapshot")
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func (s *Service) upgradeCompanionArtifact(ctx context.Context, current domainplugin.InstalledPlugin, manifest domainplugin.PluginManifest, input domainplugin.PluginInstallRequest, resolved ResolvedManifest) error {
@@ -492,9 +531,13 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 			return domainplugin.InstalledPlugin{}, err
 		}
 	}
+	defer s.withExecutableMutation()()
 	item, err := s.repo.GetInstalled(ctx, pluginID)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
+	}
+	if executableManifest(item.Manifest) && input.Enabled != nil {
+		return domainplugin.InstalledPlugin{}, apperrors.ErrUnsupportedOperation
 	}
 	expected := item
 	if input.SecretRefs != nil {
@@ -539,6 +582,9 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 			item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 		}
 	}
+	if executableManifest(item.Manifest) && item.Status != expected.Status {
+		return domainplugin.InstalledPlugin{}, apperrors.ErrConflict
+	}
 	item.UpdatedAt = now
 	item, err = s.repo.UpdateInstalled(ctx, expected, item, nil)
 	if err != nil {
@@ -546,24 +592,42 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 	}
 	s.reconcileCurrent(ctx, item.ID)
 	s.recordAudit(ctx, principal, "configure", item, "configured plugin")
-	return item, nil
+	return s.withExecutableDetails(ctx, item)
 }
 
 func (s *Service) Remove(ctx context.Context, principal domainidentity.Principal, pluginID string) error {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginRemove); err != nil {
 		return err
 	}
-	item, err := s.repo.RemoveInstalled(ctx, pluginID, func(ctx context.Context, item domainplugin.InstalledPlugin) error {
-		if item.Type == "companion-pack" && s.companions != nil {
-			return s.companions.Remove(ctx, item.ID)
-		}
-		return nil
-	})
+	defer s.withExecutableMutation()()
+	current, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return err
+	}
+	var item domainplugin.InstalledPlugin
+	commit := func() error {
+		item, err = s.repo.RemoveInstalled(ctx, pluginID, func(ctx context.Context, item domainplugin.InstalledPlugin) error {
+			if item.Type == "companion-pack" && s.companions != nil {
+				return s.companions.Remove(ctx, item.ID)
+			}
+			return nil
+		})
+		return err
+	}
+	if executableManifest(current.Manifest) {
+		err = s.removeExecutable(ctx, current, commit)
+	} else {
+		err = commit()
+	}
 	if err != nil {
 		return err
 	}
 	s.reconcileCurrent(ctx, pluginID)
-	s.recordAudit(ctx, principal, "remove", item, "removed plugin")
+	summary := "removed plugin"
+	if executableManifest(item.Manifest) && s.cleanRemovedExecutable(ctx, item.ID) != nil {
+		summary = "removed plugin; local package cleanup needs operator attention"
+	}
+	s.recordAudit(context.WithoutCancel(ctx), principal, "remove", item, summary)
 	return nil
 }
 
@@ -726,7 +790,7 @@ func (s *Service) reconcileCurrent(ctx context.Context, pluginID string) {
 }
 
 func (s *Service) reconcileItem(item domainplugin.InstalledPlugin) {
-	if item.Status != statusEnabled {
+	if item.Status != statusEnabled || executableManifest(item.Manifest) {
 		s.extensions.UnregisterPlugin(item.ID)
 		return
 	}
@@ -936,7 +1000,7 @@ func validateRuntime(runtime *domainplugin.PluginRuntimeSpec) error {
 		return nil
 	}
 	switch runtime.Mode {
-	case "", "manifest-only", "external-http", "managed-container":
+	case "", "manifest-only", "external-http", "managed-container", "executable-package-v1":
 		return nil
 	default:
 		return fmt.Errorf("%w: unsupported plugin runtime mode %q", apperrors.ErrInvalidArgument, runtime.Mode)

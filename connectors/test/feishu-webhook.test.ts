@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   calculateFeishuSignature,
   encryptFeishuWebhookPayload,
+  normalizeFeishuEvent,
   parseFeishuWebhook
 } from "../src/connectors/feishu/webhook.js";
 
@@ -119,6 +120,26 @@ test("Feishu webhook rejects token mismatch", () => {
       ),
     /token mismatch/
   );
+});
+
+test("Feishu normalizer carries appId when the header provides it", () => {
+  const base = messagePayload();
+  const payload = { ...base, header: { ...base.header, app_id: "cli_a" } };
+
+  const event = normalizeFeishuEvent(payload, new Date("2024-03-09T12:00:00Z"));
+  const withoutApp = normalizeFeishuEvent(messagePayload(), new Date("2024-03-09T12:00:00Z"));
+
+  assert.equal(event.payload.appId, "cli_a");
+  assert.equal(event.payload.tenantKey, "tenant-1");
+  assert.equal(event.payload.providerCreateTime, "1710000000000");
+  assert.equal(event.payload.token, undefined);
+  const noTime = normalizeFeishuEvent(
+    { ...payload, header: { ...payload.header, create_time: "" } }, new Date("2024-03-09T12:00:00Z")
+  );
+  assert.equal(noTime.occurredAt, "2024-03-09T12:00:00.000Z");
+  assert.equal(noTime.payload.providerCreateTime, undefined);
+  assert.equal(withoutApp.payload.appId, undefined);
+  assert.equal("appId" in withoutApp.payload, false);
 });
 
 function messagePayload() {

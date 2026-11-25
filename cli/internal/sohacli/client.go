@@ -790,6 +790,15 @@ func (c APIClient) UpgradeRepositoryPlugin(ctx context.Context, pluginID string,
 	return out.Data, nil
 }
 
+func (c APIClient) RollbackRepositoryPlugin(ctx context.Context, pluginID string, input sohaapi.PluginRepositoryRollbackRequest, headers map[string]string) (InstalledPlugin, error) {
+	var out itemResponse[InstalledPlugin]
+	path := "/api/v1/plugins/" + url.PathEscape(strings.TrimSpace(pluginID)) + "/repository/rollback"
+	if err := c.doJSON(ctx, http.MethodPost, path, c.Token, headers, input, &out); err != nil {
+		return InstalledPlugin{}, err
+	}
+	return out.Data, nil
+}
+
 func (c APIClient) EnablePlugin(ctx context.Context, pluginID string, headers map[string]string) (InstalledPlugin, error) {
 	return c.pluginAction(ctx, pluginID, "enable", headers)
 }

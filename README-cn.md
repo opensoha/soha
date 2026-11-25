@@ -134,6 +134,8 @@ make init          # 或：make init DEV_DB_MODE=local（拉起 Compose PostgreS
 make               # 同时启动 Go API (:8080) 与 Vite 前端 (:5173)
 ```
 
+在仓库根目录运行 `npm ci`。根锁文件管理 `contracts/`、`web/`、`connectors/`、`cli/npm/cli/` 和 `plugin-sdk/ui/`。
+
 - 控制台：`http://localhost:5173` · API：`http://localhost:8080`
 - 分别启动：`make dev-api` / `make dev-web`（启动 Agent 运行时：`cd agent && go run ./cmd/agent`）
 - 完整开发环境与数据库说明：[本地开发指南](https://docs.opensoha.com/zh/docs/development/local-development)

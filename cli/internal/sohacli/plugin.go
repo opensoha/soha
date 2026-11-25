@@ -11,7 +11,7 @@ import (
 
 func runPlugin(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) == 0 {
-		return fmt.Errorf("plugin requires a subcommand: search, show, install, list, enable, disable, upgrade, config, remove")
+		return fmt.Errorf("plugin requires a subcommand: search, show, install, list, enable, disable, upgrade, rollback, config, remove")
 	}
 	switch args[0] {
 	case "search":
@@ -28,6 +28,8 @@ func runPlugin(ctx context.Context, args []string, rt Runtime) error {
 		return runPluginDisable(ctx, args[1:], rt)
 	case "upgrade":
 		return runPluginUpgrade(ctx, args[1:], rt)
+	case "rollback":
+		return runPluginRepositoryRollback(ctx, args[1:], rt)
 	case "config":
 		return runPluginConfig(ctx, args[1:], rt)
 	case "remove", "rm":
@@ -49,6 +51,7 @@ func runPluginInstall(ctx context.Context, args []string, rt Runtime) error {
 	enable := fs.Bool("enable", false, "enable after install")
 	repositoryURL := fs.String("repository", "", "public GitHub repository URL")
 	ref := fs.String("ref", "", "repository branch, tag, or commit")
+	trustPublisher := fs.String("trust-publisher", "", "acknowledge the exact publisher key fingerprint shown in a prior preview")
 	yes := fs.Bool("yes", false, "confirm the reviewed repository preview without prompting")
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	if err := fs.Parse(args); err != nil {
@@ -63,14 +66,15 @@ func runPluginInstall(ctx context.Context, args []string, rt Runtime) error {
 			return err
 		}
 		return runPluginRepositoryInstall(ctx, rt, profile, pluginRepositoryInstallOptions{
-			RepositoryURL: *repositoryURL,
-			Ref:           *ref,
-			Enable:        *enable,
-			Yes:           *yes,
-			JSON:          *jsonOutput,
+			RepositoryURL:  *repositoryURL,
+			Ref:            *ref,
+			TrustPublisher: *trustPublisher,
+			Enable:         *enable,
+			Yes:            *yes,
+			JSON:           *jsonOutput,
 		})
 	}
-	if err := rejectPluginFlags(fs, "ref", "yes"); err != nil {
+	if err := rejectPluginFlags(fs, "ref", "yes", "trust-publisher"); err != nil {
 		return err
 	}
 	_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)
@@ -153,6 +157,7 @@ func runPluginUpgrade(ctx context.Context, args []string, rt Runtime) error {
 	expectedChecksum := fs.String("expected-checksum", "", "expected sha256:<hex> manifest checksum")
 	repository := fs.Bool("repository", false, "upgrade from the installed plugin's stored repository source")
 	ref := fs.String("ref", "", "repository branch, tag, or commit")
+	trustPublisher := fs.String("trust-publisher", "", "acknowledge the exact publisher key fingerprint shown in a prior preview")
 	confirmPermissionIncrease := fs.Bool("confirm-permission-increase", false, "acknowledge added repository permissions")
 	yes := fs.Bool("yes", false, "confirm the reviewed repository preview without prompting")
 	jsonOutput := fs.Bool("json", false, "print JSON output")
@@ -173,12 +178,13 @@ func runPluginUpgrade(ctx context.Context, args []string, rt Runtime) error {
 		}
 		return runPluginRepositoryUpgrade(ctx, rt, profile, pluginID, pluginRepositoryUpgradeOptions{
 			Ref:                       *ref,
+			TrustPublisher:            *trustPublisher,
 			ConfirmPermissionIncrease: *confirmPermissionIncrease,
 			Yes:                       *yes,
 			JSON:                      *jsonOutput,
 		})
 	}
-	if err := rejectPluginFlags(fs, "ref", "confirm-permission-increase", "yes"); err != nil {
+	if err := rejectPluginFlags(fs, "ref", "confirm-permission-increase", "yes", "trust-publisher"); err != nil {
 		return err
 	}
 	_, _, profile, err := loadRuntimeProfile(ctx, rt, *profileFlag)

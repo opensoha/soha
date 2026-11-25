@@ -32,7 +32,7 @@
 ## 验证与交付
 
 - 本地对受影响的包或用例运行定向回归。Go 源码使用根 `go.work`，模块归属检查用 `python3 scripts/source-workspace.py check-go`；外部声明依赖另用 `GOWORK=off`。完整测试、依赖审计、race、vet、漏洞扫描与镜像矩阵由 [GitHub Actions](.github/workflows/ci.yml) 按变更路径执行。需要复现某项失败时在本地运行对应检查。
-- npm 安装只从根 `npm ci` 开始；四个 workspace 为 `contracts`、`web`、`connectors`、`cli/npm/cli`，组件从根使用 `npm run <script> --workspace <组件>`。Agent DSH 独立 Node 24 runtime 保留自己的锁文件；不加入根 npm workspace。`npm run build:web` 生成并校验 SDK、构建 Web、核对字节后嵌入；不得新增子目录锁文件或用工作区链接冒充 registry 分发。
+- npm 安装只从根 `npm ci` 开始；五个 workspace 为 `contracts`、`web`、`connectors`、`cli/npm/cli`、`plugin-sdk/ui`，组件从根使用 `npm run <script> --workspace <组件>`。Agent DSH 独立 Node 24 runtime 保留自己的锁文件；不加入根 npm workspace。`npm run build:web` 生成并校验 SDK、构建 Web、核对字节后嵌入；不得新增子目录锁文件或用工作区链接冒充 registry 分发。
 - 发布所有者与标签入口以 [.github/release-components.json](.github/release-components.json) 为准；组件工作流只使用本仓精确 tag/SHA，公开依赖验证与同源码验证分开。写入前按发布守卫核对 `.github/legacy-retirement.json` 的封存回执及 `.github/release-components.json` 中的哈希、该精确 SHA 的 main CI 和受限 environment/owner 开关；不要求已退役旧仓的 API 继续可读，也不能将 404 当作交接证明。只有 Core 管理 GitHub latest。已发布版本、附件和镜像版本标签不得覆盖，SDK staged 恢复复用原产物，不能重新打包替换。
 - 主仓源码构建记录共同的 Root SHA 及各组件产物摘要；外部消费者另记其 SHA/产物。固定兼容组合和同提交源码检查分别报告。写入版本号不等于组合已经通过验收。
 - 应用/集群删除使用[独立 PostgreSQL 集成检查](.github/workflows/deletion-integration.yml)，要求目标测试实际运行、通过且无跳过子测试；本地仅连接可丢弃的隔离测试库，不使用开发或生产业务数据库。

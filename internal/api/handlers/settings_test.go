@@ -34,6 +34,14 @@ func (s stubSettingsService) GetAISettings(context.Context, domainidentity.Princ
 	return s.ai, nil
 }
 
+func (s stubSettingsService) GetAssistantMeshSettings(context.Context, domainidentity.Principal) (domainsettings.AssistantMeshSettings, error) {
+	return domainsettings.DefaultAssistantMeshSettings(), nil
+}
+
+func (s stubSettingsService) UpdateAssistantMeshSettings(_ context.Context, _ domainidentity.Principal, item domainsettings.AssistantMeshSettings) (domainsettings.AssistantMeshSettings, error) {
+	return item, nil
+}
+
 func (s stubSettingsService) GetAISkillsRegistry(context.Context, domainidentity.Principal) ([]domainsettings.AISkillSettings, error) {
 	return s.ai.SkillsRegistry, nil
 }
