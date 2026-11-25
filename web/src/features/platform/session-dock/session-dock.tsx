@@ -158,9 +158,12 @@ function SessionDockOwner({
       if (!sessionReferenceMatchesScope(session.reference, workbench, scopeKey)) return
 
       setSessions((current) => {
-        const existing = current.findIndex((item) => item.id === session.id)
-        if (existing < 0) return [...current, session]
-        return current.map((item, index) => (index === existing ? session : item))
+        const existing = current.find((item) => item.id === session.id)
+        if (!existing) return [...current, session]
+        // The key contains the connection and reference identity. Showing the same session
+        // must keep that object stable so the terminal does not reconnect.
+        if (existing.streamingDisabledReason === session.streamingDisabledReason) return current
+        return current.map((item) => (item === existing ? session : item))
       })
       setActiveSessionKeys((current) => ({ ...current, [session.clusterId]: session.id }))
       if (workbench === 'delivery') store.setState({ selectedClusterId: session.clusterId })

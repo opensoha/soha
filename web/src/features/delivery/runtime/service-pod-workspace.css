@@ -303,6 +303,16 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 520px) {
+  .soha-service-detail .soha-pod-card {
+    gap: 4px 12px;
+    padding: 8px 12px;
+  }
+  .soha-service-detail .soha-pod-card-facts {
+    column-gap: 6px;
+  }
+  .soha-service-detail .soha-pod-card-facts > span + span {
+    padding-left: 6px;
+  }
   .soha-pod-drawer-context {
     grid-template-columns: minmax(0, 1fr);
   }

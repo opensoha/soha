@@ -216,6 +216,18 @@ async function chainMocks(context: BrowserContext, page: Page) {
         },
       }
     }
+    if (path === '/api/v1/delivery/plans/plan-b3/service-reference-impact' && method === 'GET')
+      return {
+        body: {
+          planId: 'plan-b3',
+          sourceApplicationEnvironmentId: 'test',
+          revision: 'a'.repeat(64),
+          currentRevision: 'a'.repeat(64),
+          isCurrent: true,
+          items: [],
+          hasRestrictedConsumers: false,
+        },
+      }
     if (path === '/api/v1/delivery/plans/plan-b3')
       return {
         body: {

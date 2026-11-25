@@ -430,7 +430,11 @@ describe('realtime session dock', () => {
     expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="logs:cluster-a:pod-b"]')).not.toBeNull()
 
-    await click(container.querySelector('.soha-header-realtime-sessions'))
+    const validationReads = authorization.refetch.mock.calls.length
+    await click(buttonByText('terminal-a'))
+    await flushAsyncWork()
+    expect(authorization.refetch).toHaveBeenCalledTimes(validationReads)
+    expect(dock?.hidden).toBe(false)
     await act(async () => {
       usePlatformScopeStore.getState().setClusterId('cluster-b')
     })
