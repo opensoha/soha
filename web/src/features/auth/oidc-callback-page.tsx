@@ -82,10 +82,10 @@ export function OIDCCallbackPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center"
+      className="soha-viewport-center"
       style={{ backgroundColor: token.colorBgLayout }}
     >
-      <div className="flex flex-col items-center gap-4">
+      <div className="soha-stack-lg items-center">
         {error ? (
           <>
             <Title level={4}>登录失败</Title>
@@ -94,7 +94,7 @@ export function OIDCCallbackPage() {
             </Text>
             <a
               href={appBrowserPath('/login')}
-              className="mt-4"
+              className="soha-mt-md"
               style={{ color: token.colorPrimary }}
               onClick={handleBackToLogin}
             >

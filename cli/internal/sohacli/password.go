@@ -24,7 +24,7 @@ func readHiddenLine(rt Runtime, trimSpace bool) (string, error) {
 		}
 		return string(raw), nil
 	}
-	line, err := bufio.NewReader(rt.In).ReadString('\n')
+	line, err := bufio.NewReader(io.LimitReader(rt.In, 64<<10)).ReadString('\n')
 	if err != nil && err != io.EOF {
 		return "", err
 	}

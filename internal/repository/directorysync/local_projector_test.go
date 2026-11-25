@@ -207,6 +207,9 @@ func TestDeactivatePersonSuspendsManagedUserWithoutRevokingCredentials(t *testin
 	mock.ExpectExec("DELETE FROM user_team_bindings").WithArgs("user-1", "directory:connection-1", "provider-1").WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectQuery("SELECT COALESCE.*directoryManagedBy").WithArgs("connection-1", "user-1").WillReturnRows(sqlmock.NewRows([]string{"managed"}).AddRow(true))
 	mock.ExpectExec("UPDATE users SET status='disabled'").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE sessions SET status='revoked'").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec("UPDATE identity_oidc_refresh_tokens SET revoked_at").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec("UPDATE identity_oidc_sessions SET revoked_at").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := projector.deactivatePerson(db, connection, domain.DefaultPolicy(connection.ID), person, person.ProviderSubject, directorySource(connection), connection.LoginProviderID); err != nil {
 		t.Fatal(err)

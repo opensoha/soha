@@ -86,11 +86,12 @@ function PvcDetailContent({
     enabled: Boolean(options.enabled) && canRead,
     refetchInterval: refresh.interval,
   })
+  const yamlNeeded = active === 'overview' || active === 'yaml'
   const yamlOptions = persistentVolumeClaimQueries.yaml(scope, name)
   const yamlQuery = useQuery({
     ...yamlOptions,
-    enabled: Boolean(yamlOptions.enabled) && canRead && active !== 'pods',
-    refetchInterval: active !== 'pods' ? refresh.interval : false,
+    enabled: Boolean(yamlOptions.enabled) && canRead && yamlNeeded,
+    refetchInterval: yamlNeeded ? refresh.interval : false,
   })
   const candidate = canRead ? readableQueryData(detailQuery) : undefined
   const identityError = Boolean(

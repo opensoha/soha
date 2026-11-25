@@ -99,7 +99,7 @@ func runPluginInstall(ctx context.Context, args []string, rt Runtime) error {
 		return err
 	}
 	if *jsonOutput {
-		return writePrettyJSON(rt.Out, item)
+		return writePrettyJSON(rt.Out, sanitizeCLIValue(item))
 	}
 	_, err = fmt.Fprintf(rt.Out, "Installed plugin %s %s (%s)\n", item.ID, item.Version, item.Status)
 	return err
@@ -140,7 +140,7 @@ func runPluginAction(ctx context.Context, args []string, rt Runtime, action stri
 		return err
 	}
 	if *jsonOutput {
-		return writePrettyJSON(rt.Out, item)
+		return writePrettyJSON(rt.Out, sanitizeCLIValue(item))
 	}
 	_, err = fmt.Fprintf(rt.Out, "%sd plugin %s (%s)\n", strings.ToUpper(action[:1])+action[1:], item.ID, item.Status)
 	return err
@@ -208,7 +208,7 @@ func runPluginUpgrade(ctx context.Context, args []string, rt Runtime) error {
 		return err
 	}
 	if *jsonOutput {
-		return writePrettyJSON(rt.Out, item)
+		return writePrettyJSON(rt.Out, sanitizeCLIValue(item))
 	}
 	_, err = fmt.Fprintf(rt.Out, "Upgraded plugin %s to %s\n", item.ID, item.Version)
 	return err
@@ -257,7 +257,7 @@ func runPluginConfig(ctx context.Context, args []string, rt Runtime) error {
 		return err
 	}
 	if *jsonOutput {
-		return writePrettyJSON(rt.Out, item)
+		return writePrettyJSON(rt.Out, sanitizeCLIValue(item))
 	}
 	_, err = fmt.Fprintf(rt.Out, "Configured plugin %s\n", item.ID)
 	return err

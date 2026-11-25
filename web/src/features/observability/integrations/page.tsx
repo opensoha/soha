@@ -288,7 +288,7 @@ export function AlertIntegrationsPage() {
       render: (value: string, record) => (
         <Space orientation="vertical" size={2}>
           <Text strong>{value || record.id}</Text>
-          <Text type="secondary" className="text-xs">
+          <Text type="secondary">
             {record.id}
           </Text>
         </Space>

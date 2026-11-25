@@ -10,7 +10,6 @@ import { ManagementState } from '@/components/management-list'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
-import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
@@ -43,6 +42,10 @@ import { useParams, useSearchParams, type SetURLSearchParams } from 'react-route
 import { SubmittedValues } from './submitted-values'
 import { planHelmReleaseRollback } from '../api'
 import { helmMutations } from '../mutations'
+
+const YamlDraftDiffEditor = lazy(async () => ({
+  default: (await import('@/components/yaml-draft-diff-editor')).YamlDraftDiffEditor,
+}))
 import { helmQueries } from '../queries'
 import type {
   HelmReleaseHistory,
@@ -583,15 +586,17 @@ function HelmReleaseContent({
           {selectedRevision &&
           visibleCurrentManifestQueryData &&
           visibleSelectedManifestQueryData ? (
-            <YamlDraftDiffEditor
-              baselineOnLeft
-              editable={false}
-              modified={visibleSelectedManifestQueryData.content}
-              original={visibleCurrentManifestQueryData.content}
-              title={localeCode === 'zh_CN' ? '渲染清单差异' : 'Rendered manifest diff'}
-              leftLabel={`${localeCode === 'zh_CN' ? '当前' : 'Current'} · Revision ${visibleCurrentManifestQueryData.revision}`}
-              rightLabel={`Revision ${visibleSelectedManifestQueryData.revision}`}
-            />
+            <Suspense fallback={<Spin />}>
+              <YamlDraftDiffEditor
+                baselineOnLeft
+                editable={false}
+                modified={visibleSelectedManifestQueryData.content}
+                original={visibleCurrentManifestQueryData.content}
+                title={localeCode === 'zh_CN' ? '渲染清单差异' : 'Rendered manifest diff'}
+                leftLabel={`${localeCode === 'zh_CN' ? '当前' : 'Current'} · Revision ${visibleCurrentManifestQueryData.revision}`}
+                rightLabel={`Revision ${visibleSelectedManifestQueryData.revision}`}
+              />
+            </Suspense>
           ) : selectedRevision &&
             (currentManifestQuery.isLoading || selectedManifestQuery.isLoading) ? (
             <Spin />

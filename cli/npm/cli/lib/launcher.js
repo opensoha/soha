@@ -66,19 +66,36 @@ function releaseURL(baseURL, version, fileName) {
 
 function assertDownloadURL(value) {
   const parsed = new URL(value);
-  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "::1";
+  const loopback =
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "::1" ||
+    parsed.hostname === "[::1]";
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
     throw new Error(`refusing insecure download URL ${value}`);
   }
 }
 
 async function download(url, maxBytes) {
-  assertDownloadURL(url);
-  const response = await fetch(url, {
-    redirect: "follow",
-    headers: { "user-agent": "@opensoha/cli" },
-  });
-  assertDownloadURL(response.url);
+  let currentURL = url;
+  let response;
+  for (let hop = 0; hop <= 10; hop += 1) {
+    assertDownloadURL(currentURL);
+    response = await fetch(currentURL, {
+      redirect: "manual",
+      headers: { "user-agent": "@opensoha/cli" },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location || hop === 10) {
+        throw new Error(`download ${url} exceeded redirect limit`);
+      }
+      currentURL = new URL(location, currentURL).href;
+      continue;
+    }
+    break;
+  }
   if (!response.ok) {
     throw new Error(`download ${url} returned HTTP ${response.status}`);
   }
@@ -86,11 +103,20 @@ async function download(url, maxBytes) {
   if (contentLength > maxBytes) {
     throw new Error(`download ${url} exceeds the ${maxBytes}-byte limit`);
   }
-  const raw = Buffer.from(await response.arrayBuffer());
-  if (raw.length > maxBytes) {
-    throw new Error(`download ${url} exceeds the ${maxBytes}-byte limit`);
+  if (!response.body) {
+    return Buffer.alloc(0);
   }
-  return raw;
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of response.body) {
+    const buf = Buffer.from(chunk);
+    totalBytes += buf.length;
+    if (totalBytes > maxBytes) {
+      throw new Error(`download ${url} exceeds the ${maxBytes}-byte limit`);
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks, totalBytes);
 }
 
 async function readIfPresent(filePath) {

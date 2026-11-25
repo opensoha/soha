@@ -78,8 +78,6 @@ func (c *Client) QueryPodLogs(ctx context.Context, query domainresource.LogQuery
 		page.Coverage.SuccessfulSources++
 		page.Truncated = page.Truncated || result.truncated
 		page.Entries = append(page.Entries, result.entries...)
-		sortAggregateLogEntries(page.Entries, query.Direction)
-		page.Entries, page.Truncated = boundAggregateLogEntries(page.Entries, query.Limit, page.Truncated)
 	}
 
 	sortAggregateLogEntries(page.Entries, query.Direction)

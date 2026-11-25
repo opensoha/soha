@@ -83,6 +83,9 @@ func (l *BoundedRateLimiter) allow(key string, limit int, window time.Duration) 
 }
 
 func (l *BoundedRateLimiter) makeRoom(now time.Time, window time.Duration) {
+	if len(l.entries) < l.maxEntries {
+		return
+	}
 	for key, entry := range l.entries {
 		if now.Sub(entry.windowStart) >= window {
 			delete(l.entries, key)

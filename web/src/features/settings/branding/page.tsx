@@ -51,7 +51,7 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
 
   if (permissionSnapshotQuery.isLoading || isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )

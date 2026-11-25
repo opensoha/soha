@@ -501,7 +501,7 @@ function WorkerPoolsContent({
           >
             <Input placeholder="v1.x.y" />
           </Form.Item>
-          <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+          <div className="soha-form-grid-2--sm">
             {(
               [
                 ['providerNode', text('PVE 节点', 'PVE node')],

@@ -9,7 +9,10 @@ import (
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
-const outpostControlMaxLease = 30 * time.Second
+const (
+	outpostControlMaxLease  = 30 * time.Second
+	outpostControlClockSkew = 2 * time.Second
+)
 
 type outpostControlFloor struct {
 	Generation int64                                       `json:"generation"`
@@ -59,7 +62,7 @@ func (o *outpostRuntime) validateControl(c *sohaapi.IdentityOutpostRuntimeContro
 }
 
 func validOutpostControlLease(c *sohaapi.IdentityOutpostRuntimeControl, now time.Time) bool {
-	return c.Generation > 0 && (c.Action == "serve" || c.Action == "drain") && !c.IssuedAt.IsZero() && !c.IssuedAt.After(now) && c.ExpiresAt.After(c.IssuedAt) && c.ExpiresAt.Sub(c.IssuedAt) <= outpostControlMaxLease && now.Before(c.ExpiresAt)
+	return c.Generation > 0 && (c.Action == "serve" || c.Action == "drain") && !c.IssuedAt.IsZero() && !c.IssuedAt.After(now.Add(outpostControlClockSkew)) && c.ExpiresAt.After(c.IssuedAt) && c.ExpiresAt.Sub(c.IssuedAt) <= outpostControlMaxLease && now.Before(c.ExpiresAt)
 }
 
 func (f outpostControlFloor) accepts(c *sohaapi.IdentityOutpostRuntimeControl) bool {

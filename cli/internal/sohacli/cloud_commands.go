@@ -65,9 +65,9 @@ func runCloudFleetDiagnostics(ctx context.Context, args []string, rt Runtime) er
 
 	switch formatValue {
 	case "json":
-		return writePrettyJSON(rt.Out, diagnostics)
+		return writePrettyJSON(rt.Out, sanitizeCLIJSONValue(diagnostics))
 	case "yaml":
-		return writeYAML(rt.Out, diagnostics)
+		return writeYAML(rt.Out, sanitizeCLIJSONValue(diagnostics))
 	case "summary":
 		return writeCloudFleetDiagnosticsSummary(rt, profileName, diagnostics)
 	default:

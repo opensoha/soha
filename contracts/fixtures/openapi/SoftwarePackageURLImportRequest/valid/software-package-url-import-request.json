@@ -11,6 +11,6 @@
   "platform": "darwin",
   "arch": "arm64",
   "storageIntegrationId": "software-object-storage",
-  "url": "https://downloads.opensoha.dev/soha-desktop-0.2.0-arm64.dmg",
+  "url": "https://downloads.opensoha.com/soha-desktop-0.2.0-arm64.dmg",
   "fileName": "soha-desktop-0.2.0-arm64.dmg"
 }

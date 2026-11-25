@@ -58,39 +58,47 @@ func (s *AdvancedMemoryStore) ListAttempts(_ context.Context, runID string) ([]S
 func (s *AdvancedMemoryStore) PutReplayPlan(_ context.Context, item ReplayPlan) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.replays[item.ID] = item
+	s.replays[item.ID] = cloneReplayPlan(item)
 	return nil
 }
 func (s *AdvancedMemoryStore) ListReplayPlans(context.Context) ([]ReplayPlan, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return sortedMapValues(s.replays, func(item ReplayPlan) string { return item.ID }), nil
+	items := sortedMapValues(s.replays, func(item ReplayPlan) string { return item.ID })
+	for i, item := range items {
+		items[i] = cloneReplayPlan(item)
+	}
+	return items, nil
 }
 func (s *AdvancedMemoryStore) PutGatePolicy(_ context.Context, item GatePolicy) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	item.MinimumScores = maps.Clone(item.MinimumScores)
-	item.MaximumRegression = maps.Clone(item.MaximumRegression)
-	s.policies[item.ID+":"+item.Version] = item
+	s.policies[item.ID+":"+item.Version] = cloneGatePolicy(item)
 	return nil
 }
 func (s *AdvancedMemoryStore) ListGatePolicies(context.Context) ([]GatePolicy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return sortedMapValues(s.policies, func(item GatePolicy) string { return item.ID + ":" + item.Version }), nil
+	items := sortedMapValues(s.policies, func(item GatePolicy) string { return item.ID + ":" + item.Version })
+	for i, item := range items {
+		items[i] = cloneGatePolicy(item)
+	}
+	return items, nil
 }
 func (s *AdvancedMemoryStore) PutGateDecision(_ context.Context, item GateDecision) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	item.Reasons = slices.Clone(item.Reasons)
-	item.EvidenceRefs = slices.Clone(item.EvidenceRefs)
-	s.decisions[item.ID] = item
+	s.decisions[item.ID] = cloneGateDecision(item)
 	return nil
 }
 func (s *AdvancedMemoryStore) ListGateDecisions(context.Context) ([]GateDecision, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return sortedMapValues(s.decisions, func(item GateDecision) string { return item.ID }), nil
+	items := sortedMapValues(s.decisions, func(item GateDecision) string { return item.ID })
+	for i, item := range items {
+		items[i] = cloneGateDecision(item)
+	}
+	return items, nil
 }
 func (s *AdvancedMemoryStore) PutFeedback(_ context.Context, item FeedbackSample) error {
 	s.mu.Lock()
@@ -127,5 +135,23 @@ func cloneAttempt(item SampleAttempt) SampleAttempt {
 	item.CandidateRefs = maps.Clone(item.CandidateRefs)
 	item.Scores = maps.Clone(item.Scores)
 	item.Usage = maps.Clone(item.Usage)
+	return item
+}
+
+func cloneReplayPlan(item ReplayPlan) ReplayPlan {
+	item.SourceTraceRefs = slices.Clone(item.SourceTraceRefs)
+	item.CandidateRefs = maps.Clone(item.CandidateRefs)
+	return item
+}
+
+func cloneGatePolicy(item GatePolicy) GatePolicy {
+	item.MinimumScores = maps.Clone(item.MinimumScores)
+	item.MaximumRegression = maps.Clone(item.MaximumRegression)
+	return item
+}
+
+func cloneGateDecision(item GateDecision) GateDecision {
+	item.Reasons = slices.Clone(item.Reasons)
+	item.EvidenceRefs = slices.Clone(item.EvidenceRefs)
 	return item
 }

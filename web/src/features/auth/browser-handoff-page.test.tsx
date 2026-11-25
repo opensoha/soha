@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { App } from 'antd'
 import { act } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App } from 'antd'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -132,6 +132,7 @@ describe('browser handoff page', () => {
     expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
       'handoff expired',
     )
+    expect(document.body.querySelector('[role="status"]')?.textContent).toContain('handoff expired')
     expect(completeBrowserHandoff).not.toHaveBeenCalled()
   })
 
@@ -149,6 +150,10 @@ describe('browser handoff page', () => {
     expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
       'browser account conflict',
     )
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+      'browser account conflict',
+    )
+    expect(container.textContent).toContain('继续登录')
     expect(continueButton?.isConnected).toBe(true)
     expect(navigate).not.toHaveBeenCalled()
   })

@@ -61,7 +61,7 @@ func safeAPIErrorMessage(status string, raw, request []byte, known ...string) st
 				for key, child := range v {
 					normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
 					switch normalized {
-					case "password", "accesstoken", "refreshtoken", "token", "apikey", "authorization", "devicecode", "usercode", "verificationhandle", "codeverifier", "confirmationid":
+					case "password", "accesstoken", "refreshtoken", "token", "apikey", "authorization", "secret", "secretvalue", "privatekey", "clientsecret", "credential", "devicecode", "usercode", "verificationhandle", "codeverifier", "confirmationid":
 						if secret, ok := child.(string); ok {
 							known = append(known, secret)
 						}

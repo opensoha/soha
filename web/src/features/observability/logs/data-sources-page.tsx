@@ -289,7 +289,7 @@ export function LogDataSourcesPage() {
       render: (name: string, item) => (
         <Space orientation="vertical" size={2}>
           <Text strong>{name}</Text>
-          <Text type="secondary" className="text-xs">
+          <Text type="secondary">
             {item.config.endpoint}
           </Text>
         </Space>
@@ -329,7 +329,7 @@ export function LogDataSourcesPage() {
           {!isRetiredLogSource(item) &&
           item.validationStatus !== 'healthy' &&
           item.validationMessage ? (
-            <Text className="text-xs" type="secondary">
+            <Text type="secondary">
               {item.validationMessage}
             </Text>
           ) : null}

@@ -1062,7 +1062,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *appvirtualization.Service {
+func newVirtualizationService(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *appvirtualization.Service {
 	virtualizationService := appvirtualization.MustNew(
 		appvirtualization.Dependencies{
 			Connections:      repos.virtualizationRepository,
@@ -1105,9 +1105,6 @@ func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, i
 		},
 	)
 	virtualizationService.SetInstrumentation(infra.runtimeMetrics)
-	if core.runtimeConfigService.ModuleEnabled("virtualization") {
-		virtualizationService.Start(lifecycleCtx)
-	}
 	return virtualizationService
 }
 
@@ -1128,7 +1125,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService.SetInstrumentation(infra.logger.Named("workflow"), infra.runtimeMetrics)
 	workflowService.SetAlertMutator(core.monitoringService)
 	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
-	virtualizationService := newVirtualizationService(lifecycleCtx, cfg, infra, repos, core)
+	virtualizationService := newVirtualizationService(cfg, infra, repos, core)
 	personalVM, err := newPersonalEnvironmentVM(core.identityService, repos.copilotRepository, virtualizationService)
 	if err != nil {
 		panic(fmt.Errorf("build personal environment VM runtime: %w", err))
@@ -1286,9 +1283,11 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	deliveryService.SetExecutionPrincipalReader(core.identityService)
 	deliveryService.SetDockerDelivery(dockerService)
 	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
-	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
-		deliveryService.SetGovernance(governanceService)
+	governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService)
+	if governanceErr != nil {
+		panic(fmt.Errorf("build delivery governance service: %w", governanceErr))
 	}
+	deliveryService.SetGovernance(governanceService)
 	core.catalogService.SetTemplateUsageRuntimeReaders(appcatalog.TemplateUsageRuntimeReaders{
 		Builds:    core.buildService,
 		Workflows: workflowService,

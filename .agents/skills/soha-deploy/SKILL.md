@@ -36,7 +36,7 @@ Use the `deploy/` assets to run soha as a single-project runtime: one applicatio
 ## Deployment Map
 
 - `deploy/Dockerfile`: multi-stage image build for the embedded SPA.
-- `README.md` and `README-cn.md`: canonical raw `docker run`, default-value, override, and migration warnings.
+- `README.md` and `README-cn.md`: repository overview, quick-start entrypoints, and links to published deployment documentation (`soha-docs/content/*/operations/deployment.md` owns detailed `docker run`, Helm, Kustomize, and migration guides).
 - `deploy/docker-compose.yaml`: local stack with app plus PostgreSQL and optional Hermes runner services.
 - `configs/config.yaml`: default backend config for local and container startup.
 - `deploy/deployment.yaml`: raw Kubernetes manifest for namespace, app, PostgreSQL, Service, and Ingress.

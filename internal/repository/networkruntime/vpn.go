@@ -1434,9 +1434,13 @@ func compileGatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
 	}
+	overlayPrefix, err := netip.ParsePrefix(gateway.OverlayCIDR)
+	if err != nil {
+		return networkprotocol.ConfigurationDesired{}, fmt.Errorf("%w: invalid gateway overlay CIDR", apperrors.ErrInvalidArgument)
+	}
 	desired := networkprotocol.ConfigurationDesired{PolicyVersion: snapshot.PolicyVersion, ValidUntil: sitePlan.validUntil, AccessProfile: domainnetworkaccess.ProfileFull, ProtectedResourceIDs: slices.Clone(snapshot.ProtectedResourceIDs), NetworkLeases: []networkprotocol.NetworkLease{}, ResourceLeases: []networkprotocol.ResourceLease{}}
 	wireGuard := &networkprotocol.WireGuardConfiguration{Role: "gateway", InterfaceName: "soha0", PublicKey: credential.WireGuardPublicKey,
-		Addresses: []string{netip.PrefixFrom(netip.MustParsePrefix(gateway.OverlayCIDR).Addr().Next(), netip.MustParsePrefix(gateway.OverlayCIDR).Addr().BitLen()).String()}, ListenPort: gateway.PublicEndpointPort,
+		Addresses: []string{netip.PrefixFrom(overlayPrefix.Addr().Next(), overlayPrefix.Addr().BitLen()).String()}, ListenPort: gateway.PublicEndpointPort,
 		MTU: gateway.MTU, RoutingMode: gateway.RoutingMode, FirewallDefault: "deny", Peers: slices.Clone(sitePlan.peers), Routes: slices.Clone(sitePlan.routes), DNSServers: slices.Clone(gateway.DNSServers), FirewallRules: []networkprotocol.WireGuardFirewallRule{}}
 	for index := range peers {
 		peer := &peers[index]
@@ -1448,10 +1452,6 @@ func compileGatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential
 			continue
 		}
 		_, _, resourceTargets, err := compileProtectedLeaseAccess(tx, peerNetworkLeases, peerResourceLeases, snapshot)
-		if err != nil {
-			return networkprotocol.ConfigurationDesired{}, err
-		}
-		denied, err := vpnProtectedDestinations(tx, snapshot)
 		if err != nil {
 			return networkprotocol.ConfigurationDesired{}, err
 		}
@@ -1469,7 +1469,7 @@ func compileGatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential
 		for _, lease := range peerResourceLeases {
 			desired.ValidUntil = minTime(desired.ValidUntil, lease.ExpiresAt)
 		}
-		wireGuard.FirewallRules = append(wireGuard.FirewallRules, leaseFirewallRules(peer.Address, peerNetworkLeases, resourceTargets, denied)...)
+		wireGuard.FirewallRules = append(wireGuard.FirewallRules, leaseFirewallRules(peer.Address, peerNetworkLeases, resourceTargets, protected)...)
 	}
 	wireGuard.FirewallRules = append(wireGuard.FirewallRules, sitePlan.firewallRules...)
 	wireGuard.Routes = sortedUniqueStrings(wireGuard.Routes)
@@ -1478,20 +1478,6 @@ func compileGatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential
 	}
 	desired.WireGuard = wireGuard
 	return desired, nil
-}
-
-func prefixOverlapsAny(raw string, candidates []string) bool {
-	prefix, err := netip.ParsePrefix(raw)
-	if err != nil {
-		return false
-	}
-	for _, candidate := range candidates {
-		other, err := netip.ParsePrefix(candidate)
-		if err == nil && prefix.Overlaps(other) {
-			return true
-		}
-	}
-	return false
 }
 
 func routesCoverAll(routes, destinations []string) bool {

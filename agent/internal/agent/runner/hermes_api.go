@@ -281,6 +281,7 @@ func (r *Runner) finishAgentChatRun(ctx, taskCtx context.Context, run AgentRun, 
 		r.metrics.markOutcome(metricScopeAgentRuntime, "canceled")
 		return
 	}
+	externalRunID := stringMapValue(output, "externalRunId")
 	status, errorMessage := "completed", ""
 	if err != nil {
 		r.logger.Warn("external agent chat failed", zap.String("run_id", run.ID), zap.String("error", redactAgentRuntimeText(err.Error())))
@@ -293,7 +294,7 @@ func (r *Runner) finishAgentChatRun(ctx, taskCtx context.Context, run AgentRun, 
 		}
 		output = map[string]any{}
 	}
-	r.agentRunCallback(ctx, run, status, output, nil, nil, stringMapValue(output, "externalRunId"), errorMessage)
+	r.agentRunCallback(ctx, run, status, output, nil, nil, externalRunID, errorMessage)
 	r.metrics.markOutcome(metricScopeAgentRuntime, status)
 }
 

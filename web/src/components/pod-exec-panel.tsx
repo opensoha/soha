@@ -74,8 +74,8 @@ export function PodExecPanel({
   return (
     <div className="soha-page-section">
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '命令执行' : 'Command Exec'}>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="soha-stack-lg">
+          <div className="soha-inline-wrap">
             <Text strong>{localeCode === 'zh_CN' ? '快捷命令' : 'Presets'}</Text>
             {COMMAND_PRESETS.map((item) => (
               <Button key={item} size="small" variant="outlined" onClick={() => setCommand(item)}>
@@ -84,8 +84,8 @@ export function PodExecPanel({
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_160px]">
-            <div className="flex flex-col gap-2">
+          <div className="soha-pod-exec-grid">
+            <div className="soha-stack-sm">
               <Text strong>{localeCode === 'zh_CN' ? '容器' : 'Container'}</Text>
               <Select
                 value={container || undefined}
@@ -95,7 +95,7 @@ export function PodExecPanel({
                 allowClear
               />
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="soha-stack-sm">
               <Text strong>{localeCode === 'zh_CN' ? '命令' : 'Command'}</Text>
               <Input.TextArea
                 value={command}
@@ -104,13 +104,13 @@ export function PodExecPanel({
                 placeholder={localeCode === 'zh_CN' ? '请输入要在容器中执行的命令' : 'Enter the command to run inside the container'}
               />
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="soha-stack-sm">
               <Text strong>{localeCode === 'zh_CN' ? '超时(秒)' : 'Timeout (s)'}</Text>
               <InputNumber value={timeoutSeconds} min={1} max={120} onChange={(value) => setTimeoutSeconds(Number(value) || 10)} />
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="soha-row-end">
             <Button
               type="primary"
               loading={execMutation.isPending}
@@ -142,7 +142,7 @@ export function PodExecPanel({
             />
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="soha-pod-result-grid">
             <Card className="soha-detail-card" title="Stdout">
               <pre className="soha-code-block soha-code-block-dark">{result.stdout || (localeCode === 'zh_CN' ? '无标准输出' : 'No stdout output')}</pre>
             </Card>

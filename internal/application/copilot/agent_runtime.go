@@ -367,11 +367,6 @@ func agentRunStatusTerminal(status string) bool {
 	}
 }
 
-func agentRunWithOutput(run domaincopilot.AgentRun, output map[string]any) domaincopilot.AgentRun {
-	run.Output = mergeAgentRunCallbackPayload(run.Output, output)
-	return run
-}
-
 func agentRunCallbackProducesArtifact(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case domaincopilot.AgentRunStatusCompleted, "succeeded", "success", domaincopilot.AgentRunStatusFailed, "error", domaincopilot.AgentRunStatusCallbackTimeout:

@@ -433,8 +433,8 @@ export function RuntimeHostModal({ editing, onClose, onSuccess, open }: RuntimeH
                   )
             }
           />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
+          <div className="soha-stack-sm">
+            <div className="soha-row-between">
               <Typography.Text strong>
                 {localeText(localeCode, '安装命令', 'Install command')}
               </Typography.Text>

@@ -815,16 +815,30 @@ export function LogExplorer({
 
   const page = readableQueryData(snapshotQuery)
   const logFieldOptions = useMemo(
-    () => [
-      ...LOG_FIELDS,
-      ...Array.from(new Set(entries.flatMap((entry) => Object.keys(entry.attributes ?? {}))))
-        .sort()
-        // ponytail: keep the field rail bounded; add search/virtualization if schemas exceed 20 fields.
-        .slice(0, 20)
-        .map((key) => ({ value: `attribute:${key}`, label: key })),
-    ],
-    [entries],
+    () =>
+      mode === 'history'
+        ? [
+            ...LOG_FIELDS,
+            ...Array.from(
+              new Set(entries.flatMap((entry) => Object.keys(entry.attributes ?? {}))),
+            )
+              .sort()
+              // ponytail: keep the field rail bounded; add search/virtualization if schemas exceed 20 fields.
+              .slice(0, 20)
+              .map((key) => ({ value: `attribute:${key}`, label: key })),
+          ]
+        : LOG_FIELDS,
+    [entries, mode],
   )
+  const keyedEntries = useMemo(() => {
+    const counts = new Map<string, number>()
+    return entries.map((entry) => {
+      const base = `${entry.timestamp}\u0000${formatLogSource(entry)}\u0000${entry.message}`
+      const seen = counts.get(base) ?? 0
+      counts.set(base, seen + 1)
+      return { entry, key: seen === 0 ? base : `${base}#${seen}` }
+    })
+  }, [entries])
 
   return (
     <div className={embedded ? 'soha-log-explorer is-embedded' : 'soha-log-explorer'}>
@@ -1316,10 +1330,10 @@ export function LogExplorer({
                     ))}
                   </div>
                   <div className="soha-log-result-rows">
-                    {entries.map((entry) => (
+                    {keyedEntries.map(({ entry, key }) => (
                       <details
                         className="soha-log-result-row"
-                        key={entry.timestamp + formatLogSource(entry) + entry.message}
+                        key={key}
                       >
                         <summary>
                           <span className="soha-log-result-disclosure" aria-hidden="true">
@@ -1394,10 +1408,10 @@ export function LogExplorer({
                   : '设置范围后开始查询实时日志。'}
               </div>
             ) : (
-              entries.map((entry) => (
+              keyedEntries.map(({ entry, key }) => (
                 <div
                   className="soha-aggregate-log-row"
-                  key={entry.timestamp + formatLogSource(entry) + entry.message}
+                  key={key}
                 >
                   <span className="soha-aggregate-log-time">{formatDateTime(entry.timestamp)}</span>
                   <span className="soha-aggregate-log-source">{formatLogSource(entry)}</span>

@@ -19,9 +19,6 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func bootstrapConfiguration(ctx context.Context, engine string, doc map[string]any, p *domain.Protection) error {
-	return bootstrapConfigurationWithUDP(ctx, engine, doc, p, nil)
-}
 func bootstrapConfigurationWithUDP(ctx context.Context, engine string, doc map[string]any, p *domain.Protection, explicit map[string]bool) error {
 	scope, err := proxytransport.NewScope(p.CIDRs, p.Hosts)
 	if err != nil {
@@ -99,9 +96,6 @@ func fetchBootstrap(ctx context.Context, rawURL string, scope *proxytransport.Sc
 		return nil, errUnsafeConfiguration
 	}
 	return raw, nil
-}
-func bootstrapMihomo(ctx context.Context, doc map[string]any, scope *proxytransport.Scope) error {
-	return bootstrapMihomoWithUDP(ctx, doc, scope, nil)
 }
 func bootstrapMihomoWithUDP(ctx context.Context, doc map[string]any, scope *proxytransport.Scope, explicit map[string]bool) error {
 	nodes, err := arraySection(doc["proxies"])

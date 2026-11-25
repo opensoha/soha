@@ -5,7 +5,7 @@
   "publisher": "opensoha",
   "type": "connector",
   "description": "Feishu connector capability bundle.",
-  "homepage": "https://opensoha.dev/connectors/feishu",
+  "homepage": "https://opensoha.com/connectors/feishu",
   "compatibility": {
     "soha": ">=0.1.0",
     "contracts": ">=0.1.0 <1.0.0"

@@ -1149,7 +1149,7 @@ export function BuildTemplatesPage() {
             <BooleanTag value={item.enabled} />
             <TemplatePublicationStatus template={item.template} />
           </span>
-          <Text type="secondary" className="text-xs">
+          <Text type="secondary">
             {item.updatedAt ? formatDateTime(item.updatedAt) : '尚未保存'}
           </Text>
         </>

@@ -57,9 +57,20 @@ export function VMSSHTerminal({
     if (!enabled) {
       dispose()
       const id = currentSession.current
+      currentSession.current = ''
+      setSessionId('')
       if (id) void virtualizationApi.closeSSHSession(id).catch(() => undefined)
     }
   }, [enabled, dispose])
+  useEffect(() => {
+    return () => {
+      dispose()
+      const id = currentSession.current
+      currentSession.current = ''
+      setSessionId('')
+      if (id) void virtualizationApi.closeSSHSession(id).catch(() => undefined)
+    }
+  }, [binding.vmId, dispose])
 
   async function connect() {
     if (!enabled || !container.current) return
@@ -180,8 +191,10 @@ export function VMSSHTerminal({
   async function disconnect() {
     dispose()
     setState('closing')
+    const id = currentSession.current
     try {
-      if (currentSession.current) await close.mutateAsync(currentSession.current)
+      if (id) await close.mutateAsync(id)
+      currentSession.current = ''
       setState('closed')
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '关闭会话失败，请重试')
@@ -200,7 +213,11 @@ export function VMSSHTerminal({
         >
           连接 Shell
         </Button>
-        <Button disabled={!sessionId} loading={close.isPending} onClick={() => void disconnect()}>
+        <Button
+          disabled={!sessionId || state === 'closed' || state === 'closing'}
+          loading={close.isPending}
+          onClick={() => void disconnect()}
+        >
           关闭会话
         </Button>
         <span>

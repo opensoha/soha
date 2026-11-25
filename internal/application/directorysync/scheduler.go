@@ -29,6 +29,7 @@ type Scheduler struct {
 	interval   time.Duration
 	mu         sync.Mutex
 	lastFired  map[string]string
+	inFlight   map[string]bool
 	metrics    *runtimeobs.Registry
 	audit      interface {
 		Record(context.Context, domainaudit.Entry) error
@@ -43,7 +44,7 @@ func (s *Scheduler) SetAuditRecorder(audit interface {
 }
 
 func NewScheduler(repository domain.Repository, service *Service, resolve ConnectorResolver) *Scheduler {
-	return &Scheduler{repository: repository, service: service, resolve: resolve, interval: 30 * time.Second, lastFired: map[string]string{}}
+	return &Scheduler{repository: repository, service: service, resolve: resolve, interval: 30 * time.Second, lastFired: map[string]string{}, inFlight: map[string]bool{}}
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
@@ -86,19 +87,30 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time) {
 			continue
 		}
 		s.mu.Lock()
+		if s.inFlight == nil {
+			s.inFlight = map[string]bool{}
+		}
 		key := connection.ID + ":" + minute
-		if s.lastFired[key] != "" {
+		if s.lastFired[key] != "" || s.inFlight[connection.ID] {
 			s.mu.Unlock()
 			continue
 		}
 		s.lastFired[key] = minute
+		s.inFlight[connection.ID] = true
 		for previous := range s.lastFired {
 			if !strings.HasSuffix(previous, ":"+minute) {
 				delete(s.lastFired, previous)
 			}
 		}
 		s.mu.Unlock()
-		go s.run(ctx, connection)
+		go func(conn domain.Connection) {
+			defer func() {
+				s.mu.Lock()
+				delete(s.inFlight, conn.ID)
+				s.mu.Unlock()
+			}()
+			s.run(ctx, conn)
+		}(connection)
 	}
 }
 

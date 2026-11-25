@@ -917,7 +917,7 @@ export function VirtualizationVmDetailPage() {
                       key: 'provider',
                       label: localeText(localeCode, '高级信息', 'Advanced information'),
                       children: (
-                        <pre className="max-h-[520px] overflow-auto bg-[var(--soha-bg-surface-muted)] p-3 text-xs">
+                        <pre className="soha-code-block" style={{ maxHeight: 520 }}>
                           {providerRaw ||
                             localeText(localeCode, '暂无提供方原始数据', 'No raw provider data')}
                         </pre>

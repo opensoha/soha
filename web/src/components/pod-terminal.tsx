@@ -77,14 +77,10 @@ export function PodTerminal({
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const resizeSendTimerRef = useRef<number | null>(null)
   const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null)
-  const previousContainerRef = useRef<string | undefined>(container)
-  const previousShellRef = useRef<string>(shell)
   const sessionRef = useRef(0)
   const [connectionState, setConnectionState] = useState<
     'idle' | 'connecting' | 'connected' | 'closed' | 'error'
   >('idle')
-  const [, setLastMessage] = useState(t('podTerminal.idle', 'Terminal has not been connected yet'))
-  const [reconnectNotice, setReconnectNotice] = useState('')
 
   const canConnect = Boolean(clusterId && namespace)
 
@@ -142,10 +138,19 @@ export function PodTerminal({
     if (containerRef.current) {
       containerRef.current.innerHTML = ''
     }
-    if (beforeConnect && !(await beforeConnect())) return
+    if (beforeConnect) {
+      try {
+        if (!(await beforeConnect())) {
+          if (sessionRef.current === sessionId) setConnectionState('idle')
+          return
+        }
+      } catch {
+        if (sessionRef.current === sessionId) setConnectionState('error')
+        return
+      }
+    }
     if (sessionRef.current !== sessionId || !containerRef.current) return
     setConnectionState('connecting')
-    setLastMessage(t('podTerminal.connecting', 'Connecting terminal...'))
 
     const terminal = new Terminal({
       cursorBlink: true,
@@ -171,7 +176,6 @@ export function PodTerminal({
     } catch {
       if (sessionRef.current !== sessionId) return
       setConnectionState('error')
-      setLastMessage(t('podTerminal.failed', 'Terminal connection failed'))
       terminal.writeln('\r\n[error] terminal authorization failed')
       return
     }
@@ -182,12 +186,6 @@ export function PodTerminal({
     socket.onopen = () => {
       if (sessionRef.current !== sessionId) return
       setConnectionState('connected')
-      if (reconnectNotice) {
-        setLastMessage(reconnectNotice)
-        setReconnectNotice('')
-      } else {
-        setLastMessage(t('podTerminal.connected', 'Terminal connected'))
-      }
       terminal.focus()
       fitAddon.fit()
       sendResize()
@@ -201,14 +199,8 @@ export function PodTerminal({
         case 'stderr':
           terminal.write(payload.data || '')
           break
-        case 'status':
-          if (payload.message) {
-            setLastMessage(payload.message)
-          }
-          break
         case 'exit':
           setConnectionState('closed')
-          setLastMessage(payload.message || t('podTerminal.closed', 'Terminal session ended'))
           terminal.writeln(`\r\n[session] ${payload.message || 'terminal session closed'}`)
           break
       }
@@ -216,7 +208,6 @@ export function PodTerminal({
     socket.onerror = () => {
       if (sessionRef.current !== sessionId) return
       setConnectionState('error')
-      setLastMessage(t('podTerminal.failed', 'Terminal connection failed'))
       terminal.writeln('\r\n[error] terminal connection failed')
     }
     socket.onclose = () => {
@@ -243,7 +234,7 @@ export function PodTerminal({
       }, TERMINAL_RESIZE_SETTLE_MS)
     })
     resizeObserverRef.current.observe(containerRef.current)
-  }, [beforeConnect, disposeTerminal, sendResize, t, terminalURL])
+  }, [beforeConnect, disposeTerminal, sendResize, terminalURL])
 
   useEffect(() => {
     if (!canConnect) return
@@ -256,27 +247,6 @@ export function PodTerminal({
       disposeTerminal()
     }
   }, [canConnect, connect, disposeTerminal])
-
-  useEffect(() => {
-    if (!canConnect) return
-    const previousContainer = previousContainerRef.current
-    const previousShell = previousShellRef.current
-    const containerChanged = previousContainer !== undefined && previousContainer !== container
-    const shellChanged = previousShell !== shell
-
-    if (containerChanged || shellChanged) {
-      const nextNotice = containerChanged
-        ? t(
-            'podTerminal.containerReconnected',
-            'Container changed, terminal reconnected automatically',
-          )
-        : t('podTerminal.shellReconnected', 'Shell changed, terminal reconnected automatically')
-      setReconnectNotice(nextNotice)
-    }
-
-    previousContainerRef.current = container
-    previousShellRef.current = shell
-  }, [canConnect, container, shell, t])
 
   if (!canConnect) {
     return (

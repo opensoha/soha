@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react'
 
 function initialDraft(resourceKey: string, serverValue?: string, storageKey?: string | null) {
+  let value = serverValue ?? ''
+  try {
+    value = (storageKey ? window.localStorage.getItem(storageKey) : null) ?? value
+  } catch {
+    /* Storage unavailable: the draft remains editable in memory. */
+  }
   return {
     resourceKey,
     observed: serverValue,
     original: serverValue,
-    value: (storageKey ? window.localStorage.getItem(storageKey) : null) ?? serverValue ?? '',
+    value,
+  }
+}
+
+function clearSavedDraft(storageKey?: string | null) {
+  try {
+    if (storageKey) window.localStorage.removeItem(storageKey)
+  } catch {
+    /* Storage unavailable: local reset and apply must still complete. */
   }
 }
 
@@ -46,8 +60,17 @@ export function useYamlDraft(
       setState((current) =>
         current.resourceKey === resourceKey ? { ...current, value } : current,
       ),
+    save: () => {
+      if (!active || !storageKey) return false
+      try {
+        window.localStorage.setItem(storageKey, state.value)
+        return true
+      } catch {
+        return false
+      }
+    },
     reset: () => {
-      if (storageKey) window.localStorage.removeItem(storageKey)
+      clearSavedDraft(storageKey)
       setState({
         resourceKey,
         observed: serverValue,
@@ -62,7 +85,7 @@ export function useYamlDraft(
           : current,
       ),
     applied: (value?: string) => {
-      if (storageKey) window.localStorage.removeItem(storageKey)
+      clearSavedDraft(storageKey)
       if (value === undefined) return
       setState((current) =>
         current.resourceKey === resourceKey

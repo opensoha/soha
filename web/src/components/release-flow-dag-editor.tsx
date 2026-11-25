@@ -365,17 +365,17 @@ function ReleaseStepNode({ data, selected }: NodeProps<FlowNode>) {
           <Text strong>{data.name}</Text>
           <Tag color={option ? DAG_NODE_TAG_COLORS[option.color] : 'blue'}>{getDagNodeLabel(data.type, localeCode)}</Tag>
         </div>
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? `超时 ${data.timeoutSeconds ?? 300}s` : `timeout ${data.timeoutSeconds ?? 300}s`}</Text>
-        {data.type === 'manual_approval' ? <Text type="secondary" className="text-xs">{approvalNodeSummary(data, localeCode)}</Text> : null}
-        {data.executorKind ? <Text type="secondary" className="text-xs">{`executor ${data.executorKind}`}</Text> : null}
-        {data.capabilityRef ? <Text type="secondary" className="text-xs">{`capability ${data.capabilityRef}`}</Text> : null}
-        {data.inputs?.length ? <Text type="secondary" className="text-xs">{`inputs ${data.inputs.join(', ')}`}</Text> : null}
-        {data.outputs?.length ? <Text type="secondary" className="text-xs">{`outputs ${data.outputs.join(', ')}`}</Text> : null}
-        {artifactOutputSummary(data.artifactOutputs) ? <Text type="secondary" className="text-xs">{artifactOutputSummary(data.artifactOutputs)}</Text> : null}
+        <Text type="secondary">{localeCode === 'zh_CN' ? `超时 ${data.timeoutSeconds ?? 300}s` : `timeout ${data.timeoutSeconds ?? 300}s`}</Text>
+        {data.type === 'manual_approval' ? <Text type="secondary">{approvalNodeSummary(data, localeCode)}</Text> : null}
+        {data.executorKind ? <Text type="secondary">{`executor ${data.executorKind}`}</Text> : null}
+        {data.capabilityRef ? <Text type="secondary">{`capability ${data.capabilityRef}`}</Text> : null}
+        {data.inputs?.length ? <Text type="secondary">{`inputs ${data.inputs.join(', ')}`}</Text> : null}
+        {data.outputs?.length ? <Text type="secondary">{`outputs ${data.outputs.join(', ')}`}</Text> : null}
+        {artifactOutputSummary(data.artifactOutputs) ? <Text type="secondary">{artifactOutputSummary(data.artifactOutputs)}</Text> : null}
         {selectorSummary(data.serviceSelector) || selectorSummary(data.environmentSelector) || selectorSummary(data.targetSelector) ? (
-          <Text type="secondary" className="text-xs">{selectorSummary(data.serviceSelector) || selectorSummary(data.environmentSelector) || selectorSummary(data.targetSelector)}</Text>
+          <Text type="secondary">{selectorSummary(data.serviceSelector) || selectorSummary(data.environmentSelector) || selectorSummary(data.targetSelector)}</Text>
         ) : null}
-        {data.continueOnFailure ? <Text type="warning" className="text-xs">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on failure'}</Text> : null}
+        {data.continueOnFailure ? <Text type="warning">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on failure'}</Text> : null}
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -416,7 +416,7 @@ function StepConfigInspector({
       return (
         <div className="soha-dag-approval-config">
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '审批模式' : 'Approval Mode'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '审批模式' : 'Approval Mode'}</Text>
             <Select
               style={FULL_WIDTH_STYLE}
               value={String(config.approvalMode ?? 'any')}
@@ -425,7 +425,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '最少审批人数' : 'Required Approvals'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '最少审批人数' : 'Required Approvals'}</Text>
             <InputNumber
               style={FULL_WIDTH_STYLE}
               value={Number(config.requiredApprovals ?? 1)}
@@ -435,7 +435,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '候选用户' : 'Approver Users'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '候选用户' : 'Approver Users'}</Text>
             <Input
               value={toConfigStringList(config.approverUsers).join(', ')}
               placeholder="release-owner, qa-owner"
@@ -443,7 +443,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '候选角色' : 'Approver Roles'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '候选角色' : 'Approver Roles'}</Text>
             <Input
               value={toConfigStringList(config.approverRoles).join(', ')}
               placeholder="release-manager, ops-lead"
@@ -451,7 +451,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '候选团队' : 'Approver Teams'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '候选团队' : 'Approver Teams'}</Text>
             <Input
               value={toConfigStringList(config.approverTeams).join(', ')}
               placeholder="qa, sre"
@@ -459,7 +459,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '审批 SLA(分钟)' : 'Approval SLA(min)'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '审批 SLA(分钟)' : 'Approval SLA(min)'}</Text>
             <InputNumber
               style={FULL_WIDTH_STYLE}
               value={Number(config.slaMinutes ?? 60)}
@@ -469,7 +469,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '超时动作' : 'Timeout Action'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '超时动作' : 'Timeout Action'}</Text>
             <Select
               style={FULL_WIDTH_STYLE}
               value={String(config.onTimeout ?? 'block')}
@@ -478,7 +478,7 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-dag-inspector-field">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '驳回后动作' : 'Reject Action'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '驳回后动作' : 'Reject Action'}</Text>
             <Select
               style={FULL_WIDTH_STYLE}
               value={String(config.rejectAction ?? 'stop')}
@@ -487,12 +487,12 @@ function StepConfigInspector({
             />
           </div>
           <div className="soha-step-inline">
-            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '必须审批' : 'Required approval'}</Text>
+            <Text type="secondary">{localeCode === 'zh_CN' ? '必须审批' : 'Required approval'}</Text>
             <Switch checked={config.required !== false} onChange={(checked) => patch('required', checked)} />
           </div>
           <div className="soha-dag-approval-window">
             <div className="soha-step-inline">
-              <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '启用变更窗口' : 'Change Window'}</Text>
+              <Text type="secondary">{localeCode === 'zh_CN' ? '启用变更窗口' : 'Change Window'}</Text>
               <Switch checked={Boolean(changeWindow.enabled)} onChange={(checked) => patchChangeWindow('enabled', checked)} />
             </div>
             <Input
@@ -609,7 +609,7 @@ function StepConfigInspector({
         </>
       )
     case 'rollback_to_previous':
-      return <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '回滚到最近成功的上一版 revision。' : 'Roll back to the previous successful revision.'}</Text>
+      return <Text type="secondary">{localeCode === 'zh_CN' ? '回滚到最近成功的上一版 revision。' : 'Roll back to the previous successful revision.'}</Text>
     default:
       return null
   }
@@ -637,7 +637,7 @@ function DeliveryDagInspector({
   return (
     <div className="soha-dag-approval-config">
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '执行器' : 'Executor'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '执行器' : 'Executor'}</Text>
         <Input
           value={node.executorKind ?? ''}
           placeholder="runner / mcp / webhook_callback"
@@ -645,7 +645,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '目标类型' : 'Target Kind'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '目标类型' : 'Target Kind'}</Text>
         <Input
           value={node.targetKind ?? ''}
           placeholder="k8s_workload / ai_test"
@@ -653,7 +653,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '能力引用' : 'Capability Ref'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '能力引用' : 'Capability Ref'}</Text>
         <Input
           value={node.capabilityRef ?? ''}
           placeholder="testing.ui.run"
@@ -661,7 +661,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? 'Provider 引用' : 'Provider Ref'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? 'Provider 引用' : 'Provider Ref'}</Text>
         <Input
           value={node.providerRef ?? ''}
           placeholder="external-test-platform"
@@ -669,7 +669,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '输入产物' : 'Inputs'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '输入产物' : 'Inputs'}</Text>
         <Input
           value={node.inputs?.join(', ') ?? ''}
           placeholder="source.image, scan.sbom"
@@ -677,7 +677,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '输出产物' : 'Outputs'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '输出产物' : 'Outputs'}</Text>
         <Input
           value={node.outputs?.join(', ') ?? ''}
           placeholder="image, test_report"
@@ -685,7 +685,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '运行条件' : 'Run Condition'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '运行条件' : 'Run Condition'}</Text>
         <Input
           value={node.runCondition ?? ''}
           placeholder="branch == main"
@@ -693,7 +693,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '失败策略' : 'Failure Policy'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '失败策略' : 'Failure Policy'}</Text>
         <Select
           allowClear
           style={FULL_WIDTH_STYLE}
@@ -703,7 +703,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '服务选择器(JSON)' : 'Service Selector JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '服务选择器(JSON)' : 'Service Selector JSON'}</Text>
         <Input.TextArea
           rows={3}
           value={stringifyJsonValue(node.serviceSelector)}
@@ -712,7 +712,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '环境选择器(JSON)' : 'Environment Selector JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '环境选择器(JSON)' : 'Environment Selector JSON'}</Text>
         <Input.TextArea
           rows={3}
           value={stringifyJsonValue(node.environmentSelector)}
@@ -721,7 +721,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '目标选择器(JSON)' : 'Target Selector JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '目标选择器(JSON)' : 'Target Selector JSON'}</Text>
         <Input.TextArea
           rows={3}
           value={stringifyJsonValue(node.targetSelector)}
@@ -730,7 +730,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '输入映射(JSON)' : 'Input Mapping JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '输入映射(JSON)' : 'Input Mapping JSON'}</Text>
         <Input.TextArea
           rows={3}
           value={stringifyJsonValue(node.inputMapping)}
@@ -739,7 +739,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '产物类型' : 'Artifact Kinds'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '产物类型' : 'Artifact Kinds'}</Text>
         <Input
           value={node.artifactKinds?.join(', ') ?? ''}
           placeholder="test_report, screenshot, video, junit"
@@ -747,7 +747,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '产物输出(JSON)' : 'Artifact Outputs JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '产物输出(JSON)' : 'Artifact Outputs JSON'}</Text>
         <Input.TextArea
           rows={4}
           value={stringifyJsonValue(node.artifactOutputs)}
@@ -756,7 +756,7 @@ function DeliveryDagInspector({
         />
       </div>
       <div className="soha-dag-inspector-field">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '可观测事件(JSON)' : 'Observability JSON'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '可观测事件(JSON)' : 'Observability JSON'}</Text>
         <Input.TextArea
           rows={3}
           value={stringifyJsonValue(node.observability)}
@@ -875,7 +875,7 @@ function ReleaseFlowDagEditorInner({
   const nodeTypeEditor = selectedNode ? (
     useFloatingInspector ? (
       <div className="soha-dag-inspector-type">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '节点功能' : 'Node Function'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '节点功能' : 'Node Function'}</Text>
         <Tag color={selectedNodeOption ? DAG_NODE_TAG_COLORS[selectedNodeOption.color] : 'blue'}>
           {getDagNodeLabel(selectedNode.data.type, localeCode)}
         </Tag>
@@ -915,7 +915,7 @@ function ReleaseFlowDagEditorInner({
         onChange={(value) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, timeoutSeconds: Number(value || 300) } } : node))}
       />
       <div className="soha-step-inline">
-        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on Failure'}</Text>
+        <Text type="secondary">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on Failure'}</Text>
         <Switch
           checked={Boolean(selectedNode.data.continueOnFailure)}
           onChange={(checked) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, continueOnFailure: checked } } : node))}
@@ -942,7 +942,7 @@ function ReleaseFlowDagEditorInner({
           setEdges((current) => current.map((edge) => edge.id === selectedEdge.id ? { ...edge, label: condition, data: { condition } } : edge))
         }}
       />
-      <Text type="secondary" className="text-xs">{`${selectedEdge.source} -> ${selectedEdge.target}`}</Text>
+      <Text type="secondary">{`${selectedEdge.source} -> ${selectedEdge.target}`}</Text>
     </>
   ) : null
   const activeInspectorFields = selectedNode ? nodeInspectorFields : edgeInspectorFields
@@ -993,7 +993,7 @@ function ReleaseFlowDagEditorInner({
         {localeCode === 'zh_CN' ? '删除选中' : 'Delete Selected'}
       </Button>
     </Space>
-    <Text type="secondary" className="text-xs">
+    <Text type="secondary">
       {useFloatingInspector
         ? (localeCode === 'zh_CN'
           ? '节点可直接在画布中拖动。选择节点或连线后，在画布内编辑属性。'

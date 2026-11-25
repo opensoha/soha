@@ -228,7 +228,7 @@ export function WorkloadDetailShell({
 
   if (detailQuery.isLoading)
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )
@@ -484,7 +484,15 @@ export function WorkloadDetailShell({
                     }}
                     onSave={() => {
                       if (!canUpdateYaml || !yamlDraftStorageKey) return
-                      window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
+                      if (!yamlState.save()) {
+                        void message.error(
+                          t(
+                            'yamlEditor.saveFailed',
+                            'Could not save locally. Your draft remains in this editor.',
+                          ),
+                        )
+                        return
+                      }
                       void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
                     }}
                     onApply={() => {

@@ -53,11 +53,15 @@ func runVMShell(ctx context.Context, rt Runtime, client APIClient, binding sohaa
 	}
 	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + path + "/stream"
 	endpoint.RawQuery, endpoint.Fragment = "", ""
-	header := http.Header{"Authorization": {"Bearer " + client.effectiveToken(client.Token)}, "User-Agent": {userAgent}}
+	sentToken := client.effectiveToken(client.Token)
+	header := http.Header{"Authorization": {"Bearer " + sentToken}, "User-Agent": {userAgent}}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second, Proxy: http.ProxyFromEnvironment}
 	if transport, ok := client.httpClient().Transport.(*http.Transport); ok {
 		dialer.TLSClientConfig = transport.TLSClientConfig
 		dialer.NetDialContext = transport.DialContext
+		if transport.Proxy != nil {
+			dialer.Proxy = transport.Proxy
+		}
 	}
 	var conn *websocket.Conn
 	for attempt := 0; attempt < 2; attempt++ {
@@ -69,10 +73,11 @@ func runVMShell(ctx context.Context, rt Runtime, client APIClient, binding sohaa
 		if err == nil || attempt > 0 || response == nil || response.StatusCode != http.StatusUnauthorized || !client.canRefresh() {
 			break
 		}
-		token, refreshErr := client.refreshAfterUnauthorized(ctx)
+		token, refreshErr := client.refreshAfterUnauthorized(ctx, sentToken)
 		if refreshErr != nil {
 			return refreshErr
 		}
+		sentToken = token
 		header.Set("Authorization", "Bearer "+token)
 	}
 	if err != nil {

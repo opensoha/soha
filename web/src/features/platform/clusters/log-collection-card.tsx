@@ -302,7 +302,7 @@ export function LogCollectionCard({ scope, localeCode }: { scope: ScopeKey; loca
         {disable.feedback}
 
         {plan ? (
-          <Space orientation="vertical" size="middle" className="w-full">
+          <Space orientation="vertical" size="middle" className="soha-full-width">
             <Descriptions
               size="small"
               column={1}

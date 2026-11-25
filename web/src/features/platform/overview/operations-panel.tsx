@@ -344,7 +344,7 @@ export function PlatformOperationsPanel({
               <Text strong>
                 {localeCode === 'zh_CN' ? '各项节点最高占比' : 'Peak Percentage by Node'}
               </Text>
-              <Text type="secondary" className="text-xs">
+              <Text type="secondary">
                 {visibleNodesQueryData === undefined
                   ? '—'
                   : `${capacity.readyNodes}/${capacity.totalNodes}`}{' '}
@@ -556,7 +556,7 @@ export function PlatformOperationsPanel({
                     <Text strong>
                       {localeCode === 'zh_CN' ? '高风险与审批能力' : 'Risk & Approval Capabilities'}
                     </Text>
-                    <Text type="secondary" className="text-xs">
+                    <Text type="secondary">
                       {localeCode === 'zh_CN'
                         ? visibleCapabilitiesQueryData === undefined
                           ? '—'

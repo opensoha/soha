@@ -36,7 +36,8 @@ func TestSafeDialerRejectsPrivateAndPinsPublicAddress(t *testing.T) {
 			if host == "private.example" {
 				return []net.IPAddr{{IP: net.ParseIP("10.0.0.1")}}, nil
 			}
-			return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
+			// The fake dialer never connects to this globally routable address.
+			return []net.IPAddr{{IP: net.ParseIP("1.1.1.1")}}, nil
 		},
 		dial: func(_ context.Context, _, address string) (net.Conn, error) {
 			dialed = address
@@ -53,7 +54,7 @@ func TestSafeDialerRejectsPrivateAndPinsPublicAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = connection.Close()
-	if dialed != "203.0.113.10:443" {
+	if dialed != "1.1.1.1:443" {
 		t.Fatalf("unexpected pinned address %q", dialed)
 	}
 }

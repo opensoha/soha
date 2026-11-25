@@ -548,18 +548,18 @@ export function OperationsTable({
           </Descriptions.Item>
         </Descriptions>
         {selectedOperation?.payload?.workerPoolId && (
-          <div className="mt-4">
+          <div className="soha-mt-md">
             <WorkerReadiness operationId={selectedOperation.id} />
           </div>
         )}
         {selectedOperation?.message ? (
           <ContextFeedback
-            className="mt-4"
+            className="soha-mt-md"
             type={isAbnormalOperation(selectedOperation.status) ? 'error' : 'info'}
             title={selectedOperation.message}
           />
         ) : null}
-        <div className="mt-4 flex justify-end">
+        <div className="soha-mt-md soha-row-end">
           <Button
             size="small"
             onClick={async () => {
@@ -584,7 +584,7 @@ export function OperationsTable({
             {localeText(localeCode, '复制日志', 'Copy logs')}
           </Button>
         </div>
-        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--soha-border-color)] bg-[var(--soha-bg-surface-muted)] p-3 text-xs">
+        <pre className="soha-code-block soha-mt-md" style={{ maxHeight: 520 }}>
           {(logs.length
             ? logs
                 .map(

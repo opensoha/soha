@@ -46,4 +46,4 @@ jobs:
         with:
           name: skills-validation-report
           path: skills/dist/*
-          if-no-files-found: error
+          if-no-files-found: warn

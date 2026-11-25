@@ -17,7 +17,7 @@ func runCompletion(args []string, rt Runtime) error {
 		_, err := fmt.Fprint(rt.Out, buildBashCompletionScript())
 		return err
 	case "zsh":
-		_, err := fmt.Fprint(rt.Out, "#compdef soha\n"+buildBashCompletionScript())
+		_, err := fmt.Fprint(rt.Out, "#compdef soha\nautoload -U +X bashcompinit && bashcompinit\n"+buildBashCompletionScript())
 		return err
 	case "fish":
 		_, err := fmt.Fprint(rt.Out, buildFishCompletionScript())
@@ -143,7 +143,7 @@ func writeCompletionSubcommands(buf *bytes.Buffer, spec commandSpec) {
 		if len(words) == 0 {
 			continue
 		}
-		fmt.Fprintf(buf, "      if [[ \"${COMP_WORDS[2]}\" == %q ]]; then\n", subcommand.Name)
+		fmt.Fprintf(buf, "      if [[ $COMP_CWORD -ge 3 && \"${COMP_WORDS[2]}\" == %q ]]; then\n", subcommand.Name)
 		fmt.Fprintf(buf, "        COMPREPLY=($(compgen -W %q -- \"$cur\"))\n", joinWords(words))
 		fmt.Fprintln(buf, "        return 0")
 		fmt.Fprintln(buf, "      fi")
