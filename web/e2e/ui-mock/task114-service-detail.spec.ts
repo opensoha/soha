@@ -77,6 +77,7 @@ for (const width of [1440, 390]) {
           visibleMenus: [{ id: 'applications', path: '/applications', labelZh: '应用中心' }],
         })
       if (path === '/application-environments') return data([binding])
+      if (path === '/application-environments/retail-test/detail') return data({ binding })
       if (path === '/application-environments/retail-test/targets/native-root/relations')
         return data({
           root: source.resource,
@@ -124,6 +125,21 @@ for (const width of [1440, 390]) {
           ...(base.body as { data: Record<string, unknown> }).data,
           bindings: [binding],
         })
+      if (
+        base &&
+        path === '/applications/retail/application-environments/retail-test/runtime-summary'
+      ) {
+        const body = structuredClone(base.body) as {
+          data: { environment: { targets: unknown[]; workloads: Array<Record<string, unknown>> } }
+        }
+        const environment = body.data.environment
+        environment.targets = binding.targets
+        const workload = environment.workloads.find((item) => item.workloadName === 'order-api')!
+        environment.workloads = [
+          { ...workload, targetId: 'native-root', sourceStatus: 'linked', source },
+        ]
+        return { ...base, body }
+      }
       if (base && path === '/applications/retail/runtime') {
         const payload = (
           base.body as {
@@ -139,6 +155,15 @@ for (const width of [1440, 390]) {
         const workload = env.workloads.find((item) => item.workloadName === 'order-api')!
         env.workloads = [{ ...workload, targetId: 'native-root', sourceStatus: 'linked', source }]
         return data(payload)
+      }
+      if (base && path.endsWith('/services/order-api/pods')) {
+        const body = structuredClone(base.body) as {
+          data: { items: Array<{ pod: { uid: string } }> }
+        }
+        body.data.items.forEach((item, index) => {
+          item.pod.uid = `pod-uid-${index}`
+        })
+        return { ...base, body }
       }
       if (base && path.endsWith('/workloads/order-api/runtime')) {
         const payload = (

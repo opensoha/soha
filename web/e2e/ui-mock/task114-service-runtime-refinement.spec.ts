@@ -42,6 +42,11 @@ async function setup(context: BrowserContext, page: Page) {
       body.data[0].name = 'AWS Retail Store · 零售微服务'
       return { ...response, body }
     }
+    if (path === '/applications/retail') {
+      const body = structuredClone(response.body) as { data: { name: string } }
+      body.data.name = 'AWS Retail Store · 零售微服务'
+      return { ...response, body }
+    }
     if (path.endsWith('/detail')) {
       const body = structuredClone(response.body) as { data: { application?: { name: string } } }
       if (body.data.application) body.data.application.name = 'AWS Retail Store · 零售微服务'

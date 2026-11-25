@@ -1277,10 +1277,15 @@
   margin-bottom: 12px;
 }
 @media (min-width: 768px) and (min-height: 720px) {
-  .soha-service-console[data-scroll-view] {
+  .soha-page.soha-application-workbench {
     height: calc(
-      100dvh - var(--soha-application-header-height, var(--soha-app-chrome-height)) - 88px
+      100dvh - var(--soha-application-header-height, var(--soha-app-chrome-height)) - 12px
     );
+    min-height: 0;
+  }
+  .soha-service-console[data-scroll-view] {
+    flex: 1 1 0;
+    min-height: 0;
     grid-template-rows: minmax(0, 1fr);
   }
   .soha-service-console[data-scroll-view] .soha-service-selector {
@@ -1298,6 +1303,10 @@
     overscroll-behavior: contain;
     scrollbar-width: thin;
   }
+  .soha-service-console[data-scroll-view] .soha-service-console__body > .soha-application-pane {
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .soha-service-console[data-scroll-view] .soha-service-console__body,
   .soha-service-console[data-scroll-view] .soha-service-overview-grid,
   .soha-service-detail[data-service-tab='pods'],
@@ -1308,8 +1317,9 @@
     flex-direction: column;
     min-height: 0;
   }
-  .soha-service-catalog__scroll,
-  .soha-pod-list-scroll {
+  .soha-service-console[data-scroll-view]
+    :is(.soha-service-catalog__scroll, .soha-pod-list-scroll) {
+    flex: 1 1 0;
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;

@@ -34,7 +34,10 @@ export function ServiceWorkflowCard({
 }: {
   service?: ApplicationServiceDirectoryItem
   environmentId: string
-  binding?: DeliveryApplicationBindingSummary
+  binding?: Pick<
+    DeliveryApplicationBindingSummary,
+    'latestWorkflow' | 'targets' | 'workflowTemplate'
+  >
   workloads: ApplicationRuntimeWorkload[]
   runs?: WorkflowRun[]
   canView: boolean

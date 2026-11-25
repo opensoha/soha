@@ -35,16 +35,18 @@ export function serviceDeliveryKind(
 export function serviceWorkflow(
   service: ApplicationServiceDirectoryItem | undefined,
   environmentId: string,
-  binding: DeliveryApplicationBindingSummary | undefined,
+  binding: Pick<DeliveryApplicationBindingSummary, 'latestWorkflow' | 'targets'> | undefined,
   workloads: ApplicationRuntimeWorkload[],
-  runs: WorkflowRun[] = [],
+  runs?: WorkflowRun[],
 ): WorkflowRun | undefined {
   if (!service || !environmentId) return undefined
-  const candidates = [
-    ...runs,
+  const candidates = runs ?? [
     binding?.latestWorkflow,
     ...workloads.map((item) => item.latestWorkflow),
   ]
+  const targets = (binding?.targets ?? []).filter(
+    (target) => target.enabled && (target.serviceId || target.metadata?.serviceId) === service.id,
+  )
   return candidates
     .filter((run): run is WorkflowRun => {
       if (!run || run.applicationId !== service.applicationId || run.scope === 'delivery_batch')
@@ -58,8 +60,14 @@ export function serviceWorkflow(
       )
         return false
       if (metadata.serviceId && metadata.serviceId !== service.id) return false
-      const target = binding?.targets?.find((item) => item.id === metadata.targetId)
-      if (metadata.targetId && target?.metadata?.serviceId !== service.id) return false
+      const target = targets.find((item) => item.id === metadata.targetId)
+      if (metadata.targetId && !target) return false
+      const matchesTarget = targets.some(
+        (item) =>
+          item.clusterId === run.clusterId &&
+          item.namespace === run.namespace &&
+          item.workloadName === run.deploymentName,
+      )
       const matchesWorkload = workloads.some(
         (item) =>
           item.applicationEnvironmentId === environmentId &&
@@ -69,7 +77,8 @@ export function serviceWorkflow(
       )
       return Boolean(
         (scope === environmentId && (metadata.serviceId === service.id || target)) ||
-        matchesWorkload,
+        matchesWorkload ||
+        matchesTarget,
       )
     })
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]

@@ -92,6 +92,45 @@ describe('service workflow scope', () => {
       ])?.id,
     ).toBe('new')
   })
+  it('uses the configured target to match a scoped run while runtime observation is unavailable', () => {
+    const latest = run()
+    const target = {
+      id: 'target',
+      serviceId: service.id,
+      clusterId: 'cluster',
+      namespace: 'test-ns',
+      workloadKind: 'Deployment',
+      workloadName: 'api',
+      enabled: true,
+    }
+    expect(serviceWorkflow(service, 'test', { targets: [target] }, [], [latest])).toBe(latest)
+    expect(
+      serviceWorkflow(
+        service,
+        'test',
+        { targets: [{ ...target, serviceId: 'other' }] },
+        [],
+        [latest],
+      ),
+    ).toBeUndefined()
+    expect(
+      serviceWorkflow(
+        service,
+        'test',
+        { targets: [{ ...target, namespace: 'prod' }] },
+        [],
+        [latest],
+      ),
+    ).toBeUndefined()
+  })
+
+  it('does not reuse an older workflow snapshot when the scoped read returns no records', () => {
+    const latest = run()
+    expect(
+      serviceWorkflow(service, 'test', { ...binding, latestWorkflow: latest }, [workload], []),
+    ).toBeUndefined()
+  })
+
   it('assigns concurrent environment records to each service even when the latest binding run belongs elsewhere', () => {
     const apiRun = run({ metadata: { bindingId: 'test', serviceId: 'svc' } })
     const worker = { ...service, id: 'worker' }

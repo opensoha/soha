@@ -154,6 +154,12 @@ export function task114Response(
   if (path === '/applications') return data(applications)
   if (path === '/workflows') return data([])
   if (path === '/application-environments') return data([])
+  if (
+    /^\/application-environments\/retail-(test|prod)\/service-references$/.test(path) &&
+    url.searchParams.get('limit') === '100'
+  ) {
+    return { body: { items: [] } }
+  }
   if (path === '/delivery/environments') return data(catalog)
   if (path === '/clusters')
     return data([
@@ -234,6 +240,16 @@ export function task114Response(
     )
     if (environment)
       return data({ environment, observationStatus: 'available', observedAt: createdAt })
+  }
+  if (
+    app.id === 'retail' &&
+    services.some(
+      (service) =>
+        path ===
+        `/applications/${app.id}/application-environments/retail-prod/services/${service.id}/pods`,
+    )
+  ) {
+    return data({ status: 'unconfigured', items: [] })
   }
   const ownedPods = path.match(
     /^\/applications\/retail\/application-environments\/retail-test\/services\/([^/]+)\/pods$/,

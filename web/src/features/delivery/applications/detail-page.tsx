@@ -524,6 +524,7 @@ export function ApplicationDetailWorkspace({
     activeBindingQuery,
     environments,
     runtimeQuery,
+    runtimeSummary,
     runtimePending,
     focusedServiceId,
     focusedService,
@@ -636,6 +637,7 @@ export function ApplicationDetailWorkspace({
     null,
   )
   const [workflowCreateModalVisible, setWorkflowCreateModalVisible] = useState(false)
+  const [environmentWorkflowExpanded, setEnvironmentWorkflowExpanded] = useState(false)
   const [deliveryActionModalVisible, setDeliveryActionModalVisible] = useState(false)
   const [manifestLaunch, setManifestLaunch] = useState<{
     applicationId: string
@@ -683,15 +685,25 @@ export function ApplicationDetailWorkspace({
   )
   const deliveryLaunch = activeTab === 'delivery' && Boolean(requestedLaunch)
   const applicationSettings = settingsKey === 'application'
+  const serviceWorkflowTab =
+    activeTab === 'services' && Boolean(focusedServiceId) && serviceTab === 'build'
+  const permissionSnapshot = readableQueryData(permissionSnapshotQuery)?.data
+  const canViewWorkflows = hasPermission(permissionSnapshot, 'delivery.workflows.view')
+  const canReadServiceWorkflowTemplate =
+    serviceWorkflowTab &&
+    canViewWorkflows &&
+    hasPermission(permissionSnapshot, 'delivery.releases.view')
   const detailQuery = useQuery(
     deliveryQueries.applications.detail(
       applicationId ?? '',
       Boolean(application) &&
         (showOverview ||
           activeTab === 'delivery' ||
+          canReadServiceWorkflowTemplate ||
           bindingSettings ||
           applicationSettings ||
           deliveryActionModalVisible),
+      activeTab === 'delivery' && environmentWorkflowExpanded && canViewWorkflows ? 5_000 : false,
     ),
   )
   const configuredServiceQuery = useQuery(
@@ -733,7 +745,6 @@ export function ApplicationDetailWorkspace({
       (bindingSettings || (workflowCreateModalVisible && workflowCreateSource === 'template')),
     loadClusters: false,
   })
-  const permissionSnapshot = readableQueryData(permissionSnapshotQuery)?.data
   const canCreateService = hasPermission(permissionSnapshot, 'delivery.application-services.create')
   const canUpdateService = hasPermission(permissionSnapshot, 'delivery.application-services.update')
   const canDeleteService = hasPermission(permissionSnapshot, 'delivery.application-services.delete')
@@ -743,7 +754,6 @@ export function ApplicationDetailWorkspace({
   )
   const canManageRepositories = managementState.canUpdateApplication
   const canViewBuilds = hasPermission(permissionSnapshot, 'delivery.applications.view')
-  const canViewWorkflows = hasPermission(permissionSnapshot, 'delivery.workflows.view')
   const canTriggerBuild = hasPermission(permissionSnapshot, 'delivery.builds.trigger')
   const canTriggerWorkflow = hasPermission(permissionSnapshot, 'delivery.workflows.trigger')
   const canTriggerRelease = hasPermission(permissionSnapshot, 'delivery.releases.trigger')
@@ -753,10 +763,7 @@ export function ApplicationDetailWorkspace({
   )
   const canViewScopeGrants = hasPermission(permissionSnapshot, 'access.scope-grants.view')
   const workflowReadsEnabled = Boolean(
-    application &&
-    activeEnvironmentId &&
-    canViewWorkflows &&
-    (activeTab === 'delivery' || (focusedServiceId && serviceTab === 'build')),
+    application && activeEnvironmentId && canViewWorkflows && serviceWorkflowTab,
   )
   const serviceWorkflowsQuery = useQuery(
     deliveryQueries.workflows.list(
@@ -764,7 +771,10 @@ export function ApplicationDetailWorkspace({
       { enabled: workflowReadsEnabled, refetchInterval: 5_000 },
     ),
   )
-  const serviceWorkflows = readableQueryData(serviceWorkflowsQuery) ?? []
+  const scopedWorkflows = workflowReadsEnabled
+    ? readableQueryData(serviceWorkflowsQuery)
+    : undefined
+  const workflowHistoryRestricted = !canViewWorkflows || queryAccessDenied(serviceWorkflowsQuery)
   const productionIds = environments
     .filter((item) => item.isProduction)
     .map((item) => item.environmentId)
@@ -1473,19 +1483,20 @@ export function ApplicationDetailWorkspace({
     if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
     setSearchParams(next)
   }
-  const configuredWorkflowBindings = bindings.filter(
-    (binding) =>
-      binding.workflowTemplateId && binding.applicationEnvironmentId === activeEnvironmentId,
+  const workflowBindings = bindings
+    .filter((binding) => binding.workflowTemplateId)
+    .map((binding) => (canViewWorkflows ? binding : { ...binding, latestWorkflow: undefined }))
+  const configuredWorkflowBindings = workflowBindings.filter(
+    (binding) => binding.applicationEnvironmentId === activeEnvironmentId,
   )
   const serviceWorkflowBinding = bindings.find(
     (binding) => binding.applicationEnvironmentId === activeEnvironmentId,
   )
-  const workflowReadState =
-    detailQuery.isError || serviceWorkflowsQuery.isError
-      ? 'error'
-      : !detail || (workflowReadsEnabled && serviceWorkflowsQuery.isLoading)
-        ? 'loading'
-        : 'ready'
+  const workflowReadState = serviceWorkflowsQuery.isError
+    ? 'error'
+    : workflowReadsEnabled && serviceWorkflowsQuery.isLoading
+      ? 'loading'
+      : 'ready'
   const openServiceWorkflow = (serviceId: string) => {
     const path = applicationWorkspacePath(
       application.id,
@@ -1965,10 +1976,13 @@ export function ApplicationDetailWorkspace({
             <ServiceWorkflowCard
               service={focusedService}
               environmentId={activeEnvironmentId}
-              binding={serviceWorkflowBinding}
-              runs={serviceWorkflows}
+              binding={{
+                ...serviceWorkflowBinding,
+                targets: serviceWorkflowBinding?.targets ?? runtimeSummary?.environment.targets,
+              }}
+              runs={workflowHistoryRestricted ? [] : scopedWorkflows}
               workloads={selectedWorkloads}
-              canView={canViewWorkflows}
+              canView={!workflowHistoryRestricted}
               state={workflowReadState}
               onSelectStage={openWorkflowStage}
             />
@@ -2415,7 +2429,7 @@ export function ApplicationDetailWorkspace({
         error={detailQuery.error}
         hasReadData={detailQuery.data !== undefined}
         onRetry={() => detailQuery.refetch()}
-        dataSource={bindings.filter((binding) => binding.workflowTemplateId)}
+        dataSource={workflowBindings}
         empty={
           <ManagementState
             compact
@@ -3969,7 +3983,11 @@ export function ApplicationDetailWorkspace({
                     </Suspense>
                   ) : null}
                   {!focusedService ? (
-                    <details className="soha-application-inline-disclosure">
+                    <details
+                      className="soha-application-inline-disclosure"
+                      open={environmentWorkflowExpanded}
+                      onToggle={(event) => setEnvironmentWorkflowExpanded(event.currentTarget.open)}
+                    >
                       <summary>环境工作流</summary>
                       {tab('pipeline').children}
                       {applicationWorkflowOverview}

@@ -91,6 +91,8 @@ for (const width of [1440, 390]) {
           visibleMenus: [{ id: 'applications', path: '/applications', labelZh: '应用中心' }],
         })
       if (path === '/application-environments') return data([{ ...binding, updatedAt: revision }])
+      if (path === '/application-environments/retail-test/detail')
+        return data({ binding: { ...binding, updatedAt: revision } })
       if (path === '/application-environments/retail-test' && method === 'PUT') {
         const body = request.postDataJSON() as Record<string, unknown>
         writes.push(body)
@@ -160,31 +162,34 @@ for (const width of [1440, 390]) {
         const body = base.body as { data: Record<string, unknown> }
         return data({ ...body.data, bindings: [{ ...binding, updatedAt: revision }] })
       }
-      if (base && path === '/applications/retail/runtime') {
-        const body = base.body as {
-          data: { environments: Array<{ environmentId: string; workloads: unknown[] }> }
+      if (
+        base &&
+        path === '/applications/retail/application-environments/retail-test/runtime-summary'
+      ) {
+        const body = structuredClone(base.body) as {
+          data: { environment: { targets: unknown[]; workloads: unknown[] } }
         }
-        for (const env of body.data.environments)
-          if (env.environmentId === 'test')
-            env.workloads = [
-              { target: otherTarget, source: otherSource },
-              { target, source },
-            ].map(({ target, source }) => ({
-              applicationEnvironmentId: 'retail-test',
-              targetId: target.id,
-              serviceId: 'search',
-              clusterId: 'cluster-a',
-              namespace: 'retail-test',
-              workloadKind: 'CustomResource',
-              workloadName: target.workloadName,
-              sourceStatus: 'linked',
-              healthStatus: 'unknown',
-              desiredReplicas: 0,
-              readyReplicas: 0,
-              updatedReplicas: 0,
-              availableReplicas: 0,
-              source,
-            }))
+        body.data.environment.targets = binding.targets
+        body.data.environment.workloads = [
+          { target: otherTarget, source: otherSource },
+          { target, source },
+        ].map(({ target, source }) => ({
+          applicationEnvironmentId: 'retail-test',
+          targetId: target.id,
+          serviceId: 'search',
+          clusterId: 'cluster-a',
+          namespace: 'retail-test',
+          workloadKind: 'CustomResource',
+          workloadName: target.workloadName,
+          sourceStatus: 'linked',
+          healthStatus: 'unknown',
+          desiredReplicas: 0,
+          readyReplicas: 0,
+          updatedReplicas: 0,
+          availableReplicas: 0,
+          source,
+        }))
+        return { ...base, body }
       }
       return base
     })
@@ -256,7 +261,8 @@ for (const width of [1440, 390]) {
       page.locator('.soha-operation-feedback').filter({ hasText: '关系规则已保存' }),
     ).toBeVisible()
     expect(writes).toHaveLength(2)
-    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(dialog).not.toBeVisible()
     await relations.getByRole('button', { name: '选择 Pod search-pod-0', exact: true }).click()
     await relations.getByRole('button', { name: '查看 search-pod-0 指标' }).click()
     await expect(page.getByRole('region', { name: '关联 Pod 指标', exact: true })).toBeVisible()
