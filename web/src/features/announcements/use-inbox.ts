@@ -1,13 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { useAuthStore } from '@/stores/auth-store'
 import { announcementQueries } from './queries'
 
-export function useAnnouncementInbox(limit = 10, allowPortalView = false) {
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const snapshot = permissionSnapshotQuery.data?.data
-  const canViewAnnouncements =
-    hasPermission(snapshot, 'system.announcements.view') ||
-    (allowPortalView && hasPermission(snapshot, 'identity.portal.view'))
-
-  return useQuery(announcementQueries.inbox(limit, canViewAnnouncements))
+export function useAnnouncementInbox(limit = 10, live = false) {
+  const enabled = useAuthStore((state) => state.isAuthenticated())
+  const session = useAuthStore((state) => state.sessionGeneration)
+  return useQuery(announcementQueries.inbox(limit, enabled, session, live))
 }

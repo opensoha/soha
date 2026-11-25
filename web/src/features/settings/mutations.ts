@@ -42,6 +42,12 @@ export const settingsMutations = {
       }),
   },
   ai: {
+    saveAssistantMesh: (queryClient: QueryClient, owner: string) =>
+      mutationOptions({
+        mutationKey: settingsMutationKeys.ai('save-assistant-mesh'),
+        mutationFn: settingsApi.ai.saveAssistantMesh,
+        onSuccess: (item) => queryClient.setQueryData(settingsKeys.ai.assistantMesh(owner), item),
+      }),
     setRuntimeAssetEnabled: (queryClient: QueryClient, owner: string) =>
       mutationOptions({
         mutationKey: settingsMutationKeys.ai('set-runtime-asset-enabled'),
@@ -63,7 +69,9 @@ export const settingsMutations = {
         retry: false,
         onSettled: async (_data, _error, input) => {
           await Promise.all([
-            queryClient.invalidateQueries({ queryKey: settingsKeys.ai.runtimeProfileHistory(owner, input.id) }),
+            queryClient.invalidateQueries({
+              queryKey: settingsKeys.ai.runtimeProfileHistory(owner, input.id),
+            }),
             queryClient.invalidateQueries({ queryKey: workbenchKeys.runtimeProfiles() }),
           ])
         },

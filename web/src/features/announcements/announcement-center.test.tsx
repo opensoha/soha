@@ -10,6 +10,8 @@ import { AnnouncementBell } from './announcement-center'
 const testState = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
   unreadCount: 0,
+  sessionGeneration: 1,
+  signedIn: true,
 }))
 
 vi.mock('@/i18n', () => ({
@@ -17,9 +19,14 @@ vi.mock('@/i18n', () => ({
     localeCode === 'zh_CN' ? chinese : english,
   useI18n: () => ({ localeCode: 'en_US' as const }),
 }))
-vi.mock('@/features/auth', () => ({
-  hasPermission: () => true,
-  usePermissionSnapshot: () => ({ data: { data: { permissionKeys: [] } } }),
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (
+    selector: (state: { sessionGeneration: number; isAuthenticated: () => boolean }) => unknown,
+  ) =>
+    selector({
+      sessionGeneration: testState.sessionGeneration,
+      isAuthenticated: () => testState.signedIn,
+    }),
 }))
 vi.mock('./use-inbox', () => ({
   useAnnouncementInbox: () => ({
@@ -132,6 +139,62 @@ describe('AnnouncementBell i18n', () => {
     expect(document.body.textContent).toContain('View')
     expect(document.body.textContent).toContain('Expected duration: 30 minutes')
 
+    testState.items = []
+    testState.unreadCount = 0
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <AntdApp>
+            <AnnouncementBell />
+          </AntdApp>
+        </QueryClientProvider>,
+      )
+    })
+    expect(document.body.textContent).not.toContain('Expected duration: 30 minutes')
     await act(async () => root.unmount())
+  })
+  it('announces a personal notice without changing focus and removes it on account switch', async () => {
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    const client = new QueryClient()
+    const render = () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <AntdApp>
+            <input aria-label="Current work" />
+            <AnnouncementBell />
+          </AntdApp>
+        </QueryClientProvider>,
+      )
+    try {
+      await act(async () => render())
+      const input = container.querySelector('input')
+      input?.focus()
+      testState.items = [
+        {
+          id: 'private-notice',
+          title: 'Inherited Heya assets',
+          content: 'One shared asset',
+          level: 'info',
+          audience: 'personal',
+          isRead: false,
+        },
+      ]
+      testState.unreadCount = 1
+      await act(async () => render())
+      expect(document.body.textContent).toContain('Inherited Heya assets')
+      expect(container.querySelector('[aria-label="Announcements, 1 unread"]')).not.toBeNull()
+      expect(document.activeElement).toBe(input)
+      testState.sessionGeneration++
+      testState.items = []
+      testState.unreadCount = 0
+      await act(async () => render())
+      await vi.waitFor(() =>
+        expect(document.body.textContent).not.toContain('Inherited Heya assets'),
+      )
+    } finally {
+      await act(async () => root.unmount())
+      client.clear()
+    }
   })
 })
