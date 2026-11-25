@@ -413,7 +413,7 @@ var topLevelCommandSpecs = []commandSpec{
 	},
 	{
 		Name:    "plugin",
-		Usage:   "soha plugin <search|show|install|list|enable|disable|upgrade|config|remove> [options]",
+		Usage:   "soha plugin <search|show|install|list|enable|disable|upgrade|rollback|config|remove> [options]",
 		Summary: "Search, install, and manage Soha plugins",
 		Subcommands: []commandSpec{
 			{Name: "search", Usage: "soha plugin search [options]", Summary: "Search plugin marketplace entries", Examples: []string{"soha plugin search --query k8s", "soha plugin search --marketplace https://marketplace.opensoha.com --source-id opensoha-official"}},
@@ -423,6 +423,7 @@ var topLevelCommandSpecs = []commandSpec{
 			{Name: "enable", Usage: "soha plugin enable <plugin-id> [options]", Summary: "Enable an installed plugin", Examples: []string{"soha plugin enable opensoha.k8s-sre-pack"}},
 			{Name: "disable", Usage: "soha plugin disable <plugin-id> [options]", Summary: "Disable an installed plugin", Examples: []string{"soha plugin disable opensoha.k8s-sre-pack"}},
 			{Name: "upgrade", Usage: "soha plugin upgrade [options] <plugin-id>", Summary: "Upgrade an installed plugin, including from its stored repository source", Examples: []string{"soha plugin upgrade opensoha.k8s-sre-pack", "soha plugin upgrade --marketplace https://marketplace.opensoha.com --version 0.2.0 opensoha.k8s-sre-pack", "soha plugin upgrade opensoha.k8s-sre-pack --repository --ref v0.2.0 --yes --profile local"}},
+			{Name: "rollback", Usage: "soha plugin rollback --expected-version <current> --version <retained> [options] <plugin-id>", Summary: "Restore a retained repository plugin version offline", Examples: []string{"soha plugin rollback --expected-version 2.0.0 --version 1.0.0 --yes example.plugin"}},
 			{Name: "config", Usage: "soha plugin config <plugin-id> [options]", Summary: "Configure metadata and secret refs", Examples: []string{"soha plugin config opensoha.k8s-sre-pack --secret-ref token=secret://k8s/token"}},
 			{Name: "remove", Aliases: []string{"rm"}, Usage: "soha plugin remove <plugin-id> [options]", Summary: "Remove an installed plugin", Examples: []string{"soha plugin remove opensoha.k8s-sre-pack"}},
 		},

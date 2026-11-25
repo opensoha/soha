@@ -75,6 +75,7 @@ type ResolvedManifest struct {
 	Manifest        domainplugin.PluginManifest
 	Integrity       *domainplugin.PluginIntegrity
 	RawChecksum     string
+	rawManifest     []byte
 	ChecksumStatus  string
 	SignatureStatus string
 	Source          string

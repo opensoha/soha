@@ -1,0 +1,11 @@
+{
+  "siteId": "site-hq",
+  "name": "HQ staff Wi-Fi",
+  "accessMedium": "wifi",
+  "kind": "guest",
+  "enabled": true,
+  "nasBindingIds": ["nas-hq-wifi"],
+  "priority": 100,
+  "autoConnect": true,
+  "rules": []
+}

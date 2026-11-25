@@ -17,6 +17,10 @@ import (
 
 type systemIntegrationHandlerStub struct{ update domain.UpdateInput }
 
+func (*systemIntegrationHandlerStub) ListStorageDrivers(context.Context, domainidentity.Principal) ([]sohaapi.StorageDriverDescriptor, error) {
+	return []sohaapi.StorageDriverDescriptor{}, nil
+}
+
 func (*systemIntegrationHandlerStub) List(context.Context, domainidentity.Principal, domain.Filter) ([]sohaapi.SystemIntegration, error) {
 	return []sohaapi.SystemIntegration{}, nil
 }

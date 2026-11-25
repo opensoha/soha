@@ -240,6 +240,7 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/plugins/:pluginID/disable", deps.Plugins.Disable)
 	protected.POST("/plugins/:pluginID/upgrade", deps.Plugins.Upgrade)
 	protected.POST("/plugins/:pluginID/repository/upgrade", deps.Plugins.UpgradeRepository)
+	protected.POST("/plugins/:pluginID/repository/rollback", deps.Plugins.RollbackRepository)
 	protected.PUT("/plugins/:pluginID/config", deps.Plugins.Configure)
 	protected.POST("/plugins/:pluginID/activate", deps.Plugins.ActivateCompanion)
 	protected.POST("/plugins/:pluginID/rollback", deps.Plugins.RollbackCompanion)
@@ -266,6 +267,8 @@ func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/identity/saml/login-sources/import", deps.Settings.ImportSAMLLoginSourceMetadata)
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
 	protected.GET("/settings/ai", deps.Settings.GetAISettings)
+	protected.GET("/settings/ai/assistant-mesh", deps.Settings.GetAssistantMeshSettings)
+	protected.PUT("/settings/ai/assistant-mesh", deps.Settings.UpdateAssistantMeshSettings)
 	protected.PUT("/settings/ai/workbench-model", deps.Settings.UpdateAIWorkbenchModelSettings)
 	if deps.Copilot != nil {
 		protected.GET("/settings/ai/workbench-runtime-profiles/:profileId", deps.Copilot.ListRuntimeProfileRevisions)

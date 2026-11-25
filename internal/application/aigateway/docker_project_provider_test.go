@@ -2,6 +2,7 @@ package aigateway
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
@@ -13,8 +14,9 @@ import (
 )
 
 type projectCapabilityFixture struct {
-	item    domaindocker.Project
-	creates int
+	item     domaindocker.Project
+	creates  int
+	projects map[string]domaindocker.Project
 }
 
 func (f *projectCapabilityFixture) CreateProject(_ context.Context, _ domainidentity.Principal, input domaindocker.ProjectInput) (domaindocker.Project, error) {
@@ -28,8 +30,57 @@ func (f *projectCapabilityFixture) FindProjectCreation(context.Context, domainid
 	}
 	return f.item, nil
 }
-func (f *projectCapabilityFixture) GetProject(context.Context, domainidentity.Principal, string) (domaindocker.Project, error) {
+func (f *projectCapabilityFixture) GetProject(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Project, error) {
+	if f.projects != nil {
+		project, ok := f.projects[id]
+		if !ok {
+			return domaindocker.Project{}, apperrors.ErrNotFound
+		}
+		return project, nil
+	}
 	return f.item, nil
+}
+
+func TestAssistantMeshMCPRequiresExplicitProjectGrant(t *testing.T) {
+	provider, err := NewDockerProjectCapabilityProvider(&projectCapabilityFixture{projects: map[string]domaindocker.Project{
+		"project-a": {ID: "project-a", HostID: "host"}, "project-b": {ID: "project-b", HostID: "host"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &memoryGatewayRepository{}
+	service := newProjectGatewayTestService(repo)
+	if err := service.SetCapabilityProviders(provider); err != nil {
+		t.Fatal(err)
+	}
+	caller := testPrincipal("admin")
+	ctx := WithAssistantMeshProjectGrant(t.Context())
+	invoke := func(project string, wantAllowed bool) {
+		t.Helper()
+		result, err := service.InvokeTool(ctx, caller, domainaigateway.ToolInvocationRequest{
+			ToolName: "docker.projects.get", CapabilityVersion: "1", RequestID: "agent:same-run",
+			Input: map[string]any{"projectId": project},
+		})
+		if wantAllowed {
+			item, _ := result.Output.(domaindocker.Project)
+			if err != nil || item.ID != project {
+				t.Fatalf("project %s: allowed grant returned %+v, %v", project, result, err)
+			}
+		} else if !errors.Is(err, apperrors.ErrAccessDenied) || result.Output != nil {
+			t.Fatalf("project %s: missing grant returned %+v, %v", project, result, err)
+		}
+	}
+	invoke("project-a", false)
+	repo.toolGrants = []domainaigateway.ToolGrant{{
+		ID: "grant", SubjectType: "user", SubjectID: caller.UserID, Effect: "allow", ToolName: "docker.projects.get",
+		ResourceScopes: map[string]any{"dockerProject": "*"},
+	}}
+	invoke("project-a", false)
+	repo.toolGrants[0].ResourceScopes["dockerProject"] = "project-a"
+	invoke("project-a", true)
+	invoke("project-b", false)
+	repo.toolGrants = nil
+	invoke("project-a", false)
 }
 
 func TestDockerProjectCapabilityApprovalAndRecovery(t *testing.T) {

@@ -247,7 +247,7 @@ describe('Provider Portal catalog page', () => {
     const container = await renderPage()
 
     expect(apiMocks.get).toHaveBeenCalledWith('/portal/bootstrap')
-    expect(announcementMocks.useAnnouncementInbox).toHaveBeenCalledWith(10, true)
+    expect(announcementMocks.useAnnouncementInbox).toHaveBeenCalledWith()
     expect(container.textContent).toContain('Operations Console')
     const cards = container.querySelector('.soha-portal-app-grid')
     expect(cards?.textContent).not.toContain('Available')

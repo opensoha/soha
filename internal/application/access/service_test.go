@@ -28,6 +28,15 @@ func TestAdminRoleContainsDirectoryPermissions(t *testing.T) {
 	}
 }
 
+func TestDefaultHeyaAssetDispositionIsLimitedToAdmin(t *testing.T) {
+	for role, permissions := range defaultRolePermissions() {
+		hasPermission := slices.Contains(permissions, PermAccessUsersInheritHeyaAssets)
+		if hasPermission != (role == "admin") {
+			t.Errorf("role %s has disposition permission = %t", role, hasPermission)
+		}
+	}
+}
+
 func TestPermissionCatalogDropsGlobalMonitoringSettingsPermissions(t *testing.T) {
 	permissions := allPermissionKeys()
 	for _, stale := range []string{"settings.monitoring.view", "settings.monitoring.manage"} {

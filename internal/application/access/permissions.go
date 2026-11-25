@@ -266,6 +266,7 @@ const (
 	PermDockerOperationsView               = "docker.operations.view"
 	PermDockerOperationsManage             = "docker.operations.manage"
 	PermAccessUsersView                    = "access.users.view"
+	PermAccessUsersInheritHeyaAssets       = "access.users.inherit-heya-assets"
 	PermAccessUsersManage                  = "access.users.manage"
 	PermAccessRolesView                    = "access.roles.view"
 	PermAccessRolesManage                  = "access.roles.manage"

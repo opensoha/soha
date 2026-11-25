@@ -4,7 +4,7 @@ import { BellOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HeaderActionButton } from '@/components/header-action-button'
 import { ManagementState } from '@/components/management-list'
-import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { useAuthStore } from '@/stores/auth-store'
 import { localeText, useI18n } from '@/i18n'
 import type { LocaleCode } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
@@ -68,11 +68,7 @@ function AnnouncementList({
         <div className="soha-announcement-center-item" key={item.id} role="listitem">
           <div className="soha-announcement-center-item__body">
             <Space size={8} wrap>
-              <Button
-                type="link"
-                className="soha-system-linklike"
-                onClick={() => onPreview(item)}
-              >
+              <Button type="link" className="soha-system-linklike" onClick={() => onPreview(item)}>
                 {item.title}
               </Button>
               {item.sticky ? (
@@ -122,30 +118,42 @@ function AnnouncementList({
 }
 
 export function AnnouncementBell() {
+  const signedIn = useAuthStore((state) => state.isAuthenticated())
+  const session = useAuthStore((state) => state.sessionGeneration)
+  return signedIn ? <SessionAnnouncementBell key={session} /> : null
+}
+
+function SessionAnnouncementBell() {
   const { localeCode } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const canViewAnnouncements = hasPermission(
-    permissionSnapshotQuery.data?.data,
-    'system.announcements.view',
-  )
-  const inboxQuery = useAnnouncementInbox(10)
-  const [modalItem, setModalItem] = useState<AnnouncementInboxItem | null>(null)
+  const inboxQuery = useAnnouncementInbox(10, true)
+  const [modalID, setModalID] = useState<string | null>(null)
   const [autoOpenedID, setAutoOpenedID] = useState<string | null>(null)
 
   const items = inboxQuery.data?.data.items ?? []
+  const modalItem = items.find((item) => item.id === modalID) ?? null
   const unreadCount = inboxQuery.data?.data.unreadCount ?? 0
   const unreadItems = useMemo(() => items.filter((item) => !item.isRead), [items])
-  const topUnread = useMemo(() => unreadItems[0] ?? null, [unreadItems])
+  const topUnread = unreadItems.find((item) => item.audience !== 'personal')
+  const personal = unreadItems.find((item) => item.audience === 'personal')
+  const personalID = personal?.id
+  const personalTitle = personal?.title
+  const announcementOpening = modalItem !== null || (!!topUnread && autoOpenedID !== topUnread.id)
 
   useEffect(() => {
-    if (!canViewAnnouncements) return
+    if (!personalID || !personalTitle || announcementOpening) return
+    const key = 'personal-notice-' + personalID
+    void message.info({ content: personalTitle, key })
+    return () => message.destroy(key)
+  }, [announcementOpening, message, personalID, personalTitle])
+
+  useEffect(() => {
     if (!topUnread) return
     if (autoOpenedID === topUnread.id) return
-    setModalItem(topUnread)
+    setModalID(topUnread.id)
     setAutoOpenedID(topUnread.id)
-  }, [autoOpenedID, canViewAnnouncements, topUnread])
+  }, [autoOpenedID, topUnread])
 
   const markReadMutation = useMutation({
     mutationFn: markAnnouncementRead,
@@ -160,10 +168,8 @@ export function AnnouncementBell() {
 
   const handleMarkRead = async (announcementID: string) => {
     await markReadMutation.mutateAsync(announcementID)
-    setModalItem((current) => (current?.id === announcementID ? null : current))
+    setModalID((current) => (current === announcementID ? null : current))
   }
-
-  if (!canViewAnnouncements) return null
 
   return (
     <>
@@ -198,7 +204,7 @@ export function AnnouncementBell() {
                       items={unreadItems}
                       localeCode={localeCode}
                       onRead={handleMarkRead}
-                      onPreview={setModalItem}
+                      onPreview={(item) => setModalID(item.id)}
                       readingID={markReadMutation.variables as string | null}
                     />
                   ),
@@ -211,7 +217,7 @@ export function AnnouncementBell() {
                       items={items}
                       localeCode={localeCode}
                       onRead={handleMarkRead}
-                      onPreview={setModalItem}
+                      onPreview={(item) => setModalID(item.id)}
                       readingID={markReadMutation.variables as string | null}
                     />
                   ),
@@ -241,9 +247,9 @@ export function AnnouncementBell() {
       <Modal
         open={Boolean(modalItem)}
         title={modalItem?.title || localeText(localeCode, '公告', 'Announcement')}
-        onCancel={() => setModalItem(null)}
+        onCancel={() => setModalID(null)}
         footer={[
-          <Button key="close" onClick={() => setModalItem(null)}>
+          <Button key="close" onClick={() => setModalID(null)}>
             {localeText(localeCode, '稍后查看', 'Later')}
           </Button>,
           <Button

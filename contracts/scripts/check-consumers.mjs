@@ -596,7 +596,7 @@ function verifyDeclaredGoSDK(dir, env) {
 function internalInputs() {
   const inputs = ["go.work", "go.work.sum", "package.json", "package-lock.json", "go.mod", "go.sum",
     "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json",
-    "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "cli/npm/cli/package.json", "connectors/package.json",
+    "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "cli/npm/cli/package.json", "connectors/package.json", "plugin-sdk/ui/package.json",
     "skills/tools/validate_assets.py", "skills/catalog/compatibility-matrix.json",
     "contracts/skills/skill-manifest.schema.json", "contracts/presets/mcp-preset.schema.json",
     "contracts/profiles/agent-profile.schema.json", "contracts/auth/permission-catalog.json",

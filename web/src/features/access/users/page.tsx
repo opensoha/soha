@@ -25,6 +25,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   FolderOpenOutlined,
+  SwapOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
@@ -63,6 +64,8 @@ import {
   ORG_ALL_KEY,
   organizationMatchesSelection,
 } from './view-model'
+import { useAuthStore } from '@/stores/auth-store'
+import { AssistantInheritance } from './assistant-inheritance'
 import '../shared/styles.css'
 
 const { Text } = Typography
@@ -86,12 +89,15 @@ export function AccessUsersPage() {
   const canViewTeams = hasPermission(snapshot, 'access.groups.view')
   const canCreateUsers = hasPermission(snapshot, 'access.users.create')
   const canUpdateUsers = hasPermission(snapshot, 'access.users.update')
+  const canDisposeHeya = hasPermission(snapshot, 'access.users.inherit-heya-assets')
   const canDeleteUsers = hasPermission(snapshot, 'access.users.delete')
   const canReplaceUserRoles = hasPermission(snapshot, 'access.users.replace-roles')
   const canReplaceUserTeams = hasPermission(snapshot, 'access.users.replace-teams')
   const canViewScopeGrants = hasPermission(snapshot, 'access.scope-grants.view')
   const [form] = Form.useForm<Record<string, unknown>>()
   const [grantUser, setGrantUser] = useState<AccessUser | null>(null)
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration)
+  const [inheritance, setInheritance] = useState<{ ownerId: string; session: number } | null>(null)
   const [searchText, setSearchText] = useState('')
   const [selectedOrgId, setSelectedOrgId] = useState(ORG_ALL_KEY)
   const [includeSubOrganizations, setIncludeSubOrganizations] = useState(true)
@@ -105,6 +111,11 @@ export function AccessUsersPage() {
   })
   const { modalVisible, editing, createMutation, updateMutation, deleteMutation } = crud
   const usersQuery = crud.query
+  const users = readableQueryData(usersQuery) ?? []
+  const inheritanceOwner =
+    canDisposeHeya && inheritance?.session === sessionGeneration
+      ? users.find((user) => user.id === inheritance.ownerId && user.status === 'disabled')
+      : undefined
   const resettingMFA = useRef(false)
   const rolesQuery = useQuery(accessQueries.roles(canViewRoles))
   const teamsQuery = useQuery(accessQueries.teams(canViewTeams))
@@ -309,7 +320,7 @@ export function AccessUsersPage() {
       dataIndex: 'id',
       render: (_: unknown, record: AccessUser) => (
         <Space className="soha-row-action-icons">
-          {canUpdateUsers || canDeleteUsers || canViewScopeGrants ? (
+          {canUpdateUsers || canDeleteUsers || canViewScopeGrants || canDisposeHeya ? (
             <>
               {canViewScopeGrants ? (
                 <ManagementIconButton
@@ -359,6 +370,15 @@ export function AccessUsersPage() {
                     tooltip="重置 MFA"
                   />
                 </Popconfirm>
+              ) : null}
+              {canDisposeHeya && record.status === 'disabled' ? (
+                <ManagementIconButton
+                  aria-label="处置 Heya 资产"
+                  icon={<SwapOutlined />}
+                  size="small"
+                  tooltip="处置 Heya 资产"
+                  onClick={() => setInheritance({ ownerId: record.id, session: sessionGeneration })}
+                />
               ) : null}
               {canDeleteUsers ? (
                 <Popconfirm
@@ -560,6 +580,15 @@ export function AccessUsersPage() {
           />
         </section>
       </div>
+      {inheritanceOwner ? (
+        <AssistantInheritance
+          key={`${sessionGeneration}:${inheritanceOwner.id}`}
+          owner={inheritanceOwner}
+          users={users}
+          session={sessionGeneration}
+          onClose={() => setInheritance(null)}
+        />
+      ) : null}
       <Modal
         title={editing ? `编辑用户: ${getUserLabel(editing)}` : '添加用户'}
         open={modalVisible && readableQueryData(usersQuery) !== undefined}

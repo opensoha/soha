@@ -62,27 +62,40 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, a
 }
 
 func (s *Service) Inbox(ctx context.Context, principal domainidentity.Principal, limit int) (domainannouncement.Inbox, error) {
-	if err := s.authorizeInbox(ctx, principal); err != nil {
+	viewer, err := s.inboxViewer(ctx, principal)
+	if err != nil {
 		return domainannouncement.Inbox{}, err
 	}
 	if limit <= 0 {
 		limit = 10
 	}
-	return s.repo.ListInbox(ctx, principal.UserID, limit, time.Now().UTC())
+	return s.repo.ListInbox(ctx, viewer, limit, time.Now().UTC())
 }
 
 func (s *Service) MarkRead(ctx context.Context, principal domainidentity.Principal, announcementID string) error {
-	if err := s.authorizeInbox(ctx, principal); err != nil {
+	viewer, err := s.inboxViewer(ctx, principal)
+	if err != nil {
 		return err
+	}
+	announcementID = strings.TrimSpace(announcementID)
+	now := time.Now().UTC()
+	if viewer.Personal {
+		read, err := s.repo.MarkPersonalRead(ctx, viewer.UserID, announcementID, now)
+		if err != nil || read {
+			return err
+		}
+	}
+	if !viewer.Broadcast {
+		return fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 	}
 	item, err := s.getAnnouncement(ctx, announcementID)
 	if err != nil {
 		return err
 	}
-	if !isActiveInboxAnnouncement(item, time.Now().UTC()) {
+	if !isActiveInboxAnnouncement(item, now) {
 		return fmt.Errorf("%w: announcement is not available for read receipt", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.MarkRead(ctx, item.ID, principal.UserID, time.Now().UTC())
+	return s.repo.MarkRead(ctx, item.ID, viewer.UserID, now)
 }
 
 func (s *Service) Receipts(ctx context.Context, principal domainidentity.Principal, announcementID string, query domainannouncement.ReceiptQuery) (domainannouncement.ReceiptPage, error) {
@@ -361,4 +374,18 @@ func (s *Service) authorizeInbox(ctx context.Context, principal domainidentity.P
 		appaccess.PermSystemAnnouncementsView,
 		appaccess.PermIdentityPortalView,
 	)
+}
+
+func (s *Service) inboxViewer(ctx context.Context, principal domainidentity.Principal) (domainannouncement.InboxViewer, error) {
+	viewer := domainannouncement.InboxViewer{UserID: principal.UserID}
+	userID, parseErr := uuid.Parse(principal.UserID)
+	viewer.Personal = parseErr == nil && userID.String() == viewer.UserID &&
+		principal.AccessTokenID == "" && principal.GovernedAI == nil
+	err := s.authorizeInbox(ctx, principal)
+	if err == nil {
+		viewer.Broadcast = true
+	} else if !viewer.Personal || !errors.Is(err, apperrors.ErrAccessDenied) {
+		return domainannouncement.InboxViewer{}, err
+	}
+	return viewer, nil
 }

@@ -19,6 +19,7 @@ import (
 
 type App struct {
 	OptionalRuntimes      *optionalRuntimeServices
+	StorageDrivers        interface{ Close(context.Context) error }
 	CopilotService        interface{ Stop(context.Context) error }
 	PodTerminals          interface{ Shutdown(context.Context) error }
 	DockerTerminals       interface{ Shutdown(context.Context) error }
@@ -88,6 +89,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		if err := a.HTTP.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, err)
 		}
+	}
+	if a.StorageDrivers != nil {
+		shutdownErr = errors.Join(shutdownErr, a.StorageDrivers.Close(ctx))
 	}
 	if a.cancel != nil {
 		a.cancel()

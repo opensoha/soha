@@ -33,6 +33,27 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	storageRegistry := storageDriverRegistry(core.systemIntegrationService, core.secretService)
+	staticDrivers, err := startStorageDrivers(infra.lifecycleCtx, cfg.Plugins.Storage, storageRegistry)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	storageDrivers := &storageDriverRuntimes{static: staticDrivers}
+	initialized := false
+	defer func() {
+		if !initialized {
+			closeStorageDrivers(storageDrivers)
+		}
+	}()
+	storageDrivers.managed, err = startExecutablePlugins(infra.lifecycleCtx, cfg.Plugins, core, storageRegistry)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	if err := core.pluginService.RestoreExecutablePlugins(infra.lifecycleCtx); err != nil {
+		infra.logger.Named("plugins").Warn("could not restore all executable plugins", zap.Error(err))
+	}
 	delivery := newDeliveryServices(infra.lifecycleCtx, cfg, infra, repos, core)
 	gateway, err := newGatewayServices(infra.lifecycleCtx, cfg, repos, core, delivery)
 	if err != nil {
@@ -44,7 +65,6 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
-	initialized := false
 	defer func() {
 		if !initialized {
 			_ = optionalRuntimes.Close(context.Background())
@@ -89,7 +109,7 @@ func New(ctx context.Context) (*App, error) {
 	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
 	hostingDone := startHostedDynamicWorker(infra.lifecycleCtx, core.appHostingService, core.monitoringService, infra.logger)
 	initialized = true
-	return &App{
+	app := &App{
 		OptionalRuntimes:      optionalRuntimes,
 		CopilotService:        delivery.copilotService,
 		PodTerminals:          core.resourceService.PodTerminals(),
@@ -105,5 +125,9 @@ func New(ctx context.Context) (*App, error) {
 		PersonalGuest:         guestServer,
 		cancel:                infra.cancel,
 		appHostingDone:        hostingDone,
-	}, nil
+	}
+	if storageDrivers != nil {
+		app.StorageDrivers = storageDrivers
+	}
+	return app, nil
 }

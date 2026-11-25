@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 COPY contracts/package.json ./contracts/package.json
 COPY web/package.json ./web/package.json
 COPY connectors/package.json ./connectors/package.json
+COPY plugin-sdk/ui/package.json ./plugin-sdk/ui/package.json
 COPY cli/npm/cli ./cli/npm/cli
 COPY web/scripts/apply-dependency-patches.mjs web/scripts/dependency-patches.json web/scripts/dependency-patches.patch ./web/scripts/
 RUN npm ci

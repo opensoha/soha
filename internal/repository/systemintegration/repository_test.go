@@ -10,6 +10,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -43,17 +44,26 @@ func TestSystemIntegrationMigrationUsesJSONObjectDefault(t *testing.T) {
 func TestRepositoryGetDecodesObjectConfigurationAndOnlyReturnsCredentialKeys(t *testing.T) {
 	repo, mock := newSystemIntegrationRepository(t)
 	now := time.Date(2026, 7, 21, 9, 0, 0, 0, time.UTC)
-	mock.ExpectQuery(`(?s)SELECT id, category, provider_type.*FROM system_integrations WHERE id =`).WithArgs("gitlab-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "category", "provider_type", "name", "description", "enabled", "configuration", "health_status", "last_checked_at", "last_error", "version", "created_by", "updated_by", "created_at", "updated_at"}).
-			AddRow("gitlab-1", "source_control", "gitlab", "GitLab", "", true, `{"base_url":"https://gitlab.example/api/v4"}`, "unknown", nil, "", int64(1), "admin", "admin", now, now))
-	mock.ExpectQuery(`SELECT credential_key, value_encrypted FROM system_integration_credentials`).WithArgs("gitlab-1").
-		WillReturnRows(sqlmock.NewRows([]string{"credential_key", "value_encrypted"}).AddRow("token", "soha:v2:key:ciphertext"))
+	createRows := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"id", "category", "provider_type", "name", "description", "enabled", "configuration",
+			"health_status", "last_checked_at", "last_error", "version", "created_by", "updated_by", "created_at", "updated_at", "credential_keys"}).
+			AddRow("gitlab-1", "source_control", "gitlab", "GitLab", "", true, `{"base_url":"https://gitlab.example/api/v4"}`,
+				"unknown", nil, "", int64(1), "admin", "admin", now, now, `["token"]`)
+	}
+	mock.ExpectQuery(`(?s)SELECT id, category, provider_type.*jsonb_agg\(c.credential_key\).*FROM system_integrations i WHERE id =`).
+		WithArgs("gitlab-1").WillReturnRows(createRows())
 	item, err := repo.Get(context.Background(), "gitlab-1")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
 	if len(item.Configuration) != 1 || item.Configuration[0].Key != "base_url" || len(item.CredentialKeys) != 1 || item.CredentialKeys[0] != "token" {
 		t.Fatalf("unexpected item: %#v", item)
+	}
+	mock.ExpectQuery(`(?s)SELECT id, category, provider_type.*FROM system_integrations i WHERE 1=1 AND category = .* AND provider_type =`).
+		WithArgs("source_control", "gitlab").WillReturnRows(createRows())
+	items, err := repo.List(context.Background(), domain.Filter{Category: "source_control", ProviderType: "gitlab"})
+	if err != nil || len(items) != 1 || items[0].ID != item.ID || len(items[0].CredentialKeys) != 1 {
+		t.Fatalf("List() = %#v, error = %v", items, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

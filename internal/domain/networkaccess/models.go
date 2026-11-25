@@ -380,21 +380,22 @@ type MihomoProfileFilter struct {
 }
 
 type NASBinding struct {
-	ID                  string          `json:"id"`
-	NASID               string          `json:"nasId"`
-	RuntimeID           string          `json:"runtimeId"`
-	SiteID              string          `json:"siteId"`
-	Name                string          `json:"name"`
-	AccessMedium        string          `json:"accessMedium,omitempty"`
-	DeviceType          string          `json:"deviceType,omitempty"`
-	SSID                string          `json:"ssid,omitempty"`
-	ManagementAddress   string          `json:"managementAddress,omitempty"`
-	Status              string          `json:"status"`
-	CoASupported        bool            `json:"coaSupported"`
-	DisconnectSupported bool            `json:"disconnectSupported"`
-	EAPServerTrust      *EAPServerTrust `json:"eapServerTrust,omitempty"`
-	CreatedAt           time.Time       `json:"createdAt"`
-	UpdatedAt           time.Time       `json:"updatedAt"`
+	ID                    string          `json:"id"`
+	NASID                 string          `json:"nasId"`
+	RuntimeID             string          `json:"runtimeId"`
+	SiteID                string          `json:"siteId"`
+	Name                  string          `json:"name"`
+	AccessMedium          string          `json:"accessMedium,omitempty"`
+	DeviceType            string          `json:"deviceType,omitempty"`
+	SSID                  string          `json:"ssid,omitempty"`
+	ManagementAddress     string          `json:"managementAddress,omitempty"`
+	Status                string          `json:"status"`
+	CoASupported          bool            `json:"coaSupported"`
+	DisconnectSupported   bool            `json:"disconnectSupported"`
+	StrictOnlineQualified bool            `json:"-"`
+	EAPServerTrust        *EAPServerTrust `json:"eapServerTrust,omitempty"`
+	CreatedAt             time.Time       `json:"createdAt"`
+	UpdatedAt             time.Time       `json:"updatedAt"`
 }
 
 type NASBindingInput struct {
@@ -421,13 +422,28 @@ type NASBindingFilter struct {
 }
 
 type ConnectionOption struct {
-	SiteID         string `json:"siteId"`
-	SiteName       string `json:"siteName"`
-	AccessMedium   string `json:"accessMedium"`
-	SSID           string `json:"ssid,omitempty"`
-	Authentication string `json:"authentication"`
-	AccessProfile  string `json:"accessProfile"`
-	PolicyVersion  int    `json:"policyVersion"`
+	SiteID                 string                  `json:"siteId"`
+	SiteName               string                  `json:"siteName"`
+	AccessMedium           string                  `json:"accessMedium"`
+	SSID                   string                  `json:"ssid,omitempty"`
+	Authentication         string                  `json:"authentication"`
+	AccessProfile          string                  `json:"accessProfile"`
+	PolicyVersion          int                     `json:"policyVersion"`
+	AccessNetworkID        string                  `json:"accessNetworkId,omitempty"`
+	NetworkName            string                  `json:"networkName,omitempty"`
+	RecommendationPriority int                     `json:"recommendationPriority,omitempty"`
+	AutoConnect            bool                    `json:"autoConnect,omitempty"`
+	NASSession             *ConnectionNASSession   `json:"nasSession,omitempty"`
+	StrictOnline           *ConnectionStrictOnline `json:"strictOnline,omitempty"`
+}
+
+type ConnectionStrictOnline struct {
+	LeaseUntil *time.Time `json:"leaseUntil,omitempty"`
+}
+
+type ConnectionNASSession struct {
+	State          string     `json:"state"`
+	LastReceivedAt *time.Time `json:"lastReceivedAt,omitempty"`
 }
 
 type SiteProfileBinding struct {
@@ -515,6 +531,7 @@ type SessionActionPlan struct {
 }
 
 type SessionCommand struct {
+	StrictOnline        bool                              `json:"-"`
 	StationID           string                            `json:"-"`
 	AccountingSessionID string                            `json:"-"`
 	NASPortID           string                            `json:"-"`

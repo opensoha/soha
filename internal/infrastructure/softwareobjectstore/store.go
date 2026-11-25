@@ -135,6 +135,11 @@ func buildStore(item domain.Integration, values map[string]string) (*Store, erro
 	if config.BucketEndpoint {
 		httpClient.CheckRedirect = s3endpoint.RejectRedirect
 	}
+	client := newS3Client(config, httpClient)
+	return newStore(config, client, transfermanager.New(client)), nil
+}
+
+func newS3Client(config Config, httpClient *http.Client, configure ...func(*s3.Options)) *s3.Client {
 	awsConfig := aws.Config{
 		Region:                     config.Region,
 		Credentials:                aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(config.AccessKeyID, config.SecretKey, config.SessionToken)),
@@ -142,7 +147,7 @@ func buildStore(item domain.Integration, values map[string]string) (*Store, erro
 		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
 	}
-	client := s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+	options := []func(*s3.Options){func(options *s3.Options) {
 		options.UsePathStyle = config.PathStyle
 		if config.Endpoint != "" {
 			options.BaseEndpoint = aws.String(config.Endpoint)
@@ -150,8 +155,8 @@ func buildStore(item domain.Integration, values map[string]string) (*Store, erro
 		if config.BucketEndpoint {
 			s3endpoint.ConfigureBucketEndpoint(options, config.Bucket)
 		}
-	})
-	return newStore(config, client, transfermanager.New(client)), nil
+	}}
+	return s3.NewFromConfig(awsConfig, append(options, configure...)...)
 }
 
 func newStore(config Config, client s3Operations, uploader objectUploader) *Store {
@@ -288,12 +293,16 @@ func (s *Store) cleanup(ctx context.Context, objectKey string) error {
 }
 
 func storageHTTPClient(allowPrivate bool) *http.Client {
+	return &http.Client{Transport: storageHTTPTransport(allowPrivate)}
+}
+
+func storageHTTPTransport(allowPrivate bool) *http.Transport {
 	transport := cloneHTTPTransport(http.DefaultTransport)
 	transport.Proxy = nil
 	if !allowPrivate {
 		transport.DialContext = dialPublicAddress
 	}
-	return &http.Client{Transport: transport}
+	return transport
 }
 
 func dialPublicAddress(ctx context.Context, network, address string) (net.Conn, error) {

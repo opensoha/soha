@@ -95,15 +95,25 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 		version = stringValue(binding.Config["capabilityVersion"])
 		ctx = appaigateway.WithNativeWorkbenchInvocation(ctx)
 	}
-	result, err := gateway.InvokeTool(ctx, principal, domainaigateway.ToolInvocationRequest{ToolName: binding.ToolName, CapabilityVersion: version, SessionID: run.SessionID, Input: arguments})
+	request := domainaigateway.ToolInvocationRequest{ToolName: binding.ToolName, CapabilityVersion: version, SessionID: run.SessionID, Input: arguments}
+	if binding.ToolName == "docker.projects.get" {
+		request.RequestID = run.ID
+		ctx = appaigateway.WithAssistantMeshProjectGrant(ctx)
+	}
+	result, err := gateway.InvokeTool(ctx, principal, request)
 	if err != nil {
 		return nil, err
+	}
+	if binding.ToolName == "docker.projects.get" && (result.RequiresApproval || result.Output == nil) {
+		return nil, apperrors.ErrAccessDenied
 	}
 	return chatToolOutput(binding.ToolName, result, remaining)
 }
 
 func chatAgentToolArguments(run domaincopilot.AgentRun, toolName string, input map[string]any) (map[string]any, error) {
 	switch toolName {
+	case "docker.projects.get":
+		return assistantMeshProjectArguments(run, input)
 	case "personal.environment.inspect":
 		if len(input) != 0 {
 			return nil, fmt.Errorf("%w: personal environment inspection accepts no arguments", apperrors.ErrInvalidArgument)

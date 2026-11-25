@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	domainannouncement "github.com/opensoha/soha/internal/domain/announcement"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -148,24 +149,39 @@ func (r *Repository) Withdraw(ctx context.Context, id string, updatedAt time.Tim
 	return r.Get(ctx, id)
 }
 
-func (r *Repository) ListInbox(ctx context.Context, userID string, limit int, now time.Time) (domainannouncement.Inbox, error) {
+func (r *Repository) ListInbox(ctx context.Context, viewer domainannouncement.InboxViewer, limit int, now time.Time) (domainannouncement.Inbox, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT a.id, a.title, a.content, a.level, a.status, a.audience, a.sticky,
-		       a.starts_at, a.ends_at, a.published_at, a.created_by, a.updated_by, a.created_at, a.updated_at,
-		       ar.read_at
-		FROM announcements a
-		LEFT JOIN announcement_receipts ar
-		  ON ar.announcement_id = a.id AND ar.user_id = ?
-		WHERE a.status = 'published'
-		  AND a.published_at IS NOT NULL
-		  AND (a.starts_at IS NULL OR a.starts_at <= ?)
-		  AND (a.ends_at IS NULL OR a.ends_at >= ?)
-		ORDER BY a.sticky DESC, a.published_at DESC, a.updated_at DESC
+		WITH inbox AS (
+			SELECT 'broadcast' AS kind, a.id, a.title, a.content, a.level, a.status, a.audience, a.sticky,
+			       a.starts_at, a.ends_at, a.published_at,
+			       COALESCE(a.created_by, '') AS created_by, COALESCE(a.updated_by, '') AS updated_by,
+			       a.created_at, a.updated_at, ar.read_at
+			FROM announcements a
+			LEFT JOIN announcement_receipts ar
+			  ON ar.announcement_id = a.id AND ar.user_id = ?
+			WHERE ?
+			  AND a.status = 'published'
+			  AND a.published_at IS NOT NULL
+			  AND (a.starts_at IS NULL OR a.starts_at <= ?)
+			  AND (a.ends_at IS NULL OR a.ends_at >= ?)
+			UNION ALL
+			SELECT 'personal' AS kind, p.id, p.title, p.content, 'info', 'published', 'personal', false,
+			       NULL::timestamp, NULL::timestamp, p.created_at,
+			       '', '', p.created_at, p.created_at, p.read_at
+			FROM personal_announcements p
+			WHERE ? AND p.recipient_user_id = ?::uuid
+		)
+		SELECT id, title, content, level, status, audience, sticky,
+		       starts_at, ends_at, published_at, created_by, updated_by, created_at, updated_at,
+		       read_at
+		FROM inbox
+		ORDER BY (kind = 'personal' AND read_at IS NULL) DESC,
+		         sticky DESC, published_at DESC, updated_at DESC
 		LIMIT ?
-	`, userID, now, now, limit).Rows()
+	`, viewer.UserID, viewer.Broadcast, now, now, viewer.Personal, viewer.UserID, limit).Rows()
 	if err != nil {
 		return domainannouncement.Inbox{}, fmt.Errorf("query announcement inbox: %w", err)
 	}
@@ -186,15 +202,23 @@ func (r *Repository) ListInbox(ctx context.Context, userID string, limit int, no
 	var unreadCount int
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(1)
-		FROM announcements a
-		LEFT JOIN announcement_receipts ar
-		  ON ar.announcement_id = a.id AND ar.user_id = ?
-		WHERE a.status = 'published'
-		  AND a.published_at IS NOT NULL
-		  AND (a.starts_at IS NULL OR a.starts_at <= ?)
-		  AND (a.ends_at IS NULL OR a.ends_at >= ?)
-		  AND ar.read_at IS NULL
-	`, userID, now, now).Row().Scan(&unreadCount); err != nil {
+		FROM (
+			SELECT 1
+			FROM announcements a
+			LEFT JOIN announcement_receipts ar
+			  ON ar.announcement_id = a.id AND ar.user_id = ?
+			WHERE ?
+			  AND a.status = 'published'
+			  AND a.published_at IS NOT NULL
+			  AND (a.starts_at IS NULL OR a.starts_at <= ?)
+			  AND (a.ends_at IS NULL OR a.ends_at >= ?)
+			  AND ar.read_at IS NULL
+			UNION ALL
+			SELECT 1
+			FROM personal_announcements p
+			WHERE ? AND p.recipient_user_id = ?::uuid AND p.read_at IS NULL
+		) unread
+	`, viewer.UserID, viewer.Broadcast, now, now, viewer.Personal, viewer.UserID).Row().Scan(&unreadCount); err != nil {
 		return domainannouncement.Inbox{}, fmt.Errorf("count unread announcements: %w", err)
 	}
 
@@ -202,6 +226,35 @@ func (r *Repository) ListInbox(ctx context.Context, userID string, limit int, no
 		Items:       items,
 		UnreadCount: unreadCount,
 	}, nil
+}
+
+func (r *Repository) CreatePersonal(ctx context.Context, recipientID, title, content string) error {
+	tx, bound := dbtx.Bound(ctx, r.db)
+	if !bound {
+		return errors.New("personal notice requires its originating transaction")
+	}
+	now := time.Now().UTC()
+	return tx.WithContext(ctx).Exec(`
+		INSERT INTO personal_announcements (id, recipient_user_id, title, content, created_at)
+		VALUES (?, ?::uuid, ?, ?, ?)
+	`, "heya-notice-"+uuid.NewString(), recipientID, title, content, now).Error
+}
+
+func (r *Repository) MarkPersonalRead(ctx context.Context, recipientID, noticeID string, readAt time.Time) (bool, error) {
+	var id string
+	err := r.db.WithContext(ctx).Raw(`
+		UPDATE personal_announcements
+		SET read_at = COALESCE(read_at, ?)
+		WHERE id = ? AND recipient_user_id = ?::uuid
+		RETURNING id
+	`, readAt.UTC(), noticeID, recipientID).Row().Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *Repository) MarkRead(ctx context.Context, announcementID, userID string, readAt time.Time) error {

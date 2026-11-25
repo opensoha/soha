@@ -1,0 +1,17 @@
+{
+  "siteId": "site-lobby",
+  "name": "Lobby guest bootstrap",
+  "accessMedium": "wifi",
+  "kind": "open_guest_bootstrap",
+  "enabled": true,
+  "nasBindingIds": ["nas-lobby-wifi"],
+  "priority": 300,
+  "autoConnect": false,
+  "ssid": "SOHA-GUEST",
+  "rules": [
+    {
+      "effect": "allow",
+      "subjects": { "users": [], "teams": [], "tags": [] }
+    }
+  ]
+}

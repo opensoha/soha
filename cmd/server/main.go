@@ -9,11 +9,15 @@ import (
 	"time"
 
 	"github.com/opensoha/soha/internal/bootstrap"
+	"github.com/opensoha/soha/internal/infrastructure/storagedriverhost"
 	"github.com/opensoha/soha/internal/platform/redaction"
 	"go.uber.org/zap"
 )
 
 func main() {
+	if storagedriverhost.IsSandboxChild() {
+		os.Exit(storagedriverhost.RunSandboxChild())
+	}
 	os.Exit(run())
 }
 

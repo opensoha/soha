@@ -4,6 +4,12 @@ import { sourceControlKeys, systemIntegrationKeys } from './keys'
 import type { SystemIntegrationFilters } from './types'
 
 export const systemIntegrationQueries = {
+  storageDrivers: (enabled = true) =>
+    queryOptions({
+      queryKey: systemIntegrationKeys.storageDrivers(),
+      queryFn: systemIntegrationsApi.storageDrivers,
+      enabled,
+    }),
   list: (filters: SystemIntegrationFilters = {}, enabled = true) =>
     queryOptions({
       queryKey: systemIntegrationKeys.list(filters),

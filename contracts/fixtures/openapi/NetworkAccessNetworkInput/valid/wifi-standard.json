@@ -1,0 +1,30 @@
+{
+  "siteId": "site-hq",
+  "name": "HQ staff Wi-Fi",
+  "accessMedium": "wifi",
+  "kind": "standard",
+  "enabled": true,
+  "nasBindingIds": ["nas-hq-wifi"],
+  "priority": 100,
+  "autoConnect": true,
+  "ssid": "SOHA-HQ",
+  "bssids": ["aa:bb:cc:dd:ee:ff"],
+  "vlanId": 120,
+  "filterId": "filter-staff",
+  "sessionTimeoutSeconds": 28800,
+  "rules": [
+    {
+      "effect": "allow",
+      "subjects": { "users": [], "teams": ["team-engineering"], "tags": [] },
+      "deviceIds": ["device-alice-laptop"],
+      "deviceStatuses": ["active"],
+      "postureStatuses": ["compliant"],
+      "authenticationMethods": ["eap_tls", "eap_ttls_pap"],
+      "scheduleStartMinute": 480,
+      "scheduleEndMinute": 1080,
+      "vlanId": 130,
+      "filterId": "filter-engineering",
+      "sessionTimeoutSeconds": 14400
+    }
+  ]
+}

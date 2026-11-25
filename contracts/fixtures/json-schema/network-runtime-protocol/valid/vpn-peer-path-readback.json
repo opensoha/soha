@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "producerId": "endpoint-alice",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z",
+  "messageId": "u30-path-readback",
+  "messageType": "configuration.applied",
+  "payload": {
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "status": "applied",
+    "readbackHash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "vpnConnectivity": {
+      "version": "wireguard-peer-path/v1alpha1",
+      "peers": [
+        {
+          "pairId": "pair-u30",
+          "policyEpoch": 2,
+          "mode": "relay_tls_tcp",
+          "observedAt": "2026-09-03T08:00:00Z",
+          "relayId": "test-relay"
+        }
+      ]
+    }
+  }
+}

@@ -8,6 +8,9 @@ import {
   createNetworkGateway,
   createNetworkMihomoProfile,
   createNetworkNASBinding,
+  saveNetworkAccessNetwork,
+  deleteNetworkAccessNetwork,
+  previewNetworkAccessNetworks,
   createNetworkRuntimeEnrollment,
   createNetworkResource,
   createNetworkSite,
@@ -173,6 +176,27 @@ export const networkAccessMutations = {
         mutationKey: networkAccessMutationKeys.accessGrantRevoke,
         mutationFn: revokeNetworkAccessGrant,
         onSuccess: () => invalidate(queryClient),
+      }),
+  },
+  accessNetworks: {
+    save: (queryClient: QueryClient) =>
+      mutationOptions({
+        mutationKey: networkAccessMutationKeys.accessNetworkSave,
+        mutationFn: saveNetworkAccessNetwork,
+        onSuccess: (_, { input }) =>
+          queryClient.invalidateQueries({ queryKey: networkAccessKeys.accessNetworks.list(input.siteId) }),
+      }),
+    remove: (queryClient: QueryClient) =>
+      mutationOptions({
+        mutationKey: networkAccessMutationKeys.accessNetworkDelete,
+        mutationFn: deleteNetworkAccessNetwork,
+        onSuccess: (_, { siteId }) =>
+          queryClient.invalidateQueries({ queryKey: networkAccessKeys.accessNetworks.list(siteId) }),
+      }),
+    preview: () =>
+      mutationOptions({
+        mutationKey: networkAccessMutationKeys.accessNetworksPreview,
+        mutationFn: previewNetworkAccessNetworks,
       }),
   },
   nasBindings: {

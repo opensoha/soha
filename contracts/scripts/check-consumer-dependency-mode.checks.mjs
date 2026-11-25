@@ -466,7 +466,7 @@ function internalFixture(t) {
   write("contracts/go.mod", "module github.com/opensoha/soha/contracts\n\ngo 1.27.4\n");
   write("contracts/go.sum", "");
   write("contracts/b2unpublished/probe.go", 'package b2unpublished\nconst SourceOnly = "B2_SOURCE_ONLY_FIXTURE"\n');
-  const workspacePaths = ["contracts", "web", "connectors", "cli/npm/cli"];
+  const workspacePaths = ["contracts", "web", "connectors", "cli/npm/cli", "plugin-sdk/ui"];
   writeJSON("package.json", { private: true, workspaces: workspacePaths });
   writeJSON("contracts/package.json", { name: "@opensoha/contracts", version: "0.1.29", type: "module", exports: {
     "./gen/ts/sohaapi": "./gen/ts/sohaapi/index.ts", "./b2unpublished": "./b2unpublished/index.js"
@@ -477,6 +477,7 @@ function internalFixture(t) {
   write("web/build.mjs", 'import assert from "node:assert/strict"; import { sourceOnly } from "@opensoha/contracts/b2unpublished"; assert.equal(sourceOnly, "B2_SOURCE_ONLY_FIXTURE");\n');
   writeJSON("connectors/package.json", { name: "@opensoha/connectors", version: "0.1.0" });
   writeJSON("cli/npm/cli/package.json", { name: "@opensoha/cli", version: "0.1.8" });
+  writeJSON("plugin-sdk/ui/package.json", { name: "@opensoha/plugin-ui-sdk", version: "0.1.0" });
   const packages = { "": { workspaces: workspacePaths } };
   for (const part of workspacePaths) {
     const manifest = JSON.parse(readFileSync(join(root, part, "package.json")));
@@ -509,7 +510,7 @@ function internalFixture(t) {
   return { root, write, writeJSON, checker: join(root, "contracts/scripts/check-consumers.mjs"), head: git("rev-parse", "HEAD"), test: t };
 }
 function frozenInputs(root) {
-  return Object.fromEntries(["package.json", "package-lock.json", "go.work", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json", "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "connectors/package.json", "cli/npm/cli/package.json"].map((name) => [name,
+  return Object.fromEntries(["package.json", "package-lock.json", "go.work", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json", "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "connectors/package.json", "cli/npm/cli/package.json", "plugin-sdk/ui/package.json"].map((name) => [name,
     existsSync(join(root, name)) ? readFileSync(join(root, name), "utf8") : null]));
 }
 function internalRun(f, args = []) {

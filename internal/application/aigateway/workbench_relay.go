@@ -35,6 +35,7 @@ type WorkbenchRelayMessage struct {
 
 type WorkbenchRelayRequest struct {
 	MaxOutputTokens int
+	SingleAttempt   bool
 	Tools           []WorkbenchTool
 	ReasoningEffort string
 	PublicModel     string
@@ -159,6 +160,9 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 	providerKind, selections, err := s.workbenchRelaySelections(ctx, principal, publicModel, routeID, endpoint)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
+	}
+	if input.SingleAttempt && len(selections) > 1 {
+		selections = selections[:1]
 	}
 	efforts := workbenchReasoningEfforts(endpoint, selections)
 	if input.ReasoningEffort != "" && input.ReasoningEffort != "auto" && !slices.Contains(efforts, input.ReasoningEffort) {

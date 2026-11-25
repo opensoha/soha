@@ -1,8 +1,10 @@
+import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { systemIntegrationQueries } from '@/features/settings'
 import { isApiError } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import {
@@ -10,12 +12,13 @@ import {
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Space } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { pluginMutations } from '../mutations'
 import type { InstalledPlugin } from '../plugin-model'
 import { pluginSourceKindLabel, pluginSourceLabel } from '../plugin-model'
@@ -33,6 +36,7 @@ import {
   canUpgradePlugins,
 } from '../shared/permissions'
 import { PluginNameCell } from '../shared/plugin-name-cell'
+import { pluginPublisherSignatureLabel } from '../shared/repository-preview'
 import { useInstalledPluginActions } from './actions'
 import { PluginConfigModal } from './config-modal'
 import { useRepositoryUpgradeAction } from './repository-upgrade'
@@ -43,7 +47,6 @@ export function InstalledPluginDetailPage() {
   const queryClient = useQueryClient()
   const snapshot = usePermissionSnapshot().data?.data
   const [configTarget, setConfigTarget] = useState<InstalledPlugin | null>(null)
-  const actions = useInstalledPluginActions()
   const detailQuery = useQuery(pluginQueries.installedDetail(pluginId))
   const manifestQuery = useQuery(pluginQueries.manifest(pluginId))
   const extensionsQuery = useQuery(pluginQueries.extensions('runtime'))
@@ -56,7 +59,25 @@ export function InstalledPluginDetailPage() {
     }),
   })
   const plugin = readableQueryData(detailQuery)
+  const canRollback = canUpgradePlugins(snapshot)
+  const actions = useInstalledPluginActions(canRollback, plugin)
   const repositoryUpgrade = useRepositoryUpgradeAction()
+  const hasReferences = (plugin?.referenceCount ?? 0) > 0
+  const driverId = plugin?.manifest.components?.backend?.driverId
+  const canReadReferences = Boolean(
+    driverId && hasReferences && hasPermission(snapshot, 'settings.system-integrations.view'),
+  )
+  const referencesQuery = useQuery(
+    systemIntegrationQueries.list(
+      { category: 'storage', providerType: driverId },
+      canReadReferences,
+    ),
+  )
+  const references = canReadReferences ? readableQueryData(referencesQuery) : undefined
+  const canOpenStorageManagement =
+    canReadReferences &&
+    !queryAccessDenied(referencesQuery) &&
+    hasPermission(snapshot, 'software.package.view')
   const repositoryBound = Boolean(plugin?.sourceInfo?.repositoryUrl)
   const directRepository = plugin?.sourceInfo?.kind === 'github-repo'
   const canReadUpdates =
@@ -71,7 +92,7 @@ export function InstalledPluginDetailPage() {
     ? undefined
     : (readableQueryData(manifestQuery) ?? plugin?.manifest)
   const extensions = readableQueryData(extensionsQuery)
-  const blocked = actions.blocked || configMutation.blocked
+  const blocked = actions.blocked || configMutation.blocked || repositoryUpgrade.blocked
   const notFound = isApiError(detailQuery.error) && detailQuery.error.status === 404
   useInlineApiError(notFound ? detailQuery.error : null)
   useEffect(() => {
@@ -137,6 +158,7 @@ export function InstalledPluginDetailPage() {
                 detailQuery.isFetching ||
                 manifestQuery.isFetching ||
                 extensionsQuery.isFetching ||
+                (canReadReferences && referencesQuery.isFetching) ||
                 (canReadUpdates && updatesQuery.isFetching)
               }
               onClick={() =>
@@ -145,12 +167,13 @@ export function InstalledPluginDetailPage() {
                   manifestQuery.refetch(),
                   extensionsQuery.refetch(),
                   ...(canReadUpdates ? [updatesQuery.refetch()] : []),
+                  ...(canReadReferences ? [referencesQuery.refetch()] : []),
                 ])
               }
             />
             {plugin.status === 'enabled' ? (
               <Button
-                disabled={blocked || !canChangePluginLifecycle(snapshot)}
+                disabled={blocked || hasReferences || !canChangePluginLifecycle(snapshot)}
                 icon={<PauseCircleOutlined />}
                 onClick={() => actions.disable(plugin.id)}
               >
@@ -205,9 +228,18 @@ export function InstalledPluginDetailPage() {
                 升级
               </Button>
             )}
+            {plugin.rollbackVersion ? (
+              <Button
+                disabled={blocked || !canRollback}
+                icon={<RollbackOutlined />}
+                onClick={() => actions.confirmRollback(plugin)}
+              >
+                回退版本
+              </Button>
+            ) : null}
             <Button
               danger
-              disabled={blocked || !canRemovePlugins(snapshot)}
+              disabled={blocked || hasReferences || !canRemovePlugins(snapshot)}
               icon={<DeleteOutlined />}
               onClick={() => actions.confirmRemove(plugin)}
             >
@@ -215,11 +247,60 @@ export function InstalledPluginDetailPage() {
             </Button>
           </Space>
         </div>
+        {hasReferences ? (
+          <ContextFeedback
+            type="warning"
+            showIcon
+            title={`仍有 ${plugin.referenceCount} 个存储连接引用此驱动，停用和移除需要先解除引用。`}
+            description={
+              canReadReferences ? (
+                <Space orientation="vertical" size={6}>
+                  <ReadFeedback query={referencesQuery} label="引用此驱动的存储连接" />
+                  {references?.length ? (
+                    <ul>
+                      {references.map((item) => (
+                        <li key={item.id}>{item.name}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {canOpenStorageManagement ? (
+                    <Link to="/internal-workbench/software">前往软件库管理对象存储</Link>
+                  ) : null}
+                </Space>
+              ) : undefined
+            }
+          />
+        ) : null}
         <dl className="soha-plugin-facts">
           <div>
             <dt>运行状态</dt>
             <dd>{pluginStatusBadge(plugin.status)}</dd>
           </div>
+          {plugin.runtimeReady !== undefined ||
+          plugin.manifest.runtime?.mode === 'executable-package-v1' ? (
+            <div>
+              <dt>组件运行就绪</dt>
+              <dd>
+                {plugin.runtimeReady === undefined
+                  ? '状态未知'
+                  : plugin.runtimeReady
+                    ? '已就绪'
+                    : '未就绪'}
+              </dd>
+            </div>
+          ) : null}
+          {plugin.referenceCount !== undefined ? (
+            <div>
+              <dt>存储连接引用</dt>
+              <dd>{plugin.referenceCount}</dd>
+            </div>
+          ) : null}
+          {plugin.rollbackVersion ? (
+            <div>
+              <dt>本地可回退版本</dt>
+              <dd>{plugin.rollbackVersion}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>校验状态</dt>
             <dd>
@@ -312,8 +393,25 @@ export function InstalledPluginDetailPage() {
             {
               key: 'signature',
               label: '签名状态',
-              children: plugin.signatureStatus || '-',
+              children: pluginPublisherSignatureLabel(
+                plugin.signatureStatus,
+                plugin.sourceInfo?.publisherKeyFingerprint,
+              ),
             },
+            ...(plugin.sourceInfo?.publisherKeyFingerprint
+              ? [
+                  {
+                    key: 'publisherFingerprint',
+                    label: 'Ed25519 公钥指纹',
+                    span: { xs: 1, sm: 2, lg: 3 },
+                    children: (
+                      <span className="soha-plugin-digest">
+                        {plugin.sourceInfo.publisherKeyFingerprint}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
             {
               key: 'enabledAt',
               label: '启用时间',
