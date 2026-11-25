@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,8 +22,15 @@ type Repository struct{ db *gorm.DB }
 
 func New(db *gorm.DB) *Repository { return &Repository{db: db} }
 
+const integrationSelect = `
+	SELECT id, category, provider_type, name, description, enabled, configuration,
+	       health_status, last_checked_at, last_error, version, created_by, updated_by, created_at, updated_at,
+	       COALESCE((SELECT jsonb_agg(c.credential_key) FROM system_integration_credentials c
+	                 WHERE c.integration_id = i.id), '[]'::jsonb)
+	FROM system_integrations i`
+
 func (r *Repository) List(ctx context.Context, filter domain.Filter) ([]domain.Integration, error) {
-	query := `SELECT id FROM system_integrations WHERE 1=1`
+	query := integrationSelect + ` WHERE 1=1`
 	args := make([]any, 0, 3)
 	if filter.Category != "" {
 		query += ` AND category = ?`
@@ -44,11 +52,7 @@ func (r *Repository) List(ctx context.Context, filter domain.Filter) ([]domain.I
 	defer rows.Close()
 	items := make([]domain.Integration, 0)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		item, err := r.Get(ctx, id)
+		item, err := scanIntegration(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -58,29 +62,33 @@ func (r *Repository) List(ctx context.Context, filter domain.Filter) ([]domain.I
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (domain.Integration, error) {
-	var item domain.Integration
-	var configuration []byte
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, category, provider_type, name, description, enabled, configuration,
-		       health_status, last_checked_at, last_error, version, created_by, updated_by, created_at, updated_at
-		FROM system_integrations WHERE id = ?
-	`, strings.TrimSpace(id)).Row().Scan(&item.ID, &item.Category, &item.ProviderType, &item.Name, &item.Description,
-		&item.Enabled, &configuration, &item.HealthStatus, &item.LastCheckedAt, &item.LastError, &item.Version,
-		&item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt)
+	row := r.db.WithContext(ctx).Raw(integrationSelect+` WHERE id = ?`, strings.TrimSpace(id)).Row()
+	item, err := scanIntegration(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Integration{}, fmt.Errorf("%w: system integration not found", apperrors.ErrNotFound)
 	}
 	if err != nil {
 		return domain.Integration{}, fmt.Errorf("get system integration: %w", err)
 	}
-	if err := decodeConfiguration(configuration, &item.Configuration); err != nil {
-		return domain.Integration{}, fmt.Errorf("decode system integration configuration: %w", err)
-	}
-	credentials, err := r.Credentials(ctx, item.ID)
+	return item, nil
+}
+
+func scanIntegration(row interface{ Scan(...any) error }) (domain.Integration, error) {
+	var item domain.Integration
+	var configuration, keys []byte
+	err := row.Scan(&item.ID, &item.Category, &item.ProviderType, &item.Name, &item.Description,
+		&item.Enabled, &configuration, &item.HealthStatus, &item.LastCheckedAt, &item.LastError, &item.Version,
+		&item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt, &keys)
 	if err != nil {
 		return domain.Integration{}, err
 	}
-	item.CredentialKeys = sortedKeys(credentials)
+	if err := decodeConfiguration(configuration, &item.Configuration); err != nil {
+		return domain.Integration{}, fmt.Errorf("decode system integration configuration: %w", err)
+	}
+	if err := json.Unmarshal(keys, &item.CredentialKeys); err != nil {
+		return domain.Integration{}, fmt.Errorf("decode system integration credential keys: %w", err)
+	}
+	slices.Sort(item.CredentialKeys)
 	return item, nil
 }
 
@@ -203,15 +211,6 @@ func upsertCredentials(tx *gorm.DB, id string, credentials map[string]string, up
 	return nil
 }
 
-func sortedKeys(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func encodeConfiguration(fields []sohaapi.SystemIntegrationConfigurationField) ([]byte, error) {
 	values := make(map[string]string, len(fields))
 	for _, field := range fields {
@@ -227,7 +226,7 @@ func decodeConfiguration(raw []byte, target *[]sohaapi.SystemIntegrationConfigur
 			return err
 		}
 	}
-	keys := sortedKeys(values)
+	keys := slices.Sorted(maps.Keys(values))
 	fields := make([]sohaapi.SystemIntegrationConfigurationField, 0, len(keys))
 	for _, key := range keys {
 		fields = append(fields, sohaapi.SystemIntegrationConfigurationField{Key: key, Value: values[key]})

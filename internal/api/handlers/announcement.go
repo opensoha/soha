@@ -68,6 +68,7 @@ func (h *AnnouncementHandler) Get(c *gin.Context) {
 }
 
 func (h *AnnouncementHandler) Inbox(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.reader.Inbox(c.Request.Context(), principal, parseLimit(c.Query("limit"), 10))
 	if err != nil {

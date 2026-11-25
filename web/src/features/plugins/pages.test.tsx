@@ -10,7 +10,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { InstalledPluginDetailPage } from './installed/detail-page'
 import { PluginMarketplaceDetailPage } from './marketplace/detail-page'
 import { PluginMarketplacePage } from './marketplace/list-page'
-import type { InstalledPlugin, PluginManifest } from './plugin-model'
+import type { InstalledPlugin, PluginManifest, PluginRepositoryPreview } from './plugin-model'
 import { PluginManifestSections } from './shared/manifest-sections'
 
 const apiGetMock = vi.hoisted(() => vi.fn())
@@ -114,6 +114,14 @@ const repositoryInstallWithSource: InstalledPlugin = {
   requestedPermissions: { required: ['old.read'] },
   manifest: repositoryManifestWithPermissions,
 }
+const signedManifest: PluginManifest = {
+  ...repositoryManifest,
+  runtime: { mode: 'executable-package-v1' },
+  components: {
+    backend: { driverId: 'example.blob', protocol: 'object-storage/v1', platforms: {} },
+  },
+}
+const publisherFingerprint = 'f'.repeat(64)
 
 beforeAll(() => {
   class ResizeObserverMock {
@@ -563,6 +571,167 @@ describe('plugin list page data boundaries', () => {
     expect(document.body.textContent).toContain('未启用')
     expect(apiPostMock.mock.calls.some(([path]) => path === '/plugins/install')).toBe(false)
   })
+
+  it.each([
+    { role: 'installer', admin: false, official: false },
+    { role: 'admin', admin: true, official: false },
+    { role: 'admin with official source', admin: true, official: true },
+  ])('blocks read-only previews and gates publisher trust ($role)', async ({ admin, official }) => {
+    if (!admin) permissionSnapshotMock.permissionKeys = ['plugin.view', 'plugin.install']
+    const repositoryUrl = repositorySourceInfo.canonicalSource
+    const preview: PluginRepositoryPreview = {
+      manifest: signedManifest,
+      sourceInfo: { ...repositorySourceInfo, official },
+      previewToken: 'preview-only',
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      checksumStatus: 'verified',
+      signatureStatus: 'not_provided',
+      installEligibility: 'signed-release-required',
+    }
+    const trustPreview: PluginRepositoryPreview = {
+      ...preview,
+      signatureStatus: 'untrusted',
+      installEligibility: 'publisher-trust-required',
+      publisherKeyFingerprint: publisherFingerprint,
+      releaseAttestation: {
+        schemaVersion: '1',
+        pluginId: signedManifest.id,
+        version: signedManifest.version,
+        repository: repositoryUrl,
+        commitSha: repositorySourceInfo.commitSha,
+        rawManifestSha256: 'b'.repeat(64),
+        components: signedManifest.components!,
+      },
+    }
+    const confirmedPreview: PluginRepositoryPreview = {
+      ...trustPreview,
+      signatureStatus: 'verified',
+      installEligibility: 'confirmable',
+      previewToken: 'signed-preview-token',
+    }
+    apiGetMock.mockResolvedValue({ data: [] })
+    apiPostMock
+      .mockResolvedValueOnce({ data: preview })
+      .mockResolvedValueOnce({ data: trustPreview })
+      .mockResolvedValueOnce({ data: confirmedPreview })
+      .mockResolvedValueOnce({ data: { ...repositoryInstallWithSource, status: 'installed' } })
+    await renderPage(<PluginMarketplacePage />, '/plugins/marketplace')
+    await act(async () => buttonWithText(document.body, '从仓库安装').click())
+    await setInputByPlaceholder(document.body, 'https://github.com/owner/repository', repositoryUrl)
+    await act(async () => buttonWithText(document.body, '预览').click())
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('请先为此提交发布签名 Release'),
+    )
+    expect(document.body.textContent).not.toContain('确认安装')
+    expect(document.body.textContent).toContain('Go 对象存储驱动')
+    await act(async () => buttonWithText(document.body, '重新预览').click())
+    await vi.waitFor(() => expect(document.body.textContent).toContain(publisherFingerprint))
+    expect(document.body.textContent).not.toContain('确认安装')
+    if (!admin || official) {
+      expect(document.body.textContent).not.toContain('信任发布者并重新预览')
+      if (official) expect(document.body.textContent).toContain('请先在官方目录登记')
+      expect(apiPostMock.mock.calls).toEqual(
+        Array.from({ length: 2 }, () => ['/plugins/repository/preview', { repositoryUrl }]),
+      )
+      return
+    }
+    const trust = buttonWithText(document.body, '信任发布者并重新预览')
+    expect(trust.disabled).toBe(true)
+    await act(async () =>
+      document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+    )
+    await act(async () => trust.click())
+    expect(apiPostMock).toHaveBeenCalledTimes(3)
+    expect(apiPostMock).toHaveBeenLastCalledWith('/plugins/repository/preview', {
+      repositoryUrl,
+      trustPublisherFingerprint: publisherFingerprint,
+    })
+    await vi.waitFor(() => expect(document.body.textContent).toContain('发布者签名已验证'))
+    await act(async () => buttonWithText(document.body, '确认安装').click())
+    expect(apiPostMock).toHaveBeenLastCalledWith('/plugins/repository/install', {
+      previewToken: 'signed-preview-token',
+    })
+    await vi.waitFor(() => expect(document.body.textContent).toContain('安装记录已保存'))
+  })
+
+  it.each([false, true])(
+    'protects referenced drivers and gates local rollback on upgrade access (%s)',
+    async (operator) => {
+      permissionSnapshotMock.permissionKeys = [
+        'plugin.view',
+        ...(operator
+          ? [
+              'plugin.upgrade',
+              'plugin.lifecycle',
+              'plugin.remove',
+              'settings.system-integrations.view',
+              'software.package.view',
+            ]
+          : []),
+      ]
+      let installed: InstalledPlugin = {
+        ...repositoryInstallWithSource,
+        manifest: signedManifest,
+        rollbackVersion: '1.0.0',
+        rollbackRequiresPermissionConfirmation: true,
+        runtimeReady: true,
+        referenceCount: 1,
+      }
+      const integrationPath = '/system-integrations?category=storage&providerType=example.blob'
+      apiGetMock.mockImplementation(async (path: string) => {
+        if (path === '/plugins/plugin.repository') return { data: installed }
+        if (path === '/plugins/plugin.repository/manifest') return { data: signedManifest }
+        if (path === '/extensions/runtime') return { data: [] }
+        if (path === integrationPath)
+          return { items: [{ id: 'storage-1', name: 'Archive storage' }] }
+        throw new Error(`Unexpected GET ${path}`)
+      })
+      apiPostMock.mockImplementation(async () => {
+        installed = { ...installed, version: '1.0.0', rollbackVersion: '2.0.0' }
+        return { data: installed }
+      })
+      const container = await renderPage(
+        <Routes>
+          <Route path="/plugins/installed/:pluginId" element={<InstalledPluginDetailPage />} />
+        </Routes>,
+        '/plugins/installed/plugin.repository',
+      )
+      await vi.waitFor(() => expect(container.textContent).toContain('本地可回退版本1.0.0'))
+      expect(container.textContent).toContain('组件运行就绪已就绪')
+      expect(container.textContent).toContain('仍有 1 个存储连接引用此驱动')
+      expect(buttonWithText(container, '停用').disabled).toBe(true)
+      expect(buttonWithText(container, '移除').disabled).toBe(true)
+      const rollback = buttonWithText(container, '回退版本')
+      if (!operator) {
+        expect(rollback.disabled).toBe(true)
+        expect(container.textContent).not.toContain('Archive storage')
+        expect(apiGetMock).not.toHaveBeenCalledWith(integrationPath)
+        return
+      }
+      await vi.waitFor(() => expect(container.textContent).toContain('Archive storage'))
+      expect(container.querySelector('a[href="/internal-workbench/software"]')).not.toBeNull()
+      await act(async () => rollback.click())
+      const confirm = buttonWithText(document.body, '确认回退')
+      expect(confirm.disabled).toBe(true)
+      expect(document.body.textContent).toContain('无需访问 GitHub 或市场')
+      await act(async () =>
+        document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+      )
+      await act(async () => confirm.click())
+      expect(apiPostMock.mock.calls).toEqual([
+        [
+          '/plugins/plugin.repository/repository/rollback',
+          {
+            expectedVersion: '2.0.0',
+            expectedUpdatedAt: repositoryInstallWithSource.updatedAt,
+            version: '1.0.0',
+            confirmPermissionIncrease: true,
+          },
+        ],
+      ])
+      await vi.waitFor(() => expect(container.textContent).toContain('本地可回退版本2.0.0'))
+    },
+  )
 
   it('stops repository preview failure without falling back to the legacy install route', async () => {
     apiGetMock.mockImplementation(async (path: string) => {

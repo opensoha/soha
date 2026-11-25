@@ -834,6 +834,7 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		permission   string
 		scoped       bool
 	}{
+		{name: "access network update", method: "PUT", path: "/api/v1/network-access/access-networks/:accessNetworkId", resourceKind: "NetworkAccessNetwork", action: "update", permission: appaccess.PermNetworkAccessSitesUpdate, scoped: true},
 		{name: "proxy typed command permission is kind dependent", method: "POST", path: "/api/v1/network-access/proxy-instances/:instanceID/commands", resourceKind: "NetworkProxyCommand", action: "execute", permission: "network_access.proxy_instances.<command>", scoped: true},
 		{name: "proxy source deletion updates existing instance", method: "DELETE", path: "/api/v1/network-access/proxy-instances/:instanceID/sources/:sourceID", resourceKind: "NetworkProxyInstance", action: "update", permission: appaccess.PermNetworkAccessProxyInstancesUpdate, scoped: true},
 		{name: "proxy deployment control updates existing instance", method: "POST", path: "/api/v1/network-access/proxy-instances/:instanceID/deployment/control", resourceKind: "NetworkProxyInstance", action: "update", permission: appaccess.PermNetworkAccessProxyInstancesUpdate, scoped: true},

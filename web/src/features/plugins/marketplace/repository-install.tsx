@@ -17,11 +17,15 @@ import { pluginMutations } from '../mutations'
 import { pluginStatusBadge } from '../shared/formatters'
 import { RepositoryRefs } from '../shared/repository-refs'
 import {
+  previewCanConfirm,
   previewExpired,
   previewNeedsRefresh,
+  previewPublisherToTrust,
   previewRequiresBranch,
   RepositoryPreviewReview,
+  RepositoryPublisherTrust,
   repositoryFailureText,
+  verifyTrustedPreview,
 } from '../shared/repository-preview'
 
 const { Text } = Typography
@@ -37,7 +41,7 @@ function installedStatusText(plugin: InstalledPlugin) {
   return '未启用'
 }
 
-export function useRepositoryInstallAction() {
+export function useRepositoryInstallAction(canTrustPublisher: boolean) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [form] = Form.useForm<RepositoryInstallValues>()
@@ -48,10 +52,13 @@ export function useRepositoryInstallAction() {
   const [preview, setPreview] = useState<PluginRepositoryPreview | null>(null)
   const [previewError, setPreviewError] = useState<Error | null>(null)
   const [previewing, setPreviewing] = useState(false)
+  const [trustAcknowledged, setTrustAcknowledged] = useState(false)
   const [expired, setExpired] = useState(false)
   const [installed, setInstalled] = useState<InstalledPlugin | null>(null)
   const [conflictPluginId, setConflictPluginId] = useState<string | null>(null)
   const requestSequence = useRef(0)
+  const publisherToTrust = previewPublisherToTrust(preview)
+  const confirmable = preview && previewCanConfirm(preview)
   const mutation = useOperationMutation(pluginMutations.repositoryInstall(queryClient), {
     label: ['从仓库安装插件', 'Install plugin from repository'],
     target: () => preview?.manifest.name || 'GitHub 仓库',
@@ -67,6 +74,7 @@ export function useRepositoryInstallAction() {
     (reset = true) => {
       requestSequence.current += 1
       setPreview(null)
+      setTrustAcknowledged(false)
       setPreviewing(false)
       setExpired(false)
       if (reset) resetMutation()
@@ -98,6 +106,7 @@ export function useRepositoryInstallAction() {
     setBranchRepository(undefined)
     setBranch(undefined)
     setPreview(null)
+    setTrustAcknowledged(false)
     setPreviewError(null)
     setPreviewing(false)
     setExpired(false)
@@ -113,6 +122,7 @@ export function useRepositoryInstallAction() {
     setBranchRepository(undefined)
     setBranch(undefined)
     setPreview(null)
+    setTrustAcknowledged(false)
     setPreviewError(null)
     setPreviewing(false)
     setExpired(false)
@@ -131,8 +141,19 @@ export function useRepositoryInstallAction() {
     clearPreview()
   }
 
-  async function previewRepository() {
-    if (mutation.blocked || (branchRepository && !branch)) return
+  async function previewRepository(trust = false) {
+    if (mutation.blocked || previewing || (branchRepository && !branch)) return
+    if (
+      trust &&
+      (!canTrustPublisher ||
+        !trustAcknowledged ||
+        !publisherToTrust ||
+        !preview ||
+        previewExpired(preview))
+    )
+      return
+    const reviewed = trust ? preview : null
+    const sequence = ++requestSequence.current
     let input: PluginRepositoryPreviewRequest
     try {
       if (marketSource) {
@@ -147,8 +168,9 @@ export function useRepositoryInstallAction() {
     } catch {
       return
     }
-    const sequence = ++requestSequence.current
+    if (sequence !== requestSequence.current) return
     setPreview(null)
+    setTrustAcknowledged(false)
     setPreviewError(null)
     setExpired(false)
     setInstalled(null)
@@ -159,8 +181,10 @@ export function useRepositoryInstallAction() {
       const result = await pluginApi.repositoryPreview({
         ...input,
         ...(branch ? { ref: branch } : {}),
+        ...(reviewed ? { trustPublisherFingerprint: publisherToTrust } : {}),
       })
       if (sequence !== requestSequence.current) return
+      if (reviewed) verifyTrustedPreview(reviewed, result)
       setPreview(result)
     } catch (error) {
       if (sequence !== requestSequence.current) return
@@ -175,7 +199,7 @@ export function useRepositoryInstallAction() {
   }
 
   function confirm() {
-    if (!preview || mutation.blocked) return
+    if (!preview || !previewCanConfirm(preview) || mutation.blocked) return
     if (previewExpired(preview)) {
       clearPreview(false)
       setExpired(true)
@@ -250,18 +274,20 @@ export function useRepositoryInstallAction() {
               <Button
                 loading={previewing}
                 disabled={mutation.blocked || Boolean(branchRepository && !branch)}
-                onClick={previewRepository}
+                onClick={() => void previewRepository()}
               >
                 {preview ? '重新预览' : '预览'}
               </Button>
-              <Button
-                type="primary"
-                loading={mutation.isPending}
-                disabled={!preview || previewing || mutation.blocked}
-                onClick={confirm}
-              >
-                确认安装
-              </Button>
+              {!preview || confirmable ? (
+                <Button
+                  type="primary"
+                  loading={mutation.isPending}
+                  disabled={!preview || previewing || mutation.blocked}
+                  onClick={confirm}
+                >
+                  确认安装
+                </Button>
+              ) : null}
             </Space>
           )
         }
@@ -338,7 +364,16 @@ export function useRepositoryInstallAction() {
               description={repositoryFailureText(previewError)}
             />
           ) : null}
-          {preview ? <RepositoryPreviewReview preview={preview} /> : null}
+          {preview ? (
+            <RepositoryPreviewReview preview={preview} canTrustPublisher={canTrustPublisher} />
+          ) : null}
+          {canTrustPublisher && publisherToTrust ? (
+            <RepositoryPublisherTrust
+              acknowledged={trustAcknowledged}
+              onAcknowledgedChange={setTrustAcknowledged}
+              onTrust={() => void previewRepository(true)}
+            />
+          ) : null}
           {operationError ? (
             <ContextFeedback
               showIcon

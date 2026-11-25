@@ -367,6 +367,57 @@
     {
       "if": {
         "properties": {
+          "payload": {
+            "required": [
+              "vpnConnectivity"
+            ]
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "properties": {
+              "runtimeKind": {
+                "const": "endpoint"
+              },
+              "payload": {
+                "properties": {
+                  "wireguard": {
+                    "properties": {
+                      "role": {
+                        "const": "endpoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "runtimeKind": {
+                "const": "gateway"
+              },
+              "payload": {
+                "properties": {
+                  "wireguard": {
+                    "properties": {
+                      "role": {
+                        "const": "gateway"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "messageType": {
             "const": "lease.renew.request"
           }
@@ -755,6 +806,17 @@
         "uiObservedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "uiLogin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subjectId", "epoch", "sessionId"],
+          "properties": {
+            "subjectId": { "$ref": "#/$defs/Identifier" },
+            "sessionId": { "$ref": "#/$defs/Identifier" },
+            "epoch": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+          },
+          "description": "Login scope reported by an administrator-provisioned endpoint UI presence service. The account must match the authenticated runtime credential."
         },
         "capabilities": {
           "type": "array",
@@ -1377,6 +1439,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 86400
+        },
+        "reauthenticate": {
+          "type": "boolean",
+          "description": "Request RADIUS reauthentication when the bounded session timeout expires."
         }
       }
     },
@@ -1551,6 +1617,7 @@
               "endpoint-presence-v1",
               "nas-session-accounting-v1",
               "endpoint-ui-presence-v1",
+              "endpoint-ui-lease-v1",
               "windows-channel-controls-v1",
               "radius-eap-ttls-pap-v1",
               "radius-ttls-pap-verifier-v1",
@@ -1733,7 +1800,15 @@
           "items": {
             "$ref": "#/$defs/DNSResolutionRequest"
           }
+        },
+        "vpnConnectivity": {
+          "$ref": "#/$defs/WireGuardPathPlan"
         }
+      },
+      "dependentRequired": {
+        "vpnConnectivity": [
+          "wireguard"
+        ]
       }
     },
     "MihomoBypassHost": {
@@ -2360,6 +2435,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "vpnConnectivity": {
+          "$ref": "#/$defs/WireGuardPathReadback"
         }
       }
     },
@@ -2760,6 +2838,27 @@
           "maxLength": 191,
           "pattern": "^[A-Fa-f0-9:]+$"
         },
+        "calledStationIdBase64": {
+          "type": "string",
+          "maxLength": 340,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "nasPortIdBase64": {
+          "type": "string",
+          "maxLength": 172,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "nasPort": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "outerIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]*$"
+        },
         "authenticationReceipt": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{43}$"
@@ -2927,8 +3026,9 @@
           },
           "then": {
             "not": {
-              "required": [
-                "authenticationReceipt"
+              "anyOf": [
+                { "required": ["authenticationReceipt"] },
+                { "required": ["outerIdentity"] }
               ]
             }
           }
@@ -3411,6 +3511,233 @@
         },
         "status": {
           "const": "revoked"
+        }
+      }
+    },
+    "WireGuardPathMode": {
+      "enum": [
+        "direct",
+        "relay_udp",
+        "relay_tls_tcp",
+        "disconnected",
+        "unknown"
+      ]
+    },
+    "WireGuardPathScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "sessionId",
+        "pairId",
+        "peerRuntimeId",
+        "leaseId",
+        "policyEpoch",
+        "validUntil"
+      ],
+      "properties": {
+        "deploymentId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "pairId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "peerRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policyEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "WireGuardPathRelay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relayId",
+        "transports",
+        "ticketRef"
+      ],
+      "properties": {
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "transports": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "udp",
+              "tls_tcp"
+            ]
+          }
+        },
+        "ticketRef": {
+          "$ref": "#/$defs/Identifier"
+        }
+      }
+    },
+    "WireGuardPathGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/WireGuardPathScope"
+        },
+        "relay": {
+          "$ref": "#/$defs/WireGuardPathRelay"
+        }
+      }
+    },
+    "WireGuardPathPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "peers"
+      ],
+      "properties": {
+        "version": {
+          "const": "wireguard-peer-path/v1alpha1"
+        },
+        "peers": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/WireGuardPathGrant"
+          }
+        }
+      }
+    },
+    "WireGuardPathSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairId",
+        "policyEpoch",
+        "mode",
+        "observedAt"
+      ],
+      "properties": {
+        "pairId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "policyEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mode": {
+          "$ref": "#/$defs/WireGuardPathMode"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "relay_udp",
+                  "relay_tls_tcp"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "relayId"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "relayId"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "WireGuardPathReadback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "peers"
+      ],
+      "properties": {
+        "version": {
+          "const": "wireguard-peer-path/v1alpha1"
+        },
+        "peers": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/WireGuardPathSample"
+          }
+        }
+      }
+    },
+    "WireGuardPathRelayTicketClaims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "relayId",
+        "sourceRuntimeId",
+        "transport",
+        "ticketId",
+        "expiresAt"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/WireGuardPathScope"
+        },
+        "relayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sourceRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "transport": {
+          "enum": [
+            "udp",
+            "tls_tcp"
+          ]
+        },
+        "ticketId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     }

@@ -22,6 +22,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install source workspace
         run: npm ci
+      - name: Test the plugin UI bridge and its public types
+        run: npm test --workspace @opensoha/plugin-ui-sdk
       - name: Audit source workspace dependencies
         run: npm run check:dependencies
       - name: Generate same-source SDK and verify npm link

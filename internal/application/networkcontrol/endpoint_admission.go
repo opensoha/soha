@@ -10,7 +10,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-func (s *Service) applyEndpointAdmission(ctx context.Context, authorization *runtime.NASAuthorization, subject domain.Subject, device domain.Device, binding domain.NASBinding) error {
+func (s *Service) applyEndpointAdmission(ctx context.Context, authorization *runtime.NASAuthorization, subject domain.Subject, device domain.Device, binding domain.NASBinding, strictRuntimeID string) error {
 	policies, err := s.store.PublishedEndpointResponsePolicies(ctx)
 	if err != nil {
 		return err
@@ -26,6 +26,13 @@ func (s *Service) applyEndpointAdmission(ctx context.Context, authorization *run
 		return err
 	}
 	authorization.RestrictionEpoch = floor.Epoch
+	if strictRuntimeID != "" && authorization.Decision == domain.DecisionAllow {
+		if presence.RuntimeID != strictRuntimeID || !presence.StrictUI.CurrentFor(subject.UserID, authorization.CreatedAt) {
+			authorization.Decision, authorization.AccessProfile, authorization.ReasonCode = domain.DecisionDeny, domain.ProfileDeny, "strict_ui_lease_required"
+			return nil
+		}
+		authorization.StrictUIEpoch = presence.StrictUI.Epoch
+	}
 	profile, reason := app.EndpointAdmissionProfile(authorization.AccessProfile, subject, device, binding, policies, presence, floor, authorization.PolicyVersion, authorization.CreatedAt)
 	authorization.AccessProfile = profile
 	if reason != "" {

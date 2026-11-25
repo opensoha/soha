@@ -171,22 +171,24 @@ type SessionMessageEnvelope struct {
 type WorkbenchAssistantTask = sohaapi.WorkbenchAssistantTask
 
 type WorkbenchSendMessageInput struct {
-	AssistantTask    *WorkbenchAssistantTask    `json:"assistantTask,omitempty"`
-	RequestID        string                     `json:"requestId,omitempty"`
-	TaskIntent       *TaskIntent                `json:"taskIntent,omitempty"`
-	ContextSelection *ContextSelection          `json:"contextSelection,omitempty"`
-	ModelPreferences *WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
-	Content          string                     `json:"content"`
-	Mode             string                     `json:"mode,omitempty"`
-	AgentProviderID  string                     `json:"agentProviderId,omitempty"`
-	Toolset          SessionToolset             `json:"toolset,omitempty"`
-	ScopeOverrides   map[string]any             `json:"scopeOverrides,omitempty"`
-	Source           string                     `json:"source,omitempty"`
-	LaunchContext    *WorkbenchLaunchContext    `json:"launchContext,omitempty"`
-	SelectionContext *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
-	PinnedContext    map[string]any             `json:"pinnedContext,omitempty"`
-	KnowledgeContext *KnowledgeContextConfig    `json:"knowledgeContext,omitempty"`
-	EventSink        WorkbenchStreamEventSink   `json:"-"`
+	AssistantMeshSkill *AssistantMeshSkill        `json:"assistantMeshSkill,omitempty"`
+	AssistantMeshMCP   *AssistantMeshMCP          `json:"assistantMeshMcp,omitempty"`
+	AssistantTask      *WorkbenchAssistantTask    `json:"assistantTask,omitempty"`
+	RequestID          string                     `json:"requestId,omitempty"`
+	TaskIntent         *TaskIntent                `json:"taskIntent,omitempty"`
+	ContextSelection   *ContextSelection          `json:"contextSelection,omitempty"`
+	ModelPreferences   *WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
+	Content            string                     `json:"content"`
+	Mode               string                     `json:"mode,omitempty"`
+	AgentProviderID    string                     `json:"agentProviderId,omitempty"`
+	Toolset            SessionToolset             `json:"toolset,omitempty"`
+	ScopeOverrides     map[string]any             `json:"scopeOverrides,omitempty"`
+	Source             string                     `json:"source,omitempty"`
+	LaunchContext      *WorkbenchLaunchContext    `json:"launchContext,omitempty"`
+	SelectionContext   *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
+	PinnedContext      map[string]any             `json:"pinnedContext,omitempty"`
+	KnowledgeContext   *KnowledgeContextConfig    `json:"knowledgeContext,omitempty"`
+	EventSink          WorkbenchStreamEventSink   `json:"-"`
 }
 
 type WorkbenchStreamEventSink func(WorkbenchStreamEvent) bool

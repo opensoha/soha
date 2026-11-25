@@ -10,6 +10,7 @@ function normalizeFilters(filters: SystemIntegrationFilters = {}) {
 
 export const systemIntegrationKeys = {
   all: ['settings', 'system-integrations'] as const,
+  storageDrivers: () => ['settings', 'system-integrations', 'storage-drivers'] as const,
   lists: () => ['settings', 'system-integrations', 'list'] as const,
   list: (filters: SystemIntegrationFilters = {}) =>
     ['settings', 'system-integrations', 'list', normalizeFilters(filters)] as const,

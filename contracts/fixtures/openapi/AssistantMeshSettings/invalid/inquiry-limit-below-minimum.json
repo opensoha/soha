@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "organizationApproverUserIds": [],
+  "defaultVisibility": "private",
+  "experienceCardLifetimeDays": 90,
+  "allowPermanentExperienceCards": true,
+  "inquiryPairLimitPerHour": 8,
+  "inquiryCallerLimitPerDay": 25,
+  "inquiryMergeWindowHours": 12,
+  "inquiryPendingLimit": 4,
+  "inquiryTimeoutHours": 48,
+  "inquiryRetentionDays": 14
+}

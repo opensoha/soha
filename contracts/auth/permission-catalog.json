@@ -1,7 +1,7 @@
 {
   "schemaVersion": "authorization.opensoha.io/v1",
   "catalogVersion": "2.0.0",
-  "contentHash": "sha256:132db706644d454f3706998f29f1ca9d7de4fece9a7adaeb00acc6597386104a",
+  "contentHash": "sha256:d233e7fcdb01c2776fabc647c8fa39b70e677581ee8219fb3edf57f52d99f55a",
   "permissions": [
     {
       "key": "access.directory.create",
@@ -622,6 +622,21 @@
       "legacyAliases": [
         "access.users.manage"
       ]
+    },
+    {
+      "key": "access.users.inherit-heya-assets",
+      "domain": "access",
+      "resource": "users",
+      "action": "inherit-heya-assets",
+      "displayName": "处置离职员工的 Heya 资产",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
     },
     {
       "key": "access.users.manage",

@@ -73,16 +73,20 @@ interface NASBindingValues {
 }
 interface NetworkNASBindingsPaneProps {
   canManage: boolean
-  view?: 'network-device' | 'ssid' | 'user-admission'
+  siteId?: string
+  view?: 'network-device' | 'user-admission'
 }
 export function NetworkNASBindingsPane({
   canManage,
+  siteId,
   view = 'network-device',
 }: NetworkNASBindingsPaneProps) {
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const queryClient = useQueryClient()
-  const query = useQuery(networkAccessQueries.nasBindings(LIST_FILTER))
+  const query = useQuery(
+    networkAccessQueries.nasBindings(siteId ? { ...LIST_FILTER, siteId } : LIST_FILTER),
+  )
   const visibleQueryData = query.isEnabled === false ? undefined : readableQueryData(query)
   const create = useOperationMutation(networkAccessMutations.nasBindings.create(queryClient), {
     label: ['创建 NAS绑定', 'Create NAS binding'],
@@ -106,40 +110,26 @@ export function NetworkNASBindingsPane({
   const selectedMedium = Form.useWatch('accessMedium', form)
   const configureEAP = Form.useWatch('configureEAP', form)
   const eapMethod = Form.useWatch(['eapServerTrust', 'eapMethod'], form)
-  const fixedMedium: NetworkAccessMedium | undefined = view === 'ssid' ? 'wifi' : undefined
-  const items = fixedMedium
-    ? visibleQueryData?.filter((item) => item.accessMedium === fixedMedium)
-    : visibleQueryData
   const addLabel =
     view === 'user-admission'
       ? t('networkAccess.add.admission', '新增入网配置')
-      : view === 'ssid'
-        ? t('networkAccess.add.ssid', '新增 SSID')
-        : t('networkAccess.add.networkDevice', '新增网络设备')
+      : t('networkAccess.add.networkDevice', '新增网络设备')
   const editLabel =
     view === 'user-admission'
       ? t('networkAccess.edit.admission', '编辑入网配置')
-      : view === 'ssid'
-        ? t('networkAccess.edit.ssid', '编辑 SSID')
-        : t('networkAccess.edit.networkDevice', '编辑网络设备')
+      : t('networkAccess.edit.networkDevice', '编辑网络设备')
   const deleteLabel =
     view === 'user-admission'
       ? t('networkAccess.delete.admission', '删除入网配置')
-      : view === 'ssid'
-        ? t('networkAccess.delete.ssid', '删除 SSID')
-        : t('networkAccess.delete.networkDevice', '删除网络设备')
+      : t('networkAccess.delete.networkDevice', '删除网络设备')
   const confirmDeleteLabel =
     view === 'user-admission'
       ? t('networkAccess.confirmDelete.admission', '确认删除入网配置？')
-      : view === 'ssid'
-        ? t('networkAccess.confirmDelete.ssid', '确认删除 SSID？')
-        : t('networkAccess.confirmDelete.networkDevice', '确认删除网络设备？')
+      : t('networkAccess.confirmDelete.networkDevice', '确认删除网络设备？')
   const searchPlaceholder =
     view === 'user-admission'
       ? t('networkAccess.search.admission', '搜索 Wi-Fi、有线、SSID、NAS、运行时或站点')
-      : view === 'ssid'
-        ? t('networkAccess.search.ssids', '搜索 SSID、无线设备、NAS、运行时或站点')
-        : t('networkAccess.search.networkDevices', '搜索设备、SSID、NAS、运行时或站点')
+      : t('networkAccess.search.networkDevices', '搜索设备、SSID、NAS、运行时或站点')
   function openEditor(record: NetworkNASBinding | null) {
     create.reset()
     update.reset()
@@ -155,12 +145,12 @@ export function NetworkNASBindingsPane({
     })
     form.setFieldsValue(
       record ?? {
-        accessMedium: fixedMedium ?? 'wired',
+        accessMedium: 'wired',
         name: '',
         nasId: '',
         runtimeId: '',
-        siteId: '',
-        deviceType: fixedMedium === 'wifi' ? 'wireless_controller' : 'switch',
+        siteId: siteId ?? '',
+        deviceType: 'switch',
         status: 'active',
         coaSupported: false,
         disconnectSupported: false,
@@ -181,7 +171,7 @@ export function NetworkNASBindingsPane({
         nasId: values.nasId.trim(),
         runtimeId: values.runtimeId.trim(),
         siteId: values.siteId.trim(),
-        accessMedium: fixedMedium ?? values.accessMedium,
+        accessMedium: values.accessMedium,
         deviceType: values.deviceType,
         ...(selectedMedium === 'wifi' && values.ssid?.trim() ? { ssid: values.ssid.trim() } : {}),
         ...(values.managementAddress?.trim()
@@ -314,7 +304,7 @@ export function NetworkNASBindingsPane({
 
       <TablePane
         columns={columns}
-        items={items}
+        items={visibleQueryData}
         loading={query.isLoading}
         refreshing={query.isFetching}
         error={query.isEnabled === false ? null : query.error}
@@ -387,7 +377,10 @@ export function NetworkNASBindingsPane({
                 },
               ]}
             >
-              <Input maxLength={name === 'name' ? 200 : 128} />
+              <Input
+                disabled={name === 'siteId' && Boolean(siteId)}
+                maxLength={name === 'name' ? 200 : 128}
+              />
             </Form.Item>
           ))}
           <Form.Item
@@ -396,7 +389,7 @@ export function NetworkNASBindingsPane({
             rules={[{ required: true }]}
           >
             <Select
-              disabled={operationBlocked || Boolean(fixedMedium)}
+              disabled={operationBlocked}
               options={[
                 { value: 'wifi', label: 'Wi-Fi' },
                 { value: 'wired', label: t('networkAccess.wired', '有线') },

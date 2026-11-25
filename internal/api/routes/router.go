@@ -70,6 +70,7 @@ type Dependencies struct {
 	Registries                 *apiHandlers.RegistryHandler
 	Releases                   *apiHandlers.ReleaseHandler
 	Copilot                    *apiHandlers.CopilotHandler
+	AssistantMesh              *apiHandlers.AssistantMeshHandler
 	PersonalGuestPreparation   *apiHandlers.PersonalGuestPreparationHandler
 	Knowledge                  *apiHandlers.KnowledgeHandler
 	Evaluation                 *apiHandlers.EvaluationHandler

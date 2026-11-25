@@ -1,3 +1,19 @@
+const assistantMeshKeys = {
+  all: (owner?: string) => ['assistant-mesh', owner] as const,
+  availability: (owner?: string) => ['assistant-mesh', owner, 'availability'] as const,
+  list: (owner: string | undefined, view: string, kind: string | undefined) =>
+    ['assistant-mesh', owner, 'list', view, kind] as const,
+  asset: (owner: string | undefined, id: string | undefined, kind: string | undefined) =>
+    ['assistant-mesh', owner, 'asset', id, kind] as const,
+  extractMessages: (owner: string | undefined, sessionId: string | undefined) =>
+    ['assistant-mesh', owner, 'extract-messages', sessionId] as const,
+  extractRuns: (owner: string | undefined, sessionId: string | undefined) =>
+    ['assistant-mesh', owner, 'extract-runs', sessionId] as const,
+  delegations: (owner: string) => ['assistant-mesh', owner, 'delegations'] as const,
+  delegationList: (owner: string, direction: 'inbox' | 'sent') =>
+    ['assistant-mesh', owner, 'delegations', direction] as const,
+}
+
 export const workbenchKeys = {
   runtimeProfiles: (owner?: string) =>
     owner ? (['copilot-runtime-profiles', owner] as const) : (['copilot-runtime-profiles'] as const),
@@ -51,6 +67,7 @@ export const workbenchKeys = {
     events: (runId: string, afterSequence: number) =>
       ['copilot-agent-runs', 'events', runId, afterSequence] as const,
   },
+  assistantMesh: assistantMeshKeys,
 }
 
 export const workbenchMutationKeys = {

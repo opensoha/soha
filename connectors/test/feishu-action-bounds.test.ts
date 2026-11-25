@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import timers from "node:timers/promises";
 
@@ -11,6 +14,13 @@ import type { ConnectorActionResult } from "../src/sdk/types.js";
 
 const config = { appId: "cli_a", appSecret: "app-secret", verificationToken: "verification-token", baseUrl: "https://feishu.test/open-apis" };
 const action = { action: "feishu.message.send_text", input: { receiveIdType: "chat_id", receiveId: "oc_chat", text: "hello" } };
+const managedEvent = {
+  id: "event-1",
+  type: "im.message.receive_v1",
+  source: "feishu",
+  occurredAt: "2024-03-09T12:00:00.000Z",
+  payload: { appId: "cli_a" }
+};
 const tokenBody = { code: 0, tenant_access_token: "test-token", expire: 7200 };
 
 for (const [name, text, valid] of [
@@ -51,6 +61,73 @@ test("preaborted action does not consume rate capacity or expose the caller reas
   assert.deepEqual(connector.getDeadLetters(), []);
   assert.deepEqual(connector.getRetryQueue(), []);
   assert.equal((await connector.dispatchAction(action)).ok, true);
+});
+
+test("managed Heya delivery sends once per attempt with a stable uuid and persists nothing", async (t) => {
+  const requestId = `heya-${"0123456789abcdef".repeat(2)}`;
+  const persistenceDir = mkdtempSync(path.join(tmpdir(), "feishu-managed-"));
+  t.after(() => rmSync(persistenceDir, { recursive: true, force: true }));
+  const uuids: string[] = [];
+  let sends = 0;
+  const connector = createConnector(async (input, init) => {
+    if (String(input).includes("/auth/")) return jsonResponse(tokenBody);
+    sends += 1;
+    uuids.push((JSON.parse(String(init?.body)) as { uuid: string }).uuid);
+    return new Response("", { status: 503 });
+  }, { maxRetries: 3, retryBackoffMs: 1, persistenceDir });
+
+  const first = await connector.dispatchAction({ ...action, requestId, event: managedEvent });
+  assert.equal(first.ok, false);
+  assert.equal(first.error?.retryable, true);
+  assert.equal(sends, 1, "managed attempt must not retry internally");
+  const second = await connector.dispatchAction({ ...action, requestId, event: managedEvent });
+  assert.equal(second.ok, false);
+  assert.equal(sends, 2, "each explicit attempt sends exactly once");
+  assert.deepEqual(uuids, [requestId, requestId]);
+  assert.deepEqual(connector.getDeadLetters(), []);
+  assert.deepEqual(connector.getRetryQueue(), []);
+  assert.deepEqual(readdirSync(persistenceDir), [], "managed attempts must not persist input");
+});
+
+test("managed Heya delivery rejects a wrong appId before any HTTP", async () => {
+  let calls = 0;
+  const connector = createConnector(async () => {
+    calls += 1;
+    return jsonResponse({ code: 0, data: {} });
+  });
+  const requestId = `heya-${"0123456789abcdef".repeat(2)}`;
+
+  const result = await connector.dispatchAction({
+    ...action,
+    requestId,
+    event: { ...managedEvent, payload: { appId: "cli_other" } }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.retryable, false);
+  assert.equal(JSON.stringify(result).includes(config.appId), false);
+  assert.equal(calls, 0);
+  assert.equal(connector.getMetrics().actionsFailed, 1);
+});
+
+test("managed Heya delivery rejects a missing appId before any HTTP", async () => {
+  let calls = 0;
+  const connector = createConnector(async () => {
+    calls += 1;
+    return jsonResponse({ code: 0, data: {} });
+  });
+  const requestId = `heya-${"0123456789abcdef".repeat(2)}`;
+
+  const result = await connector.dispatchAction({
+    ...action,
+    requestId,
+    event: { ...managedEvent, payload: {} }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.retryable, false);
+  assert.equal(JSON.stringify(result).includes(config.appId), false);
+  assert.equal(calls, 0);
 });
 
 test("canceled noncooperative auth fetch cannot later send or report success", async () => {

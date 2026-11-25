@@ -536,7 +536,7 @@ test('admission settings preserve their tab scopes and reveal the runtime guide 
   const guide = page.getByRole('button', { name: '接入说明', exact: true })
   await guide.click()
   await expect(page.getByText(/创建一次性接入令牌/)).toBeVisible()
-  await page.getByRole('tab', { name: 'SSID', exact: true }).click()
+  await page.getByRole('tab', { name: '接入网络', exact: true }).click()
   await expect(page).toHaveURL(/tab=ssids/)
   await expect(page.locator('.soha-management-query-card')).toBeVisible()
   await page.getByRole('tab', { name: '网络设备', exact: true }).click()
@@ -607,7 +607,7 @@ for (const tab of ['radius-services', 'ssids', 'nas-bindings']) {
       new RegExp(`/network-access/settings\\?scope=retained&tab=${tab}#network-settings$`),
     )
     await expect(page.getByRole('tab', { selected: true })).toHaveText(
-      tab === 'radius-services' ? 'RADIUS 接入' : tab === 'ssids' ? 'SSID' : '网络设备',
+      tab === 'radius-services' ? 'RADIUS 接入' : tab === 'ssids' ? '接入网络' : '网络设备',
     )
     verifyBrowserEvidence(evidence)
   })

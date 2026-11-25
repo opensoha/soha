@@ -818,7 +818,7 @@ func (r *Repository) GetAgentRun(ctx context.Context, createdBy, runID string) (
 		args = append(args, strings.TrimSpace(createdBy))
 	}
 	query += ` LIMIT 1`
-	row := r.db.WithContext(ctx).Raw(query, args...).Row()
+	row := dbtx.DB(ctx, r.db).Raw(query, args...).Row()
 	return scanAgentRunRow(row, runID)
 }
 

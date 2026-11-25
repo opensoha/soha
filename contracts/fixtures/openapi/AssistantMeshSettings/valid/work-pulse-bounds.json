@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "organizationApproverUserIds": [],
+  "defaultVisibility": "private",
+  "experienceCardLifetimeDays": 90,
+  "allowPermanentExperienceCards": true,
+  "workPulseDefaultLifetimeHours": 168,
+  "workPulseMaxLifetimeDays": 90,
+  "receptionMinScore": 1
+}

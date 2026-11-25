@@ -21,6 +21,10 @@ import (
 )
 
 func (s *Service) holdToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {
+	if assistantMeshProjectGrantRequired(ctx) {
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", "shared project read requires immediate authorization", nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, apperrors.ErrAccessDenied
+	}
 	if nativeUnownedApproval(ctx) {
 		err := fmt.Errorf("%w: Native approval requires an owning CapabilityTask", apperrors.ErrUnsupportedOperation)
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
