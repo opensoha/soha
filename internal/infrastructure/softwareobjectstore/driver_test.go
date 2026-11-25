@@ -8,11 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/opensoha/soha/contracts/plugins/storagedriver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,6 +32,24 @@ func testDriverBinding(endpoint string) storagedriver.Binding {
 			"access_key_id": "test-access", "secret_access_key": "test-secret", "session_token": "test-token",
 		},
 	}
+}
+
+func TestS3DriverUsesConfiguredBucketEndpoint(t *testing.T) {
+	binding := testDriverBinding("")
+	binding.Settings = json.RawMessage(`{"endpoint":"https://assets.example.com","region":"us-east-1","bucket_endpoint":"true"}`)
+	resolved, err := driverBinding(binding)
+	require.NoError(t, err)
+	t.Cleanup(resolved.http.CloseIdleConnections)
+
+	presigned, err := s3.NewPresignClient(resolved.client).PresignGetObject(t.Context(), &s3.GetObjectInput{
+		Bucket: aws.String(binding.Container),
+		Key:    aws.String(binding.Prefix + "object.zip"),
+	})
+	require.NoError(t, err)
+	endpoint, err := url.Parse(presigned.URL)
+	require.NoError(t, err)
+	assert.Equal(t, "assets.example.com", endpoint.Host)
+	assert.Equal(t, "/scope/object.zip", endpoint.EscapedPath())
 }
 
 func TestS3DriverExactKeysAndOpen(t *testing.T) {

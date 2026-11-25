@@ -251,6 +251,7 @@ const (
   for (const [typeName, values] of [
     ["IdentityProviderUserMetadataProtocol", [["OIDC", "oidc"], ["Proxy", "proxy"], ["Saml", "saml"]]],
     ["PersonalEnvironmentTemplateMode", [["ObserveOnly", "observe-only"], ["RestrictedWrite", "restricted-write"]]],
+    ["PersonalEnvironmentActionRequestAction", [["Wake", "wake"], ["Sleep", "sleep"], ["Reconcile", "reconcile"]]],
     ["PersonalGuestRuntimeInputKind", [["Browser", "browser"], ["Docker", "docker"], ["Execute", "execute"], ["FileRead", "file_read"], ["FileWrite", "file_write"]]],
     ["ExportDeliveryDocumentParamsFormat", [["JSON", "json"], ["Yaml", "yaml"]]],
     ["DeliveryDraftServiceServiceKind", [["ExternalService", "external_service"], ["HelmRelease", "helm_release"], ["Job", "job"], ["KubernetesWorkload", "kubernetes_workload"]]],
@@ -345,12 +346,29 @@ function applyGoCompatibility(spec) {
   // existing int64 SDK field while preventing omitempty from erasing that zero.
   schemas.NetworkProxyDeploymentRuntimeAck.properties.activeConnections["x-omitempty"] = false;
 
+  // A nil slice omits the update. An empty slice revokes every grant.
+  const sensitivePublishers = schemas.UpdateHostedAppRuntimeConfigRequest.properties.sensitivePublisherIds;
+  sensitivePublishers["x-omitempty"] = false;
+  sensitivePublishers["x-omitzero"] = true;
+
   // Keep Rejected available for the published PersonalAgentAccessDecisionStatus.
   schemas.WorkflowRequestReceipt.properties.submissionStatus["x-enum-varnames"] = [
     "WorkflowRequestReceiptSubmissionStatusAccepted",
     "WorkflowRequestReceiptSubmissionStatusUnknown",
     "WorkflowRequestReceiptSubmissionStatusRejected",
   ];
+
+  // Preserve the published connection-mode names and the browser-control Agent alias.
+  const connectionMode = schemas.KubernetesConnectionMode;
+  const connectionModeNames = new Map([
+    ["direct_kubeconfig", "KubernetesConnectionModeDirectKubeconfig"],
+    ["agent", "KubernetesConnectionModeAgent"],
+  ]);
+  connectionMode["x-enum-varnames"] = connectionMode.enum.map((value) => {
+    const name = connectionModeNames.get(value);
+    if (!name) throw new Error(`unmapped Kubernetes connection mode: ${value}`);
+    return name;
+  });
 
   // Keep Unavailable available for the published RuntimeNetworkUsageScope.
   schemas.WorkbenchRuntimeAssetStatus.properties.status["x-enum-varnames"] = [
@@ -393,6 +411,8 @@ function applyGoCompatibility(spec) {
     "NetworkProxyServerPublication",
     "NetworkProxyConfigurationInput",
     "NetworkProxyConfigurationPatchInput",
+    "AppHostingGatewayAccessDecision",
+    "UpdateAppHostingSettingsRequest",
   ]);
 
   const riskLevel = schemas.RiskLevel;

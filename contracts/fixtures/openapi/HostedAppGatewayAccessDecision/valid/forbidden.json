@@ -1,0 +1,9 @@
+{
+  "decision": "forbidden",
+  "appId": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+  "dnsLabel": "sales-dashboard-a1b2c3",
+  "host": "sales-dashboard-a1b2c3.apps.soha.internal",
+  "appStatus": "online",
+  "routeGeneration": 4,
+  "reason": "audience_revoked"
+}

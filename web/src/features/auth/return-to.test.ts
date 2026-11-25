@@ -31,6 +31,11 @@ describe('shouldUseDocumentNavigation', () => {
   it('uses document navigation for server protocol callback paths', () => {
     expect(shouldUseDocumentNavigation('/oauth2/authorize?client_id=portal')).toBe(true)
     expect(shouldUseDocumentNavigation('/api/v1/provider/proxy/callback?state=resume')).toBe(true)
+    expect(
+      shouldUseDocumentNavigation(
+        '/api/v1/app-hosting/auth/start?host=ops-a1b2.apps.example.com&returnPath=%2Freports',
+      ),
+    ).toBe(true)
     expect(shouldUseDocumentNavigation('/portal/applications/app-1')).toBe(false)
   })
 })
@@ -48,6 +53,12 @@ describe('path deployment return targets', () => {
   it('recognizes server callbacks below the deployment prefix', () => {
     expect(
       shouldUseDocumentNavigation('/team/api/v1/provider/proxy/callback?state=resume', '/team/'),
+    ).toBe(true)
+    expect(
+      shouldUseDocumentNavigation(
+        '/team/api/v1/app-hosting/auth/start?host=ops-a1b2.apps.example.com',
+        '/team/',
+      ),
     ).toBe(true)
     expect(shouldUseDocumentNavigation('/team/oauth2/authorize?client_id=portal', '/team/')).toBe(
       true,

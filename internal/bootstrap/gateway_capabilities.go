@@ -41,7 +41,11 @@ func bindGatewayCapabilities(aiGatewayService *appaigateway.Service, core *coreS
 	if err != nil {
 		return fmt.Errorf("build Docker project capabilities: %w", err)
 	}
-	if err := aiGatewayService.AddCapabilityProviders(deliveryCapabilities, observabilityCapabilities, professionalCapabilities, dockerProjectCapabilities,
+	appHostingCapabilities, err := appaigateway.NewAppHostingCapabilityProvider(core.appHostingService)
+	if err != nil {
+		return fmt.Errorf("build app hosting capabilities: %w", err)
+	}
+	if err := aiGatewayService.AddCapabilityProviders(deliveryCapabilities, observabilityCapabilities, professionalCapabilities, dockerProjectCapabilities, appHostingCapabilities,
 		appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService), appaigateway.NewPersonalEnvironmentCapabilityProvider(delivery.copilotService)); err != nil {
 		return fmt.Errorf("register application Gateway capabilities: %w", err)
 	}

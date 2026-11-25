@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
+	apphostinghandler "github.com/opensoha/soha/internal/api/handlers/apphosting"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
 	outpostruntimehandler "github.com/opensoha/soha/internal/api/handlers/outpostruntime"
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
@@ -80,6 +81,7 @@ type Dependencies struct {
 	AIGateway                  *apiHandlers.AIGatewayHandler
 	Plugins                    *apiHandlers.PluginHandler
 	Software                   *apiHandlers.SoftwareHandler
+	AppHosting                 *apphostinghandler.Handler
 	ContentDLP                 *apiHandlers.ContentDLPHandler
 	ContentDLPWorkflow         *apiHandlers.ContentDLPWorkflowHandler
 	Companion                  *apiHandlers.CompanionHandler

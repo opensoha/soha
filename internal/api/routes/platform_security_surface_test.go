@@ -57,6 +57,7 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/rollback/plan") ||
 		strings.HasSuffix(path, "/access-control/access-reviews") ||
 		isNetworkSecurityReadOnlyPOST(path) ||
+		strings.HasSuffix(path, "/deployments/preflight") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		path == "/api/v1/ai-gateway/plans/validate" ||
 		path == "/api/v1/plugins/repository/preview" ||
@@ -121,6 +122,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
 	softwareMutationSecuritySurface,
+	appHostingMutationSecuritySurface,
 	networkAccessMutationSecuritySurface,
 }
 
@@ -224,6 +226,67 @@ func softwareMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		permission = appaccess.PermSoftwarePackageDelete
 	}
 	return nonPlatformMutationEntry("SoftwarePackage", nonPlatformMutationAction(method, path), permission, false), true
+}
+
+func appHostingMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if !strings.HasPrefix(path, "/api/v1/app-hosting/") {
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+	if approval, ok := appHostingApprovalSecuritySurface(path); ok {
+		return approval, true
+	}
+	switch {
+	case path == "/api/v1/app-hosting/settings":
+		return nonPlatformMutationEntry("AppHostingSettings", "update", appaccess.PermAppHostingAdminManage, false), true
+	case path == "/api/v1/app-hosting/settings/gateway-token/rotate":
+		return nonPlatformMutationEntry("AppHostingGatewayToken", "rotate", appaccess.PermAppHostingAdminManage, false), true
+	case path == "/api/v1/app-hosting/workspace-deployments":
+		return nonPlatformMutationEntry("HostedAppRevision", "workspace-deploy", appaccess.PermAppHostingAppsPublish, false), true
+	case strings.HasSuffix(path, "/visitor-attributes") && method == "PUT":
+		return nonPlatformMutationEntry("HostedAppVisitorAttributes", "review", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/visitor-attributes"):
+		return nonPlatformMutationEntry("HostedAppVisitorAttributes", "request", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/runtime-config"):
+		return nonPlatformMutationSecuritySurfaceEntry{
+			ResourceKind: "HostedAppRuntimeConfig", Action: "update",
+			PermissionKey:     "apphosting.apps.publish|apphosting.admin.manage",
+			DynamicPermission: true, ScopeRequired: true, AuditRequired: true,
+		}, true
+	case strings.HasSuffix(path, "/maintainers"):
+		return nonPlatformMutationEntry("HostedApp", "maintainers", appaccess.PermAppHostingAppsPublish, true), true
+	case strings.HasSuffix(path, "/transfer"):
+		return nonPlatformMutationEntry("HostedApp", "transfer", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/delete"):
+		return nonPlatformMutationSecuritySurfaceEntry{
+			ResourceKind:      "HostedApp",
+			Action:            "delete",
+			PermissionKey:     "apphosting.apps.publish|apphosting.admin.manage",
+			DynamicPermission: true,
+			ScopeRequired:     true,
+			AuditRequired:     true,
+		}, true
+	case strings.HasSuffix(path, "/suspend"):
+		return nonPlatformMutationEntry("HostedApp", "suspend", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/unsuspend"):
+		return nonPlatformMutationEntry("HostedApp", "unsuspend", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/revisions"):
+		return nonPlatformMutationEntry("HostedAppRevision", "upload", appaccess.PermAppHostingAppsPublish, true), true
+	default:
+		return nonPlatformMutationEntry("HostedApp", nonPlatformMutationAction(method, path), appaccess.PermAppHostingAppsPublish, path != "/api/v1/app-hosting/apps"), true
+	}
+}
+
+func appHostingApprovalSecuritySurface(path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
+	case strings.HasPrefix(path, "/api/v1/app-hosting/approvals/") && strings.HasSuffix(path, "/approve"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "approve", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasPrefix(path, "/api/v1/app-hosting/approvals/") && strings.HasSuffix(path, "/reject"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "reject", appaccess.PermAppHostingAdminManage, true), true
+	case strings.HasSuffix(path, "/visibility-approval/withdraw"):
+		return nonPlatformMutationEntry("HostedAppVisibilityApproval", "withdraw", appaccess.PermAppHostingAppsPublish, true), true
+	default:
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
 }
 
 func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {

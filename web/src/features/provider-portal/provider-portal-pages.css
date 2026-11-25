@@ -789,3 +789,313 @@
     grid-template-columns: 1fr;
   }
 }
+
+.soha-portal-view-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+}
+
+.soha-portal-view-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.soha-portal-view-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 12px;
+  border-radius: var(--soha-radius-control, 6px);
+  color: var(--soha-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.soha-portal-view-nav-link:hover {
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-primary);
+}
+
+.soha-portal-view-nav-link:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-portal-view-nav-link.is-active {
+  background: var(--soha-fill-weak);
+  color: var(--soha-primary);
+  font-weight: 600;
+}
+
+.soha-portal-view-nav-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.soha-portal-view-nav-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.soha-portal-hosted-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+}
+
+.soha-portal-hosted-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.soha-portal-colleague-toolbar,
+.soha-portal-my-apps-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.soha-portal-colleague-search {
+  flex: 1 1 260px;
+  max-width: 380px;
+}
+
+.soha-portal-colleague-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-portal-authors-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-portal-subsection-title {
+  display: block;
+}
+
+.soha-portal-author-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.soha-portal-author-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.soha-portal-author-card:hover {
+  background: var(--soha-fill-weak);
+}
+
+.soha-portal-author-card:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-portal-author-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+
+.soha-portal-author-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-portal-author-card-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-portal-work-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+  gap: 12px;
+}
+
+.soha-portal-work-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 8px);
+  background: var(--soha-bg-surface);
+}
+
+.soha-portal-work-card:hover {
+  background: var(--soha-fill-weak);
+}
+
+.soha-portal-work-card-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-portal-work-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-portal-work-card-title.ant-typography {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.soha-portal-work-card-desc.ant-typography {
+  margin-bottom: 0;
+  min-height: 40px;
+}
+
+.soha-portal-work-card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--soha-border-color-secondary, var(--soha-border-color));
+}
+
+.soha-portal-work-card-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-portal-work-card-author-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.soha-portal-work-author-trigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--soha-text-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.soha-portal-work-author-trigger:hover {
+  color: var(--soha-primary);
+  text-decoration: underline;
+}
+
+.soha-portal-work-author-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-portal-work-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-portal-empty-guide {
+  padding: 24px 16px;
+}
+
+@media (max-width: 480px) {
+  .soha-provider-portal-home .soha-portal-main {
+    width: calc(100% - 16px);
+    padding: 8px 0 24px;
+  }
+
+  .soha-portal-hosted-surface {
+    padding: 12px;
+  }
+
+  .soha-portal-view-nav-bar {
+    padding: 6px;
+  }
+
+  .soha-portal-view-nav {
+    width: 100%;
+  }
+
+  .soha-portal-view-nav-link {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+
+  .soha-portal-colleague-search {
+    max-width: none;
+    width: 100%;
+  }
+
+  .soha-portal-colleague-filters {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .soha-portal-author-grid,
+  .soha-portal-work-grid {
+    grid-template-columns: 1fr;
+  }
+}

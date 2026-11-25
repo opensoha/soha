@@ -1,0 +1,26 @@
+{
+  "decision": "allow",
+  "appId": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+  "dnsLabel": "sales-dashboard-a1b2c3",
+  "host": "sales-dashboard-a1b2c3.apps.soha.internal",
+  "appStatus": "online",
+  "routeGeneration": 3,
+  "spaFallback": true,
+  "activeRevisionId": "rev_01j8x2h9b2n4p6q8r0s2t4u6v8",
+  "storageIntegrationId": "int_minio_apps",
+  "storagePrefix": "hosted-apps",
+  "files": [
+    {
+      "path": "index.html",
+      "sizeBytes": 1420,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "contentType": "text/html; charset=utf-8",
+      "etag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+      "objectKey": "hosted-apps/app_01j8x2h4a9m7k3q1w5e6r7t8y9/rev_01j8x2h9b2n4p6q8r0s2t4u6v8/index.html"
+    }
+  ],
+  "user": {
+    "id": "ahv_8f2a9c4b1d7e3056a1b2c3d4e5f60718",
+    "displayName": "Carol Zhang"
+  }
+}

@@ -158,3 +158,61 @@ func TestPermissionCatalogIncludesIndependentWorkbenchEntries(t *testing.T) {
 		}
 	}
 }
+
+func TestPermissionCatalogIncludesAppHostingEntries(t *testing.T) {
+	var catalog struct {
+		Permissions []struct {
+			Key            string   `json:"key"`
+			Domain         string   `json:"domain"`
+			Resource       string   `json:"resource"`
+			Action         string   `json:"action"`
+			DisplayName    string   `json:"displayName"`
+			RiskLevel      string   `json:"riskLevel"`
+			ScopeKinds     []string `json:"scopeKinds"`
+			ApprovalPolicy string   `json:"approvalPolicy"`
+			Status         string   `json:"status"`
+			Assignable     bool     `json:"assignable"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal(PermissionCatalogJSON(), &catalog); err != nil {
+		t.Fatalf("decode permission catalog: %v", err)
+	}
+
+	type expectation struct {
+		resource   string
+		action     string
+		riskLevel  string
+		scopeKinds string
+	}
+	want := map[string]expectation{
+		"apphosting.admin.manage": {resource: "admin", action: "manage", riskLevel: "mutate", scopeKinds: "tenant,workspace"},
+		"apphosting.admin.view":   {resource: "admin", action: "view", riskLevel: "read", scopeKinds: "tenant,workspace"},
+		"apphosting.apps.publish": {resource: "apps", action: "publish", riskLevel: "mutate", scopeKinds: "tenant,workspace,resource"},
+		"apphosting.apps.view":    {resource: "apps", action: "view", riskLevel: "read", scopeKinds: "tenant,workspace,resource"},
+	}
+	seen := make(map[string]bool, len(want))
+	for _, permission := range catalog.Permissions {
+		exp, ok := want[permission.Key]
+		if !ok {
+			continue
+		}
+		gotScopes := ""
+		for i, s := range permission.ScopeKinds {
+			if i > 0 {
+				gotScopes += ","
+			}
+			gotScopes += s
+		}
+		if permission.Domain != "apphosting" || permission.Resource != exp.resource || permission.Action != exp.action ||
+			permission.RiskLevel != exp.riskLevel || gotScopes != exp.scopeKinds ||
+			permission.ApprovalPolicy != "never" || permission.Status != "active" || !permission.Assignable || permission.DisplayName == "" {
+			t.Fatalf("unexpected apphosting permission: %#v", permission)
+		}
+		seen[permission.Key] = true
+	}
+	for key := range want {
+		if !seen[key] {
+			t.Fatalf("missing permission %s", key)
+		}
+	}
+}

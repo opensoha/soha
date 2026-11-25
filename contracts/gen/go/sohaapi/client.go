@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -1120,6 +1122,531 @@ func (c *Client) ConfigureInstalledPlugin(ctx context.Context, pluginID string, 
 		return InstalledPlugin{}, err
 	}
 	return out.Data, nil
+}
+
+func (c *Client) GetAppHostingSettings(ctx context.Context) (AppHostingSettings, error) {
+	var out AppHostingSettingsResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/settings", true, nil, &out); err != nil {
+		return AppHostingSettings{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UpdateAppHostingSettings(ctx context.Context, req AppHostingSettingsUpdateRequest) (AppHostingSettings, error) {
+	var out AppHostingSettingsResponse
+	if err := c.doJSON(ctx, http.MethodPut, "/app-hosting/settings", true, req, &out); err != nil {
+		return AppHostingSettings{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RotateAppHostingGatewayToken(ctx context.Context, req *AppHostingGatewayTokenRotateRequest) (AppHostingGatewayTokenSecret, error) {
+	var out AppHostingGatewayTokenRotateResponse
+	var body any
+	if req != nil {
+		body = req
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/app-hosting/settings/gateway-token/rotate", true, body, &out); err != nil {
+		return AppHostingGatewayTokenSecret{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListAppHostingAudienceCandidates(ctx context.Context, params ListAppHostingAudienceCandidatesParams) (AppHostingAudienceCandidates, error) {
+	var out AppHostingAudienceCandidatesResponse
+	values := url.Values{}
+	addQueryString(values, "query", params.Query)
+	addQueryInt(values, "limit", params.Limit)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/audience-candidates"+encodeQuery(values), true, nil, &out); err != nil {
+		return AppHostingAudienceCandidates{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListPortalHostedApps(ctx context.Context, params ListPortalHostedAppsParams) (PortalHostedAppCatalog, error) {
+	var out PortalHostedAppCatalogResponse
+	values := url.Values{}
+	addQueryString(values, "query", params.Query)
+	addQueryString(values, "kind", string(params.Kind))
+	addQueryString(values, "authorUserId", params.AuthorUserID)
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/portal/apps"+encodeQuery(values), true, nil, &out); err != nil {
+		return PortalHostedAppCatalog{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListHostedApps(ctx context.Context, params ListHostedAppsParams) (HostedAppList, error) {
+	var out HostedAppListResponse
+	values := url.Values{}
+	addQueryString(values, "scope", string(params.Scope))
+	addQueryString(values, "query", params.Query)
+	addQueryString(values, "status", string(params.Status))
+	addQueryString(values, "ownerUserId", params.OwnerUserID)
+	addQueryString(values, "teamId", params.TeamID)
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/apps"+encodeQuery(values), true, nil, &out); err != nil {
+		return HostedAppList{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) CreateHostedApp(ctx context.Context, req CreateHostedAppRequest) (HostedApp, error) {
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/app-hosting/apps", true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) GetHostedApp(ctx context.Context, appID string) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodGet, path, true, nil, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) GetHostedAppRuntimeConfig(ctx context.Context, appID string) (HostedAppRuntimeConfig, error) {
+	path, err := hostedAppPath(appID, "runtime-config")
+	if err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	var out HostedAppRuntimeConfigResponse
+	if err := c.doJSON(ctx, http.MethodGet, path, true, nil, &out); err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UpdateHostedAppRuntimeConfig(ctx context.Context, appID string, req UpdateHostedAppRuntimeConfigRequest) (HostedAppRuntimeConfig, error) {
+	path, err := hostedAppPath(appID, "runtime-config")
+	if err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	var out HostedAppRuntimeConfigResponse
+	if err := c.doJSON(ctx, http.MethodPut, path, true, req, &out); err != nil {
+		return HostedAppRuntimeConfig{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UpdateHostedApp(ctx context.Context, appID string, req UpdateHostedAppRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPatch, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UpdateHostedAppVisibility(ctx context.Context, appID string, req UpdateHostedAppVisibilityRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "visibility")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPut, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) TakeHostedAppOffline(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	return c.mutateHostedAppLifecycle(ctx, appID, "offline", req)
+}
+
+func (c *Client) BringHostedAppOnline(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	return c.mutateHostedAppLifecycle(ctx, appID, "online", req)
+}
+
+func (c *Client) SuspendHostedApp(ctx context.Context, appID string, req HostedAppSuspendRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "suspend")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UnsuspendHostedApp(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	return c.mutateHostedAppLifecycle(ctx, appID, "unsuspend", req)
+}
+
+func (c *Client) UpdateHostedAppMaintainers(ctx context.Context, appID string, req UpdateHostedAppMaintainersRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "maintainers")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPut, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) TransferHostedAppOwnership(ctx context.Context, appID string, req TransferHostedAppOwnershipRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, "transfer")
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) DeleteHostedApp(ctx context.Context, appID string, req DeleteHostedAppRequest) (DeleteHostedAppResult, error) {
+	path, err := hostedAppPath(appID, "delete")
+	if err != nil {
+		return DeleteHostedAppResult{}, err
+	}
+	var out DeleteHostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return DeleteHostedAppResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListHostedAppVisibilityApprovals(ctx context.Context, params ListHostedAppVisibilityApprovalsParams) (HostedAppVisibilityApprovalList, error) {
+	var out HostedAppVisibilityApprovalListResponse
+	values := url.Values{}
+	addQueryString(values, "scope", string(params.Scope))
+	addQueryString(values, "status", string(params.Status))
+	addQueryString(values, "appId", params.AppID)
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	if err := c.doJSON(ctx, http.MethodGet, "/app-hosting/approvals"+encodeQuery(values), true, nil, &out); err != nil {
+		return HostedAppVisibilityApprovalList{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) WithdrawHostedAppVisibilityApproval(ctx context.Context, appID string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	return c.mutateHostedAppLifecycle(ctx, appID, "visibility-approval/withdraw", req)
+}
+
+func (c *Client) ApproveHostedAppVisibility(ctx context.Context, approvalID string, req *ApproveHostedAppVisibilityRequest) (HostedAppVisibilityApprovalDecisionResult, error) {
+	path, err := hostedAppApprovalPath(approvalID, "approve")
+	if err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	payload := ApproveHostedAppVisibilityRequest{}
+	if req != nil {
+		payload = *req
+	}
+	var out HostedAppVisibilityApprovalDecisionResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, payload, &out); err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RejectHostedAppVisibility(ctx context.Context, approvalID string, req RejectHostedAppVisibilityRequest) (HostedAppVisibilityApprovalDecisionResult, error) {
+	path, err := hostedAppApprovalPath(approvalID, "reject")
+	if err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	var out HostedAppVisibilityApprovalDecisionResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedAppVisibilityApprovalDecisionResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) DeployHostedAppFromWorkspace(ctx context.Context, req WorkspaceHostedAppDeploymentRequest) (WorkspaceHostedAppDeploymentResult, error) {
+	var out WorkspaceHostedAppDeploymentResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/app-hosting/workspace-deployments", true, req, &out); err != nil {
+		return WorkspaceHostedAppDeploymentResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) mutateHostedAppLifecycle(ctx context.Context, appID, action string, req *HostedAppLifecycleActionRequest) (HostedApp, error) {
+	path, err := hostedAppPath(appID, action)
+	if err != nil {
+		return HostedApp{}, err
+	}
+	var body any
+	if req != nil {
+		body = req
+	}
+	var out HostedAppResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, body, &out); err != nil {
+		return HostedApp{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) PreflightHostedAppDeployment(ctx context.Context, appID string, req HostedAppPreflightRequest) (HostedAppPreflightResult, error) {
+	path, err := hostedAppPath(appID, "deployments/preflight")
+	if err != nil {
+		return HostedAppPreflightResult{}, err
+	}
+	var out HostedAppPreflightResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedAppPreflightResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) UploadHostedAppRevision(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams) (HostedAppDeploymentReceipt, error) {
+	return c.uploadHostedAppRevision(ctx, appID, bundle, params, "application/gzip")
+}
+
+// UploadHostedAppRevisionWithVisibility sends an audience change as part of a single publication.
+func (c *Client) UploadHostedAppRevisionWithVisibility(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams, visibility UpdateHostedAppVisibilityRequest) (HostedAppDeploymentReceipt, error) {
+	if bundle == nil {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("revision bundle reader is required")
+	}
+	if strings.TrimSpace(params.IdempotencyKey) == "" {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("publishing with a visibility change requires an idempotency key")
+	}
+	body, contentType, err := publicationBody(bundle, visibility)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	return c.uploadHostedAppRevision(ctx, appID, body, params, contentType)
+}
+
+type publicationUploadBody struct {
+	io.Reader
+	bundleCloser io.Closer
+	length       int64
+	replay       func() (io.ReadCloser, error)
+}
+
+func (b *publicationUploadBody) Close() error {
+	if b.bundleCloser != nil {
+		return b.bundleCloser.Close()
+	}
+	return nil
+}
+
+func publicationBody(bundle io.Reader, visibility UpdateHostedAppVisibilityRequest) (*publicationUploadBody, string, error) {
+	var framing bytes.Buffer
+	writer := multipart.NewWriter(&framing)
+	meta, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="publishVisibility"`},
+		"Content-Type":        {"application/json"},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if err := json.NewEncoder(meta).Encode(visibility); err != nil {
+		return nil, "", err
+	}
+	if _, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="bundle"; filename="bundle.tar.gz"`},
+		"Content-Type":        {"application/gzip"},
+	}); err != nil {
+		return nil, "", err
+	}
+	bundleOffset := framing.Len()
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	raw := framing.Bytes()
+	// Add multipart framing without copying the uploaded archive or spawning a pipe goroutine.
+	frame := func(source io.Reader) io.Reader {
+		return io.MultiReader(bytes.NewReader(raw[:bundleOffset]), source, bytes.NewReader(raw[bundleOffset:]))
+	}
+	body := &publicationUploadBody{Reader: frame(bundle)}
+	body.bundleCloser, _ = bundle.(io.Closer)
+	if fresh, size := replayableBundle(bundle); fresh != nil {
+		body.length = int64(len(raw)) + int64(size)
+		body.replay = func() (io.ReadCloser, error) { return io.NopCloser(frame(fresh())), nil }
+	}
+	return body, writer.FormDataContentType(), nil
+}
+
+// Preserve the same body replay support net/http gives to the raw upload.
+func replayableBundle(bundle io.Reader) (func() io.Reader, int) {
+	switch reader := bundle.(type) {
+	case *bytes.Reader:
+		initial := *reader
+		return func() io.Reader {
+			replayed := initial
+			return &replayed
+		}, initial.Len()
+	case *bytes.Buffer:
+		initial := reader.Bytes()
+		return func() io.Reader { return bytes.NewReader(initial) }, len(initial)
+	case *strings.Reader:
+		initial := *reader
+		return func() io.Reader {
+			replayed := initial
+			return &replayed
+		}, initial.Len()
+	default:
+		return nil, 0
+	}
+}
+
+func (c *Client) uploadHostedAppRevision(ctx context.Context, appID string, bundle io.Reader, params UploadHostedAppRevisionParams, contentType string) (HostedAppDeploymentReceipt, error) {
+	if bundle == nil {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("revision bundle reader is required")
+	}
+	basePath, err := hostedAppPath(appID, "revisions")
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	values := url.Values{}
+	addQueryString(values, "idempotencyKey", strings.TrimSpace(params.IdempotencyKey))
+	if params.SpaFallback != nil {
+		values.Set("spaFallback", strconv.FormatBool(*params.SpaFallback))
+	}
+	addQueryString(values, "description", params.Description)
+	path := basePath + encodeQuery(values)
+
+	endpoint, err := c.endpoint(path)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bundle)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	if framed, ok := bundle.(*publicationUploadBody); ok && framed.replay != nil {
+		req.GetBody = framed.replay
+		req.ContentLength = framed.length
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", contentType)
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	if strings.TrimSpace(c.Token) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.Token))
+	}
+	client := c.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	defer resp.Body.Close()
+	raw, err := readResponseBody(resp, maxJSONResponseBytes)
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %w", basePath, err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("POST %s failed: %s: %s", basePath, resp.Status, responseErrorMessage(raw))
+	}
+	var out HostedAppDeploymentResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return HostedAppDeploymentReceipt{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ListHostedAppRevisions(ctx context.Context, appID string, params ListHostedAppRevisionsParams) (HostedAppRevisionList, error) {
+	basePath, err := hostedAppPath(appID, "revisions")
+	if err != nil {
+		return HostedAppRevisionList{}, err
+	}
+	values := url.Values{}
+	addQueryInt(values, "limit", params.Limit)
+	addQueryInt(values, "offset", params.Offset)
+	var out HostedAppRevisionListResponse
+	if err := c.doJSON(ctx, http.MethodGet, basePath+encodeQuery(values), true, nil, &out); err != nil {
+		return HostedAppRevisionList{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) GetHostedAppRevision(ctx context.Context, appID, revisionID string) (HostedAppRevision, error) {
+	revTrimmed := strings.TrimSpace(revisionID)
+	if revTrimmed == "" {
+		return HostedAppRevision{}, fmt.Errorf("revision ID is required")
+	}
+	path, err := hostedAppPath(appID, "revisions/"+url.PathEscape(revTrimmed))
+	if err != nil {
+		return HostedAppRevision{}, err
+	}
+	var out HostedAppRevisionResponse
+	if err := c.doJSON(ctx, http.MethodGet, path, true, nil, &out); err != nil {
+		return HostedAppRevision{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RollbackHostedApp(ctx context.Context, appID string, req HostedAppRollbackRequest) (HostedAppDeploymentReceipt, error) {
+	path, err := hostedAppPath(appID, "rollback")
+	if err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	var out HostedAppDeploymentResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, true, req, &out); err != nil {
+		return HostedAppDeploymentReceipt{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ExchangeHostedAppGatewayTicket(ctx context.Context, req HostedAppTicketExchangeRequest, gatewayToken ...string) (HostedAppTicketExchangeResult, error) {
+	var out HostedAppTicketExchangeResponse
+	useClientToken, headers := gatewayAuthHeaders(gatewayToken...)
+	if err := c.doJSONWithHeaders(ctx, http.MethodPost, "/app-hosting/gateway/tickets/exchange", useClientToken, req, &out, headers); err != nil {
+		return HostedAppTicketExchangeResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) CheckHostedAppGatewayAccess(ctx context.Context, req HostedAppGatewayAccessCheckRequest, gatewayToken ...string) (HostedAppGatewayAccessDecision, error) {
+	var out HostedAppGatewayAccessCheckResponse
+	useClientToken, headers := gatewayAuthHeaders(gatewayToken...)
+	if err := c.doJSONWithHeaders(ctx, http.MethodPost, "/app-hosting/gateway/access-check", useClientToken, req, &out, headers); err != nil {
+		return HostedAppGatewayAccessDecision{}, err
+	}
+	return out.Data, nil
+}
+
+func hostedAppPath(appID, suffix string) (string, error) {
+	trimmed := strings.TrimSpace(appID)
+	if trimmed == "" {
+		return "", fmt.Errorf("app ID is required")
+	}
+	base := "/app-hosting/apps/" + url.PathEscape(trimmed)
+	if suffix == "" {
+		return base, nil
+	}
+	return base + "/" + suffix, nil
+}
+
+func hostedAppApprovalPath(approvalID, suffix string) (string, error) {
+	trimmed := strings.TrimSpace(approvalID)
+	if trimmed == "" {
+		return "", fmt.Errorf("approval ID is required")
+	}
+	base := "/app-hosting/approvals/" + url.PathEscape(trimmed)
+	if suffix == "" {
+		return base, nil
+	}
+	return base + "/" + suffix, nil
+}
+
+func gatewayAuthHeaders(gatewayToken ...string) (bool, http.Header) {
+	for _, candidate := range gatewayToken {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return false, http.Header{"Authorization": []string{"Bearer " + trimmed}}
+		}
+	}
+	return true, nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, useToken bool, body any, out any) error {

@@ -1,0 +1,14 @@
+{
+  "decision": "allow",
+  "host": "sales-dashboard-a1b2c3.apps.soha.internal",
+  "files": [
+    {
+      "path": "index.html",
+      "sizeBytes": 1420,
+      "sha256": "NOT_A_VALID_SHA256",
+      "contentType": "text/html",
+      "etag": "\"abc\"",
+      "objectKey": "hosted-apps/app/rev/index.html"
+    }
+  ]
+}

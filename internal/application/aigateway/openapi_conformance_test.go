@@ -53,7 +53,11 @@ func TestOpenAPICapabilitiesMatchLiveMCPToolCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry, err := newCapabilityRegistry(vmProvider, creationProvider, draftProvider, BuiltinCapabilityProvider{})
+	appHostingProvider, err := NewAppHostingCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := newCapabilityRegistry(vmProvider, creationProvider, draftProvider, appHostingProvider, BuiltinCapabilityProvider{})
 	if err != nil {
 		t.Fatal(err)
 	}

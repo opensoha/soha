@@ -11,6 +11,7 @@
       "src/features/copilot/observe/routes.ts",
       "src/features/copilot/routes.ts",
       "src/features/delivery/routes.ts",
+      "src/features/identity/app-hosting/routes.ts",
       "src/features/identity/applications/routes.ts",
       "src/features/identity/login-records/routes.ts",
       "src/features/identity/outposts/routes.ts",
@@ -54,14 +55,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 299,
-    "metadataPaths": 299,
-    "overlappingPaths": 299,
+    "runtimePaths": 303,
+    "metadataPaths": 303,
+    "overlappingPaths": 303,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 246,
-    "lazySourceModules": 232
+    "lazyRouteLoads": 250,
+    "lazySourceModules": 236
   },
   "paths": {
     "runtime": [
@@ -195,6 +196,7 @@
       "/identity/policies",
       "/identity/providers",
       "/internal-workbench",
+      "/internal-workbench/app-hosting",
       "/internal-workbench/overview",
       "/internal-workbench/software",
       "/login",
@@ -305,6 +307,9 @@
       "/plugins/marketplace/:pluginId",
       "/portal",
       "/portal/applications/:applicationId",
+      "/portal/colleague-works",
+      "/portal/colleague-works/authors/:authorId",
+      "/portal/my-apps",
       "/portal/security",
       "/registries",
       "/release-board",
@@ -496,6 +501,7 @@
       "/identity/policies",
       "/identity/providers",
       "/internal-workbench",
+      "/internal-workbench/app-hosting",
       "/internal-workbench/overview",
       "/internal-workbench/software",
       "/login",
@@ -606,6 +612,9 @@
       "/plugins/marketplace/:pluginId",
       "/portal",
       "/portal/applications/:applicationId",
+      "/portal/colleague-works",
+      "/portal/colleague-works/authors/:authorId",
+      "/portal/my-apps",
       "/portal/security",
       "/registries",
       "/release-board",
@@ -797,6 +806,7 @@
       "/identity/policies",
       "/identity/providers",
       "/internal-workbench",
+      "/internal-workbench/app-hosting",
       "/internal-workbench/overview",
       "/internal-workbench/software",
       "/login",
@@ -907,6 +917,9 @@
       "/plugins/marketplace/:pluginId",
       "/portal",
       "/portal/applications/:applicationId",
+      "/portal/colleague-works",
+      "/portal/colleague-works/authors/:authorId",
+      "/portal/my-apps",
       "/portal/security",
       "/registries",
       "/release-board",
@@ -1579,6 +1592,11 @@
         "source": "@/features/plugins/installed/detail-page"
       },
       {
+        "exportName": "InternalWorkbenchAppHostingPage",
+        "moduleExport": "InternalWorkbenchAppHostingPage",
+        "source": "@/features/identity/app-hosting/page"
+      },
+      {
         "exportName": "JobDetailPage",
         "moduleExport": "JobDetailPage",
         "source": "@/features/platform/workloads/jobs/detail-page"
@@ -1939,6 +1957,21 @@
         "source": "@/features/provider-portal/application-detail/page"
       },
       {
+        "exportName": "PortalColleagueAuthorPage",
+        "moduleExport": "PortalColleagueAuthorPage",
+        "source": "@/features/provider-portal/colleague-works/author-page"
+      },
+      {
+        "exportName": "PortalColleagueWorksPage",
+        "moduleExport": "PortalColleagueWorksPage",
+        "source": "@/features/provider-portal/colleague-works/list-page"
+      },
+      {
+        "exportName": "PortalMyHostedAppsPage",
+        "moduleExport": "PortalMyHostedAppsPage",
+        "source": "@/features/provider-portal/my-apps/page"
+      },
+      {
         "exportName": "PortalSecurityPage",
         "moduleExport": "PortalSecurityPage",
         "source": "@/features/provider-portal/security/page"
@@ -2285,6 +2318,7 @@
       "@/features/docker/projects/detail-page",
       "@/features/docker/projects/list-page",
       "@/features/docker/templates/page",
+      "@/features/identity/app-hosting/page",
       "@/features/identity/applications/list-page",
       "@/features/identity/login-records/page",
       "@/features/identity/outposts/list-page",
@@ -2419,6 +2453,9 @@
       "@/features/plugins/marketplace/list-page",
       "@/features/provider-portal/application-detail/page",
       "@/features/provider-portal/catalog/page",
+      "@/features/provider-portal/colleague-works/author-page",
+      "@/features/provider-portal/colleague-works/list-page",
+      "@/features/provider-portal/my-apps/page",
       "@/features/provider-portal/security/page",
       "@/features/secrets/page",
       "@/features/settings/branding/page",
@@ -2521,6 +2558,7 @@
       "@/features/docker/projects/detail-page": ["DockerProjectDetailPage"],
       "@/features/docker/projects/list-page": ["DockerProjectsPage"],
       "@/features/docker/templates/page": ["DockerTemplatesPage"],
+      "@/features/identity/app-hosting/page": ["InternalWorkbenchAppHostingPage"],
       "@/features/identity/applications/list-page": ["IdentityApplicationsPage"],
       "@/features/identity/login-records/page": ["IdentityLoginRecordsPage"],
       "@/features/identity/outposts/list-page": ["IdentityOutpostsPage"],
@@ -2756,6 +2794,9 @@
       "@/features/plugins/marketplace/list-page": ["PluginMarketplacePage"],
       "@/features/provider-portal/application-detail/page": ["PortalApplicationDetailPage"],
       "@/features/provider-portal/catalog/page": ["SohaProviderPortalPage"],
+      "@/features/provider-portal/colleague-works/author-page": ["PortalColleagueAuthorPage"],
+      "@/features/provider-portal/colleague-works/list-page": ["PortalColleagueWorksPage"],
+      "@/features/provider-portal/my-apps/page": ["PortalMyHostedAppsPage"],
       "@/features/provider-portal/security/page": ["PortalSecurityPage"],
       "@/features/secrets/page": ["SecretsPage"],
       "@/features/settings/branding/page": ["BrandingSettingsPage"],
@@ -2781,5 +2822,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-11-07T19:27:35.167Z"
+  "generatedAt": "2026-11-21T05:50:10.585Z"
 }

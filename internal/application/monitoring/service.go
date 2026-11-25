@@ -300,6 +300,55 @@ func (s *Service) RecordGovernanceAlert(ctx context.Context, input domaingoverna
 	return nil
 }
 
+// EnsureActiveGovernanceAlert records a caller-keyed alert once. A resolved event requires a new ID.
+func (s *Service) EnsureActiveGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) (bool, error) {
+	if s.alertEvents == nil {
+		return true, nil
+	}
+	expected := governanceAlertEventInput(input)
+	event, err := s.alertEvents.GetEvent(ctx, expected.ID)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		err = s.RecordGovernanceAlert(ctx, input)
+		return err == nil, err
+	}
+	if err != nil {
+		return false, err
+	}
+	if !hasGovernanceIdentity(event, expected) {
+		return false, apperrors.ErrConflict
+	}
+	return event.Status != "resolved", nil
+}
+
+func hasGovernanceIdentity(event domainalert.AlertEvent, expected domainalert.AlertEventInput) bool {
+	return event.SourceType == expected.SourceType && event.SourceSystem == expected.SourceSystem && event.Fingerprint == expected.Fingerprint
+}
+
+// ResolveGovernanceAlert closes the existing governance event without changing its start time.
+func (s *Service) ResolveGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) error {
+	if s.alertEvents == nil {
+		return nil
+	}
+	expected := governanceAlertEventInput(input)
+	event, err := s.alertEvents.GetEvent(ctx, expected.ID)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !hasGovernanceIdentity(event, expected) {
+		return apperrors.ErrConflict
+	}
+	if event.Status == "resolved" && event.CurrentState == "resolved" {
+		return nil
+	}
+	event.Status, event.CurrentState = "resolved", "resolved"
+	event.EndsAt, event.LastSeenAt = input.CreatedAt, input.CreatedAt
+	_, err = s.alertEvents.UpdateEvent(ctx, event.ID, toAlertEventInput(event))
+	return err
+}
+
 func (s *Service) Summary(ctx context.Context, principal domainidentity.Principal) (domainalert.Summary, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveMonitoringView); err != nil {
 		return domainalert.Summary{}, err

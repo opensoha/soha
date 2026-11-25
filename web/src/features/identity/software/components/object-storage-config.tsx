@@ -70,7 +70,8 @@ const endpointPlaceholders: Record<S3StoragePreset, string> = {
 const cloudStorageHints = {
   oss: {
     region: '例如 ap-southeast-1',
-    endpoint: '请填写与桶所在地域匹配的 OSS S3 兼容端点。',
+    endpoint:
+      '请填写桶所在地域的 S3 兼容端点。中国大陆地域的部分账号需使用已绑定到桶的 HTTPS 域名。',
     bucket: undefined,
   },
   cos: {
@@ -88,7 +89,8 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
   const [editing, setEditing] = useState<SystemIntegration | null>(null)
   const [testingAfterSave, setTestingAfterSave] = useState(false)
   const preset = Form.useWatch('preset', form) ?? 'minio'
-  const endpointRequired = preset !== 'aws'
+  const bucketEndpoint = Form.useWatch('bucketEndpoint', form) ?? false
+  const endpointRequired = preset !== 'aws' || bucketEndpoint
   const cloudHint = preset === 'oss' || preset === 'cos' ? cloudStorageHints[preset] : undefined
   const permissions = usePermissionSnapshot().data?.data
   const canView = hasPermission(permissions, 'settings.system-integrations.view')
@@ -526,7 +528,10 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
                 disabled={operationBlocked || Boolean(editing)}
                 options={presetOptions}
                 onChange={(value: S3StoragePreset) => {
-                  form.setFieldValue('pathStyle', !['aws', 'oss', 'cos'].includes(value))
+                  form.setFieldsValue({
+                    pathStyle: !['aws', 'oss', 'cos'].includes(value),
+                    bucketEndpoint: false,
+                  })
                   if (
                     (value === 'oss' || value === 'cos') &&
                     form.getFieldValue('region') === 'us-east-1'
@@ -552,7 +557,7 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
               label={
                 <Space size={4}>
                   Endpoint
-                  <Tooltip title="云厂商填写对应地域的 S3 兼容 Endpoint；Amazon S3 可留空。">
+                  <Tooltip title="填写与 Region 匹配的 S3 兼容端点。使用已绑定到桶的自定义域名时，填写该 HTTPS 地址并开启桶专属域名。Amazon S3 可留空。">
                     <QuestionCircleOutlined aria-label="Endpoint 配置说明" tabIndex={0} />
                   </Tooltip>
                 </Space>
@@ -572,7 +577,9 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
             >
               <Input
                 disabled={operationBlocked || Boolean(editing)}
-                placeholder={endpointPlaceholders[preset]}
+                placeholder={
+                  bucketEndpoint ? 'https://objects.example.com' : endpointPlaceholders[preset]
+                }
               />
             </Form.Item>
             <Form.Item
@@ -596,10 +603,18 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
           </Text>
           <div className="soha-software-switch-grid">
             <Form.Item name="pathStyle" label="Path-style" valuePropName="checked">
-              <Switch disabled={operationBlocked || Boolean(editing)} />
+              <Switch disabled={operationBlocked || Boolean(editing) || bucketEndpoint} />
+            </Form.Item>
+            <Form.Item name="bucketEndpoint" label="桶专属 HTTPS 域名" valuePropName="checked">
+              <Switch
+                disabled={operationBlocked || Boolean(editing)}
+                onChange={(checked) => {
+                  if (checked) form.setFieldsValue({ pathStyle: false, insecure: false })
+                }}
+              />
             </Form.Item>
             <Form.Item name="insecure" label="允许 HTTP（仅内网开发）" valuePropName="checked">
-              <Switch disabled={operationBlocked || Boolean(editing)} />
+              <Switch disabled={operationBlocked || Boolean(editing) || bucketEndpoint} />
             </Form.Item>
             <Form.Item name="allowPrivate" label="允许私网 Endpoint" valuePropName="checked">
               <Switch disabled={operationBlocked || Boolean(editing)} />

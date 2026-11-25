@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -260,6 +260,28 @@ func TestCreateS3StorageIntegrationValidatesAndEncryptsCredentials(t *testing.T)
 	request.Configuration[0].Value = "https://127.0.0.1"
 	if _, err := service.Create(t.Context(), adminPrincipal(), request); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("private endpoint without allow_private error = %v", err)
+	}
+}
+
+func TestS3StorageBucketEndpointConfiguration(t *testing.T) {
+	fields := []sohaapi.SystemIntegrationConfigurationField{
+		{Key: "endpoint", Value: "https://objects.example.test"},
+		{Key: "bucket", Value: "hosted-apps"},
+		{Key: "region", Value: "cn-hangzhou"},
+		{Key: "bucket_endpoint", Value: "true"},
+		{Key: "path_style", Value: "false"},
+	}
+	if err := validateS3StorageConfiguration(false, fields, nil); err != nil {
+		t.Fatalf("valid bucket endpoint rejected: %v", err)
+	}
+	fields[4].Value = "true"
+	if err := validateS3StorageConfiguration(false, fields, nil); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("path-style bucket endpoint error = %v", err)
+	}
+	fields[4].Value = "false"
+	fields[0].Value = "https://objects.example.test/path"
+	if err := validateS3StorageConfiguration(false, fields, nil); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("bucket endpoint with path error = %v", err)
 	}
 }
 
