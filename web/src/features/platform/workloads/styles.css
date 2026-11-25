@@ -131,7 +131,7 @@
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
-  background: var(--soha-bg-surface) !important;
+  background: color-mix(in srgb, var(--soha-primary) 3.5%, var(--soha-bg-surface)) !important;
 }
 
 .soha-pods-table .ant-table-cell-fix-start::after,

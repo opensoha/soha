@@ -19,7 +19,7 @@ import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { DatePicker, Select } from 'antd'
@@ -241,7 +241,7 @@ export function IdentityLoginRecordsPage() {
           <ManagementTableToolbar>
             <ManagementIconButton
               aria-label={t('identity.loginRecords.scopeHelp')}
-              icon={<InfoCircleOutlined />}
+              icon={<QuestionCircleOutlined />}
               tooltip={t('identity.loginRecords.scope')}
             />
             <ManagementDensityButton

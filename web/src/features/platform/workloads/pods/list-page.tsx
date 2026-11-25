@@ -502,7 +502,10 @@ export function WorkloadsPodsPage() {
           if (canOpenLogs) {
             items.push({
               key: 'logs',
-              label: actionLabel(logLabel, podLogsCapability.reason),
+              label:
+                logsDisabled || podLogsCapability.status === 'partial'
+                  ? actionLabel(logLabel, podLogsCapability.reason)
+                  : logLabel,
               icon: <FileTextOutlined aria-hidden />,
               disabled: logsDisabled,
             })
@@ -522,7 +525,9 @@ export function WorkloadsPodsPage() {
           if (canOpenTerminal) {
             items.push({
               key: 'terminal',
-              label: actionLabel(terminalLabel, podExecCapability.reason),
+              label: terminalDisabled
+                ? actionLabel(terminalLabel, podExecCapability.reason)
+                : terminalLabel,
               icon: <CodeOutlined aria-hidden />,
               disabled: terminalDisabled,
             })
@@ -542,7 +547,10 @@ export function WorkloadsPodsPage() {
             if (items.length) items.push({ type: 'divider', key: 'mutation-divider' })
             items.push({
               key: 'delete',
-              label: actionLabel(deleteLabel, podDeleteCapability.reason),
+              label:
+                platformWriteBlocked || rowDeleteUnavailable
+                  ? actionLabel(deleteLabel, podDeleteCapability.reason)
+                  : deleteLabel,
               danger: true,
               disabled: platformWriteBlocked || rowDeleteUnavailable,
               icon: deletePodMutation.isPending ? (

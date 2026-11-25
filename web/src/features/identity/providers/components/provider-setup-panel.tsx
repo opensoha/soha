@@ -5,7 +5,7 @@ import { StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { isApiError } from '@/services/api-error'
 import { readableQueryData } from '@/utils/query-feedback'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Descriptions, Space, Typography } from 'antd'
 import { identityProviderQueries } from '../queries'
@@ -69,7 +69,7 @@ export function ProviderSetupPanel({ provider }: { provider: IdentityProvider })
           <ManagementIconButton
             aria-label={t('identity.providers.setup.statusHelp')}
             tooltip={t('identity.providers.setup.statusHint')}
-            icon={<InfoCircleOutlined />}
+            icon={<QuestionCircleOutlined />}
           />
           <Button
             disabled={query.isEnabled === false}

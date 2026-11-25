@@ -12,11 +12,13 @@
 }
 
 [data-workbench='platform'] .soha-management-query-card.ant-card {
-  border-width: 0;
+  border: 1px solid var(--soha-hairline-strong) !important;
+  border-radius: 22px !important;
+  background: var(--soha-glass-bg) !important;
 }
 
 [data-workbench='platform'] .soha-management-query-card .ant-card-body {
-  padding: 8px 17px;
+  padding: 10px 16px !important;
 }
 
 [data-workbench='platform']
@@ -214,7 +216,7 @@
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
-  background: var(--soha-bg-surface-muted) !important;
+  background: var(--soha-capsule-head-bg, var(--soha-bg-surface-muted)) !important;
 }
 
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
@@ -225,7 +227,7 @@
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
-  background: var(--soha-bg-surface) !important;
+  background: color-mix(in srgb, var(--soha-primary) 3.5%, var(--soha-bg-surface)) !important;
 }
 
 .soha-platform-table .ant-table-cell-fix-start::after,
