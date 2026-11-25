@@ -572,28 +572,9 @@ function WorkbenchSwitcher({
 }
 
 function ApplicationHeaderFrame({ brand, children }: { brand?: ReactNode; children: ReactNode }) {
-  const topbarRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const topbar = topbarRef.current
-    const container = topbar?.parentElement
-    if (!topbar || !container) return
-    const updateHeight = () => {
-      const height = `${topbar.getBoundingClientRect().height}px`
-      if (container.style.getPropertyValue('--soha-application-header-height') !== height) {
-        container.style.setProperty('--soha-application-header-height', height)
-      }
-    }
-    updateHeight()
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(topbar)
-    return () => {
-      observer.disconnect()
-      container.style.removeProperty('--soha-application-header-height')
-    }
-  }, [brand != null])
   if (!brand) return children
   return (
-    <div className="soha-application-topbar" ref={topbarRef}>
+    <div className="soha-application-topbar">
       <div className="soha-sider-topbar soha-application-brand">{brand}</div>
       {children}
     </div>
