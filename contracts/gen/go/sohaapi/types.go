@@ -56182,6 +56182,15 @@ const External WorkbenchAgentRunExecutionOwner = "external"
 const Native WorkbenchAgentRunExecutionOwner = "native"
 
 // Retained for Go SDK source compatibility.
+const ExecuteKubernetesWorkloadActionConditionalParamsKindDaemonSet ExecuteKubernetesWorkloadActionConditionalParamsKind = "DaemonSet"
+
+// Retained for Go SDK source compatibility.
+const ExecuteKubernetesWorkloadActionConditionalParamsKindDeployment ExecuteKubernetesWorkloadActionConditionalParamsKind = "Deployment"
+
+// Retained for Go SDK source compatibility.
+const ExecuteKubernetesWorkloadActionConditionalParamsKindStatefulSet ExecuteKubernetesWorkloadActionConditionalParamsKind = "StatefulSet"
+
+// Retained for Go SDK source compatibility.
 const Restart ExecuteKubernetesWorkloadActionConditionalParamsAction = "restart"
 
 // Retained for Go SDK source compatibility.

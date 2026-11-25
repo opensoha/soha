@@ -212,7 +212,10 @@ function buildWorkloadActionColumn({
           : []),
         {
           key: entry.key,
-          label: actionLabel(entry.label, entry.capability.reason),
+          label:
+            blocked || entry.capability.disabled
+              ? actionLabel(entry.label, entry.capability.reason)
+              : entry.label,
           icon: entry.icon,
           danger: entry.key === 'delete',
           disabled: blocked || entry.capability.disabled,
@@ -870,10 +873,13 @@ export function WorkloadsDeploymentsPage() {
           items={batchActions.map((action) => ({
             key: action.key,
             icon: action.icon,
-            label: actionLabel(
-              action.label,
-              action.allowed ? workloadMutationCapability.reason : batchMutationDisabledReason,
-            ),
+            label:
+              platformWriteBlocked || !action.allowed
+                ? actionLabel(
+                    action.label,
+                    action.allowed ? workloadMutationCapability.reason : batchMutationDisabledReason,
+                  )
+                : action.label,
             disabled: platformWriteBlocked || !action.allowed,
           }))}
           onSelect={(key) => {

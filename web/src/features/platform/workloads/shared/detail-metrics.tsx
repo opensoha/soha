@@ -4,7 +4,7 @@ import { formatWorkloadMetricValue } from './workload-metrics-format'
 import { useI18n } from '@/i18n'
 import { parseCpuValue, parseMemoryValue } from '@/features/platform/workloads-model'
 import type { MetricSeries, ResourceMetrics, ResourceQuantity } from '@/types'
-import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { LineChart } from '@visactor/react-vchart'
 import { Button, Card, Segmented, theme, Tooltip, Typography } from 'antd'
 
@@ -240,7 +240,7 @@ export function WorkloadDetailMetrics({
                   ) : help ? (
                     <Tooltip title={help}>
                       <span tabIndex={0} aria-label={help}>
-                        <InfoCircleOutlined />
+                        <QuestionCircleOutlined />
                       </span>
                     </Tooltip>
                   ) : undefined

@@ -4,7 +4,9 @@
   word-break: normal;
 }
 .soha-cluster-nodes-page .soha-node-name {
-  display: block;
+  display: inline-block;
+  max-inline-size: 100%;
+  vertical-align: middle;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

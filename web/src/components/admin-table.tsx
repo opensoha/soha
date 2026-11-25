@@ -1111,6 +1111,7 @@ export function AdminTable({
     'soha-admin-table-shell',
     shellClassName,
     hasHeader || hasToolbar ? 'is-panel' : '',
+    virtual ? 'is-virtual' : '',
     viewportScroll ? 'is-viewport-scroll' : '',
   ]
     .filter(Boolean)

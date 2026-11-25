@@ -1,8 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { BusinessWorkspaceType } from '@/types'
-import type { AppThemeId, ThemeMode } from '@/theme/app-theme'
-import { DEFAULT_APP_THEME_ID, DEFAULT_THEME_MODE } from '@/theme/app-theme'
+import type { AppThemeId, LightCanvasPreset, ThemeMode } from '@/theme/app-theme'
+import {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_APP_THEME_ID,
+  DEFAULT_DARK_CANVAS_COLOR,
+  DEFAULT_LIGHT_CANVAS_COLOR,
+  DEFAULT_THEME_MODE,
+} from '@/theme/app-theme'
 
 export interface ApplicationListFilters {
   group?: string
@@ -18,6 +24,11 @@ interface PreferencesState {
   currentWorkspace: BusinessWorkspaceType | null
   themeId: AppThemeId
   themeMode: ThemeMode
+  accentColor: string
+  lightCanvas: LightCanvasPreset
+  lightCanvasColor: string
+  darkCanvasColor: string
+  paperGrain: boolean
   localeCode: 'zh_CN' | 'en_US'
   companionMode: 'companion' | 'icon'
   companionBubbleEnabled: boolean
@@ -30,6 +41,12 @@ interface PreferencesState {
   setCurrentWorkspace: (workspace: BusinessWorkspaceType | null) => void
   setThemeId: (themeId: AppThemeId) => void
   setThemeMode: (themeMode: ThemeMode) => void
+  setAccentColor: (accentColor: string) => void
+  setLightCanvas: (lightCanvas: LightCanvasPreset) => void
+  setLightCanvasColor: (color: string) => void
+  setDarkCanvasColor: (color: string) => void
+  setPaperGrain: (enabled: boolean) => void
+  resetAppearanceDefaults: () => void
   setLocaleCode: (localeCode: 'zh_CN' | 'en_US') => void
   setCompanionMode: (mode: 'companion' | 'icon') => void
   setCompanionBubbleEnabled: (enabled: boolean) => void
@@ -43,6 +60,11 @@ export const usePreferencesStore = create<PreferencesState>()(
       currentWorkspace: null,
       themeId: DEFAULT_APP_THEME_ID,
       themeMode: DEFAULT_THEME_MODE,
+      accentColor: DEFAULT_ACCENT_COLOR,
+      lightCanvas: 'apple',
+      lightCanvasColor: DEFAULT_LIGHT_CANVAS_COLOR,
+      darkCanvasColor: DEFAULT_DARK_CANVAS_COLOR,
+      paperGrain: true,
       localeCode: 'zh_CN',
       companionMode: 'companion',
       companionBubbleEnabled: true,
@@ -90,6 +112,19 @@ export const usePreferencesStore = create<PreferencesState>()(
       setCurrentWorkspace: (currentWorkspace) => set({ currentWorkspace }),
       setThemeId: (themeId) => set({ themeId }),
       setThemeMode: (themeMode) => set({ themeMode }),
+      setAccentColor: (accentColor) => set({ accentColor }),
+      setLightCanvas: (lightCanvas) => set({ lightCanvas }),
+      setLightCanvasColor: (lightCanvasColor) => set({ lightCanvasColor }),
+      setDarkCanvasColor: (darkCanvasColor) => set({ darkCanvasColor }),
+      setPaperGrain: (paperGrain) => set({ paperGrain }),
+      resetAppearanceDefaults: () =>
+        set({
+          accentColor: DEFAULT_ACCENT_COLOR,
+          lightCanvas: 'apple',
+          lightCanvasColor: DEFAULT_LIGHT_CANVAS_COLOR,
+          darkCanvasColor: DEFAULT_DARK_CANVAS_COLOR,
+          paperGrain: true,
+        }),
       setLocaleCode: (localeCode) => set({ localeCode }),
       setCompanionMode: (companionMode) => set({ companionMode }),
       setCompanionBubbleEnabled: (companionBubbleEnabled) => set({ companionBubbleEnabled }),

@@ -18,8 +18,8 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import {
   CloudDownloadOutlined,
-  InfoCircleOutlined,
   LinkOutlined,
+  QuestionCircleOutlined,
   RocketOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -391,7 +391,7 @@ export function HelmChartsPage() {
             >
               <Button
                 type="text"
-                icon={<InfoCircleOutlined />}
+                icon={<QuestionCircleOutlined />}
                 aria-label={
                   localeCode === 'zh_CN' ? 'Chart 目录来源与范围' : 'Chart catalog source and scope'
                 }

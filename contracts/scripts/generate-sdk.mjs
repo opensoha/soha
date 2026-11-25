@@ -267,6 +267,7 @@ const (
     ["WorkbenchAgentStatusEventStatus", [["Cancelled", "cancelled"], ["Failed", "failed"], ["Queued", "queued"], ["Running", "running"], ["Succeeded", "succeeded"]]],
     ["SearchWorkbenchMessagesParamsWorkspace", [["Chat", "chat"], ["Heya", "heya"]]],
     ["WorkbenchAgentRunExecutionOwner", [["External", "external"], ["Native", "native"]]],
+    ["ExecuteKubernetesWorkloadActionConditionalParamsKind", [["DaemonSet", "DaemonSet"], ["Deployment", "Deployment"], ["StatefulSet", "StatefulSet"]]],
     ["ExecuteKubernetesWorkloadActionConditionalParamsAction", [["Restart", "restart"], ["Rollback", "rollback"], ["Scale", "scale"]]],
   ]) {
     for (const [suffix, value] of values) {

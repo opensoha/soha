@@ -301,9 +301,16 @@ function LoginBrandStory({ brandName, slogan }: { brandName: string; slogan?: st
   return (
     <section className="soha-auth-flow" aria-label={`${brandName} 品牌介绍`}>
       <div className="soha-auth-flow-copy">
+        <div className="soha-auth-eyebrow">
+          <span className="soha-auth-eyebrow__dot" aria-hidden="true" />
+          <span>ATELIER EDITION · UNIFIED CONTROL PLANE</span>
+        </div>
         <Title level={1} className="soha-auth-flow-title">
           {brandName}
         </Title>
+        <p className="soha-auth-flow-kicker" aria-hidden="true">
+          Calm, tactile orchestration for modern infrastructure.
+        </p>
         <p className="soha-auth-flow-subtitle">{slogan}</p>
       </div>
 

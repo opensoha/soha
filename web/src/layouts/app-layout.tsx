@@ -1,16 +1,32 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
-import { Avatar, Breadcrumb, Button, Dropdown, Layout, Menu, Spin } from 'antd'
+import {
+  Avatar,
+  Breadcrumb,
+  Button,
+  Dropdown,
+  Layout,
+  Menu,
+  Modal,
+  Popover,
+  Segmented,
+  Spin,
+  Switch,
+} from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type { MenuProps } from 'antd'
 import {
+  BgColorsOutlined,
+  CheckOutlined,
   DownOutlined,
   FileAddOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
+  SearchOutlined,
   SunOutlined,
   TranslationOutlined,
   LogoutOutlined,
@@ -61,12 +77,22 @@ import {
 import { getNormalizedBranding, useBrandingSettings } from '@/features/settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
-import { resolveThemeMode, watchSystemThemeMode } from '@/theme/app-theme'
+import {
+  ACCENT_PRESETS,
+  DARK_CANVAS_PRESETS,
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_DARK_CANVAS_COLOR,
+  DEFAULT_LIGHT_CANVAS_COLOR,
+  LIGHT_CANVAS_PRESETS,
+  resolveThemeMode,
+  watchSystemThemeMode,
+  type ThemeMode,
+} from '@/theme/app-theme'
 import { resolveBrandingLogos } from '@/utils/branding'
 import type { BusinessWorkspaceType, RuntimeMenuNode } from '@/types'
 
 const { Sider, Header, Content } = Layout
-const SIDEBAR_WIDTH = 200
+const SIDEBAR_WIDTH = 212
 const SIDEBAR_COLLAPSED_WIDTH = 55
 const ApplicationNavigation = lazy(async () => {
   const module = await import('@/features/delivery/navigation')
@@ -580,6 +606,160 @@ async function validateSessionReference(session: RealtimeSession, localeCode: st
   await validateDeliverySessionReference(session, localeCode)
 }
 
+interface CommandEntry {
+  group: string
+  icon: ReactNode
+  id: string
+  label: string
+  meta?: string
+  onRun: () => void
+}
+
+function CommandPaletteModal({
+  entries,
+  localeCode,
+  onClose,
+  open,
+}: {
+  entries: CommandEntry[]
+  localeCode: 'zh_CN' | 'en_US'
+  onClose: () => void
+  open: boolean
+}) {
+  const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setQuery('')
+    setActiveIndex(0)
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 20)
+    return () => window.clearTimeout(timer)
+  }, [open])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return entries
+    return entries.filter(
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        (item.meta && item.meta.toLowerCase().includes(q)) ||
+        item.group.toLowerCase().includes(q),
+    )
+  }, [entries, query])
+
+  const groups = useMemo(() => {
+    const map = new Map<string, CommandEntry[]>()
+    filtered.forEach((item) => {
+      const list = map.get(item.group) ?? []
+      list.push(item)
+      map.set(item.group, list)
+    })
+    return Array.from(map.entries())
+  }, [filtered])
+
+  const safeIndex = Math.min(activeIndex, Math.max(0, filtered.length - 1))
+
+  return (
+    <Modal
+      className="soha-cmdk-modal"
+      closable={false}
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
+      open={open}
+      style={{ top: 76 }}
+      width={560}
+    >
+      <div className="soha-cmdk-surface">
+        <div className="soha-cmdk-input-row">
+          <span className="soha-cmdk-input-icon">
+            <SearchOutlined />
+          </span>
+          <input
+            ref={inputRef}
+            aria-label={localeCode === 'zh_CN' ? '搜索页面或操作' : 'Search pages or commands'}
+            className="soha-cmdk-input"
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setActiveIndex(0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setActiveIndex((current) =>
+                  filtered.length === 0 ? 0 : (current + 1) % filtered.length,
+                )
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActiveIndex((current) =>
+                  filtered.length === 0 ? 0 : (current - 1 + filtered.length) % filtered.length,
+                )
+              } else if (event.key === 'Enter' && filtered[safeIndex]) {
+                event.preventDefault()
+                filtered[safeIndex].onRun()
+                onClose()
+              }
+            }}
+            placeholder={
+              localeCode === 'zh_CN'
+                ? '跳转工作台、资源页面或切换主题...'
+                : 'Jump to workbench, resource page, or toggle theme...'
+            }
+            value={query}
+          />
+          <span className="soha-cmdk-kbd">ESC</span>
+        </div>
+
+        <div className="soha-cmdk-list">
+          {filtered.length === 0 ? (
+            <div className="soha-cmdk-empty">
+              {localeCode === 'zh_CN' ? '未找到匹配的导航或命令' : 'No matching commands found'}
+            </div>
+          ) : (
+            groups.map(([group, items]) => (
+              <div key={group}>
+                <div className="soha-cmdk-group-title">{group}</div>
+                {items.map((item) => {
+                  const index = filtered.indexOf(item)
+                  const active = index === safeIndex
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`soha-cmdk-item ${active ? 'is-active' : ''}`}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => {
+                        item.onRun()
+                        onClose()
+                      }}
+                    >
+                      <span className="soha-cmdk-item__main">
+                        <span className="soha-cmdk-item__icon">{item.icon}</span>
+                        <span>{item.label}</span>
+                      </span>
+                      {item.meta ? <span className="soha-cmdk-item__meta">{item.meta}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="soha-cmdk-footer">
+          <span>Soha Command Surface</span>
+          <span className="soha-cmdk-footer-hints">
+            <span>↑↓ {localeCode === 'zh_CN' ? '选择' : 'Navigate'}</span>
+            <span>↵ {localeCode === 'zh_CN' ? '跳转' : 'Open'}</span>
+          </span>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -591,6 +771,19 @@ export function AppLayout() {
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
   const themeMode = usePreferencesStore((state) => state.themeMode)
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const accentColor = usePreferencesStore((state) => state.accentColor ?? DEFAULT_ACCENT_COLOR)
+  const setAccentColor = usePreferencesStore((state) => state.setAccentColor)
+  const lightCanvasColor = usePreferencesStore(
+    (state) => state.lightCanvasColor ?? DEFAULT_LIGHT_CANVAS_COLOR,
+  )
+  const setLightCanvasColor = usePreferencesStore((state) => state.setLightCanvasColor)
+  const darkCanvasColor = usePreferencesStore(
+    (state) => state.darkCanvasColor ?? DEFAULT_DARK_CANVAS_COLOR,
+  )
+  const setDarkCanvasColor = usePreferencesStore((state) => state.setDarkCanvasColor)
+  const paperGrain = usePreferencesStore((state) => state.paperGrain ?? true)
+  const setPaperGrain = usePreferencesStore((state) => state.setPaperGrain)
+  const resetAppearanceDefaults = usePreferencesStore((state) => state.resetAppearanceDefaults)
   const preferredSidebarCollapsed = usePreferencesStore((state) => state.sidebarCollapsed)
   const setSidebarCollapsed = usePreferencesStore((state) => state.setSidebarCollapsed)
   // Narrow-screen navigation is temporary; keep the user's desktop preference.
@@ -1054,6 +1247,113 @@ export function AppLayout() {
     'ai',
     GLOBAL_ASSISTANT_FEATURE,
   )
+  const [commandOpen, setCommandOpen] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandOpen((current) => !current)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const commandEntries = useMemo<CommandEntry[]>(() => {
+    const entries: CommandEntry[] = []
+    const navGroup = localeCode === 'zh_CN' ? '当前导航' : 'Current Navigation'
+    const visitNav = (nodes: RuntimeMenuNode[], prefix = '') => {
+      nodes.forEach((node) => {
+        const label = resolveRuntimeMenuLabel(node, localeCode)
+        const fullLabel = prefix ? `${prefix} / ${label}` : label
+        if (!node.children?.length && node.route) {
+          const path = node.route.redirectTo ?? node.route.path
+          entries.push({
+            group: navGroup,
+            icon: resolveMenuIcon(node.iconKey) ?? <SearchOutlined />,
+            id: `nav-${node.id}`,
+            label: fullLabel,
+            meta: path,
+            onRun: () => navigate(path),
+          })
+        }
+        if (node.children?.length) {
+          visitNav(node.children, label)
+        }
+      })
+    }
+    visitNav(primaryNav)
+
+    const wbGroup = localeCode === 'zh_CN' ? '切换工作台' : 'Switch Workbench'
+    workbenchOptions.forEach((wb) => {
+      entries.push({
+        group: wbGroup,
+        icon: wb.icon,
+        id: `wb-${wb.key}`,
+        label: wb.label,
+        meta: wb.key,
+        onRun: () => {
+          if (wb.key === 'account') return
+          const targetPath = findFirstAccessiblePathForWorkbench(wb.key, snapshot)
+          if (targetPath) navigate(targetPath)
+        },
+      })
+    })
+
+    const prefGroup = localeCode === 'zh_CN' ? '界面偏好' : 'Preferences'
+    entries.push({
+      group: prefGroup,
+      icon: resolvedThemeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />,
+      id: 'pref-theme',
+      label:
+        resolvedThemeMode === 'dark'
+          ? localeCode === 'zh_CN'
+            ? '切换至暖白纸感模式'
+            : 'Switch to Warm Cream Mode'
+          : localeCode === 'zh_CN'
+            ? '切换至苔林夜色模式'
+            : 'Switch to Moss Nocturne Mode',
+      meta: resolvedThemeMode === 'dark' ? 'Light' : 'Dark',
+      onRun: () => setThemeMode(resolvedThemeMode === 'dark' ? 'light' : 'dark'),
+    })
+    entries.push({
+      group: prefGroup,
+      icon: <TranslationOutlined />,
+      id: 'pref-locale',
+      label: localeCode === 'zh_CN' ? '切换语言为 English' : 'Switch language to 中文',
+      meta: localeCode === 'zh_CN' ? 'EN' : 'ZH',
+      onRun: () => setLocaleCode(localeCode === 'zh_CN' ? 'en_US' : 'zh_CN'),
+    })
+    return entries
+  }, [
+    localeCode,
+    navigate,
+    primaryNav,
+    resolvedThemeMode,
+    setLocaleCode,
+    setThemeMode,
+    snapshot,
+    workbenchOptions,
+  ])
+
+  const quickJumpTrigger = (
+    <button
+      type="button"
+      className="soha-cmdk-trigger"
+      aria-label={localeCode === 'zh_CN' ? '快速跳转与命令面板' : 'Quick jump and command palette'}
+      title={localeCode === 'zh_CN' ? '快速跳转 (⌘K)' : 'Quick jump (⌘K)'}
+      onClick={() => setCommandOpen(true)}
+    >
+      <span className="soha-cmdk-trigger__left">
+        <SearchOutlined />
+        <span className="soha-cmdk-trigger__text">
+          {localeCode === 'zh_CN' ? '搜索与跳转...' : 'Quick jump...'}
+        </span>
+      </span>
+      <span className="soha-cmdk-kbd">⌘K</span>
+    </button>
+  )
 
   function closeResourceCreate() {
     setResourceCreateOpenedByAction(false)
@@ -1119,7 +1419,17 @@ export function AppLayout() {
                         alt={branding.sidebarTitle}
                       />
                     ) : (
-                      <div className="soha-brand-mark">SOHA</div>
+                      <div className="soha-brand-lockup">
+                        <div className="soha-brand-mark">S</div>
+                        {!sidebarCollapsed && (
+                          <div className="soha-brand-wordmark">
+                            <span className="soha-brand-wordmark__title">
+                              {branding.sidebarTitle || 'Soha'}
+                            </span>
+                            <span className="soha-brand-wordmark__edition">Atelier</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </button>
                 </div>
@@ -1149,6 +1459,7 @@ export function AppLayout() {
                           if (targetPath) navigate(targetPath)
                         }}
                       />
+                      {quickJumpTrigger}
                     </div>
                     <div className="soha-nav-business">
                       <Menu
@@ -1189,6 +1500,7 @@ export function AppLayout() {
                             navigate(targetPath)
                           }}
                         />
+                        {quickJumpTrigger}
                       </div>
                     ) : null}
                     <div className="soha-nav-business">
@@ -1197,8 +1509,9 @@ export function AppLayout() {
                         mode="inline"
                         items={primaryMenuItems}
                         selectedKeys={primarySelectedKeys}
-                        openKeys={sidebarCollapsed ? [] : primaryOpenKeys}
+                        openKeys={sidebarCollapsed ? undefined : primaryOpenKeys}
                         onOpenChange={(keys) => {
+                          if (sidebarCollapsed) return
                           if (isSystemWorkspaceRoute) {
                             setSystemOpenKeys(keys as string[])
                             return
@@ -1240,7 +1553,17 @@ export function AppLayout() {
                         alt={branding.sidebarTitle}
                       />
                     ) : (
-                      <div className="soha-brand-mark">SOHA</div>
+                      <div className="soha-brand-lockup">
+                        <div className="soha-brand-mark">S</div>
+                        {!sidebarCollapsed && (
+                          <div className="soha-brand-wordmark">
+                            <span className="soha-brand-wordmark__title">
+                              {branding.sidebarTitle || 'Soha'}
+                            </span>
+                            <span className="soha-brand-wordmark__edition">Atelier</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </button>
                 ) : undefined
@@ -1324,6 +1647,251 @@ export function AppLayout() {
                         label={languageSwitchLabel}
                         onClick={() => setLocaleCode(localeCode === 'zh_CN' ? 'en_US' : 'zh_CN')}
                       />
+                      <Popover
+                        placement="bottomRight"
+                        trigger="click"
+                        classNames={{ container: 'soha-palette-popover-body' }}
+                        content={
+                          <div className="soha-palette-panel">
+                            <div className="soha-palette-header">
+                              <div className="soha-palette-header__copy">
+                                <span className="soha-palette-header__title">
+                                  {localeCode === 'zh_CN' ? '外观与主题调色板' : 'Appearance Palette'}
+                                </span>
+                                <span className="soha-palette-header__sub">
+                                  {localeCode === 'zh_CN'
+                                    ? '实时定制品牌主色与深浅画布色温'
+                                    : 'Live brand accent & canvas tone'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="soha-palette-reset-btn"
+                                onClick={() => resetAppearanceDefaults()}
+                                title={
+                                  localeCode === 'zh_CN' ? '恢复官方默认外观' : 'Reset defaults'
+                                }
+                              >
+                                <ReloadOutlined />
+                                <span>{localeCode === 'zh_CN' ? '默认' : 'Reset'}</span>
+                              </button>
+                            </div>
+
+                            <div className="soha-palette-section">
+                              <div className="soha-palette-section__head">
+                                <span className="soha-palette-section__title">
+                                  {localeCode === 'zh_CN' ? '外观模式' : 'Mode'}
+                                </span>
+                              </div>
+                              <Segmented<ThemeMode>
+                                block
+                                size="small"
+                                className="soha-palette-segmented"
+                                value={themeMode}
+                                onChange={(mode) => setThemeMode(mode)}
+                                options={[
+                                  {
+                                    label: localeCode === 'zh_CN' ? '浅色' : 'Light',
+                                    value: 'light',
+                                  },
+                                  {
+                                    label: localeCode === 'zh_CN' ? '深色' : 'Dark',
+                                    value: 'dark',
+                                  },
+                                  {
+                                    label: localeCode === 'zh_CN' ? '跟随系统' : 'System',
+                                    value: 'system',
+                                  },
+                                ]}
+                              />
+                            </div>
+
+                            <div className="soha-palette-section is-divider">
+                              <div className="soha-palette-section__head">
+                                <span className="soha-palette-section__title">
+                                  {localeCode === 'zh_CN' ? '主品牌强调色' : 'Brand Accent'}
+                                </span>
+                                <span className="soha-palette-section__hex">{accentColor}</span>
+                              </div>
+                              <div className="soha-palette-swatches">
+                                {ACCENT_PRESETS.map((preset) => {
+                                  const selected =
+                                    accentColor.toLowerCase() === preset.lightHex.toLowerCase()
+                                  return (
+                                    <button
+                                      key={preset.id}
+                                      type="button"
+                                      className={`soha-palette-swatch-row ${
+                                        selected ? 'is-selected' : ''
+                                      }`}
+                                      onClick={() => setAccentColor(preset.lightHex)}
+                                    >
+                                      <span
+                                        className="soha-palette-swatch-dot"
+                                        style={{
+                                          backgroundColor:
+                                            resolvedThemeMode === 'dark'
+                                              ? preset.darkHex
+                                              : preset.lightHex,
+                                        }}
+                                      >
+                                        {selected ? <CheckOutlined /> : null}
+                                      </span>
+                                      <span className="soha-palette-swatch-copy">
+                                        <span className="soha-palette-swatch-name">
+                                          {localeCode === 'zh_CN' ? preset.labelZh : preset.labelEn}
+                                        </span>
+                                        <span className="soha-palette-swatch-desc">
+                                          {preset.descZh}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              <label className="soha-palette-custom-row">
+                                <span>
+                                  {localeCode === 'zh_CN'
+                                    ? '自定义强调色调色盘'
+                                    : 'Custom Accent Picker'}
+                                </span>
+                                <span className="soha-palette-custom-row__right">
+                                  <span className="soha-palette-section__hex">{accentColor}</span>
+                                  <input
+                                    type="color"
+                                    aria-label={
+                                      localeCode === 'zh_CN' ? '自定义主色调' : 'Custom accent color'
+                                    }
+                                    className="soha-palette-color-input"
+                                    value={accentColor}
+                                    onChange={(event) => setAccentColor(event.target.value)}
+                                  />
+                                </span>
+                              </label>
+                            </div>
+
+                            <div className="soha-palette-section is-divider">
+                              <div className="soha-palette-section__head">
+                                <span className="soha-palette-section__title">
+                                  {resolvedThemeMode === 'dark'
+                                    ? localeCode === 'zh_CN'
+                                      ? '深色画布色温'
+                                      : 'Dark Canvas Tone'
+                                    : localeCode === 'zh_CN'
+                                      ? '浅色画布色温'
+                                      : 'Light Canvas Tone'}
+                                </span>
+                                <span className="soha-palette-section__hex">
+                                  {resolvedThemeMode === 'dark'
+                                    ? darkCanvasColor
+                                    : lightCanvasColor}
+                                </span>
+                              </div>
+                              <div className="soha-palette-canvas-pills">
+                                {(resolvedThemeMode === 'dark'
+                                  ? DARK_CANVAS_PRESETS
+                                  : LIGHT_CANVAS_PRESETS
+                                ).map((item) => {
+                                  const activeHex =
+                                    resolvedThemeMode === 'dark'
+                                      ? darkCanvasColor
+                                      : lightCanvasColor
+                                  const selected =
+                                    activeHex.toLowerCase() === item.hex.toLowerCase()
+                                  return (
+                                    <button
+                                      key={item.id}
+                                      type="button"
+                                      className={`soha-palette-canvas-pill ${
+                                        selected ? 'is-selected' : ''
+                                      }`}
+                                      onClick={() =>
+                                        resolvedThemeMode === 'dark'
+                                          ? setDarkCanvasColor(item.hex)
+                                          : setLightCanvasColor(item.hex)
+                                      }
+                                    >
+                                      <span
+                                        className="soha-palette-canvas-pill__chip"
+                                        style={{ backgroundColor: item.hex }}
+                                      />
+                                      <span className="soha-palette-canvas-pill__name">
+                                        {localeCode === 'zh_CN' ? item.labelZh : item.labelEn}
+                                      </span>
+                                      <span className="soha-palette-canvas-pill__hex">
+                                        {item.hex}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              <label className="soha-palette-custom-row">
+                                <span>
+                                  {resolvedThemeMode === 'dark'
+                                    ? localeCode === 'zh_CN'
+                                      ? '深色画布自由调色盘'
+                                      : 'Custom Dark Canvas'
+                                    : localeCode === 'zh_CN'
+                                      ? '浅色画布自由调色盘'
+                                      : 'Custom Light Canvas'}
+                                </span>
+                                <span className="soha-palette-custom-row__right">
+                                  <span className="soha-palette-section__hex">
+                                    {resolvedThemeMode === 'dark'
+                                      ? darkCanvasColor
+                                      : lightCanvasColor}
+                                  </span>
+                                  <input
+                                    type="color"
+                                    aria-label={
+                                      resolvedThemeMode === 'dark'
+                                        ? localeCode === 'zh_CN'
+                                          ? '自定义深色画布背景色'
+                                          : 'Custom dark canvas color'
+                                        : localeCode === 'zh_CN'
+                                          ? '自定义浅色画布背景色'
+                                          : 'Custom light canvas color'
+                                    }
+                                    className="soha-palette-color-input"
+                                    value={
+                                      resolvedThemeMode === 'dark'
+                                        ? darkCanvasColor
+                                        : lightCanvasColor
+                                    }
+                                    onChange={(event) =>
+                                      resolvedThemeMode === 'dark'
+                                        ? setDarkCanvasColor(event.target.value)
+                                        : setLightCanvasColor(event.target.value)
+                                    }
+                                  />
+                                </span>
+                              </label>
+                            </div>
+
+                            <div className="soha-palette-section is-divider">
+                              <div className="soha-palette-toggle-row">
+                                <span className="soha-palette-toggle-row__label">
+                                  {localeCode === 'zh_CN'
+                                    ? '纸张微噪点肌理'
+                                    : 'Tactile Paper Grain'}
+                                </span>
+                                <Switch
+                                  size="small"
+                                  checked={paperGrain}
+                                  onChange={(checked) => setPaperGrain(checked)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <HeaderActionButton
+                          ariaLabel={localeCode === 'zh_CN' ? '主题调色板' : 'Theme palette'}
+                          title={localeCode === 'zh_CN' ? '主题调色板' : 'Theme palette'}
+                          className="soha-header-palette-trigger"
+                          icon={<BgColorsOutlined />}
+                        />
+                      </Popover>
                       <HeaderActionButton
                         ariaLabel={themeSwitchTitle}
                         title={themeSwitchTitle}
@@ -1420,6 +1988,12 @@ export function AppLayout() {
             <GlobalResourceCreateModal onClose={closeResourceCreate} open />
           </Suspense>
         ) : null}
+        <CommandPaletteModal
+          entries={commandEntries}
+          localeCode={localeCode}
+          onClose={() => setCommandOpen(false)}
+          open={commandOpen}
+        />
       </RealtimeSessionDockProvider>
     </GlobalAIAssistantProvider>
   )

@@ -14,6 +14,7 @@ export type SummaryChartItem = {
 export type SummaryChartProps = {
   items: SummaryChartItem[]
   kind?: 'ring' | 'bars'
+  surface?: 'default' | 'hero'
   total?: number
 }
 
@@ -24,7 +25,12 @@ function subscribeMotion(onChange: () => void) {
   return () => media.removeEventListener('change', onChange)
 }
 
-export default function SummaryChart({ items, kind = 'ring', total }: SummaryChartProps) {
+export default function SummaryChart({
+  items,
+  kind = 'ring',
+  surface = 'default',
+  total,
+}: SummaryChartProps) {
   const { token } = theme.useToken()
   const { localeCode } = useI18n()
   const themeMode = usePreferencesStore((state) => state.themeMode)
@@ -33,13 +39,24 @@ export default function SummaryChart({ items, kind = 'ring', total }: SummaryCha
     () => window.matchMedia(motionQuery).matches,
     () => false,
   )
-  const colors = {
-    success: token.colorSuccess,
-    danger: token.colorError,
-    neutral: token.colorTextQuaternary,
-    active: token.colorPrimary,
-    violet: token.purple6,
-  }
+  const resolvedMode = resolveThemeMode(themeMode)
+  const isHero = surface === 'hero'
+  const chartSize = isHero ? 76 : OVERVIEW_COMPACT_CHART_SIZE
+  const colors = isHero
+    ? {
+        success: '#8be0b9',
+        danger: '#f59f7f',
+        neutral: 'rgba(247, 244, 238, 0.24)',
+        active: '#a7ebcb',
+        violet: '#d8efe3',
+      }
+    : {
+        success: resolvedMode === 'dark' ? '#5ec29e' : '#2b7a56',
+        danger: token.colorError,
+        neutral: token.colorFillSecondary,
+        active: resolvedMode === 'dark' ? '#5ec29e' : '#1f4735',
+        violet: resolvedMode === 'dark' ? '#b8b3a8' : '#4c5951',
+      }
   const complete =
     items.length > 0 &&
     items.every(({ value }) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
@@ -72,14 +89,17 @@ export default function SummaryChart({ items, kind = 'ring', total }: SummaryCha
       }
 
   return (
-    <div className={`soha-compute-summary-chart is-${kind}`} aria-hidden="true">
+    <div
+      className={`soha-compute-summary-chart is-${kind} ${isHero ? 'is-hero' : ''}`}
+      aria-hidden="true"
+    >
       {kind === 'ring' ? (
         <Pie
           data={data.filter(({ value }) => value > 0)}
           angleField="value"
           colorField="label"
-          height={OVERVIEW_COMPACT_CHART_SIZE}
-          innerRadius={0.8}
+          height={chartSize}
+          innerRadius={isHero ? 0.78 : 0.8}
           radius={0.96}
           padding={0}
           margin={0}
@@ -88,8 +108,11 @@ export default function SummaryChart({ items, kind = 'ring', total }: SummaryCha
           label={false}
           scale={scale}
           animate={animate}
-          theme={resolveThemeMode(themeMode)}
-          style={{ stroke: token.colorBgContainer, lineWidth: 1 }}
+          theme={isHero ? 'dark' : resolveThemeMode(themeMode)}
+          style={{
+            stroke: isHero ? 'rgba(23, 53, 40, 0.85)' : token.colorBgContainer,
+            lineWidth: isHero ? 1.5 : 1,
+          }}
           interaction={{ elementHighlight: true }}
           tooltip={{
             title: 'label',
@@ -108,7 +131,7 @@ export default function SummaryChart({ items, kind = 'ring', total }: SummaryCha
           xField="label"
           yField="value"
           colorField="label"
-          height={OVERVIEW_COMPACT_CHART_SIZE}
+          height={chartSize}
           paddingTop={12}
           paddingBottom={0}
           paddingLeft={0}

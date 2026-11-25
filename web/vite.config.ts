@@ -5,8 +5,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { gzipSync } from 'node:zlib'
 import { normalizePath } from 'vite'
 import type { GetManualChunk } from 'rollup'
+// @ts-expect-error local dev-only mock plugin
+import { createPilotMockPlugin } from './scripts/pilot-mock-plugin.mjs'
 
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8080'
+const usePilotMock = process.env.VITE_UI_PILOT_MOCK === '1'
 const base = process.env.VITE_BASE_PATH || '/'
 if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base)) {
   throw new Error(
@@ -95,6 +98,7 @@ export default defineConfig(() => ({
   base,
   plugins: [
     react(),
+    ...(usePilotMock ? [createPilotMockPlugin()] : []),
     {
       name: 'soha-workbench-session-entry',
       apply: 'build',
@@ -225,15 +229,19 @@ export default defineConfig(() => ({
         changeOrigin: true,
         ws: true,
       },
-      [prefix + '/api']: {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        ws: true,
-        rewrite: (path) => path.slice(prefix.length),
-        cookiePathRewrite: prefix
-          ? { '/api/v1/auth': prefix + '/api/v1/auth', '/': prefix + '/' }
-          : undefined,
-      },
+      ...(usePilotMock
+        ? {}
+        : {
+            [prefix + '/api']: {
+              target: apiProxyTarget,
+              changeOrigin: true,
+              ws: true,
+              rewrite: (path: string) => path.slice(prefix.length),
+              cookiePathRewrite: prefix
+                ? { '/api/v1/auth': prefix + '/api/v1/auth', '/': prefix + '/' }
+                : undefined,
+            },
+          }),
     },
   },
   build: {
