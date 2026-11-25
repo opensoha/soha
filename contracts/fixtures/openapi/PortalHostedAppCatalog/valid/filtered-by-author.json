@@ -1,0 +1,43 @@
+{
+  "items": [
+    {
+      "id": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+      "name": "Quarterly Sales Dashboard",
+      "description": "",
+      "kind": "static",
+      "dnsLabel": "sales-dashboard-a1b2c3",
+      "host": "sales-dashboard-a1b2c3.apps.soha.internal",
+      "url": "https://sales-dashboard-a1b2c3.apps.soha.internal",
+      "author": {
+        "userId": "usr_alice",
+        "displayName": "Alice Chen",
+        "avatarUrl": "https://cdn.soha.internal/avatars/alice.png",
+        "teamNames": [
+          "Growth Analytics"
+        ]
+      },
+      "updatedAt": "2026-11-21T02:00:00Z"
+    }
+  ],
+  "authors": [
+    {
+      "userId": "usr_alice",
+      "displayName": "Alice Chen",
+      "avatarUrl": "https://cdn.soha.internal/avatars/alice.png",
+      "teamNames": [
+        "Growth Analytics"
+      ],
+      "visibleAppCount": 1
+    }
+  ],
+  "selectedAuthor": {
+    "userId": "usr_alice",
+    "displayName": "Alice Chen",
+    "teamNames": [
+      "Growth Analytics"
+    ],
+    "visibleAppCount": 1
+  },
+  "myAppsCount": 3,
+  "total": 1
+}

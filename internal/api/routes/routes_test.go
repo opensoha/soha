@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
+	apphostinghandler "github.com/opensoha/soha/internal/api/handlers/apphosting"
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -1112,6 +1113,7 @@ func routeTestDependencies() Dependencies {
 		AIGateway:                  &apiHandlers.AIGatewayHandler{},
 		Plugins:                    &apiHandlers.PluginHandler{},
 		Software:                   &apiHandlers.SoftwareHandler{},
+		AppHosting:                 &apphostinghandler.Handler{},
 		Virtualization:             &apiHandlers.VirtualizationHandler{},
 		Docker:                     &apiHandlers.DockerHandler{},
 		NetworkAccess:              &apiHandlers.NetworkAccessHandler{},

@@ -14,6 +14,7 @@ import (
 	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
+	apphostinghandler "github.com/opensoha/soha/internal/api/handlers/apphosting"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
 	outpostruntimehandler "github.com/opensoha/soha/internal/api/handlers/outpostruntime"
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
@@ -26,6 +27,7 @@ import (
 	appaiproduction "github.com/opensoha/soha/internal/application/aiproduction"
 	appannouncement "github.com/opensoha/soha/internal/application/announcement"
 	appregistry "github.com/opensoha/soha/internal/application/app"
+	appapphosting "github.com/opensoha/soha/internal/application/apphosting"
 	appaudit "github.com/opensoha/soha/internal/application/audit"
 	appbuild "github.com/opensoha/soha/internal/application/build"
 	appcatalog "github.com/opensoha/soha/internal/application/catalog"
@@ -279,6 +281,7 @@ type coreServices struct {
 	integrationService             *appintegration.Service
 	pluginService                  *appplugin.Service
 	softwareService                *appsoftware.Service
+	appHostingService              *appapphosting.Service
 	contentDLPService              *appcontentdlp.Service
 	companionService               *appcompanion.Service
 	identityProviderService        *appidentityprovider.Service
@@ -708,7 +711,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		},
 	}})
 
-	contentSecurity, err := newContentSecurityServices(infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, identityMFAService)
+	contentSecurity, err := newContentSecurityServices(ctx, cfg.Database, infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, auditService, identityMFAService, cfg.Security.CredentialEncryptionKeys.Active().Secret())
 	if err != nil {
 		infra.cancel()
 		return nil, err
@@ -717,6 +720,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	return &coreServices{
 		endpointControls:               contentSecurity.endpoint,
 		managedContent:                 contentSecurity.managed,
+		appHostingService:              contentSecurity.appHosting,
 		permissionResolver:             permissionResolver,
 		auditService:                   auditService,
 		operationService:               operationService,
@@ -1205,6 +1209,9 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
 	copilotService.SetInstrumentation(infra.logger.Named("copilot"), infra.runtimeMetrics)
 	copilotService.SetSecretLeaseService(core.secretService)
+	if core.appHostingService != nil {
+		core.appHostingService.SetWorkspaceBundleSource(copilotService)
+	}
 	agentProviderService, err := appagentharness.NewProviderControlPlane(
 		appagentharness.NewProviderReconciler(core.pluginExtensions),
 		core.permissionResolver,
@@ -1719,6 +1726,7 @@ func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.
 		core.pluginService, core.pluginService, core.pluginService, core.pluginService,
 	)
 	dependencies.Software = apiHandlers.NewSoftwareHandler(core.softwareService)
+	dependencies.AppHosting = apphostinghandler.New(core.appHostingService, apphostinghandler.WithAccessTokenParser(core.identityService))
 	dependencies.ManagedContentDestinations = apiHandlers.NewManagedContentDestinationsHandler(core.managedContent)
 	dependencies.ManagedContentTransfers = apiHandlers.NewManagedContentTransfersHandler(core.managedContent)
 	dependencies.ManagedContentWorkflow = apiHandlers.NewManagedContentWorkflowHandler(core.managedContent)

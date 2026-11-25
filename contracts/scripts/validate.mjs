@@ -412,6 +412,17 @@ const requiredOpenapiFixtureSchemas = [
   "NetworkSiteProfileBindingInput",
   "NetworkSpaceInput",
   "ResourceLease",
+  "HostedApp",
+  "AppHostingSettings",
+  "PortalHostedAppCatalog",
+  "HostedAppVisibilityApproval",
+  "UpdateHostedAppMaintainersRequest",
+  "TransferHostedAppOwnershipRequest",
+  "DeleteHostedAppRequest",
+  "RejectHostedAppVisibilityRequest",
+  "WorkspaceHostedAppDeploymentRequest",
+  "HostedAppGatewayAccessDecision",
+  "AppHostingGatewayAccessDecision",
 ];
 
 const requiredJsonExamples = [

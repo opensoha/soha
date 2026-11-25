@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestGovernanceAlertEventInputBuildsAlertEvent(t *testing.T) {
@@ -54,5 +56,37 @@ func TestGovernanceAlertEventInputBuildsAlertEvent(t *testing.T) {
 		if strings.Contains(event.Summary, leaked) || strings.Contains(event.Annotations["authorization"], leaked) {
 			t.Fatalf("event leaked %q: %#v", leaked, event)
 		}
+	}
+}
+
+func TestGovernanceAlertEnsureAndResolveKeepsOriginalStart(t *testing.T) {
+	repo := &stubMonitoringCompatRepository{alertEvents: make(map[string]domainalert.AlertEvent)}
+	service := &Service{alertEvents: repo, notificationPolicies: repo}
+	started := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	input := domaingovernance.AlertInput{
+		Source: "app-hosting", Action: "app_data.capacity", EventID: "warning-1", CreatedAt: started,
+	}
+	if active, err := service.EnsureActiveGovernanceAlert(t.Context(), input); err != nil || !active {
+		t.Fatalf("ensuring alert: active=%t err=%v", active, err)
+	}
+	input.CreatedAt = started.Add(time.Minute)
+	if active, err := service.EnsureActiveGovernanceAlert(t.Context(), input); err != nil || !active {
+		t.Fatalf("ensuring alert: active=%t err=%v", active, err)
+	}
+	event := repo.alertEvents["governance:app-hosting:warning-1"]
+	if !event.StartsAt.Equal(started) || event.Status != "firing" {
+		t.Fatalf("replayed event = %#v", event)
+	}
+	if err := service.ResolveGovernanceAlert(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	resolved := repo.updatedEventInput
+	if resolved.Status != "resolved" || !resolved.StartsAt.Equal(started) || !resolved.EndsAt.Equal(input.CreatedAt) {
+		t.Fatalf("resolved event = %#v", resolved)
+	}
+	input.ID = event.ID
+	input.Action = "unrelated"
+	if err := service.ResolveGovernanceAlert(t.Context(), input); err != apperrors.ErrConflict {
+		t.Fatalf("resolving unrelated event = %v", err)
 	}
 }

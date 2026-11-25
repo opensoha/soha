@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -72,7 +73,7 @@ func (r *Repository) ListRoleCapabilities(ctx context.Context) (map[string][]dom
 }
 
 func (r *Repository) ListRolePermissions(ctx context.Context) (map[string][]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, permission_keys
 		FROM roles
 		ORDER BY id ASC

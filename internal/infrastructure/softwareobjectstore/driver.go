@@ -82,7 +82,7 @@ func driverSettings(settings json.RawMessage) (map[string]string, error) {
 	}
 	for key, value := range raw {
 		switch key {
-		case "endpoint", "region", "path_style", "insecure", "allow_private":
+		case "endpoint", "region", "path_style", "bucket_endpoint", "insecure", "allow_private":
 		default:
 			return nil, driverError(storagedriver.CodeInvalidRequest)
 		}

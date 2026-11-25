@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.8
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.4.15
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.2
+	github.com/aws/smithy-go v1.28.4
 	github.com/beevik/etree v1.8.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/distribution/reference v0.6.0
@@ -75,7 +76,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.5 // indirect
-	github.com/aws/smithy-go v1.28.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect

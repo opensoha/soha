@@ -302,6 +302,10 @@ const (
 	PermSoftwarePackageCreate              = "software.package.create"
 	PermSoftwarePackageDelete              = "software.package.delete"
 	PermSoftwarePackageView                = "software.package.view"
+	PermAppHostingAdminManage              = "apphosting.admin.manage"
+	PermAppHostingAdminView                = "apphosting.admin.view"
+	PermAppHostingAppsPublish              = "apphosting.apps.publish"
+	PermAppHostingAppsView                 = "apphosting.apps.view"
 	PermDockerDLPPolicyView                = "docker.dlp-policy.view"
 	PermDockerDLPPolicyUpdate              = "docker.dlp-policy.update"
 	PermDockerDLPPolicyPublish             = "docker.dlp-policy.publish"
@@ -324,6 +328,10 @@ var resourceMonitoringPermissionKeys = []string{
 }
 
 var allPermissionKeySet = []string{
+	PermAppHostingAdminManage,
+	PermAppHostingAdminView,
+	PermAppHostingAppsPublish,
+	PermAppHostingAppsView,
 	PermNetworkAccessNASBindingsView,
 	PermNetworkAccessNASBindingsCreate,
 	PermNetworkAccessNASBindingsUpdate,
@@ -837,8 +845,14 @@ var opsRolePermissionKeys = []string{
 	PermSettingsBrandingView,
 	PermSettingsBrandingManage,
 	PermSettingsRuntimeConfigView,
+	PermAppHostingAdminView,
+	PermAppHostingAdminManage,
+	PermAppHostingAppsView,
+	PermAppHostingAppsPublish,
 }
 var developerRolePermissionKeys = []string{
+	PermAppHostingAppsView,
+	PermAppHostingAppsPublish,
 	PermDeliveryTriggersView,
 	PermDeliveryTemplateSourcesView,
 	PermWorkbenchAIView,
@@ -1006,6 +1020,7 @@ var auditorRolePermissionKeys = []string{
 	PermPluginView,
 	PermIdentityPortalView,
 	PermIdentityAuditView,
+	PermAppHostingAdminView,
 }
 
 func defaultRolePermissions() map[string][]string {

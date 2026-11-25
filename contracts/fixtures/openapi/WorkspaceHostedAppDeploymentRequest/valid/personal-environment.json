@@ -1,0 +1,19 @@
+{
+  "name": "Expense Calculator",
+  "slug": "expense-calc",
+  "description": "Built in Soha Personal Workspace",
+  "spaFallback": true,
+  "visibility": {
+    "mode": "selected",
+    "teamIds": [
+      "team_finance"
+    ]
+  },
+  "source": {
+    "kind": "personal_environment",
+    "sourcePath": "projects/expense-calc/dist",
+    "assistantId": "asst_default",
+    "environmentVersion": 4
+  },
+  "idempotencyKey": "ws-deploy-01j9a1"
+}
