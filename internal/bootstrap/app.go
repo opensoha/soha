@@ -110,6 +110,7 @@ func New(ctx context.Context) (*App, error) {
 		delivery.copilotService.Start(infra.lifecycleCtx)
 	}
 	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
+	hostingDone := startHostedDynamicWorker(infra.lifecycleCtx, core.appHostingService, core.monitoringService, infra.logger)
 	initialized = true
 	app := &App{
 		OptionalRuntimes:      optionalRuntimes,
@@ -126,6 +127,7 @@ func New(ctx context.Context) (*App, error) {
 		HTTP:                  httpServer,
 		PersonalGuest:         guestServer,
 		cancel:                infra.cancel,
+		appHostingDone:        hostingDone,
 	}
 	if storageDrivers != nil {
 		app.StorageDrivers = storageDrivers

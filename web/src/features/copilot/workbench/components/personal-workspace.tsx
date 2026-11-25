@@ -1,14 +1,21 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import {
+  WorkspacePublishModal,
+  resolveSafeHostedAppUrl,
+  type WorkspaceHostedAppDeploymentResult,
+} from '@/features/app-hosting'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { CopyOutlined, ExportOutlined } from '@ant-design/icons'
 import type {
   PersonalEnvironment,
   PersonalGuestRuntime,
   PersonalGuestRuntimeInput,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Drawer, Input, Space, Tabs, Typography } from 'antd'
+import { App, Button, Card, Drawer, Input, Space, Tabs, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { workbenchKeys } from '../keys'
 import { workbenchMutations } from '../mutations'
@@ -53,7 +60,16 @@ export function PersonalWorkspace({
   const [text, setText] = useState('')
   const [toolsID, setToolsID] = useState('')
   const [frame, setFrame] = useState<PersonalGuestRuntime['browser']>()
+  const [publishSourcePath, setPublishSourcePath] = useState('.')
+  const [publishModalOpen, setPublishModalOpen] = useState(false)
+  const [lastPublishedResult, setLastPublishedResult] =
+    useState<WorkspaceHostedAppDeploymentResult | null>(null)
   const loadedFile = useRef('')
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canPublishApp = hasPermission(
+    permissionSnapshotQuery.data?.data,
+    'apphosting.apps.publish',
+  )
   const query = useQuery(workbenchQueries.workspaceRuntime(owner, environment.assistantId, open))
   const toolsQuery = useQuery(
     workbenchQueries.guestToolsOperation(owner, environment.assistantId, toolsID),
@@ -91,10 +107,13 @@ export function PersonalWorkspace({
     setPath('notes/example.txt')
     setURL('https://example.com/')
     setSelector('')
+    setPublishSourcePath('.')
+    setPublishModalOpen(false)
   }, [])
   useEffect(() => {
     if (denied) {
       setOpen(false)
+      setLastPublishedResult(null)
       clearDraft()
     }
   }, [denied, clearDraft])
@@ -421,6 +440,103 @@ export function PersonalWorkspace({
                     </Space>
                   ),
                 },
+                {
+                  key: 'publish',
+                  label: '发布应用',
+                  children: (
+                    <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+                      <Typography.Paragraph style={{ marginBottom: 0 }}>
+                        将个人工作空间（<code>/data</code>）内的静态构建目录或单页工具直接托管为公司固定 HTTPS 链接，服务端直接按工作空间身份打包并扫描敏感文件，产物内容不经过对话上下文。
+                      </Typography.Paragraph>
+                      {!canPublishApp ? (
+                        <ContextFeedback
+                          type="info"
+                          title="当前账号为只读模式，暂无托管应用发布权限"
+                          description="如需将个人工作空间产物发布为托管应用，请联系管理员授予 apphosting.apps.publish 权限。"
+                        />
+                      ) : null}
+                      <div>
+                        <Typography.Text>工作区相对路径</Typography.Text>
+                        <Input
+                          aria-label="工作区发布相对路径"
+                          disabled={!canPublishApp || query.isError || busy}
+                          maxLength={512}
+                          placeholder="例如 .、dist 或 schedule-tool"
+                          style={{ marginTop: 4 }}
+                          value={publishSourcePath}
+                          onChange={(e) => setPublishSourcePath(e.target.value)}
+                        />
+                        <Typography.Text
+                          type="secondary"
+                          style={{ display: 'block', marginTop: 4, fontSize: 12 }}
+                        >
+                          默认 <code>.</code> 表示工作区根目录，也可填写如 <code>dist</code> 或{' '}
+                          <code>schedule-tool</code> 等包含 <code>index.html</code> 的子目录。
+                        </Typography.Text>
+                      </div>
+                      <div>
+                        <Button
+                          type="primary"
+                          disabled={
+                            !canPublishApp ||
+                            query.isError ||
+                            busy ||
+                            !publishSourcePath.trim()
+                          }
+                          onClick={() => setPublishModalOpen(true)}
+                        >
+                          配置并发布为托管应用
+                        </Button>
+                      </div>
+                      {lastPublishedResult ? (
+                        <Card size="small" role="status" variant="outlined">
+                          <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                            <Space size={8} wrap>
+                              <Typography.Text strong>
+                                最近发布：{lastPublishedResult.app.name}
+                              </Typography.Text>
+                              <StatusTag value={lastPublishedResult.app.status} label="已发布" />
+                              <Typography.Text type="secondary">
+                                v{lastPublishedResult.revision.revisionNumber}
+                              </Typography.Text>
+                            </Space>
+                            <Typography.Paragraph copyable style={{ marginBottom: 0 }}>
+                              {lastPublishedResult.app.url}
+                            </Typography.Paragraph>
+                            <Space wrap>
+                              {resolveSafeHostedAppUrl(lastPublishedResult.app.url) ? (
+                                <Button
+                                  size="small"
+                                  type="primary"
+                                  icon={<ExportOutlined />}
+                                  href={resolveSafeHostedAppUrl(lastPublishedResult.app.url)!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  打开应用
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="small"
+                                icon={<CopyOutlined />}
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(lastPublishedResult.app.url)
+                                    void message.success('已复制分享链接')
+                                  } catch {
+                                    void message.error('复制失败，请手动复制链接')
+                                  }
+                                }}
+                              >
+                                复制链接
+                              </Button>
+                            </Space>
+                          </Space>
+                        </Card>
+                      ) : null}
+                    </Space>
+                  ),
+                },
               ]}
             />
             {latest && (
@@ -435,6 +551,20 @@ export function PersonalWorkspace({
                 )}
               </div>
             )}
+            <WorkspacePublishModal
+              open={publishModalOpen && canPublishApp && !denied}
+              onClose={() => setPublishModalOpen(false)}
+              currentUserId={owner}
+              defaultSpaFallback
+              source={{
+                kind: 'personal_environment',
+                sourcePath: publishSourcePath.trim() || '.',
+                assistantId: environment.assistantId,
+                ...(environment.version >= 1 ? { environmentVersion: environment.version } : {}),
+              }}
+              sourceSummary={`个人工作空间 /data/${(publishSourcePath.trim() || '.').replace(/^\/+/, '')}`}
+              onPublished={(result) => setLastPublishedResult(result)}
+            />
           </Space>
         )}
       </Drawer>

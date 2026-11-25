@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "appsDomain": "apps.soha.internal",
+  "publicScheme": "https",
+  "storageIntegrationId": "int_minio_apps",
+  "storagePrefix": "hosted-apps",
+  "gatewayTokenConfigured": true,
+  "allowOrganizationVisibility": true,
+  "organizationVisibilityPolicy": "public_internet",
+  "policyVersion": 0,
+  "maxBundleCompressedBytes": 52428800,
+  "maxBundleUncompressedBytes": 209715200,
+  "maxBundleFileCount": 2000,
+  "maxAppsPerOwner": 20,
+  "retainedRevisionsPerApp": 10
+}

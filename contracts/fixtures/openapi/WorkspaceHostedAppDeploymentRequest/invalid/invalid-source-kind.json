@@ -1,0 +1,7 @@
+{
+  "source": {
+    "kind": "host_filesystem",
+    "environmentVersion": 0
+  },
+  "idempotencyKey": ""
+}

@@ -56,7 +56,8 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime-executor ./cmd/radius-runtime-executor && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/outpost-runtime-executor ./cmd/outpost-runtime-executor && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/proxy-runtime-executor ./cmd/proxy-runtime-executor && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/soha-app-gateway ./cmd/app-gateway
 
 FROM go-source AS network-gateway-build
 ARG TARGETOS=linux
@@ -154,6 +155,14 @@ COPY deploy/network-test/eapol-test.sh /usr/local/bin/soha-eapol-test
 RUN chmod 0755 /usr/local/bin/soha-eapol-test
 ENTRYPOINT ["/usr/local/bin/soha-eapol-test"]
 
+FROM alpine:3.20 AS app-gateway-runtime
+RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
+COPY --from=go-build /out/soha-app-gateway /usr/local/bin/soha-app-gateway
+RUN chmod 0755 /usr/local/bin/soha-app-gateway
+USER 10001:10001
+EXPOSE 8090 8091
+ENTRYPOINT ["/usr/local/bin/soha-app-gateway"]
+
 FROM alpine:3.20 AS soha-runtime
 RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
@@ -164,12 +173,13 @@ COPY --from=go-build /out/outpost-runtime-executor /app/outpost-runtime-executor
 COPY --from=go-build /out/proxy-runtime-executor /app/proxy-runtime-executor
 COPY --from=go-build /out/radius-runtime-executor /app/radius-runtime-executor
 COPY --from=go-build /out/runtime-upgrade /app/runtime-upgrade
+COPY --from=go-build /out/soha-app-gateway /usr/local/bin/soha-app-gateway
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 ENV SOHA_CONFIG_FILE=/app/configs/config.yaml \
     SOHA_PLUGINS_COMPANION_STORAGE_DIR=/app/data/companion
-RUN mkdir -p /app/data && chown 10001:10001 /app/data && chmod 0755 /app/entrypoint.sh
+RUN mkdir -p /app/data && chown 10001:10001 /app/data && chmod 0755 /app/entrypoint.sh /usr/local/bin/soha-app-gateway
 USER 10001:10001
 EXPOSE 8080 8082 8083
 ENTRYPOINT ["/app/entrypoint.sh"]

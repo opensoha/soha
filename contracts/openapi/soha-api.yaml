@@ -38,6 +38,7 @@ tags:
   - name: Portal
   - name: Directory
   - name: Network Access
+  - name: AppHosting
 x-soha-websocket-paths:
   /clusters/{clusterID}/workloads/pods/{podName}/logs/stream:
     get:
@@ -30282,6 +30283,1410 @@ paths:
                     $ref: "#/components/schemas/NetworkRADIUSOptions"
         "403":
           $ref: "#/components/responses/Error"
+  /app-hosting/settings:
+    get:
+      tags:
+        - AppHosting
+      operationId: getAppHostingSettings
+      summary: Get workspace App Hosting platform settings and governance limits
+      responses:
+        "200":
+          description: Current App Hosting platform settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppHostingSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - AppHosting
+      operationId: updateAppHostingSettings
+      summary: Update workspace App Hosting platform settings and governance limits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppHostingSettingsUpdateRequest"
+      responses:
+        "200":
+          description: Updated App Hosting platform settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppHostingSettingsResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/settings/gateway-token/rotate:
+    post:
+      tags:
+        - AppHosting
+      operationId: rotateAppHostingGatewayToken
+      summary: Rotate the dedicated App Hosting gateway bearer token
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppHostingGatewayTokenRotateRequest"
+      responses:
+        "200":
+          description: Newly rotated gateway bearer token secret, returned once.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppHostingGatewayTokenRotateResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/audience-candidates:
+    get:
+      tags:
+        - AppHosting
+      operationId: listAppHostingAudienceCandidates
+      summary: Search sanitized user and team audience candidates for hosted app sharing
+      x-soha-capability:
+        name: apphosting.audience.search
+        riskLevel: read
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Sanitized shareable users and teams matching the query.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppHostingAudienceCandidatesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/portal/apps:
+    get:
+      tags:
+        - AppHosting
+      operationId: listPortalHostedApps
+      summary: List online non-private hosted applications visible to the current portal visitor
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/HostedAppKind"
+        - name: authorUserId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 24
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Audience-filtered colleague hosted applications catalog and sanitized author summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalHostedAppCatalogResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps:
+    get:
+      tags:
+        - AppHosting
+      operationId: listHostedApps
+      summary: List hosted applications visible in maintainer or administrator scope
+      x-soha-capability:
+        name: apphosting.apps.list
+        riskLevel: read
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.view
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/HostedAppListScope"
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/HostedAppStatus"
+        - name: ownerUserId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated hosted applications list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - AppHosting
+      operationId: createHostedApp
+      summary: Create a hosted application and allocate its immutable subdomain label
+      x-soha-capability:
+        name: apphosting.apps.create
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHostedAppRequest"
+      responses:
+        "201":
+          description: Newly created hosted application.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "200":
+          description: Existing hosted application returned for a matching idempotencyKey.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedApp
+      summary: Get hosted application metadata and current active revision binding
+      x-soha-capability:
+        name: apphosting.apps.get
+        riskLevel: read
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.view
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Hosted application detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags:
+        - AppHosting
+      operationId: updateHostedApp
+      summary: Update hosted application display metadata or SPA fallback mode
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHostedAppRequest"
+      responses:
+        "200":
+          description: Updated hosted application detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/visibility:
+    put:
+      tags:
+        - AppHosting
+      operationId: updateHostedAppVisibility
+      summary: Replace hosted application audience visibility scope and advance route generation
+      x-soha-capability:
+        name: apphosting.apps.visibility.set
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHostedAppVisibilityRequest"
+      responses:
+        "200":
+          description: Hosted application with updated visibility scope and bumped routeGeneration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/offline:
+    post:
+      tags:
+        - AppHosting
+      operationId: takeHostedAppOffline
+      summary: Take a hosted application offline and advance route generation
+      x-soha-capability:
+        name: apphosting.apps.offline
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppLifecycleActionRequest"
+      responses:
+        "200":
+          description: Hosted application transitioned to offline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/online:
+    post:
+      tags:
+        - AppHosting
+      operationId: bringHostedAppOnline
+      summary: Bring an offline hosted application with a ready active revision back online
+      x-soha-capability:
+        name: apphosting.apps.online
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppLifecycleActionRequest"
+      responses:
+        "200":
+          description: Hosted application transitioned to online.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/suspend:
+    post:
+      tags:
+        - AppHosting
+      operationId: suspendHostedApp
+      summary: Administratively suspend a hosted application and immediately revoke visitor access
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppSuspendRequest"
+      responses:
+        "200":
+          description: Hosted application suspended by administrator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/unsuspend:
+    post:
+      tags:
+        - AppHosting
+      operationId: unsuspendHostedApp
+      summary: Lift administrative suspension on a hosted application
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppLifecycleActionRequest"
+      responses:
+        "200":
+          description: Administrative suspension lifted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/maintainers:
+    put:
+      tags:
+        - AppHosting
+      operationId: updateHostedAppMaintainers
+      summary: Replace collaborator maintainers for a hosted application
+      x-soha-capability:
+        name: apphosting.apps.maintainers
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHostedAppMaintainersRequest"
+      responses:
+        "200":
+          description: Hosted application with updated collaborator maintainers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/transfer:
+    post:
+      tags:
+        - AppHosting
+      operationId: transferHostedAppOwnership
+      summary: Transfer ownership of a hosted application to another user and advance route generation
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferHostedAppOwnershipRequest"
+      responses:
+        "200":
+          description: Hosted application transferred to the new owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/delete:
+    post:
+      tags:
+        - AppHosting
+      operationId: deleteHostedApp
+      summary: Permanently delete a hosted application and purge its stored revision objects after name confirmation
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteHostedAppRequest"
+      responses:
+        "200":
+          description: Hosted application permanently deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteHostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/visibility-approval/withdraw:
+    post:
+      tags:
+        - AppHosting
+      operationId: withdrawHostedAppVisibilityApproval
+      summary: Withdraw the pending organization visibility approval request for a hosted application
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppLifecycleActionRequest"
+      responses:
+        "200":
+          description: Pending organization visibility approval withdrawn; effective visibility unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/approvals:
+    get:
+      tags:
+        - AppHosting
+      operationId: listHostedAppVisibilityApprovals
+      summary: List organization visibility approval requests in requester or administrator scope
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/HostedAppApprovalListScope"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/HostedAppVisibilityApprovalStatus"
+        - name: appId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated organization visibility approval requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisibilityApprovalListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/approvals/{approvalId}/approve:
+    post:
+      tags:
+        - AppHosting
+      operationId: approveHostedAppVisibility
+      summary: Approve a pending organization visibility request and switch the hosted application to organization visibility
+      parameters:
+        - $ref: "#/components/parameters/HostedAppApprovalID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveHostedAppVisibilityRequest"
+      responses:
+        "200":
+          description: Organization visibility approval granted and hosted application updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisibilityApprovalDecisionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/approvals/{approvalId}/reject:
+    post:
+      tags:
+        - AppHosting
+      operationId: rejectHostedAppVisibility
+      summary: Reject a pending organization visibility request while keeping the hosted application's current visibility
+      parameters:
+        - $ref: "#/components/parameters/HostedAppApprovalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectHostedAppVisibilityRequest"
+      responses:
+        "200":
+          description: Organization visibility request rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisibilityApprovalDecisionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/workspace-deployments:
+    post:
+      tags:
+        - AppHosting
+      operationId: deployHostedAppFromWorkspace
+      summary: Package and publish a hosted application directly from the caller's personal assistant workspace or conversation artifact
+      x-soha-capability:
+        name: apphosting.workspace.publish
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+          - observe.ai.chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceHostedAppDeploymentRequest"
+      responses:
+        "201":
+          description: Newly created hosted application and activated revision from workspace or artifact source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceHostedAppDeploymentResponse"
+        "200":
+          description: Updated existing hosted application or returned existing deployment for a matching idempotencyKey.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceHostedAppDeploymentResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/deployments/preflight:
+    post:
+      tags:
+        - AppHosting
+      operationId: preflightHostedAppDeployment
+      summary: Validate bundle limits, entrypoint presence, and flagged file checks before upload
+      x-soha-capability:
+        name: apphosting.apps.preflight
+        riskLevel: analyze
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppPreflightRequest"
+      responses:
+        "200":
+          description: Preflight evaluation result with blockers, warnings, and active limits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppPreflightResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/revisions:
+    get:
+      tags:
+        - AppHosting
+      operationId: listHostedAppRevisions
+      summary: List immutable revisions of a hosted application
+      x-soha-capability:
+        name: apphosting.apps.revisions.list
+        riskLevel: read
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.view
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated hosted application revisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRevisionListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - AppHosting
+      operationId: uploadHostedAppRevision
+      summary: Upload a tar.gz bundle for static activation or dynamic build
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: spaFallback
+          in: query
+          required: false
+          schema:
+            type: boolean
+            x-go-type-skip-optional-pointer: false
+        - name: description
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      requestBody:
+        required: true
+        content:
+          application/gzip:
+            schema:
+              type: string
+              format: binary
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - publishVisibility
+                - bundle
+              properties:
+                publishVisibility:
+                  description: >
+                    Send this JSON part before the bundle. Requires idempotencyKey and application ownership.
+                    The server applies the audience, or requests required approval, only when the revision
+                    activates and the application's routing generation has not changed since upload.
+                    Idempotent replays leave the current audience untouched.
+                  $ref: "#/components/schemas/UpdateHostedAppVisibilityRequest"
+                bundle:
+                  type: string
+                  format: binary
+            encoding:
+              publishVisibility:
+                contentType: application/json
+              bundle:
+                contentType: application/gzip
+      responses:
+        "201":
+          description: Uploaded a new hosted application revision. Static revisions activate immediately; dynamic revisions are queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppDeploymentResponse"
+        "200":
+          description: Existing deployment receipt returned for a matching idempotencyKey.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppDeploymentResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/revisions/{revisionId}:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRevision
+      summary: Get detail of a specific hosted application revision
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+        - $ref: "#/components/parameters/HostedAppRevisionID"
+      responses:
+        "200":
+          description: Hosted application revision detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRevisionResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/runtime-config:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRuntimeConfig
+      summary: Read masked dynamic application configuration
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeConfigResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - AppHosting
+      operationId: updateHostedAppRuntimeConfig
+      summary: Update dynamic application configuration for subsequent revisions
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHostedAppRuntimeConfigRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeConfigResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/runtime-usage:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRuntimeUsage
+      summary: Read bounded managed database usage and warning state
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRuntimeUsageResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/visitor-attributes:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppVisitorAttributes
+      summary: Read the application visitor attribute grant and pending request
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - AppHosting
+      operationId: requestHostedAppVisitorAttributes
+      summary: Request additional visitor attributes as the application owner
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestHostedAppVisitorAttributesRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - AppHosting
+      operationId: decideHostedAppVisitorAttributes
+      summary: Review a pending request or revoke granted visitor attributes as an administrator
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideHostedAppVisitorAttributesRequest"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppVisitorAttributesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/revisions/{revisionId}/logs:
+    get:
+      tags:
+        - AppHosting
+      operationId: getHostedAppRevisionLogs
+      summary: Read redacted platform build and runtime events for a revision
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+        - $ref: "#/components/parameters/HostedAppRevisionID"
+      responses:
+        "200":
+          description: Application hosting management result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppRevisionLogsResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/apps/{appId}/rollback:
+    post:
+      tags:
+        - AppHosting
+      operationId: rollbackHostedApp
+      summary: Atomically switch the active revision of a hosted application to an earlier ready revision
+      x-soha-capability:
+        name: apphosting.apps.rollback
+        riskLevel: mutate
+        requiresApproval: false
+        permissionKeys:
+          - ai.gateway.invoke
+          - apphosting.apps.publish
+      parameters:
+        - $ref: "#/components/parameters/HostedAppID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppRollbackRequest"
+      responses:
+        "200":
+          description: Rollback completed without altering visibilityScope or administrative suspension.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppDeploymentResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/auth/start:
+    get:
+      tags:
+        - AppHosting
+      operationId: startHostedAppBrowserAuth
+      summary: Start browser SSO handoff for a hosted application subdomain
+      security: []
+      parameters:
+        - name: host
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 253
+        - name: returnPath
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+        - name: gatewayState
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "302":
+          description: Redirects authenticated visitors to the hosted app callback with a one-time host-bound ticket, or redirects unauthenticated visitors to Soha login.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/gateway/tickets/exchange:
+    post:
+      tags:
+        - AppHosting
+      operationId: exchangeHostedAppGatewayTicket
+      summary: Exchange a one-time host-bound SSO ticket from standalone app-gateway
+      security:
+        - appHostingGatewayBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppTicketExchangeRequest"
+      responses:
+        "200":
+          description: Validated host-bound session identity and current route generation.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppTicketExchangeResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /app-hosting/gateway/access-check:
+    post:
+      tags:
+        - AppHosting
+      operationId: checkHostedAppGatewayAccess
+      summary: Evaluate real-time visitor access, route generation, and manifest files for standalone app-gateway
+      security:
+        - appHostingGatewayBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostedAppGatewayAccessCheckRequest"
+      responses:
+        "200":
+          description: Real-time access decision and active revision manifest metadata.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedAppGatewayAccessCheckResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -30308,7 +31713,26 @@ components:
       type: http
       scheme: bearer
       description: Dedicated installer-provisioned Outpost workload executor token bound to one executor identity and its approved workload slots. Administrator and general runner credentials do not authorize this API.
+    appHostingGatewayBearerAuth:
+      type: http
+      scheme: bearer
+      description: Dedicated App Hosting gateway bearer token provisioned through platform settings rotation. User JWTs and general runner credentials do not authorize standalone app-gateway endpoints.
   parameters:
+    HostedAppID:
+      name: appId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    HostedAppRevisionID:
+      name: revisionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    HostedAppApprovalID:
+      name: approvalId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
     MenuID:
       name: menuID
       in: path
@@ -71913,3 +73337,1732 @@ components:
           items:
             $ref: "#/components/schemas/NetworkProxyRule"
       description: Separate explicit direct-subscription device projection. This mode deliberately discloses upstream parameters, has no scoped gateway credential and promises neither upstream privacy nor immediate revocation of already disclosed credentials. It must never be returned by the protected /projection path or used as automatic fallback. Prepare validates conversion, policy and current device authorization; it may proceed client_eligible to activated without server relay readiness.
+    AppHostingOrganizationVisibilityPolicy:
+      type: string
+      enum:
+        - allow_direct
+        - require_approval
+        - disabled
+      x-enum-varnames:
+        - AppHostingOrganizationVisibilityPolicyAllowDirect
+        - AppHostingOrganizationVisibilityPolicyRequireApproval
+        - AppHostingOrganizationVisibilityPolicyDisabled
+    AppHostingQuotaOverride:
+      type: object
+      required:
+        - scope
+        - id
+      properties:
+        scope:
+          type: string
+          enum: [team, role]
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        maxStaticApps:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+        maxDynamicApps:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+    AppHostingRuntimeLimits:
+      type: object
+      required: [cpuMilli, memoryMiB, maxReplicas, scaleDownSeconds]
+      properties:
+        cpuMilli:
+          type: integer
+          format: int32
+          minimum: 50
+          maximum: 4000
+        memoryMiB:
+          type: integer
+          format: int32
+          minimum: 64
+          maximum: 4096
+        maxReplicas:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 10
+        scaleDownSeconds:
+          type: integer
+          format: int32
+          minimum: 60
+          maximum: 3600
+    AppHostingGovernance:
+      type: object
+      required: [maxDynamicAppsPerOwner, quotaOverrides, runtimeLimits, dataCapacityWarningMiB]
+      properties:
+        maxDynamicAppsPerOwner:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+        quotaOverrides:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AppHostingQuotaOverride"
+        runtimeLimits:
+          $ref: "#/components/schemas/AppHostingRuntimeLimits"
+        dataCapacityWarningMiB:
+          description: Administrative alert threshold per managed application database in MiB.
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1048576
+    AppHostingSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - appsDomain
+        - publicScheme
+        - storageIntegrationId
+        - storagePrefix
+        - gatewayTokenConfigured
+        - allowOrganizationVisibility
+        - maxBundleCompressedBytes
+        - maxBundleUncompressedBytes
+        - maxBundleFileCount
+        - maxAppsPerOwner
+        - retainedRevisionsPerApp
+      properties:
+        governance:
+          $ref: "#/components/schemas/AppHostingGovernance"
+          x-go-type-skip-optional-pointer: false
+        enabled:
+          type: boolean
+        appsDomain:
+          type: string
+          maxLength: 253
+        publicScheme:
+          type: string
+          maxLength: 16
+        storageIntegrationId:
+          type: string
+          maxLength: 128
+        storagePrefix:
+          type: string
+          maxLength: 256
+        gatewayTokenConfigured:
+          type: boolean
+        allowOrganizationVisibility:
+          type: boolean
+        organizationVisibilityPolicy:
+          $ref: "#/components/schemas/AppHostingOrganizationVisibilityPolicy"
+        policyVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        maxBundleCompressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        maxBundleUncompressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        maxBundleFileCount:
+          type: integer
+          format: int32
+          minimum: 0
+        maxAppsPerOwner:
+          type: integer
+          format: int32
+          minimum: 0
+        retainedRevisionsPerApp:
+          type: integer
+          format: int32
+          minimum: 0
+        updatedBy:
+          type: string
+          maxLength: 128
+        updatedAt:
+          type: string
+          format: date-time
+    AppHostingSettingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AppHostingSettings"
+    AppHostingSettingsUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+      properties:
+        governance:
+          $ref: "#/components/schemas/AppHostingGovernance"
+          x-go-type-skip-optional-pointer: false
+        enabled:
+          type: boolean
+        appsDomain:
+          type: string
+          maxLength: 253
+        publicScheme:
+          type: string
+          maxLength: 16
+        storageIntegrationId:
+          type: string
+          maxLength: 128
+        storagePrefix:
+          type: string
+          maxLength: 256
+        allowOrganizationVisibility:
+          type: boolean
+          x-go-pointer: true
+        organizationVisibilityPolicy:
+          $ref: "#/components/schemas/AppHostingOrganizationVisibilityPolicy"
+        maxBundleCompressedBytes:
+          type: integer
+          format: int64
+          minimum: 1
+        maxBundleUncompressedBytes:
+          type: integer
+          format: int64
+          minimum: 1
+        maxBundleFileCount:
+          type: integer
+          format: int32
+          minimum: 1
+        maxAppsPerOwner:
+          type: integer
+          format: int32
+          minimum: 1
+        retainedRevisionsPerApp:
+          type: integer
+          format: int32
+          minimum: 1
+    UpdateAppHostingSettingsRequest:
+      $ref: "#/components/schemas/AppHostingSettingsUpdateRequest"
+    AppHostingGatewayTokenRotateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 512
+    AppHostingGatewayTokenSecret:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+        - rotatedAt
+      properties:
+        token:
+          type: string
+          minLength: 1
+          format: password
+        rotatedAt:
+          type: string
+          format: date-time
+    AppHostingGatewayTokenRotateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AppHostingGatewayTokenSecret"
+    AppHostingAudienceUser:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - username
+        - displayName
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        department:
+          type: string
+          maxLength: 256
+    AppHostingAudienceTeam:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        slug:
+          type: string
+          maxLength: 128
+    AppHostingAudienceCandidates:
+      type: object
+      additionalProperties: false
+      required:
+        - users
+        - teams
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppHostingAudienceUser"
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppHostingAudienceTeam"
+    AppHostingAudienceCandidatesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/AppHostingAudienceCandidates"
+    HostedAppListScope:
+      type: string
+      enum:
+        - mine
+        - all
+      x-enum-varnames:
+        - HostedAppListScopeMine
+        - HostedAppListScopeAll
+    HostedAppKind:
+      type: string
+      enum:
+        - static
+        - dynamic
+      x-enum-varnames:
+        - HostedAppKindStatic
+        - HostedAppKindDynamic
+    HostedAppStatus:
+      type: string
+      enum:
+        - draft
+        - online
+        - offline
+        - suspended_by_admin
+      x-enum-varnames:
+        - HostedAppStatusDraft
+        - HostedAppStatusOnline
+        - HostedAppStatusOffline
+        - HostedAppStatusSuspendedByAdmin
+    HostedAppVisibilityMode:
+      type: string
+      enum:
+        - private
+        - selected
+        - organization
+      x-enum-varnames:
+        - HostedAppVisibilityModePrivate
+        - HostedAppVisibilityModeSelected
+        - HostedAppVisibilityModeOrganization
+    HostedAppVisibilityScope:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+      properties:
+        mode:
+          $ref: "#/components/schemas/HostedAppVisibilityMode"
+        userIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        teamIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+    HostedAppVisibilityInput:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+      properties:
+        mode:
+          $ref: "#/components/schemas/HostedAppVisibilityMode"
+        userIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        teamIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+    HostedAppUserSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - displayName
+        - teamNames
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        avatarUrl:
+          type: string
+          maxLength: 2048
+        teamNames:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+    HostedAppVisibilityApprovalStatus:
+      type: string
+      enum:
+        - pending
+        - approved
+        - rejected
+        - withdrawn
+        - invalidated
+      x-enum-varnames:
+        - HostedAppVisibilityApprovalStatusPending
+        - HostedAppVisibilityApprovalStatusApproved
+        - HostedAppVisibilityApprovalStatusRejected
+        - HostedAppVisibilityApprovalStatusWithdrawn
+        - HostedAppVisibilityApprovalStatusInvalidated
+    HostedAppVisibilityApproval:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - appId
+        - appName
+        - appDnsLabel
+        - requesterUserId
+        - currentVisibility
+        - requestedVisibility
+        - baseRouteGeneration
+        - policyVersion
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        appName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        appDnsLabel:
+          type: string
+          minLength: 1
+          maxLength: 63
+        requesterUserId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        requesterProfile:
+          $ref: "#/components/schemas/HostedAppUserSummary"
+        currentVisibility:
+          $ref: "#/components/schemas/HostedAppVisibilityScope"
+        requestedVisibility:
+          $ref: "#/components/schemas/HostedAppVisibilityScope"
+        baseRouteGeneration:
+          type: integer
+          format: int64
+          minimum: 1
+        policyVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        status:
+          $ref: "#/components/schemas/HostedAppVisibilityApprovalStatus"
+        reason:
+          type: string
+          maxLength: 500
+        reviewerUserId:
+          type: string
+          maxLength: 128
+        reviewComment:
+          type: string
+          maxLength: 500
+        invalidationReason:
+          type: string
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+    HostedAppVisibilityApprovalList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/HostedAppVisibilityApproval"
+        total:
+          type: integer
+          minimum: 0
+    HostedAppVisibilityApprovalListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppVisibilityApprovalList"
+    HostedAppApprovalListScope:
+      type: string
+      enum:
+        - mine
+        - all
+      x-enum-varnames:
+        - HostedAppApprovalListScopeMine
+        - HostedAppApprovalListScopeAll
+    HostedApp:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - dnsLabel
+        - host
+        - url
+        - spaFallback
+        - ownerUserId
+        - maintainerUserIds
+        - visibility
+        - status
+        - routeGeneration
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1024
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+        dnsLabel:
+          type: string
+          minLength: 1
+          maxLength: 63
+          pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        url:
+          type: string
+          format: uri
+          maxLength: 512
+        spaFallback:
+          type: boolean
+        ownerUserId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        ownerProfile:
+          $ref: "#/components/schemas/HostedAppUserSummary"
+        maintainerUserIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        maintainers:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/HostedAppUserSummary"
+        visibility:
+          $ref: "#/components/schemas/HostedAppVisibilityScope"
+        pendingVisibilityApproval:
+          $ref: "#/components/schemas/HostedAppVisibilityApproval"
+        status:
+          $ref: "#/components/schemas/HostedAppStatus"
+        suspendedReason:
+          type: string
+          maxLength: 512
+        activeRevisionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        activeRevisionNumber:
+          type: integer
+          format: int64
+          minimum: 0
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        routeGeneration:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    HostedAppResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedApp"
+    HostedAppList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedApp"
+        total:
+          type: integer
+          minimum: 0
+    HostedAppListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppList"
+    CreateHostedAppRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 48
+          pattern: ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$
+        description:
+          type: string
+          maxLength: 1024
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+        spaFallback:
+          type: boolean
+          x-go-pointer: true
+        visibility:
+          $ref: "#/components/schemas/HostedAppVisibilityInput"
+        deferVisibilityUntilPublication:
+          type: boolean
+          description: >
+            Create a private draft without applying visibility or requesting approval.
+            Use visibility only to match the idempotent app creation request.
+            Attach the intended audience to the subsequent revision upload.
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+    UpdateHostedAppRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          x-go-pointer: true
+        description:
+          type: string
+          maxLength: 1024
+          x-go-pointer: true
+        spaFallback:
+          type: boolean
+          x-go-pointer: true
+    UpdateHostedAppVisibilityRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - visibility
+      properties:
+        visibility:
+          $ref: "#/components/schemas/HostedAppVisibilityInput"
+        reason:
+          type: string
+          maxLength: 500
+    UpdateHostedAppMaintainersRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - maintainerUserIds
+      properties:
+        maintainerUserIds:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+    TransferHostedAppOwnershipRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - newOwnerUserId
+      properties:
+        newOwnerUserId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 500
+    DeleteHostedAppRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - confirmationName
+      properties:
+        confirmationName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 500
+    DeleteHostedAppResult:
+      type: object
+      additionalProperties: false
+      required:
+        - appId
+        - deleted
+      properties:
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        deleted:
+          type: boolean
+    DeleteHostedAppResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/DeleteHostedAppResult"
+    ApproveHostedAppVisibilityRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        comment:
+          type: string
+          maxLength: 500
+    RejectHostedAppVisibilityRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - comment
+      properties:
+        comment:
+          type: string
+          minLength: 1
+          maxLength: 500
+    HostedAppVisibilityApprovalDecisionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - approval
+        - app
+      properties:
+        approval:
+          $ref: "#/components/schemas/HostedAppVisibilityApproval"
+        app:
+          $ref: "#/components/schemas/HostedApp"
+    HostedAppVisibilityApprovalDecisionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppVisibilityApprovalDecisionResult"
+    PortalHostedAppItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - description
+        - kind
+        - dnsLabel
+        - host
+        - url
+        - author
+        - updatedAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1024
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+        dnsLabel:
+          type: string
+          minLength: 1
+          maxLength: 63
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+        url:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 512
+        author:
+          $ref: "#/components/schemas/HostedAppUserSummary"
+        updatedAt:
+          type: string
+          format: date-time
+    PortalHostedAppAuthorSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - displayName
+        - teamNames
+        - visibleAppCount
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        avatarUrl:
+          type: string
+          maxLength: 2048
+        teamNames:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        visibleAppCount:
+          type: integer
+          minimum: 0
+          maximum: 10000
+    PortalHostedAppCatalog:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - authors
+        - myAppsCount
+        - total
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/PortalHostedAppItem"
+        authors:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/PortalHostedAppAuthorSummary"
+        selectedAuthor:
+          $ref: "#/components/schemas/PortalHostedAppAuthorSummary"
+        myAppsCount:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+    PortalHostedAppCatalogResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/PortalHostedAppCatalog"
+    WorkspaceHostedAppSourceKind:
+      type: string
+      enum:
+        - personal_environment
+        - conversation_artifact
+      x-enum-varnames:
+        - WorkspaceHostedAppSourceKindPersonalEnvironment
+        - WorkspaceHostedAppSourceKindConversationArtifact
+    WorkspaceHostedAppSource:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          $ref: "#/components/schemas/WorkspaceHostedAppSourceKind"
+        sourcePath:
+          type: string
+          maxLength: 512
+        assistantId:
+          type: string
+          maxLength: 128
+        environmentVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        sessionId:
+          type: string
+          maxLength: 128
+        artifactId:
+          type: string
+          maxLength: 128
+        entryFileName:
+          type: string
+          maxLength: 128
+    WorkspaceHostedAppDeploymentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - source
+        - idempotencyKey
+      properties:
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+          description: Application kind for a new workspace deployment. Defaults to static. Dynamic deployments require a personal environment source.
+        appId:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        slug:
+          type: string
+          maxLength: 63
+        description:
+          type: string
+          maxLength: 1024
+        spaFallback:
+          type: boolean
+          x-go-pointer: true
+        visibility:
+          $ref: "#/components/schemas/HostedAppVisibilityInput"
+        visibilityReason:
+          type: string
+          maxLength: 500
+        source:
+          $ref: "#/components/schemas/WorkspaceHostedAppSource"
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+    WorkspaceHostedAppDeploymentResult:
+      type: object
+      additionalProperties: false
+      required:
+        - app
+        - revision
+        - created
+      properties:
+        app:
+          $ref: "#/components/schemas/HostedApp"
+        revision:
+          $ref: "#/components/schemas/HostedAppRevision"
+        created:
+          type: boolean
+    WorkspaceHostedAppDeploymentResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/WorkspaceHostedAppDeploymentResult"
+    HostedAppLifecycleActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 512
+    HostedAppSuspendRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+    HostedAppPreflightRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - uncompressedBytes
+        - fileCount
+        - hasIndexHtml
+      properties:
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+        compressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          x-go-pointer: true
+        uncompressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        fileCount:
+          type: integer
+          format: int32
+          minimum: 0
+        hasIndexHtml:
+          type: boolean
+        spaFallback:
+          type: boolean
+          x-go-pointer: true
+        samplePaths:
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+        flaggedFiles:
+          type: array
+          items:
+            type: string
+            maxLength: 1024
+    HostedAppPreflightResult:
+      type: object
+      additionalProperties: false
+      required:
+        - allowed
+        - appId
+        - url
+        - blockers
+        - warnings
+        - maxCompressedBytes
+        - maxUncompressedBytes
+        - maxFileCount
+      properties:
+        allowed:
+          type: boolean
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        url:
+          type: string
+          format: uri
+          maxLength: 512
+        blockers:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        maxCompressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        maxUncompressedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        maxFileCount:
+          type: integer
+          format: int32
+          minimum: 0
+    HostedAppPreflightResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppPreflightResult"
+    HostedAppRevisionStatus:
+      type: string
+      enum:
+        - uploading
+        - validating
+        - ready
+        - failed
+        - evicted
+      x-enum-varnames:
+        - HostedAppRevisionStatusUploading
+        - HostedAppRevisionStatusValidating
+        - HostedAppRevisionStatusReady
+        - HostedAppRevisionStatusFailed
+        - HostedAppRevisionStatusEvicted
+    HostedAppManifestFile:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - sizeBytes
+        - sha256
+        - contentType
+        - etag
+        - objectKey
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 256
+        etag:
+          type: string
+          minLength: 1
+          maxLength: 256
+        objectKey:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    HostedAppRevision:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - appId
+        - revisionNumber
+        - kind
+        - status
+        - bundleSha256
+        - fileCount
+        - totalBytes
+        - spaFallback
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        revisionNumber:
+          type: integer
+          format: int64
+          minimum: 1
+        description:
+          type: string
+          maxLength: 512
+        kind:
+          $ref: "#/components/schemas/HostedAppKind"
+        status:
+          $ref: "#/components/schemas/HostedAppRevisionStatus"
+        bundleSha256:
+          type: string
+          maxLength: 128
+        imageRef:
+          type: string
+          maxLength: 512
+          description: Immutable OCI image reference verified for this dynamic revision.
+        buildPhase:
+          type: string
+          maxLength: 32
+          description: Current dynamic deployment phase, when a build or readiness check is in progress.
+        fileCount:
+          type: integer
+          format: int32
+          minimum: 0
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        spaFallback:
+          type: boolean
+        storageIntegrationId:
+          type: string
+          maxLength: 128
+        storagePrefix:
+          type: string
+          maxLength: 256
+        failureStage:
+          type: string
+          maxLength: 128
+        failureReason:
+          type: string
+          maxLength: 1024
+        idempotencyKey:
+          type: string
+          maxLength: 128
+        createdBy:
+          type: string
+          minLength: 1
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+        activatedAt:
+          type: string
+          format: date-time
+    HostedAppRevisionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRevision"
+    HostedAppRevisionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppRevision"
+        total:
+          type: integer
+          minimum: 0
+    HostedAppRevisionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRevisionList"
+    HostedAppDeploymentReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - app
+        - revision
+        - reusedIdempotencyKey
+      properties:
+        app:
+          $ref: "#/components/schemas/HostedApp"
+        revision:
+          $ref: "#/components/schemas/HostedAppRevision"
+        reusedIdempotencyKey:
+          type: boolean
+    HostedAppDeploymentResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppDeploymentReceipt"
+    HostedAppRollbackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - targetRevisionId
+      properties:
+        targetRevisionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 512
+    HostedAppRuntimeConfig:
+      type: object
+      additionalProperties: false
+      required: [environmentKeys, dataWarningBytes]
+      properties:
+        environmentKeys:
+          description: Names of configured environment variables. Values are write-only.
+          type: array
+          items:
+            type: string
+            maxLength: 64
+        sensitivePublisherIds:
+          description: Current maintainers explicitly trusted by the application owner to publish with runtime credentials.
+          type: array
+          items:
+            type: string
+            maxLength: 128
+        dataWarningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+    HostedAppEnvironmentVariableInput:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{0,63}$'
+          maxLength: 64
+        value:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+    UpdateHostedAppRuntimeConfigRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        setEnvironment:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/HostedAppEnvironmentVariableInput"
+        removeEnvironment:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
+        sensitivePublisherIds:
+          description: Replace the current owner-consented set. An empty list clears all consent.
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 128
+        acknowledgeSensitiveAccess:
+          description: Required when granting any maintainer access to application data and runtime secrets through publishing.
+          type: boolean
+        dataWarningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1099511627776
+          x-go-pointer: true
+    HostedAppRuntimeUsageStatus:
+      type: string
+      enum: [available, not_enabled, unavailable]
+      x-enum-varnames: [HostedAppRuntimeUsageStatusAvailable, HostedAppRuntimeUsageStatusNotEnabled, HostedAppRuntimeUsageStatusUnavailable]
+    HostedAppRuntimeUsage:
+      type: object
+      additionalProperties: false
+      required: [status, warningBytes, warning]
+      properties:
+        status:
+          $ref: "#/components/schemas/HostedAppRuntimeUsageStatus"
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          x-go-pointer: true
+        warningBytes:
+          type: integer
+          format: int64
+          minimum: 1
+        warning:
+          type: boolean
+        sampledAt:
+          type: string
+          format: date-time
+          x-go-pointer: true
+    HostedAppVisitorAttribute:
+      type: string
+      enum: [email, department]
+      x-enum-varnames: [HostedAppVisitorAttributeEmail, HostedAppVisitorAttributeDepartment]
+    HostedAppVisitorAttributeRequest:
+      type: object
+      additionalProperties: false
+      required: [id, reason, fields, requestedAt]
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 500
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        requestedAt:
+          type: string
+          format: date-time
+    HostedAppVisitorAttributes:
+      type: object
+      additionalProperties: false
+      required: [granted]
+      properties:
+        granted:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        pending:
+          $ref: "#/components/schemas/HostedAppVisitorAttributeRequest"
+    RequestHostedAppVisitorAttributesRequest:
+      type: object
+      additionalProperties: false
+      required: [fields, reason]
+      properties:
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    DecideHostedAppVisitorAttributesRequest:
+      type: object
+      additionalProperties: false
+      required: [fields]
+      properties:
+        requestId:
+          description: Pending request identifier. Omit with empty fields to revoke the existing grant.
+          type: string
+          maxLength: 128
+        fields:
+          description: Approved subset. Empty fields with a request identifier reject the request.
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/HostedAppVisitorAttribute"
+    HostedAppRevisionLog:
+      type: object
+      additionalProperties: false
+      required: [source, code, message, at]
+      properties:
+        source:
+          type: string
+          enum: [build, runtime]
+        code:
+          type: string
+          maxLength: 64
+        message:
+          type: string
+          maxLength: 256
+        at:
+          type: string
+          format: date-time
+    HostedAppRevisionLogs:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/HostedAppRevisionLog"
+    HostedAppRuntimeConfigResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRuntimeConfig"
+    HostedAppRuntimeUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRuntimeUsage"
+    HostedAppVisitorAttributesResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppVisitorAttributes"
+    HostedAppRevisionLogsResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppRevisionLogs"
+    HostedAppVisitorIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        department:
+          description: Present only when the application has an administrator-approved grant.
+          type: string
+          maxLength: 256
+        email:
+          type: string
+          maxLength: 320
+        teams:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+    HostedAppTicketExchangeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - ticket
+        - host
+      properties:
+        ticket:
+          type: string
+          minLength: 1
+          maxLength: 512
+          format: password
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        gatewayState:
+          type: string
+          maxLength: 2048
+    HostedAppTicketExchangeResult:
+      type: object
+      additionalProperties: false
+      required:
+        - sessionId
+        - principalUserId
+        - appId
+        - dnsLabel
+        - host
+        - routeGeneration
+        - returnPath
+        - expiresAt
+        - user
+      properties:
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        principalUserId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        dnsLabel:
+          type: string
+          minLength: 1
+          maxLength: 63
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        routeGeneration:
+          type: integer
+          format: int64
+          minimum: 0
+        returnPath:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/HostedAppVisitorIdentity"
+    HostedAppTicketExchangeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppTicketExchangeResult"
+    HostedAppGatewayAccessCheckRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - host
+      properties:
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    HostedAppAccessDecisionKind:
+      type: string
+      enum:
+        - allow
+        - unauthenticated
+        - forbidden
+        - offline
+        - not_found
+      x-enum-varnames:
+        - HostedAppAccessDecisionKindAllow
+        - HostedAppAccessDecisionKindUnauthenticated
+        - HostedAppAccessDecisionKindForbidden
+        - HostedAppAccessDecisionKindOffline
+        - HostedAppAccessDecisionKindNotFound
+    HostedAppGatewayAccessDecision:
+      type: object
+      additionalProperties: false
+      required:
+        - decision
+        - host
+      properties:
+        decision:
+          $ref: "#/components/schemas/HostedAppAccessDecisionKind"
+        appId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        dnsLabel:
+          type: string
+          minLength: 1
+          maxLength: 63
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        appStatus:
+          $ref: "#/components/schemas/HostedAppStatus"
+        routeGeneration:
+          type: integer
+          format: int64
+          minimum: 0
+        spaFallback:
+          type: boolean
+        activeRevisionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        runtimeService:
+          type: string
+          pattern: '^soha-app-[0-9a-f]{32}$'
+          description: Cluster-local service name for a dynamic revision, resolved in the gateway's configured runtime namespace.
+        storageIntegrationId:
+          type: string
+          maxLength: 128
+        storagePrefix:
+          type: string
+          maxLength: 256
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostedAppManifestFile"
+        user:
+          $ref: "#/components/schemas/HostedAppVisitorIdentity"
+        reason:
+          type: string
+          maxLength: 512
+    AppHostingGatewayAccessDecision:
+      $ref: "#/components/schemas/HostedAppGatewayAccessDecision"
+    HostedAppGatewayAccessCheckResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/HostedAppGatewayAccessDecision"

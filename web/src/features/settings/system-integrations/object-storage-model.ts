@@ -15,6 +15,7 @@ export interface S3StorageFormValues {
   region: string
   prefix?: string
   pathStyle: boolean
+  bucketEndpoint: boolean
   insecure: boolean
   allowPrivate: boolean
   accessKeyId?: string
@@ -39,6 +40,7 @@ export function s3StorageFormValues(item?: SystemIntegration): S3StorageFormValu
     region: item ? configurationValue(item, 'region') : 'us-east-1',
     prefix: item ? configurationValue(item, 'prefix') : '',
     pathStyle: item ? configurationValue(item, 'path_style') === 'true' : true,
+    bucketEndpoint: item ? configurationValue(item, 'bucket_endpoint') === 'true' : false,
     insecure: item ? configurationValue(item, 'insecure') === 'true' : false,
     allowPrivate: item ? configurationValue(item, 'allow_private') === 'true' : false,
     accessKeyId: '',
@@ -80,6 +82,7 @@ function configuration(values: S3StorageFormValues) {
     { key: 'region', value: values.region.trim() },
     { key: 'prefix', value: values.prefix?.trim().replace(/^\/+|\/+$/g, '') ?? '' },
     { key: 'path_style', value: String(values.pathStyle) },
+    ...(values.bucketEndpoint ? [{ key: 'bucket_endpoint', value: 'true' }] : []),
     { key: 'insecure', value: String(values.insecure) },
     { key: 'allow_private', value: String(values.allowPrivate) },
   ]

@@ -1,0 +1,21 @@
+{
+  "id": "app_extra_field",
+  "name": "Extra Field App",
+  "kind": "static",
+  "dnsLabel": "extra-field-a1b2c3",
+  "host": "extra-field-a1b2c3.apps.soha.internal",
+  "url": "https://extra-field-a1b2c3.apps.soha.internal",
+  "spaFallback": false,
+  "ownerUserId": "usr_alice",
+  "maintainerUserIds": [
+    "usr_alice"
+  ],
+  "visibility": {
+    "mode": "organization"
+  },
+  "status": "online",
+  "routeGeneration": 1,
+  "createdAt": "2026-11-20T09:00:00Z",
+  "updatedAt": "2026-11-20T09:00:00Z",
+  "unexpectedInternalSecret": "not-allowed"
+}

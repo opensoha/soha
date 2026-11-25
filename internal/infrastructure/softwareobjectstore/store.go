@@ -24,6 +24,7 @@ import (
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/netguard"
+	"github.com/opensoha/soha/internal/platform/s3endpoint"
 )
 
 type ConnectionResolver interface {
@@ -31,19 +32,20 @@ type ConnectionResolver interface {
 }
 
 type Config struct {
-	IntegrationID string
-	Endpoint      string
-	Bucket        string
-	Region        string
-	Prefix        string
-	PathStyle     bool
-	Insecure      bool
-	AllowPrivate  bool
-	AccessKeyID   string
-	SecretKey     string
-	SessionToken  string
-	HealthStatus  string
-	LastCheckedAt *time.Time
+	IntegrationID  string
+	Endpoint       string
+	Bucket         string
+	Region         string
+	Prefix         string
+	PathStyle      bool
+	BucketEndpoint bool
+	Insecure       bool
+	AllowPrivate   bool
+	AccessKeyID    string
+	SecretKey      string
+	SessionToken   string
+	HealthStatus   string
+	LastCheckedAt  *time.Time
 }
 
 type s3Operations interface {
@@ -129,7 +131,11 @@ func buildStore(item domain.Integration, values map[string]string) (*Store, erro
 	if err != nil {
 		return nil, err
 	}
-	client := newS3Client(config, storageHTTPClient(config.AllowPrivate))
+	httpClient := storageHTTPClient(config.AllowPrivate)
+	if config.BucketEndpoint {
+		httpClient.CheckRedirect = s3endpoint.RejectRedirect
+	}
+	client := newS3Client(config, httpClient)
 	return newStore(config, client, transfermanager.New(client)), nil
 }
 
@@ -145,6 +151,9 @@ func newS3Client(config Config, httpClient *http.Client, configure ...func(*s3.O
 		options.UsePathStyle = config.PathStyle
 		if config.Endpoint != "" {
 			options.BaseEndpoint = aws.String(config.Endpoint)
+		}
+		if config.BucketEndpoint {
+			s3endpoint.ConfigureBucketEndpoint(options, config.Bucket)
 		}
 	}}
 	return s3.NewFromConfig(awsConfig, append(options, configure...)...)
@@ -183,6 +192,9 @@ func parseConnectionFlags(config *Config, fields map[string]string) error {
 	if config.PathStyle, err = optionalBool(fields["path_style"]); err != nil {
 		return fmt.Errorf("%w: invalid s3 path_style", apperrors.ErrInvalidArgument)
 	}
+	if config.BucketEndpoint, err = optionalBool(fields["bucket_endpoint"]); err != nil {
+		return fmt.Errorf("%w: invalid s3 bucket_endpoint", apperrors.ErrInvalidArgument)
+	}
 	if config.Insecure, err = optionalBool(fields["insecure"]); err != nil {
 		return fmt.Errorf("%w: invalid s3 insecure", apperrors.ErrInvalidArgument)
 	}
@@ -193,6 +205,11 @@ func parseConnectionFlags(config *Config, fields map[string]string) error {
 }
 
 func validateConnectionConfig(config Config) error {
+	if config.BucketEndpoint {
+		if err := s3endpoint.ValidateBucketEndpoint(config.Endpoint, config.PathStyle, config.Insecure); err != nil {
+			return fmt.Errorf("%w: %w", apperrors.ErrInvalidArgument, err)
+		}
+	}
 	if config.Endpoint != "" {
 		parsed, err := url.Parse(config.Endpoint)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Scheme == "http" && !config.Insecure {

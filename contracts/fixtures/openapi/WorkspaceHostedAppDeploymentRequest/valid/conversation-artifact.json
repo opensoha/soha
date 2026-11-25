@@ -1,0 +1,14 @@
+{
+  "appId": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+  "visibility": {
+    "mode": "organization"
+  },
+  "visibilityReason": "Share team report template with everyone",
+  "source": {
+    "kind": "conversation_artifact",
+    "sessionId": "sess_01j9a0",
+    "artifactId": "art_01j9a0",
+    "entryFileName": "index.html"
+  },
+  "idempotencyKey": "ws-deploy-artifact-01j9a2"
+}

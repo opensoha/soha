@@ -1110,6 +1110,31 @@
           "no_secret_output"
         ],
         "reviewStatus": "approved"
+      },
+      {
+        "type": "skill",
+        "id": "app-hosting-publisher",
+        "version": "0.1.0",
+        "riskLevel": "read",
+        "approvalRequired": false,
+        "gatewayCapabilityRefs": [
+          "gateway.manifest.read"
+        ],
+        "platformCapabilityRefs": [],
+        "requiredScopes": [
+          "aiClient",
+          "skill"
+        ],
+        "guardrails": [
+          "discover_live_capabilities",
+          "default_private_visibility",
+          "confirm_audience_before_share",
+          "preflight_before_upload",
+          "stable_idempotency_keys",
+          "reject_local_secrets_and_symlinks",
+          "no_secret_output"
+        ],
+        "reviewStatus": "approved"
       }
     ]
   },

@@ -194,6 +194,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "network-access-proxy-overview", ParentID: "identity", Path: "/network-access/proxy-overview", LabelZH: "流量概览", LabelEN: "Traffic Overview", IconKey: "gauge", Section: "proxy", SortOrder: 20, Enabled: true},
 	{ID: "network-access-proxy-connections", ParentID: "identity", Path: "/network-access/proxy-connections", LabelZH: "活动连接", LabelEN: "Active Connections", IconKey: "link", Section: "proxy", SortOrder: 30, Enabled: true},
 	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true},
+	{ID: "identity-app-hosting", ParentID: "identity", Path: "/internal-workbench/app-hosting", LabelZH: "应用托管", LabelEN: "App Hosting", IconKey: "globe", Section: "provider", SortOrder: 15, Enabled: true},
 	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "认证接入", LabelEN: "Authentication", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true},
 	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "接入节点", LabelEN: "Access Nodes", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true},
 	{ID: "identity-login-records", ParentID: "identity", Path: "/identity/login-records", LabelZH: "登录记录", LabelEN: "Login Records", IconKey: "file-clock", Section: "provider", SortOrder: 40, Enabled: true},

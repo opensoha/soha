@@ -1,0 +1,80 @@
+{
+  "id": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+  "name": "Quarterly Sales Dashboard",
+  "description": "Interactive SPA dashboard for cross-department quarterly review",
+  "kind": "static",
+  "dnsLabel": "sales-dashboard-a1b2c3",
+  "host": "sales-dashboard-a1b2c3.apps.soha.internal",
+  "url": "https://sales-dashboard-a1b2c3.apps.soha.internal",
+  "spaFallback": true,
+  "ownerUserId": "usr_alice",
+  "ownerProfile": {
+    "userId": "usr_alice",
+    "displayName": "Alice Chen",
+    "avatarUrl": "https://cdn.soha.internal/avatars/alice.png",
+    "teamNames": [
+      "Growth Analytics",
+      "Platform"
+    ]
+  },
+  "maintainerUserIds": [
+    "usr_bob"
+  ],
+  "maintainers": [
+    {
+      "userId": "usr_bob",
+      "displayName": "Bob Li",
+      "teamNames": [
+        "Growth Analytics"
+      ]
+    }
+  ],
+  "visibility": {
+    "mode": "selected",
+    "userIds": [
+      "usr_carol"
+    ],
+    "teamIds": [
+      "team_finance"
+    ]
+  },
+  "pendingVisibilityApproval": {
+    "id": "appr_01j9a0b1c2d3e4f5g6h7j8k9m0",
+    "appId": "app_01j8x2h4a9m7k3q1w5e6r7t8y9",
+    "appName": "Quarterly Sales Dashboard",
+    "appDnsLabel": "sales-dashboard-a1b2c3",
+    "requesterUserId": "usr_alice",
+    "requesterProfile": {
+      "userId": "usr_alice",
+      "displayName": "Alice Chen",
+      "teamNames": [
+        "Growth Analytics"
+      ]
+    },
+    "currentVisibility": {
+      "mode": "selected",
+      "userIds": [
+        "usr_carol"
+      ],
+      "teamIds": [
+        "team_finance"
+      ]
+    },
+    "requestedVisibility": {
+      "mode": "organization"
+    },
+    "baseRouteGeneration": 3,
+    "policyVersion": 2,
+    "status": "pending",
+    "reason": "Open quarterly metrics overview to all employees",
+    "createdAt": "2026-11-21T02:00:00Z",
+    "updatedAt": "2026-11-21T02:00:00Z"
+  },
+  "status": "online",
+  "activeRevisionId": "rev_01j8x2h9b2n4p6q8r0s2t4u6v8",
+  "activeRevisionNumber": 2,
+  "totalBytes": 184320,
+  "routeGeneration": 3,
+  "createdAt": "2026-11-20T10:00:00Z",
+  "updatedAt": "2026-11-21T02:00:00Z"
+}
