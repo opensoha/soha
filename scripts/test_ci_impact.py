@@ -312,7 +312,7 @@ class WorkflowWiringTests(unittest.TestCase):
             self.assertNotIn("GOWORK=off", workflow)
             for path in ("go.sum", "contracts/go.sum", "cli/go.sum", "agent/go.sum"):
                 self.assertIn(f"            {path}\n", workflow)
-            for gate in ("source-workspace.py check-go", "source-workspace.py tidy", "go mod verify", "go test ./...",
+            for gate in ("source-workspace.py check-go", "source-workspace.py tidy", "go mod verify",
                          "go test -race ./...", "go vet ./...", "govulncheck@v1.8.0", "golangci-lint-action@v9", "CGO_ENABLED=0 go build"):
                 self.assertIn(gate, workflow)
             builds = [line.strip() for line in workflow.splitlines() if line.strip().startswith("docker build") or line.strip().startswith("run: docker build")]

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -4707,6 +4708,11 @@ func TestInvokeToolRejectsAccessPolicyRateLimitCondition(t *testing.T) {
 }
 
 func TestInvokeToolKeepsFixedWindowRateLimitBucketsSeparate(t *testing.T) {
+	synctest.Test(t, testInvokeToolKeepsFixedWindowRateLimitBucketsSeparate)
+}
+
+func testInvokeToolKeepsFixedWindowRateLimitBucketsSeparate(t *testing.T) {
+	t.Helper()
 	apps := &fakeApplicationService{}
 	repo := &memoryGatewayRepository{
 		accessPolicies: []domainaigateway.AccessPolicy{

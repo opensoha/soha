@@ -140,7 +140,7 @@ export function OperationalPlanModal({
           {resourceUpdate && resourceUpdate.conflicts.length > 0 ? (
             <ContextFeedback
               description={
-                <ul className="list-disc pl-5">
+                <ul className="soha-disc-list">
                   {resourceUpdate.conflicts.map((conflict) => (
                     <li key={`${conflict.field}-${conflict.manager ?? ''}`}>
                       {`${conflict.field}${conflict.manager ? ` · ${conflict.manager}` : ''}: ${conflict.message}`}
@@ -156,7 +156,7 @@ export function OperationalPlanModal({
           {warnings.length > 0 ? (
             <ContextFeedback
               description={
-                <ul className="list-disc pl-5">
+                <ul className="soha-disc-list">
                   {warnings.map((warning) => (
                     <li key={warning}>{warning}</li>
                   ))}

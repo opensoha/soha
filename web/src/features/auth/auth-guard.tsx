@@ -24,7 +24,7 @@ const AUTH_RESTORE_RETRY_MS = 2_000
 
 function AuthRestoringState({ unavailable }: { unavailable: boolean }) {
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="soha-viewport-center">
       <ManagementState
         bordered={false}
         kind="loading"
@@ -98,7 +98,7 @@ export function AuthGuard() {
 
   if (permissionSnapshotQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="soha-viewport-center">
         <Spin size="large" />
       </div>
     )
@@ -125,9 +125,9 @@ export function AuthGuard() {
       return <Navigate to={fallbackPath} replace />
     }
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="soha-viewport-center">
         <ManagementState
-          className="max-w-[520px]"
+          className="soha-auth-state-card"
           kind="no-permission"
           description="当前账号没有可访问的页面权限"
         />

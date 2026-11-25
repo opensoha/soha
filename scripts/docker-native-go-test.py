@@ -7,7 +7,7 @@ import re
 import subprocess
 import tarfile
 
-IMAGE = 'golang:1.27.3'
+IMAGE = 'golang:1.27.4'
 CONTRACT_EMBEDS = {
     'auth/permission-catalog.json',
     'network/network-runtime-protocol.schema.json',

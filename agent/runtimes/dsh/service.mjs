@@ -66,7 +66,7 @@ export async function configFromEnv(env = process.env) {
   return {
     modelAuthMode,
     host: env.SOHA_DSH_HOST || '127.0.0.1',
-    port: Number(env.SOHA_DSH_PORT || 8097),
+    port: integer('SOHA_DSH_PORT', 8097, 65535),
     token: await secret('SOHA_DSH_SERVICE_TOKEN_FILE'),
     ...(modelAuthMode === 'gateway' ? { pat: await secret('SOHA_DSH_GATEWAY_PAT_FILE') } : {}),
     gatewayURL: url(env.SOHA_DSH_GATEWAY_URL),
@@ -874,11 +874,13 @@ export async function createRuntime(
           const raw = parsed.searchParams.get('after') ?? '0', after = Number(raw);
           if (!/^\d+$/.test(raw) || !Number.isSafeInteger(after) || after > r.sequence) throw fail();
           const candidates = r.events.filter((e) => e.sequence > after), items = [];
+          let totalBytes = 2;
           for (const e of candidates) {
-            if (items.length === 256 ||
-                Buffer.byteLength(JSON.stringify(items)) + Buffer.byteLength(JSON.stringify(e)) > 1000000)
-              break;
+            const eventBytes = Buffer.byteLength(JSON.stringify(e));
+            const nextBytes = totalBytes + (items.length > 0 ? 1 : 0) + eventBytes;
+            if (items.length === 256 || nextBytes > 1000000) break;
             items.push(e);
+            totalBytes = nextBytes;
           }
           return validate('EventPage', {
             items,
@@ -972,7 +974,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.on(sig, async () => {
         if (closing) return;
         closing = true;
-        await runtime.close();
+        try {
+          await runtime.close();
+        } catch {
+          process.exitCode = 1;
+        }
       });
   } catch {
     console.error('dsh runtime startup failed');

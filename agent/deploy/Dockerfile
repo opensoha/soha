@@ -66,7 +66,7 @@ ARG COMMIT=unknown
 LABEL org.opencontainers.image.revision=$COMMIT
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
-RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
+RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates git tzdata
 WORKDIR /app
 COPY --from=agent-build /out/soha-agent /app/soha-agent
 COPY agent/configs/agent.config.yaml /app/configs/agent.config.yaml

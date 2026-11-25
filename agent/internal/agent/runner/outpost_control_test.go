@@ -163,7 +163,8 @@ func TestOutpostControlRejectsUntrustedOrReplayedInstructions(t *testing.T) {
 				c.IssuedAt = now.Add(-31 * time.Second)
 				c.ExpiresAt = now.Add(-time.Second)
 			case "future":
-				c.IssuedAt = now.Add(time.Second)
+				c.IssuedAt = now.Add(3 * time.Second)
+				c.ExpiresAt = c.IssuedAt.Add(30 * time.Second)
 			case "long lease":
 				c.ExpiresAt = c.IssuedAt.Add(31 * time.Second)
 			case "invalid action":
@@ -186,6 +187,15 @@ func TestOutpostControlRejectsUntrustedOrReplayedInstructions(t *testing.T) {
 			}
 		})
 	}
+	t.Run("bounded positive clock skew accepted", func(t *testing.T) {
+		r, _, key := managedOutpostFixture(t)
+		now := time.Now().UTC()
+		config := signedOutpostConfig(t, key, now.Add(-time.Minute), 1)
+		config.RuntimeControl = signedOutpostControl(key, r, now.Add(500*time.Millisecond), 2, "serve")
+		if err := r.apply(config, "test-key", now); err != nil {
+			t.Fatalf("bounded clock skew rejected: %v", err)
+		}
+	})
 }
 
 func TestOutpostControlRestartAndStickyState(t *testing.T) {

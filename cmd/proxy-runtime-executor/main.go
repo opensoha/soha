@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	domain "github.com/opensoha/soha/internal/domain/proxydeployment"
 	runtime "github.com/opensoha/soha/internal/infrastructure/proxydeployment"
@@ -38,7 +40,12 @@ func run(ctx context.Context, path string) error {
 	if err = decoder.Decode(&cfg); err != nil {
 		return fmt.Errorf("invalid Proxy executor installation config")
 	}
-	token, err := os.ReadFile(cfg.TokenFile)
+	tokenFile, err := os.Open(cfg.TokenFile)
+	if err != nil {
+		return fmt.Errorf("read dedicated Proxy executor credential")
+	}
+	token, err := io.ReadAll(io.LimitReader(tokenFile, 64<<10))
+	_ = tokenFile.Close()
 	if err != nil {
 		return fmt.Errorf("read dedicated Proxy executor credential")
 	}
@@ -50,6 +57,7 @@ func run(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("proxy executor requires its installer-authorized in-cluster service account")
 	}
+	kubeConfig.Timeout = 10 * time.Second
 	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		return fmt.Errorf("construct Proxy executor Kubernetes client")

@@ -7,9 +7,13 @@ import (
 	"time"
 )
 
-func startCLIAuthCleanup(ctx context.Context, service *appidentity.Service, logger *zap.Logger) {
+func startCLIAuthCleanup(ctx context.Context, enabled bool, service *appidentity.Service, logger *zap.Logger) {
+	interval := 5 * time.Second
+	if !enabled {
+		interval = time.Minute
+	}
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {

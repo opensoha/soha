@@ -372,7 +372,17 @@ export function PodLogViewer({
     disconnect()
     const runId = connectionRunRef.current + 1
     connectionRunRef.current = runId
-    if (beforeConnect && !(await beforeConnect())) return
+    if (beforeConnect) {
+      try {
+        if (!(await beforeConnect())) {
+          if (connectionRunRef.current === runId) setConnectionState('idle')
+          return
+        }
+      } catch {
+        if (connectionRunRef.current === runId) setConnectionState('error')
+        return
+      }
+    }
     if (connectionRunRef.current !== runId) return
     setConnectionState('connecting')
     let ticketedURL: string
@@ -465,7 +475,9 @@ export function PodLogViewer({
         }
       })
       .catch(() => {
-        setConnectionState('error')
+        if (!cancelled) {
+          setConnectionState('error')
+        }
       })
 
     return () => {
@@ -713,7 +725,13 @@ export function PodLogViewer({
           icon={<ReloadOutlined />}
           size="small"
           type="text"
-          onClick={() => fetchSnapshot(historyLines)}
+          onClick={() => {
+            void fetchSnapshot(historyLines)
+            if (!previous) {
+              reconnectAttemptRef.current = 0
+              void connect()
+            }
+          }}
         >
           {t('podLogViewer.reconnect', 'Reconnect')}
         </Button>

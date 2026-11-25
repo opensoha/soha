@@ -589,7 +589,7 @@ export function OperationFeedback({
       owner.owners -= 1
       if (!owner.owners) {
         notificationOwners.delete(key)
-        notification.destroy(key)
+        notification.destroy?.(key)
       }
     }
   }, [key, notification])
@@ -599,7 +599,7 @@ export function OperationFeedback({
     if (!owner) return
     if (!active) {
       owner.notice = undefined
-      notification.destroy(key)
+      notification.destroy?.(key)
       return
     }
     const now = Date.now()
@@ -618,10 +618,10 @@ export function OperationFeedback({
       const duration = current.expiresAt ? (current.expiresAt - Date.now()) / 1_000 : 0
       if (current.expiresAt && duration <= 0) {
         current.dismissed = true
-        notification.destroy(key)
+        notification.destroy?.(key)
         return
       }
-      notification.open({
+      notification.open?.({
         key,
         className: 'soha-operation-feedback',
         style: { width: 'min(384px, calc(100vw - 48px))', background: 'var(--soha-bg-surface)' },

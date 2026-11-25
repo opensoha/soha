@@ -13,17 +13,17 @@
       "versions": [
         {
           "version": "0.1.0",
-          "manifestUrl": "https://marketplace.opensoha.dev/plugins/opensoha.soha-companion/0.1.0/plugin.manifest.json",
+          "manifestUrl": "https://marketplace.opensoha.com/plugins/opensoha.soha-companion/0.1.0/plugin.manifest.json",
           "package": {
-            "url": "https://marketplace.opensoha.dev/plugins/opensoha.soha-companion/0.1.0/companion.zip",
+            "url": "https://marketplace.opensoha.com/plugins/opensoha.soha-companion/0.1.0/companion.zip",
             "contentType": "application/zip",
             "sizeBytes": 4096,
             "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "signature": "c2lnbmF0dXJl",
             "signatureAlgorithm": "ed25519",
             "signingKeyId": "opensoha.release",
-            "provenanceUrl": "https://marketplace.opensoha.dev/plugins/opensoha.soha-companion/0.1.0/provenance.json",
-            "sbomUrl": "https://marketplace.opensoha.dev/plugins/opensoha.soha-companion/0.1.0/sbom.json"
+            "provenanceUrl": "https://marketplace.opensoha.com/plugins/opensoha.soha-companion/0.1.0/provenance.json",
+            "sbomUrl": "https://marketplace.opensoha.com/plugins/opensoha.soha-companion/0.1.0/sbom.json"
           }
         }
       ],

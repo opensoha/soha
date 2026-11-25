@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { FileDeadLetterQueue, FileIdempotencyStore, FileRetryQueue } from "../src/sdk/reliability.js";
+import { FileDeadLetterQueue, FileIdempotencyStore, FileRetryQueue, MemoryDeadLetterQueue } from "../src/sdk/reliability.js";
 
 test("file idempotency store rejects duplicates across instances until ttl expires", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "soha-connectors-idempotency-"));
@@ -157,4 +157,57 @@ test("file queues sanitize legacy entries when loading", async () => {
   assert.equal(persisted.includes("legacy-bearer"), false);
   assert.equal(persisted.includes("legacy-password"), false);
   assert.equal(persisted.includes("legacy-pass"), false);
+});
+
+test("retry queue IDs remain unique after completion and reload", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "soha-connectors-retry-ids-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "retry.json");
+  const queue = new FileRetryQueue(file, 10);
+  const input = {
+    connectorId: "feishu",
+    action: "send",
+    attempts: 1,
+    nextAttemptAt: "2026-06-12T00:00:00.000Z",
+    error: { code: "temporary", message: "try again", retryable: true },
+    input: {}
+  };
+  const first = queue.enqueue(input);
+  const second = queue.enqueue(input);
+  assert.equal(queue.complete(first.id), true);
+  const reloaded = new FileRetryQueue(file, 10);
+  const third = reloaded.enqueue(input);
+  assert.notEqual(third.id, second.id);
+  assert.equal(reloaded.complete(third.id), true);
+  assert.deepEqual(reloaded.list().map((entry) => entry.id), [second.id]);
+});
+
+test("dead letter IDs remain unique when old entries are evicted", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "soha-connectors-dead-letter-ids-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (const queue of [new MemoryDeadLetterQueue(1), new FileDeadLetterQueue(path.join(dir, "dead-letter.json"), 1)]) {
+    const ids = Array.from({ length: 4 }, () => queue.record({
+      connectorId: "feishu",
+      action: "send",
+      error: { code: "failed", message: "failed", retryable: false },
+      input: {}
+    }).id);
+    assert.equal(new Set(ids).size, ids.length);
+  }
+});
+
+test("queues reject unsafe capacities before loading or recording entries", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "soha-connectors-queue-capacity-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const factories = [
+    (capacity: number) => new MemoryDeadLetterQueue(capacity),
+    (capacity: number) => new FileDeadLetterQueue(path.join(dir, "dead-letter.json"), capacity),
+    (capacity: number) => new FileRetryQueue(path.join(dir, "retry.json"), capacity)
+  ];
+  for (const create of factories) {
+    assert.doesNotThrow(() => create(1));
+    for (const capacity of [-1, 0, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => create(capacity), /queue capacity must be a positive safe integer/);
+    }
+  }
 });

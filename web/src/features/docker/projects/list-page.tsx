@@ -1068,7 +1068,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
             title: localeText(localeCode, '项目设置', 'Project settings'),
             fieldNames: ['environment', 'owner', 'team', 'ttlSeconds'],
             children: (
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="soha-form-grid-2">
                 <Form.Item name="environment" label={localeText(localeCode, '环境', 'Environment')}>
                   <Input />
                 </Form.Item>
@@ -1098,7 +1098,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                     },
                   ]}
                 >
-                  <InputNumber id="ttlSeconds" min={60} precision={0} className="w-full" />
+                  <InputNumber id="ttlSeconds" min={60} precision={0} className="soha-full-width" />
                 </Form.Item>
               </div>
             ),
@@ -1226,7 +1226,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                   </Form.Item>
                 ) : null}
                 {sourceKind === 'git' && canViewSourceControl ? (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="soha-form-grid-2">
                     <Form.Item
                       name="sourceConnectionId"
                       label={localeText(localeCode, '代码源', 'Source connection')}
@@ -1378,7 +1378,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                 <QuickStartFormSection
                   title={localeText(localeCode, '应用与目标', 'Application and target')}
                 >
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="soha-form-grid-2">
                     <Form.Item
                       name="name"
                       label={localeText(localeCode, '应用名称', 'Application name')}
@@ -1444,7 +1444,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                       >
                         <Input placeholder="https://github.com/org/repository.git" />
                       </Form.Item>
-                      <div className="grid gap-3 md:grid-cols-3">
+                      <div className="soha-form-grid-3">
                         <Form.Item
                           name={['gitBuild', 'ref']}
                           label={localeText(
@@ -1471,7 +1471,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                           <Input placeholder="." />
                         </Form.Item>
                       </div>
-                      <div className="grid gap-3 md:grid-cols-2">
+                      <div className="soha-form-grid-2">
                         <Form.Item
                           name={['gitBuild', 'pull']}
                           label={localeText(
@@ -1515,7 +1515,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
             fieldNames: ['restartPolicy', 'environmentVariables', 'resources'],
             children: (
               <>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="soha-form-grid-2">
                   <Form.Item
                     name="restartPolicy"
                     label={localeText(localeCode, '重启策略', 'Restart policy')}
@@ -1543,7 +1543,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                     name="ttlSeconds"
                     label={localeText(localeCode, 'TTL 秒数', 'TTL seconds')}
                   >
-                    <InputNumber min={0} className="w-full" />
+                    <InputNumber min={0} className="soha-full-width" />
                   </Form.Item>
                   <Form.Item name="command" label={localeText(localeCode, '启动命令', 'Command')}>
                     <Input />
@@ -1554,11 +1554,11 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                 </div>
                 <Form.List name="environmentVariables">
                   {(fields, { add, remove }) => (
-                    <div className="mb-3 space-y-3">
+                    <div className="soha-mb-md soha-stack-md">
                       {fields.map((field, index) => (
                         <div
                           key={field.key}
-                          className="grid items-start gap-3 md:grid-cols-[1fr_1fr_40px]"
+                          className="soha-docker-env-grid"
                         >
                           <Form.Item
                             name={[field.name, 'name']}
@@ -1591,24 +1591,24 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   )}
                 </Form.List>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="soha-form-grid-3">
                   <Form.Item
                     name={['resources', 'cpus']}
                     label={localeText(localeCode, 'CPU 限制', 'CPU limit')}
                   >
-                    <InputNumber min={0} step={0.1} className="w-full" />
+                    <InputNumber min={0} step={0.1} className="soha-full-width" />
                   </Form.Item>
                   <Form.Item
                     name={['resources', 'memoryMiB']}
                     label={localeText(localeCode, '内存限制 MiB', 'Memory limit MiB')}
                   >
-                    <InputNumber min={0} className="w-full" />
+                    <InputNumber min={0} className="soha-full-width" />
                   </Form.Item>
                   <Form.Item
                     name={['resources', 'memoryReservationMiB']}
                     label={localeText(localeCode, '内存预留 MiB', 'Memory reservation MiB')}
                   >
-                    <InputNumber min={0} className="w-full" />
+                    <InputNumber min={0} className="soha-full-width" />
                   </Form.Item>
                 </div>
                 <Form.Item name="envContent" label=".env">
@@ -1624,13 +1624,13 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
               <>
                 <Form.List name="ports">
                   {(fields, { add, remove }) => (
-                    <div className="mb-3 space-y-3">
+                    <div className="soha-mb-md soha-stack-md">
                       {fields.map((field, index) => (
                         <div
                           key={field.key}
-                          className="rounded border border-[var(--soha-border-color)] p-3"
+                          className="soha-bordered-box"
                         >
-                          <div className="mb-2 flex items-center justify-between">
+                          <div className="soha-mb-sm soha-row-between">
                             <Text strong>
                               {localeText(localeCode, `端口 ${index + 1}`, `Port ${index + 1}`)}
                             </Text>
@@ -1643,7 +1643,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                               />
                             ) : null}
                           </div>
-                          <div className="grid gap-3 md:grid-cols-4">
+                          <div className="soha-form-grid-4">
                             <Form.Item
                               name={[field.name, 'name']}
                               label={localeText(localeCode, '名称', 'Name')}
@@ -1655,14 +1655,14 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                               label={localeText(localeCode, '容器端口', 'Container port')}
                               rules={[{ required: true }]}
                             >
-                              <InputNumber min={1} max={65535} className="w-full" />
+                              <InputNumber min={1} max={65535} className="soha-full-width" />
                             </Form.Item>
                             <Form.Item
                               name={[field.name, 'hostPort']}
                               label={localeText(localeCode, '主机端口', 'Host port')}
                               rules={[{ required: true }]}
                             >
-                              <InputNumber min={1} max={65535} className="w-full" />
+                              <InputNumber min={1} max={65535} className="soha-full-width" />
                             </Form.Item>
                             <Form.Item
                               name={[field.name, 'hostIp']}
@@ -1739,13 +1739,13 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                 </Form.List>
                 <Form.List name="volumes">
                   {(fields, { add, remove }) => (
-                    <div className="mb-3 space-y-3">
+                    <div className="soha-mb-md soha-stack-md">
                       {fields.map((field, index) => (
                         <div
                           key={field.key}
-                          className="rounded border border-[var(--soha-border-color)] p-3"
+                          className="soha-bordered-box"
                         >
-                          <div className="mb-2 flex items-center justify-between">
+                          <div className="soha-mb-sm soha-row-between">
                             <Text strong>
                               {localeText(localeCode, `卷 ${index + 1}`, `Volume ${index + 1}`)}
                             </Text>
@@ -1756,7 +1756,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
                               onClick={() => remove(field.name)}
                             />
                           </div>
-                          <div className="grid gap-3 md:grid-cols-4">
+                          <div className="soha-form-grid-4">
                             <Form.Item
                               name={[field.name, 'name']}
                               label={localeText(localeCode, '名称', 'Name')}

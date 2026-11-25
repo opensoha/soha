@@ -117,7 +117,7 @@ export function GatewayRelaySection(props: GatewayRelaySectionProps) {
                   { key: 'cache', label: 'Cache', children: props.metrics.cache },
                 ]}
               />
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="soha-gateway-models-grid">
                 <AdminTable
                   shellClassName="soha-management-table-shell"
                   columnSettingIconOnly

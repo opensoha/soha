@@ -33,9 +33,6 @@ func (s *Service) ListTargets(ctx context.Context, p domainidentity.Principal, f
 		return page, nil
 	}
 	start := (page.Page - 1) * page.PageSize
-	if start >= page.Total {
-		return page, nil
-	}
 	for _, binding := range bindings[start:min(start+page.PageSize, page.Total)] {
 		page.Items = append(page.Items, binding.Target)
 	}
@@ -57,6 +54,10 @@ func (s *Service) bindings(ctx context.Context, p domainidentity.Principal, f do
 	if err != nil {
 		return nil, err
 	}
+	envsByApp := make(map[string][]domaincatalog.ApplicationEnvironment)
+	for _, env := range envs {
+		envsByApp[env.ApplicationID] = append(envsByApp[env.ApplicationID], env)
+	}
 	definitions, err := s.deps.Environments.ListEnvironments(ctx, p)
 	if err != nil {
 		return nil, err
@@ -69,9 +70,13 @@ func (s *Service) bindings(ctx context.Context, p domainidentity.Principal, f do
 	if err != nil {
 		return nil, err
 	}
+	modesByTarget := make(map[string]sohaapi.TemplateUpdateMode, len(policies))
+	for _, policy := range policies {
+		modesByTarget[policy.Value.TargetID] = policy.Value.Mode
+	}
 	items := []domainupdate.Binding{}
 	for _, app := range apps {
-		found, err := s.applicationBindings(ctx, p, app, envs, f)
+		found, err := s.applicationBindings(ctx, p, app, envsByApp[app.ID], f)
 		if err != nil {
 			return nil, err
 		}
@@ -79,7 +84,7 @@ func (s *Service) bindings(ctx context.Context, p domainidentity.Principal, f do
 			if f.ServiceID != "" && binding.Target.ServiceID != f.ServiceID || f.ApplicationEnvironmentID != "" && binding.Target.ApplicationEnvironmentID != f.ApplicationEnvironmentID {
 				continue
 			}
-			applyAdoptionPolicy(&binding, protected, policies)
+			applyAdoptionPolicy(&binding, protected, modesByTarget)
 			binding.Target.BindingRevision = bindingRevision(binding)
 			items = append(items, binding)
 			if len(items) > 2000 {
@@ -91,13 +96,7 @@ func (s *Service) bindings(ctx context.Context, p domainidentity.Principal, f do
 	return items, nil
 }
 
-func (s *Service) applicationBindings(ctx context.Context, p domainidentity.Principal, app domainapp.App, envs []domaincatalog.ApplicationEnvironment, f domainupdate.Filter) ([]domainupdate.Binding, error) {
-	appEnvs := []domaincatalog.ApplicationEnvironment{}
-	for _, env := range envs {
-		if env.ApplicationID == app.ID {
-			appEnvs = append(appEnvs, env)
-		}
-	}
+func (s *Service) applicationBindings(ctx context.Context, p domainidentity.Principal, app domainapp.App, appEnvs []domaincatalog.ApplicationEnvironment, f domainupdate.Filter) ([]domainupdate.Binding, error) {
 	if f.Kind == "build" {
 		var err error
 		appEnvs, err = s.deps.Environments.ListTemplateAdoptionEnvironments(ctx, p, app.ID)
@@ -121,7 +120,7 @@ func (s *Service) applicationBindings(ctx context.Context, p domainidentity.Prin
 	return found, nil
 }
 
-func applyAdoptionPolicy(binding *domainupdate.Binding, protected map[string]bool, policies []domainupdate.Policy) {
+func applyAdoptionPolicy(binding *domainupdate.Binding, protected map[string]bool, modesByTarget map[string]sohaapi.TemplateUpdateMode) {
 	for _, env := range binding.Environments {
 		if protected[env.EnvironmentID] || environmentNeedsApproval(env) {
 			binding.Target.RequiresApproval = true
@@ -133,10 +132,8 @@ func applyAdoptionPolicy(binding *domainupdate.Binding, protected map[string]boo
 		}
 	}
 	binding.Target.Mode = "fixed"
-	for _, policy := range policies {
-		if policy.Value.TargetID == binding.Target.ID {
-			binding.Target.Mode = policy.Value.Mode
-		}
+	if mode, ok := modesByTarget[binding.Target.ID]; ok {
+		binding.Target.Mode = mode
 	}
 }
 

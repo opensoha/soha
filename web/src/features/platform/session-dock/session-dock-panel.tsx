@@ -131,7 +131,7 @@ function TerminalSessionContent({
       toolbarContent={
         <>
           <div className="soha-terminal-control-group">
-            <Text strong className="text-xs">
+            <Text strong>
               {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
             </Text>
             <Select
@@ -150,7 +150,7 @@ function TerminalSessionContent({
             />
             {podDetailQuery.isError ? (
               <>
-                <Text type="danger" className="text-xs">
+                <Text type="danger">
                   {containerLoadError}
                 </Text>
                 <Button
@@ -166,7 +166,7 @@ function TerminalSessionContent({
             ) : null}
           </div>
           <div className="soha-terminal-control-group">
-            <Text strong className="text-xs">
+            <Text strong>
               Shell:
             </Text>
             <Select

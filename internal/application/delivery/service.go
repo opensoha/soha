@@ -3315,22 +3315,6 @@ func matchesBindingTarget(binding domaincatalog.ApplicationEnvironment, clusterI
 	return false
 }
 
-func matchesSearch(item domainresource.DeploymentView, search string) bool {
-	search = strings.ToLower(strings.TrimSpace(search))
-	if search == "" {
-		return true
-	}
-	if strings.Contains(strings.ToLower(item.Name), search) {
-		return true
-	}
-	for key, value := range item.Labels {
-		if strings.Contains(strings.ToLower(key), search) || strings.Contains(strings.ToLower(value), search) {
-			return true
-		}
-	}
-	return false
-}
-
 func derefEnvironment(item *domaincatalog.Environment) domaincatalog.Environment {
 	if item == nil {
 		return domaincatalog.Environment{}

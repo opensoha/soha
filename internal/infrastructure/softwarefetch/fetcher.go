@@ -15,6 +15,7 @@ import (
 
 	appsoftware "github.com/opensoha/soha/internal/application/software"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/netguard"
 )
 
 const (
@@ -138,7 +139,7 @@ func validateURL(rawURL string) (*url.URL, error) {
 }
 
 func isUnsafeIP(ip net.IP) bool {
-	return ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate()
+	return netguard.BlockedOutboundIP(ip)
 }
 
 func responseFileName(response *http.Response) string {
@@ -155,11 +156,11 @@ func baseName(value string) string {
 	if value == "" {
 		return ""
 	}
-	name := path.Base(strings.ReplaceAll(value, `\`, "/"))
-	if decoded, err := url.PathUnescape(name); err == nil {
-		name = decoded
+	if decoded, err := url.PathUnescape(value); err == nil {
+		value = decoded
 	}
-	if name == "." || name == "/" {
+	name := path.Base(strings.ReplaceAll(value, `\`, "/"))
+	if name == "." || name == "/" || name == ".." {
 		return ""
 	}
 	return name

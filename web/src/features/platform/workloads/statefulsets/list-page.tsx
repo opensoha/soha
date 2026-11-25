@@ -410,7 +410,7 @@ export function WorkloadsStatefulSetsPage() {
         {scaleMutation.feedback}
         {deleteMutation.feedback}
 
-        <div className="flex items-center gap-2">
+        <div className="soha-inline-row">
           <Text>{localeCode === 'zh_CN' ? '副本数:' : 'Replicas:'}</Text>
           <InputNumber
             value={scaleTarget?.replicas ?? 1}

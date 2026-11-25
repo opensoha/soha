@@ -427,6 +427,35 @@ func (f *fixture) preview(t *testing.T, targets []sohaapi.TemplateUpdateTarget) 
 	return v
 }
 
+func TestListTargetsPreservesScopePolicyAndLastPage(t *testing.T) {
+	f := newFixture(t)
+	filter := domainupdate.Filter{Kind: "deployment", TemplateID: "tpl", ApplicationID: "app-1", PageSize: 5}
+	first, err := f.s.ListTargets(t.Context(), f.p, filter)
+	if err != nil || first.Total != 6 || len(first.Items) != 5 {
+		t.Fatalf("first page = %+v, err = %v", first, err)
+	}
+	target := first.Items[0]
+	if _, err := f.s.SavePolicy(t.Context(), f.p, sohaapi.TemplateUpdatePolicyInput{
+		Kind: "deployment", TemplateID: "tpl", TargetID: target.ID, Mode: "approval",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err = f.s.ListTargets(t.Context(), f.p, filter)
+	if err != nil || len(first.Items) != 5 || first.Items[0].ID != target.ID || first.Items[0].Mode != "approval" || first.Items[1].Mode != "fixed" {
+		t.Fatalf("first page after saving policy = %+v, err = %v", first, err)
+	}
+	filter.Page = 2
+	last, err := f.s.ListTargets(t.Context(), f.p, filter)
+	if err != nil || last.Total != 6 || len(last.Items) != 1 || last.Items[0].ApplicationID != "app-1" {
+		t.Fatalf("last page = %+v, err = %v", last, err)
+	}
+	filter.Page = 3
+	empty, err := f.s.ListTargets(t.Context(), f.p, filter)
+	if err != nil || empty.Total != 6 || len(empty.Items) != 0 {
+		t.Fatalf("out-of-range page = %+v, err = %v", empty, err)
+	}
+}
+
 func TestManualAdoptionThreeApplicationsTenServicesAndVersionHistory(t *testing.T) {
 	f := newFixture(t)
 	targets := f.testTargets(t)

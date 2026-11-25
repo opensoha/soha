@@ -180,8 +180,9 @@ func (c APIClient) openAIChatStreamOnce(ctx context.Context, base, session strin
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, aiStreamFrameLimit))
+		knownSecrets := append([]string{token, c.RefreshToken}, c.aiStreamSecrets()...)
 		return nil, &httpStatusError{Method: http.MethodPost, Path: path, Status: resp.Status, StatusCode: resp.StatusCode,
-			Message: safeAPIErrorMessage(resp.Status, body, raw, token, c.RefreshToken), Code: responseErrorCode(body),
+			Message: safeAPIErrorMessage(resp.Status, body, raw, knownSecrets...), Code: responseErrorCode(body),
 			AuthRejected: strings.Contains(resp.Header.Get("WWW-Authenticate"), `error="invalid_token"`)}
 	}
 	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))

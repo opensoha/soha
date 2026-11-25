@@ -57,10 +57,10 @@ func runDiagnose(ctx context.Context, args []string, rt Runtime) error {
 			"manifest": sanitizeCLIValue(manifest),
 		}
 		if clientCheck != nil {
-			report["clientCheck"] = clientCheck
+			report["clientCheck"] = sanitizeCLIValue(clientCheck)
 		}
 		if len(clusterCapabilities) > 0 {
-			report["clusterCapabilities"] = clusterCapabilities
+			report["clusterCapabilities"] = sanitizeCLIValue(clusterCapabilities)
 		}
 		if err := writePrettyJSON(rt.Out, report); err != nil {
 			return err

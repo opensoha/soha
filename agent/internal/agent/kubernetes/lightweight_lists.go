@@ -126,6 +126,11 @@ func (c *Client) listHelmReleaseSummaries(ctx context.Context, namespace string)
 		if views[i].Name != views[j].Name {
 			return views[i].Name < views[j].Name
 		}
+		leftRev, leftErr := strconv.Atoi(views[i].Revision)
+		rightRev, rightErr := strconv.Atoi(views[j].Revision)
+		if leftErr == nil && rightErr == nil {
+			return leftRev > rightRev
+		}
 		return views[i].Revision > views[j].Revision
 	})
 	return dedupeHelmReleases(views), nil
