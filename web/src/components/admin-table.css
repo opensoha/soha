@@ -25,7 +25,13 @@
   background: var(--soha-bezel-bg);
   box-shadow: var(--soha-shadow-soft);
   overflow: hidden;
-  animation: soha-reveal-up 0.54s var(--soha-ease-expo) both;
+}
+
+/* Keep the virtual viewport stationary while rows are measured and focused. */
+@media (prefers-reduced-motion: no-preference) {
+  .soha-admin-table-shell.is-panel:where(:not(.is-virtual)) {
+    animation: soha-reveal-up 0.54s var(--soha-ease-expo) both;
+  }
 }
 
 .soha-admin-table-shell.is-panel > * {

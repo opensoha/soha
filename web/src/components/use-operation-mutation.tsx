@@ -8,6 +8,7 @@ export interface OperationMutationFeedback<TData, TVariables> {
   label: readonly [string, string]
   target: (variables: TVariables) => string
   readOnly?: boolean
+  notifyOnSuccess?: boolean
   receipt?: (data: TData, variables: TVariables) => { message: string; evidence?: ReactNode }
   resultError?: (data: TData) => Error | undefined
 }
@@ -84,18 +85,19 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
     },
     [begin, localeCode, submitAsync],
   )
-  const receipt = mutation.isSuccess
-    ? (feedback.receipt?.(mutation.data, mutation.variables as TVariables) ?? {
-        message: localeText(localeCode, `${label}：请求已返回`, `${label}: request returned`),
-        evidence: feedback.readOnly
-          ? localeText(localeCode, '预检未执行资源变更。', 'Preflight did not change resources.')
-          : localeText(
-              localeCode,
-              '请核对对应记录，运行状态以实际服务观察结果为准。',
-              'Review the corresponding records. Runtime state follows the observed service state.',
-            ),
-      })
-    : undefined
+  const receipt =
+    mutation.isSuccess && feedback.notifyOnSuccess !== false
+      ? (feedback.receipt?.(mutation.data, mutation.variables as TVariables) ?? {
+          message: localeText(localeCode, `${label}：请求已返回`, `${label}: request returned`),
+          evidence: feedback.readOnly
+            ? localeText(localeCode, '预检未执行资源变更。', 'Preflight did not change resources.')
+            : localeText(
+                localeCode,
+                '请核对对应记录，运行状态以实际服务观察结果为准。',
+                'Review the corresponding records. Runtime state follows the observed service state.',
+              ),
+        })
+      : undefined
   const visibleReceipt = outcomeUnknown
     ? {
         message: receipt?.message ?? '',

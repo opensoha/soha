@@ -1,6 +1,7 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
+import { localeText, useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import {
   CommentOutlined,
@@ -41,6 +42,7 @@ export function PersonalFeed({
   onDiscuss: (item: PersonalFeedItem) => void
 }) {
   const { modal } = App.useApp()
+  const { localeCode } = useI18n()
   const client = useQueryClient()
   const query = useInfiniteQuery(workbenchQueries.feed(owner, true))
   const data = readableQueryData(query)
@@ -58,7 +60,11 @@ export function PersonalFeed({
         invalidate()
       },
     },
-    { label: ['保存动态偏好', 'Save feed preferences'], target: () => owner ?? '当前账号' },
+    {
+      label: ['保存动态偏好', 'Save feed preferences'],
+      target: () => owner ?? '当前账号',
+      notifyOnSuccess: false,
+    },
   )
   const refresh = useOperationMutation(
     {
@@ -72,7 +78,12 @@ export function PersonalFeed({
       ...workbenchMutations.feed.feedback(),
       onSuccess: invalidate,
     },
-    { label: ['更新动态反馈', 'Update feed feedback'], target: (input) => input.id },
+    {
+      label: ['更新动态反馈', 'Update feed feedback'],
+      target: (input) => input.id,
+      // The pressed state or removal of the item confirms the change in place.
+      notifyOnSuccess: false,
+    },
   )
   const denied =
     queryAccessDenied(query) ||
@@ -117,6 +128,11 @@ export function PersonalFeed({
           </Button>
         </Space>
       </header>
+      {settings.isSuccess ? (
+        <Typography.Text type="secondary" role="status">
+          {localeText(localeCode, '动态偏好已保存', 'Feed preferences saved')}
+        </Typography.Text>
+      ) : null}
       {page?.lastUpdatedAt ? (
         <Typography.Text type="secondary">
           更新于 {new Date(page.lastUpdatedAt).toLocaleString()}
