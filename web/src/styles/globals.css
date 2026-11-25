@@ -1792,7 +1792,7 @@ a {
   }
 
   .soha-header-action-button.is-wide {
-    min-width: 76px;
+    padding-inline: 6px;
   }
 
   .soha-header-action-button__surface {
