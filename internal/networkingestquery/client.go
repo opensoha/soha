@@ -181,7 +181,7 @@ func validateSummaryCounts(summary domainnetworkingest.Summary) error {
 }
 
 func validateSummaryProducer(producer domainnetworkingest.ProducerSummary) error {
-	if !validText(producer.ProducerID, 128) || !oneOf(producer.ProducerKind, "endpoint", "gateway", "freeradius", "network-control") {
+	if !validText(producer.ProducerID, 128) || !oneOf(producer.ProducerKind, "endpoint", "gateway", "freeradius", "network-control", "proxy") {
 		return fmt.Errorf("invalid producer")
 	}
 	if producer.LastSeenAt.IsZero() || producer.GapCount < 0 || producer.RegressionCount < 0 {

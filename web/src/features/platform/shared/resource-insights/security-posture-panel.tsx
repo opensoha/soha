@@ -29,7 +29,7 @@ export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
 
   if (postureQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
+      <div className="soha-section-center soha-section-center--compact">
         <Spin size="large" />
       </div>
     )

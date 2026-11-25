@@ -3,8 +3,6 @@ package copilot
 import (
 	"slices"
 	"strings"
-
-	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 )
 
 var messageReactions = []string{"👋", "👍", "❤️", "😊", "🎉", "💡", "👀", "🤔", "✅", "🙏"}
@@ -18,14 +16,6 @@ func splitMessageReaction(content string) (string, string) {
 		}
 	}
 	return content, ""
-}
-
-func (cp *nativeCheckpoint) acceptReaction(response *appaigateway.WorkbenchRelayResponse) {
-	content, reaction := splitMessageReaction(response.Content)
-	response.Content = content
-	if reaction != "" {
-		cp.Reaction = reaction
-	}
 }
 
 // ponytail: one bounded leading marker works across providers without another model call.
@@ -68,11 +58,4 @@ func (s *reactionStream) emit(content string) bool {
 		s.trimLine = content == ""
 	}
 	return content == "" || s.send(content)
-}
-
-func replyReactionMetadata(metadata map[string]any, reply chatReply, requestMessageID string) {
-	if reply.Reaction != "" && !chatReplyFailed(reply) {
-		metadata["assistantReaction"] = reply.Reaction
-		metadata["requestMessageId"] = requestMessageID
-	}
 }

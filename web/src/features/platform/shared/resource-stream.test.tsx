@@ -140,6 +140,53 @@ describe('Kubernetes resource stream', () => {
     expect(onEvent).toHaveBeenCalledTimes(2)
   })
 
+  it.each(['disconnect', 'error', 'status'] as const)(
+    'does not let an older resync overwrite a later %s',
+    async (next) => {
+      let completeResync!: () => void
+      const pending = new Promise<void>((resolve) => {
+        completeResync = resolve
+      })
+      const resync = vi.fn().mockReturnValueOnce(pending)
+      await act(async () => root.render(<Probe onEvent={vi.fn()} onResyncRequired={resync} />))
+      const socket = WebSocketMock.instances[0]
+      await act(async () =>
+        socket.onmessage?.({
+          data: JSON.stringify({ type: 'reset', observedAt: 'first' }),
+        } as MessageEvent<string>),
+      )
+      await act(async () => {
+        if (next === 'disconnect') socket.onclose?.()
+        else
+          socket.onmessage?.({
+            data: JSON.stringify({ type: next, cacheStatus: 'warming', observedAt: 'second' }),
+          } as MessageEvent<string>)
+      })
+      const expectedStatus =
+        next === 'disconnect' ? 'reconnecting' : next === 'status' ? 'connecting' : 'degraded'
+      expect(container.textContent).toBe(expectedStatus)
+      await act(async () => completeResync())
+      expect(container.textContent).toBe(expectedStatus)
+    },
+  )
+
+  it.each(['reset', 'error'] as const)(
+    'handles a rejected %s resync and stays degraded',
+    async (type) => {
+      const resync = vi.fn(async () => {
+        throw new Error('refresh failed')
+      })
+      await act(async () => root.render(<Probe onEvent={vi.fn()} onResyncRequired={resync} />))
+      await act(async () =>
+        WebSocketMock.instances[0].onmessage?.({
+          data: JSON.stringify({ type, observedAt: 'now' }),
+        } as MessageEvent<string>),
+      )
+      expect(resync).toHaveBeenCalledOnce()
+      expect(container.textContent).toBe('degraded')
+    },
+  )
+
   it('resyncs immediately, cancels obsolete refreshes and ignores old-scope socket messages', async () => {
     vi.useFakeTimers()
     const onEvent = vi.fn()

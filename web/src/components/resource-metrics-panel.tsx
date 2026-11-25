@@ -587,7 +587,7 @@ function CompactMetricCard({
   const hasData = card.lines.length > 0
   return (
     <div
-      className="rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4"
+      className="soha-compact-metric-card"
       style={{ display: 'flex', flexDirection: 'column', height: COMPACT_METRIC_CARD_HEIGHT }}
     >
       <div style={{ marginBottom: 8 }}>
@@ -750,7 +750,7 @@ export function ResourceMetricsPanel({
       <div className="soha-page-section">
         <Card className="soha-detail-card" title={title} extra={headerExtraContent}>
           <div
-            className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+            className="soha-metrics-grid"
             style={{ gridAutoRows: `${COMPACT_METRIC_CARD_HEIGHT}px` }}
           >
             {compactCards.map((card) => (

@@ -471,6 +471,37 @@ describe('workbench stream helpers', () => {
     )
   })
 
+  it.each(['parse', 'callback'] as const)(
+    'cancels an open response after a %s failure without masking that failure',
+    async (failure) => {
+      const callbackError = new Error('event callback failed')
+      const cancel = vi.fn(async () => {
+        throw new Error('cleanup failed')
+      })
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              failure === 'parse' ? 'data: {invalid json}\n\n' : 'data: {"type":"error"}\n\n',
+            ),
+          )
+        },
+        cancel,
+      })
+      vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(body)))
+      authMocks.getStoredAccessToken.mockReturnValue(null)
+
+      const result = streamWorkbenchMessage('/stream', { content: 'hello' }, () => {
+        throw callbackError
+      })
+      if (failure === 'parse')
+        await expect(result).rejects.toMatchObject({ code: 'stream_parse_error' })
+      else await expect(result).rejects.toBe(callbackError)
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(body.locked).toBe(false)
+    },
+  )
+
   it('refreshes authentication once before opening an SSE stream', async () => {
     const done: WorkbenchStreamEvent = {
       id: 'evt-done',

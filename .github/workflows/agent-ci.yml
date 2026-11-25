@@ -53,11 +53,9 @@ jobs:
       - name: Verify Go module checksums
         working-directory: agent
         run: go mod verify
-      - name: Test Go and Hermes tools
+      - name: Test Hermes tools
         working-directory: agent
-        run: |
-          go test ./...
-          python3 deploy/hermes-tools/test_plugin.py
+        run: python3 deploy/hermes-tools/test_plugin.py
       - name: Race test
         working-directory: agent
         run: go test -race ./...

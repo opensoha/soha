@@ -1008,7 +1008,7 @@ var configDefaults = []struct {
 	{"assets.docs.mode", "external"},
 	{"assets.docs.dir", "../soha-docs/build"},
 	{"assets.docs.proxy_url", "http://localhost:3000"},
-	{"assets.docs.external_url", "https://docs.opensoha.dev/"},
+	{"assets.docs.external_url", "https://docs.opensoha.com/"},
 	{"security.credential_encryption_key", defaultSystemSecret},
 	{"security.docker_runtime_identity_v1", false},
 	{"security.secret_provider", ""},

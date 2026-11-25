@@ -1,4 +1,5 @@
 import { issueStreamTicket } from '@/features/auth/auth-api'
+import { appBrowserPath, appRouterPath } from '@/utils/app-base'
 
 export function buildSameOriginStreamURL(path: string, protocol: 'http' | 'ws') {
   const scheme =
@@ -7,13 +8,13 @@ export function buildSameOriginStreamURL(path: string, protocol: 'http' | 'ws') 
         ? 'wss:'
         : 'ws:'
       : window.location.protocol
-  return new URL(path, `${scheme}//${window.location.host}`)
+  return new URL(appBrowserPath(appRouterPath(path)), `${scheme}//${window.location.host}`)
 }
 
 export async function withStreamTicket(url: URL | string) {
   const next = typeof url === 'string' ? new URL(url) : new URL(url.toString())
   const ticket = await issueStreamTicket(
-    next.pathname + (next.searchParams.has('expectedUid') ? next.search : ''),
+    appRouterPath(next.pathname) + (next.searchParams.has('expectedUid') ? next.search : ''),
   )
   next.searchParams.set('stream_ticket', ticket.ticket)
   return next.toString()

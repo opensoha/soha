@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -62,9 +63,12 @@ func Decode(encoded string, labels map[string]string) (*Release, error) {
 			return nil, err
 		}
 		defer func() { _ = reader.Close() }()
-		uncompressed, err := io.ReadAll(reader)
+		uncompressed, err := io.ReadAll(io.LimitReader(reader, MaxChartExpandedBytes+1))
 		if err != nil {
 			return nil, err
+		}
+		if len(uncompressed) > MaxChartExpandedBytes {
+			return nil, fmt.Errorf("helm release payload exceeds %d-byte limit", MaxChartExpandedBytes)
 		}
 		decodedBytes = uncompressed
 	}

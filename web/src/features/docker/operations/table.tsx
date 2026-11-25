@@ -72,7 +72,7 @@ function OperationLogDrawer({
       onClose={onClose}
     >
       {operation ? (
-        <Descriptions size="small" column={2} bordered className="mb-3">
+        <Descriptions size="small" column={2} bordered className="soha-mb-md">
           <Descriptions.Item label={localeText(localeCode, '任务 ID', 'Task ID')}>
             {operation.id}
           </Descriptions.Item>
@@ -87,7 +87,7 @@ function OperationLogDrawer({
           </Descriptions.Item>
         </Descriptions>
       ) : null}
-      <pre className="max-h-[560px] overflow-auto rounded border border-[var(--soha-border-color)] bg-[var(--soha-bg-surface-muted)] p-3 text-xs">
+      <pre className="soha-code-block" style={{ maxHeight: 560 }}>
         {loading
           ? localeText(localeCode, '日志加载中', 'Loading logs')
           : text || localeText(localeCode, '暂无日志', 'No logs')}

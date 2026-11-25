@@ -17,8 +17,7 @@ export function DocsPage() {
         <iframe
           src="/docs/"
           title="Soha Documentation"
-          className="w-full border-0"
-          style={{ minHeight: 'calc(100vh - 210px)' }}
+          style={{ width: '100%', border: 0, minHeight: 'calc(100vh - 210px)' }}
         />
       </div>
     </div>

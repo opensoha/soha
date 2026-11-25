@@ -81,19 +81,42 @@ export async function startConnectorHttpServer<TConfig>(
         response
       });
     } catch (error) {
+      if (error instanceof HttpRequestError) {
+        if (!response.headersSent && !response.destroyed) {
+          writeJson(
+            response,
+            error.status,
+            {
+              ok: false,
+              error: {
+                code: error.code,
+                message: error.message
+              }
+            },
+            error.status === 413 ? { Connection: "close" } : undefined
+          );
+        } else {
+          response.destroy();
+        }
+        return;
+      }
       logger?.error("connector http request failed", {
         connectorId: connector.id,
         method: request.method,
         url: request.url,
         error: error instanceof Error ? error.message : String(error)
       });
-      writeJson(response, 500, {
-        ok: false,
-        error: {
-          code: "connector_http_error",
-          message: "connector runtime failed to handle the request"
-        }
-      });
+      if (!response.headersSent && !response.destroyed) {
+        writeJson(response, 500, {
+          ok: false,
+          error: {
+            code: "connector_http_error",
+            message: "connector runtime failed to handle the request"
+          }
+        });
+      } else {
+        response.destroy();
+      }
     }
   });
 
@@ -216,6 +239,16 @@ async function routeRequest<TConfig>(input: {
 }
 
 class EventSinkDeliveryError extends Error {}
+
+class HttpRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
 
 async function handleWebhookRequest<TConfig>(input: {
   connector: Connector<TConfig>;
@@ -459,7 +492,7 @@ async function readJsonBody(request: IncomingMessage, maxBodyBytes: number): Pro
     const parsed = JSON.parse(body.toString("utf8")) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
-    throw new Error("invalid JSON request body");
+    throw new HttpRequestError(400, "invalid_request_body", "invalid JSON request body");
   }
 }
 
@@ -467,16 +500,25 @@ function readBody(request: IncomingMessage, maxBodyBytes: number): Promise<Buffe
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let failed = false;
     request.on("data", (chunk: Buffer) => {
+      if (failed) {
+        return;
+      }
       size += chunk.byteLength;
       if (size > maxBodyBytes) {
-        reject(new Error(`request body exceeds ${maxBodyBytes} bytes`));
-        request.destroy();
+        failed = true;
+        request.resume();
+        reject(new HttpRequestError(413, "payload_too_large", `request body exceeds ${maxBodyBytes} bytes`));
         return;
       }
       chunks.push(chunk);
     });
-    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("end", () => {
+      if (!failed) {
+        resolve(Buffer.concat(chunks));
+      }
+    });
     request.on("error", reject);
   });
 }
@@ -522,7 +564,7 @@ function actionNameFromPath(pathname: string): string | undefined {
 function requiredStringField(body: Record<string, unknown>, name: string): string {
   const value = body[name];
   if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`${name} is required`);
+    throw new HttpRequestError(400, "invalid_request_body", `${name} is required`);
   }
   return value;
 }

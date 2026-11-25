@@ -61,6 +61,7 @@ export function useKubernetesResourceStream({
     let socket: WebSocket | undefined
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let attempt = 0
+    let resyncRevision = 0
     let eventTimer: ReturnType<typeof setTimeout> | undefined
     let queuedEvent: KubernetesResourceStreamEvent | undefined
     const clearQueuedEvent = () => {
@@ -99,6 +100,7 @@ export function useKubernetesResourceStream({
           try {
             const event = JSON.parse(String(message.data)) as KubernetesResourceStreamEvent
             if (event.type === 'status') {
+              resyncRevision += 1
               setLastEventAt(event.observedAt)
               setStatus(
                 event.cacheStatus === 'live'
@@ -110,6 +112,7 @@ export function useKubernetesResourceStream({
               return
             }
             if (event.type === 'reset' || event.type === 'error' || event.resyncRequired) {
+              const revision = ++resyncRevision
               clearQueuedEvent()
               setLastEventAt(event.observedAt)
               setStatus('degraded')
@@ -119,16 +122,15 @@ export function useKubernetesResourceStream({
                 return
               }
               const resyncResult = resync()
-              if (event.type !== 'error') {
-                void Promise.resolve(resyncResult).then(
-                  () => {
-                    if (!stopped) setStatus('live')
-                  },
-                  () => {
-                    if (!stopped) setStatus('degraded')
-                  },
-                )
-              }
+              void Promise.resolve(resyncResult).then(
+                () => {
+                  if (!stopped && revision === resyncRevision && event.type !== 'error')
+                    setStatus('live')
+                },
+                () => {
+                  if (!stopped && revision === resyncRevision) setStatus('degraded')
+                },
+              )
               return
             }
             queuedEvent = event
@@ -136,14 +138,17 @@ export function useKubernetesResourceStream({
               if (!eventTimer) eventTimer = setTimeout(flushEvent, eventDebounceMs)
             } else flushEvent()
           } catch {
+            resyncRevision += 1
             setStatus('degraded')
           }
         }
         socket.onerror = () => {
+          resyncRevision += 1
           if (!stopped) setStatus('degraded')
         }
         socket.onclose = () => {
           if (stopped) return
+          resyncRevision += 1
           attempt += 1
           setStatus(attempt > 3 ? 'polling' : 'reconnecting')
           reconnectTimer = setTimeout(connect, Math.min(15_000, 1000 * 2 ** Math.min(attempt, 4)))

@@ -1384,7 +1384,7 @@ export function VirtualizationVmsPage() {
                     </Form.Item>
                     {selectedFlavor ? (
                       <ContextFeedback
-                        className="mb-3"
+                        className="soha-mb-md"
                         type="info"
                         showIcon
                         title={`已选择 ${selectedFlavor.name}: ${selectedFlavor.cpu}C / ${selectedFlavor.memoryMiB}MiB / ${selectedFlavor.diskGiB}GiB`}
@@ -2140,7 +2140,7 @@ export function VirtualizationVmsPage() {
                       }
                     />
                     <Form.Item
-                      className="mt-4"
+                      className="soha-mt-md"
                       name="startAfterCreate"
                       label={localeText(localeCode, '创建后启动', 'Start after creation')}
                       valuePropName="checked"

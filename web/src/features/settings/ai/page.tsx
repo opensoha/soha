@@ -378,7 +378,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
 
   if (isPageLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="soha-section-center">
         <Spin size="large" />
       </div>
     )
@@ -436,10 +436,10 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
         const normalized = value.toLowerCase()
         const label = normalized === 'success' ? '已通过' : normalized === 'error' ? '失败' : value
         return (
-          <div className="flex max-w-[240px] flex-col gap-1">
+          <div className="soha-stack-xs" style={{ maxWidth: 240 }}>
             <StatusTag value={normalized} label={label} />
             {record.validationMessage && normalized === 'error' ? (
-              <div className="text-xs text-[var(--ant-colorTextSecondary)]">
+              <div className="soha-secondary-caption">
                 {record.validationMessage}
               </div>
             ) : null}
@@ -535,7 +535,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       title: '数据源',
       dataIndex: 'enabledSources',
       render: (value: string[]) => (
-        <div className="flex flex-wrap gap-1">
+        <div className="soha-inline-wrap soha-inline-wrap--tight">
           {(value ?? []).map((item) => (
             <MetadataTag key={item} label={item} />
           ))}
@@ -546,7 +546,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       title: 'Playbooks',
       dataIndex: 'enabledPlaybooks',
       render: (value: string[]) => (
-        <div className="flex flex-wrap gap-1">
+        <div className="soha-inline-wrap soha-inline-wrap--tight">
           {(value ?? []).map((item) => (
             <MetadataTag key={item} label={item} />
           ))}
@@ -657,7 +657,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
               </Form.Item>
             </Col>
           </Row>
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="soha-mb-lg soha-inline-wrap">
             <MetadataTag
               label={selectedRoute ? `route: ${selectedRoute.id}` : '未选择 route'}
               tone={selectedRoute ? 'cyan' : 'default'}
@@ -1183,7 +1183,7 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             <Form.Item name="enabled" label="启用" valuePropName="checked">
               <Switch disabled={blocked} />
             </Form.Item>
-            <div className="text-sm text-[var(--ant-colorTextSecondary)]">
+            <div className="soha-secondary-note">
               ID 需要在全局 registry 中唯一；作用域用于提示这个 skill
               主要服务于哪些工作区或资源，不直接替代权限判断。
             </div>

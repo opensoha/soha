@@ -163,10 +163,6 @@ func (s *Service) loadReferenceContextWithAccess(ctx context.Context, principal 
 	return state, err
 }
 
-func (s *Service) authorizeReferenceService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {
-	return s.authorizeReferenceServiceWithAccess(ctx, principal, applicationID, serviceID, true)
-}
-
 func (s *Service) authorizeReferenceServiceWithAccess(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string, requireUpdate bool) (domainapp.Service, error) {
 	if _, err := s.applications.Get(ctx, principal, applicationID); err != nil {
 		return domainapp.Service{}, err

@@ -129,7 +129,7 @@ export function ResourceProgressCell({
     <div className={['soha-resource-cell', compact ? 'is-compact' : '', className].filter(Boolean).join(' ')}>
       <div className="soha-resource-cell-copy">
         <Text strong>{primary}</Text>
-        <Text type="secondary" className="text-xs">{secondary}</Text>
+        <Text type="secondary">{secondary}</Text>
       </div>
       <Progress
         percent={value}

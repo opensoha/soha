@@ -363,6 +363,7 @@ def provision(s):
     if len(s.get('accounts', {})) == 4 and all(x.get('policyGranted') for x in s['accounts'].values()):
         return
     inspect(s, 'coreId')
+    labels = {'soha.test.run': s['runId']}
     if not s.get('tunnelPorts'):
         remote = inspect(s, 'k3sId', remote=True)
         # Agent runs on middleware amd64, from the same Root source snapshot as Core.

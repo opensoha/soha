@@ -67,7 +67,7 @@ def select(data):
         if path.endswith(".md") and (parts[0] == "docs" or (len(parts) > 2 and parts[0] in {"web", "cli", "agent", "connectors", "skills"} and parts[1] == "docs")):
             continue
         if status[0] in "AM" and (len(parts) == 1 or (len(parts) == 2 and parts[0] in JOBS)) and parts[-1] in {
-            "README.md", "CHANGELOG.md", "LICENSE", "LICENSE.md",
+            "README.md", "README-cn.md", "CHANGELOG.md", "LICENSE", "LICENSE.md",
         }:
             continue
         if path.startswith("web/"):

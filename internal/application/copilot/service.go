@@ -201,17 +201,6 @@ type TraceTelemetry interface {
 	FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error)
 }
 
-type chatReply struct {
-	Reaction     string
-	ContextUsage *domaincopilot.ModelContextUsage
-	Content      string
-	Source       string
-	Model        string
-	ProviderID   string
-	ProviderKind string
-	Error        string
-}
-
 type chatProviderMessage struct {
 	Role    string   `json:"role"`
 	Content string   `json:"content"`
@@ -265,7 +254,7 @@ type Service struct {
 	assistantMeshSkills   AssistantMeshSkillReader
 	assistantMeshMCP      AssistantMeshMCPReader
 	dshRuns               DSHRunStore
-	dshLocks              sync.Map
+	dshLocks              [256]sync.Mutex
 	nativeTaskParents     NativeTaskParentStore
 	nativeTasks           NativeCapabilityTasks
 	agentPrincipals       AgentPrincipalResolver
@@ -738,22 +727,6 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 		return result.Envelope, err
 	}
 	return s.waitDSHMessage(ctx, principal, result)
-}
-
-func (s *Service) applyMessageSessionPatch(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, messageID string, patch map[string]any) {
-	if len(patch) == 0 {
-		return
-	}
-	merged := bindChatSummarySource(parseSessionMetadata(session.Metadata), patch, messageID)
-	if summary, ok := patch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
-		merged.Summary = strings.TrimSpace(summary)
-	}
-	if refs, ok := patch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
-		merged.AnalysisRunRefs = refs
-	}
-	session.Metadata = sessionMetadataMap(merged)
-	session.UpdatedAt = time.Now().UTC()
-	_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
 }
 
 func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {

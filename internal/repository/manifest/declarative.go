@@ -16,7 +16,7 @@ import (
 )
 
 func (r *Repository) GetSource(ctx context.Context, packageID string) (domainmanifest.Source, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT source.id, source.package_id, source.mode, COALESCE(source.repository_id, ''),
 			COALESCE(source.ref_type, ''), source.ref_value, source.source_path,
 			source.include_patterns, source.exclude_patterns, source.sync_policy,
@@ -372,11 +372,11 @@ func (r *Repository) ListDeployments(ctx context.Context, filter domainmanifest.
 		return domainmanifest.DeploymentPage{Items: []domainmanifest.Deployment{}, Page: page, PageSize: pageSize}, nil
 	}
 	var total int
-	if err := r.db.WithContext(ctx).Raw(deploymentCountQuery+where, args...).Scan(&total).Error; err != nil {
+	if err := dbtx.DB(ctx, r.db).Raw(deploymentCountQuery+where, args...).Scan(&total).Error; err != nil {
 		return domainmanifest.DeploymentPage{}, fmt.Errorf("count manifest deployments: %w", err)
 	}
 	queryArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
-	rows, err := r.db.WithContext(ctx).Raw(deploymentSelectQuery+where+` ORDER BY deployment.updated_at DESC LIMIT ? OFFSET ?`, queryArgs...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(deploymentSelectQuery+where+` ORDER BY deployment.updated_at DESC LIMIT ? OFFSET ?`, queryArgs...).Rows()
 	if err != nil {
 		return domainmanifest.DeploymentPage{}, fmt.Errorf("list manifest deployments: %w", err)
 	}
@@ -406,7 +406,7 @@ func (r *Repository) ListDeployments(ctx context.Context, filter domainmanifest.
 }
 
 func (r *Repository) GetDeployment(ctx context.Context, deploymentID string) (domainmanifest.Deployment, error) {
-	item, err := scanDeployment(r.db.WithContext(ctx).Raw(deploymentSelectQuery+` WHERE deployment.id = ? LIMIT 1`, strings.TrimSpace(deploymentID)).Row())
+	item, err := scanDeployment(dbtx.DB(ctx, r.db).Raw(deploymentSelectQuery+` WHERE deployment.id = ? LIMIT 1`, strings.TrimSpace(deploymentID)).Row())
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainmanifest.Deployment{}, apperrors.ErrNotFound
 	}
@@ -544,7 +544,7 @@ func (r *Repository) loadDeploymentDetails(ctx context.Context, item *domainmani
 }
 
 func (r *Repository) listConditions(ctx context.Context, deploymentID string) ([]domainmanifest.Condition, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT condition_type, status, reason, message, observed_generation, last_transition_at, evidence_refs
 		FROM manifest_deployment_conditions WHERE deployment_id = ? ORDER BY condition_type
 	`, deploymentID).Rows()
@@ -568,7 +568,7 @@ func (r *Repository) listConditions(ctx context.Context, deploymentID string) ([
 }
 
 func (r *Repository) listInventory(ctx context.Context, deploymentID string, generation int64) ([]domainmanifest.ResourceInventory, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT deployment_id, generation, api_version, kind, namespace, name, uid, resource_version,
 			desired_object_digest, observed_object_digest, health, last_observed_at,
 			resource_generation, observed_resource_generation, deleting_at, finalizers

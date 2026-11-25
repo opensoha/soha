@@ -23,7 +23,22 @@ const RULES = {
   AGGREGATE_ROUTE_MODULE: 'aggregate-route-module',
   ROUTE_PAGE_BARREL: 'route-page-barrel',
   SHARED_PAGE_DEPENDENCY: 'shared-capability-page-dependency',
+  UNDEFINED_UTILITY_CLASS: 'undefined-utility-class',
 }
+
+const UTILITY_CLASS_PATTERN =
+  /^(?:(?:sm|md|lg|xl|2xl|hover|focus|active|disabled|dark|first|last):)+|.*\[|^(?:grid|inline-grid|inline-flex|flex-(?:row|col|wrap|nowrap|1|auto|initial|none)|items-(?:start|end|center|baseline|stretch)|justify-(?:start|end|center|between|around|evenly)|grid-cols-\S+|col-span-\S+|gap(?:-[xy])?-\S+|space-[xy]-\S+|p[trblxy]?-\d\S*|m[trblxy]?-\d\S*|w-(?:full|screen|auto|fit|min|max|\d\S*)|h-(?:full|screen|auto|fit|min|max|\d\S*)|min-[wh]-\S+|max-[wh]-\S+|text-(?:xs|sm|base|lg|xl|\dxl|left|center|right)|font-(?:thin|light|normal|medium|semibold|bold)|bg-\S+|border(?:-[trblxy0248]|-solid|-dashed|-none)?|rounded(?:-(?:none|sm|md|lg|xl|2xl|full))?|shadow(?:-(?:none|sm|md|lg|xl))?|overflow-(?:auto|hidden|visible|scroll|[xy]-\S+)|list-(?:none|disc|decimal)|relative|absolute|fixed|sticky)$/
+
+const ALLOWED_CLASS_PREFIXES = [
+  'soha-',
+  'ant-',
+  'anticon',
+  'xterm',
+  'react-flow',
+  'monaco',
+  'is-',
+  'has-',
+]
 
 const COMPUTE_ROUTE_LEAF_IMPORTS = new Set([
   'src/features/virtualization/virtual-machines/list-page.tsx',
@@ -151,13 +166,46 @@ function collectFiles(directory) {
   return files
 }
 
+function collectCssFiles(directory) {
+  if (!existsSync(directory)) return []
+
+  const files = []
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry)
+    const stats = statSync(path)
+    if (stats.isDirectory()) files.push(...collectCssFiles(path))
+    else if (entry.endsWith('.css')) files.push(path)
+  }
+  return files
+}
+
+function extractCssClasses(cssTexts) {
+  const classes = new Set()
+  for (const cssText of cssTexts) {
+    for (const match of cssText.matchAll(/\.([a-zA-Z0-9_-]+)/g)) {
+      classes.add(match[1])
+    }
+  }
+  return classes
+}
+
 function loadWorkingTreeSources() {
   const files = [
+    ...collectFiles(resolve(projectRoot, 'src/components')),
     ...collectFiles(resolve(projectRoot, 'src/features')),
+    ...collectFiles(resolve(projectRoot, 'src/layouts')),
     ...collectFiles(resolve(projectRoot, 'src/routes')),
   ].sort()
+  const cssTexts = collectCssFiles(resolve(projectRoot, 'src')).map((filePath) =>
+    readFileSync(filePath, 'utf8'),
+  )
 
-  return new Map(files.map((filePath) => [toProjectPath(filePath), readFileSync(filePath, 'utf8')]))
+  return {
+    definedCssClasses: extractCssClasses(cssTexts),
+    sources: new Map(
+      files.map((filePath) => [toProjectPath(filePath), readFileSync(filePath, 'utf8')]),
+    ),
+  }
 }
 
 function git(args, options = {}) {
@@ -179,9 +227,27 @@ function tryMergeBase(baseRef) {
 }
 
 function resolveAutomaticBase() {
-  const candidates = [process.env.FRONTEND_BOUNDARY_BASE_REF, 'origin/main', 'main'].filter(Boolean)
+  if (process.env.FRONTEND_BOUNDARY_BASE_REF) {
+    const commit = tryMergeBase(process.env.FRONTEND_BOUNDARY_BASE_REF)
+    if (commit) return { commit, ref: process.env.FRONTEND_BOUNDARY_BASE_REF }
+  }
 
-  for (const candidate of candidates) {
+  const gitRoot = git(['rev-parse', '--show-toplevel'])
+  const ciImpactScript = resolve(gitRoot, 'scripts/ci-impact.py')
+  if (existsSync(ciImpactScript)) {
+    try {
+      const webBase = execFileSync('python3', [ciImpactScript, 'web-base'], {
+        cwd: gitRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+      if (webBase) return { commit: webBase, ref: 'web-base' }
+    } catch {
+      // Fall back to standard git refs below.
+    }
+  }
+
+  for (const candidate of ['origin/main', 'main']) {
     const commit = tryMergeBase(candidate)
     if (commit) return { commit, ref: candidate }
   }
@@ -201,19 +267,26 @@ function loadGitSources(commit) {
     '-z',
     commit,
     '--',
+    `${sourcePrefix}src/components`,
     `${sourcePrefix}src/features`,
+    `${sourcePrefix}src/layouts`,
     `${sourcePrefix}src/routes`,
+    `${sourcePrefix}src/styles`,
   ])
   const files = output ? output.split('\0').filter((file) => file.startsWith(sourcePrefix)) : []
   const sources = new Map()
+  const cssTexts = []
 
   for (const filePath of files) {
     const localPath = filePath.slice(sourcePrefix.length)
-    if (isProductionSource(localPath))
+    if (localPath.endsWith('.css')) {
+      cssTexts.push(fromRoot(['show', `${commit}:${filePath}`]))
+    } else if (isProductionSource(localPath)) {
       sources.set(localPath, fromRoot(['show', `${commit}:${filePath}`]))
+    }
   }
 
-  return sources
+  return { definedCssClasses: extractCssClasses(cssTexts), sources }
 }
 
 function sourceKind(filePath) {
@@ -412,11 +485,61 @@ function makeViolation({ sourceFile, node, rule, message, moduleSpecifier, signa
   }
 }
 
-function scanSources(sources) {
+function scanSources({ definedCssClasses, sources }) {
   const sourceFiles = createSourceFiles(sources)
   const violations = []
 
   for (const [filePath, sourceFile] of sourceFiles) {
+    function findUndefinedUtilityClasses(node) {
+      if (
+        ts.isJsxAttribute(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === 'className' &&
+        node.initializer
+      ) {
+        let literalNode
+        if (ts.isStringLiteralLike(node.initializer)) {
+          literalNode = node.initializer
+        } else if (
+          ts.isJsxExpression(node.initializer) &&
+          node.initializer.expression &&
+          ts.isStringLiteralLike(node.initializer.expression)
+        ) {
+          literalNode = node.initializer.expression
+        }
+
+        if (literalNode) {
+          const invalidTokens = literalNode.text
+            .split(/\s+/)
+            .filter(Boolean)
+            .filter(
+              (token) =>
+                !definedCssClasses.has(token) &&
+                !ALLOWED_CLASS_PREFIXES.some((prefix) => token.startsWith(prefix)) &&
+                UTILITY_CLASS_PATTERN.test(token),
+            )
+          for (const token of invalidTokens) {
+            violations.push(
+              makeViolation({
+                sourceFile,
+                node: literalNode,
+                rule: RULES.UNDEFINED_UTILITY_CLASS,
+                message: `Undefined utility class "${token}" has no CSS rule in src/**/*.css (Tailwind is not compiled).`,
+                signature: token,
+              }),
+            )
+          }
+        }
+      }
+      ts.forEachChild(node, findUndefinedUtilityClasses)
+    }
+
+    findUndefinedUtilityClasses(sourceFile)
+
+    if (!filePath.startsWith('src/features/') && !filePath.startsWith('src/routes/')) {
+      continue
+    }
+
     const references = moduleReferences(sourceFile)
     const sourceFeature = featureSegments(filePath)
 

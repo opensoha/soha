@@ -147,7 +147,8 @@ func redeemSSHAuth(ctx context.Context, cfg cfgpkg.ControlPlaneConfig, input soh
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(cfg.BaseURL, "/")+"/api/v1/virtualization/ssh-sessions/"+url.PathEscape(input.SessionID)+"/credentials", bytes.NewReader(body))
+	baseURL := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"), "/api/v1")
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/virtualization/ssh-sessions/"+url.PathEscape(input.SessionID)+"/credentials", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

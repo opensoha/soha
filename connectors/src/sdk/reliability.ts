@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -64,6 +65,8 @@ export interface IdempotencyStore {
 export class MemoryIdempotencyStore implements IdempotencyStore {
   private readonly entries = new Map<string, number>();
 
+  constructor(private readonly maxEntries = 10_000) {}
+
   has(key: string, now: Date = new Date()): boolean {
     const expiresAt = this.entries.get(key);
     return expiresAt !== undefined && expiresAt > now.getTime();
@@ -75,6 +78,13 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     const existing = this.entries.get(key);
     if (existing && existing > nowMs) {
       return false;
+    }
+    while (this.entries.size >= this.maxEntries) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      this.entries.delete(oldest);
     }
     this.entries.set(key, nowMs + ttlMs);
     return true;
@@ -92,7 +102,10 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 export class FileIdempotencyStore implements IdempotencyStore {
   private entries = new Map<string, number>();
 
-  constructor(private readonly filePath: string) {
+  constructor(
+    private readonly filePath: string,
+    private readonly maxEntries = 10_000
+  ) {
     this.load();
   }
 
@@ -112,6 +125,13 @@ export class FileIdempotencyStore implements IdempotencyStore {
         continue;
       }
       entries.set(recordedKey, expiresAt);
+    }
+    while (entries.size >= this.maxEntries) {
+      const oldest = entries.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      entries.delete(oldest);
     }
     entries.set(key, nowMs + ttlMs);
     writeJsonFile(this.filePath, { entries: Object.fromEntries(entries) });
@@ -152,7 +172,8 @@ export class FixedWindowRateLimiter implements RateLimiter {
 
   constructor(
     private readonly limit: number,
-    private readonly windowMs: number
+    private readonly windowMs: number,
+    private readonly maxEntries = 10_000
   ) {
     if (limit < 1) {
       throw new Error("rate limit must be at least 1");
@@ -166,6 +187,20 @@ export class FixedWindowRateLimiter implements RateLimiter {
     const nowMs = now.getTime();
     const entry = this.counters.get(key);
     if (!entry || nowMs - entry.windowStartMs >= this.windowMs) {
+      if (!entry && this.counters.size >= this.maxEntries) {
+        for (const [existingKey, existing] of this.counters) {
+          if (nowMs - existing.windowStartMs >= this.windowMs) {
+            this.counters.delete(existingKey);
+          }
+        }
+        while (this.counters.size >= this.maxEntries) {
+          const oldest = this.counters.keys().next().value;
+          if (oldest === undefined) {
+            break;
+          }
+          this.counters.delete(oldest);
+        }
+      }
       this.counters.set(key, { windowStartMs: nowMs, count: 1 });
       return { allowed: true };
     }
@@ -230,13 +265,16 @@ export class FileRetryQueue implements RetryQueue {
     private readonly filePath: string,
     private readonly maxEntries = 1000
   ) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
+      throw new Error("queue capacity must be a positive safe integer");
+    }
     this.load();
   }
 
   enqueue(input: RetryQueueRecordInput): RetryQueueEntry {
     const now = input.now ?? new Date();
     const entry: RetryQueueEntry = {
-      id: `${input.connectorId}:${input.action}:retry:${this.entries.length + 1}`,
+      id: `${input.connectorId}:${input.action}:retry:${randomUUID()}`,
       connectorId: input.connectorId,
       action: input.action,
       createdAt: now.toISOString(),
@@ -321,11 +359,15 @@ export interface DeadLetterQueue {
 export class MemoryDeadLetterQueue implements DeadLetterQueue {
   private readonly entries: DeadLetterEntry[] = [];
 
-  constructor(private readonly maxEntries = 100) {}
+  constructor(private readonly maxEntries = 100) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
+      throw new Error("queue capacity must be a positive safe integer");
+    }
+  }
 
   record(input: DeadLetterRecordInput): DeadLetterEntry {
     const entry: DeadLetterEntry = {
-      id: `${input.connectorId}:${input.action}:${this.entries.length + 1}`,
+      id: `${input.connectorId}:${input.action}:${randomUUID()}`,
       connectorId: input.connectorId,
       action: input.action,
       recordedAt: (input.now ?? new Date()).toISOString(),
@@ -354,12 +396,15 @@ export class FileDeadLetterQueue implements DeadLetterQueue {
     private readonly filePath: string,
     private readonly maxEntries = 100
   ) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
+      throw new Error("queue capacity must be a positive safe integer");
+    }
     this.load();
   }
 
   record(input: DeadLetterRecordInput): DeadLetterEntry {
     const entry: DeadLetterEntry = {
-      id: `${input.connectorId}:${input.action}:${this.entries.length + 1}`,
+      id: `${input.connectorId}:${input.action}:${randomUUID()}`,
       connectorId: input.connectorId,
       action: input.action,
       recordedAt: (input.now ?? new Date()).toISOString(),
@@ -455,8 +500,8 @@ function sleep(delayMs: number): Promise<void> {
 }
 
 function writeJsonFile(filePath: string, value: unknown): void {
-  mkdirSync(path.dirname(filePath), { recursive: true });
+  mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`);
+  writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flush: true });
   renameSync(tempPath, filePath);
 }

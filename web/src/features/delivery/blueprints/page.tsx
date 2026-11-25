@@ -1737,10 +1737,10 @@ export function DeliveryBlueprintsPage() {
             <Tag>{`模板 ${item.fileCount}`}</Tag>
             {item.isDraft ? <Tag color="gold">草稿</Tag> : null}
           </span>
-          <Text type="secondary" className="text-xs">
+          <Text type="secondary">
             {item.applicationName}
           </Text>
-          <Text type="secondary" className="text-xs">
+          <Text type="secondary">
             {item.updatedAt ? formatDateTime(item.updatedAt) : '尚未保存'}
           </Text>
         </>

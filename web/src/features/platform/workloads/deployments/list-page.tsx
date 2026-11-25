@@ -1031,7 +1031,7 @@ export function WorkloadsDeploymentsPage() {
         {batchScaleMutation.feedback}
         {batchRollbackMutation.feedback}
 
-        <div className="flex items-center gap-2">
+        <div className="soha-inline-row">
           <Text>{localeCode === 'zh_CN' ? '副本数:' : 'Replicas:'}</Text>
           <InputNumber
             value={scaleTarget?.replicas ?? 1}
@@ -1073,7 +1073,7 @@ export function WorkloadsDeploymentsPage() {
         {batchRollbackMutation.feedback}
 
         {batchRollbackLoading ? (
-          <div className="flex items-center justify-center h-48">
+          <div className="soha-section-center soha-section-center--compact">
             <Spin size="large" />
           </div>
         ) : currentRollback?.error ? (
@@ -1152,13 +1152,13 @@ export function WorkloadsDeploymentsPage() {
         {batchScaleMutation.feedback}
         {batchRollbackMutation.feedback}
 
-        <div className="flex flex-col gap-3">
+        <div className="soha-stack-md">
           <Text type="secondary">
             {localeCode === 'zh_CN'
               ? `将对 ${batchScaleDraft?.items.length ?? 0} 个 Deployment 应用相同副本数`
               : `Apply the same replica count to ${batchScaleDraft?.items.length ?? 0} deployments`}
           </Text>
-          <div className="flex items-center gap-2">
+          <div className="soha-inline-row">
             <Text>{localeCode === 'zh_CN' ? '副本数:' : 'Replicas:'}</Text>
             <InputNumber
               value={batchScaleDraft?.replicas ?? 1}
