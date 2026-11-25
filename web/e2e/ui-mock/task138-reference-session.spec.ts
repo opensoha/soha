@@ -75,6 +75,15 @@ for (const [kind, sourceType] of [
           ],
         })
       }
+      if (
+        path === '/applications/retail/application-environments/retail-prod/services/order-api/pods'
+      )
+        return data({ status: 'unconfigured', items: [] })
+      if (
+        path ===
+        `/applications/retail/application-environments/${consumer}/services/${service}/pods`
+      )
+        return data({ status: 'relation_only', reason: 'ownership_unverified', items: [] })
       if (path === '/application-environments')
         return data([
           {
@@ -84,6 +93,19 @@ for (const [kind, sourceType] of [
             targets: [],
           },
         ])
+      if (
+        base &&
+        path === `/applications/retail/application-environments/${consumer}/runtime-summary`
+      ) {
+        const { data: summary } = base.body as {
+          data: { environment: Record<string, unknown>; observedAt: string }
+        }
+        return data({
+          ...summary,
+          environment: { ...summary.environment, targets: [], workloads: [] },
+          observationStatus: 'unconfigured',
+        })
+      }
       if (path === collection)
         return {
           body: { items: [{ id: referenceId, revision: 1, serviceId: service, state: 'active' }] },

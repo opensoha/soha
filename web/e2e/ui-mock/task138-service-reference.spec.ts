@@ -169,6 +169,7 @@ test('saves and activates a checked source, then detaches even after source perm
             environmentId: environment.id,
             environmentName: environment.name,
             environmentKey: environment.key,
+            targets: binding.targets,
           }
         }),
       )
@@ -215,8 +216,9 @@ test('saves and activates a checked source, then detaches even after source perm
   await expect(drawer.getByText('未配置', { exact: true })).toBeVisible()
   const source = drawer.getByRole('combobox', { name: '引用源环境' })
   await source.click()
-  await expect(page.getByText('不兼容预发环境', { exact: true })).toHaveCount(0)
-  await page.getByText('来源测试环境', { exact: true }).click()
+  const sourceOptions = page.locator('.ant-select-dropdown:visible .ant-select-item-option')
+  await expect(sourceOptions.getByText('不兼容预发环境', { exact: true })).toHaveCount(0)
+  await sourceOptions.getByText('来源测试环境', { exact: true }).click()
   await expect(drawer.getByText('Deployment / order-source', { exact: true })).toBeVisible()
   expect(operations).toEqual([{ method: 'POST', path: previewPath, payload: preflight }])
   await drawer.getByRole('button', { name: '保存引用候选', exact: true }).click()

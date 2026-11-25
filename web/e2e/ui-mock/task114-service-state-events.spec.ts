@@ -61,6 +61,10 @@ async function setup(
         body: { error: { code: 'runtime_unavailable', message: 'Pod 读取失败' } },
       }
     if (path === '/application-environments') return data([binding])
+    if (
+      path === '/applications/retail/application-environments/retail-prod/services/order-api/pods'
+    )
+      return data({ status: 'unconfigured', items: [] })
     if (path === '/clusters/cluster-a/events') {
       eventReads++
       if (eventStatus !== 200)
@@ -111,14 +115,23 @@ async function setup(
         data: {
           environments?: Array<{
             applicationEnvironmentId: string
+            targets?: typeof binding.targets
             manifestDeployments?: unknown[]
           }>
-          environment?: { applicationEnvironmentId: string; manifestDeployments?: unknown[] }
+          environment?: {
+            applicationEnvironmentId: string
+            targets?: typeof binding.targets
+            manifestDeployments?: unknown[]
+          }
         }
       }
       const env =
         body.data.environment ??
         body.data.environments!.find((item) => item.applicationEnvironmentId === 'retail-test')!
+      env.targets = [
+        ...(env.targets ?? []).filter((target) => target.id !== 'target-order-api'),
+        ...binding.targets,
+      ]
       env.manifestDeployments = [
         {
           id: 'manifest-deployment',
@@ -361,8 +374,7 @@ for (const width of [1200, 390]) {
       const bounds = await metadata.boundingBox()
       expect(bounds!.height).toBeLessThanOrEqual(24)
       const tags = metadata.locator('.ant-tag')
-      await expect(tags).toHaveCount(3)
-      await expect(metadata.locator('.soha-metadata-tag').last()).toHaveText('托管 YAML')
+      await expect(tags).toHaveText(['运行正常', 'retail-test', '托管 YAML', '本地'])
       const boxes = await tags.evaluateAll((items) =>
         items.map((item) => ({
           height: item.getBoundingClientRect().height,
@@ -388,7 +400,7 @@ for (const width of [1200, 390]) {
       'aria-selected',
       'true',
     )
-    await expect(page.locator('.soha-service-runtime-overview')).toBeVisible()
+    await expect(page.getByRole('region', { name: '资源关系概览', exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: '服务运行指标', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '部署配置', exact: true })).toHaveCount(0)
     verifyBrowserEvidence(evidence)
@@ -432,9 +444,15 @@ for (const state of ['empty', 'failed', 'forbidden'] as const) {
     const metadata = page.locator('.soha-service-location')
     await expect(metadata).toContainText(state === 'empty' ? '就绪 0/0' : '就绪 —')
     await expect(metadata).toContainText(state === 'empty' ? '累计重启 0' : '累计重启 —')
-    // Application runtime snapshots retain their existing application-view permission;
-    // platform.pods.view gates the new header summary and Pod inspection actions.
-    await expect(page.locator('.soha-pod-card')).toHaveCount(state === 'forbidden' ? 2 : 0)
+    await expect(page.locator('.soha-pod-card')).toHaveCount(0)
+    if (state === 'forbidden') {
+      await expect(page.getByRole('region', { name: 'Pods', exact: true })).toContainText(
+        '无 Pod 查看权限',
+      )
+      expect(evidence.requests.some((path) => path.endsWith('/services/order-api/pods'))).toBe(
+        false,
+      )
+    }
     verifyBrowserEvidence(evidence)
   })
 }
@@ -450,5 +468,8 @@ test('R12 header resets Pod statistics when switching environment', async ({ con
     .click()
   await expect(metadata).toContainText('就绪 —')
   await expect(metadata).toContainText('累计重启 —')
+  expect(evidence.requests).toContain(
+    '/api/v1/applications/retail/application-environments/retail-prod/services/order-api/pods',
+  )
   verifyBrowserEvidence(evidence)
 })

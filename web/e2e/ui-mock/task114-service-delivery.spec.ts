@@ -17,7 +17,9 @@ for (const width of [1440, 1024, 768, 320]) {
       )
     const evidence = await installMocks(context, page, (url, method) => {
       const path = url.pathname.replace(/^\/api\/v1/, '')
-      if (method !== 'GET' && path !== '/auth/refresh') {
+      const sessionRefresh =
+        path === '/auth/refresh' || path === '/auth/refresh/application-workbench'
+      if (method !== 'GET' && !sessionRefresh) {
         writes.push(`${method} ${path}`)
         return undefined
       }

@@ -223,6 +223,8 @@ export function task114Response(
     )
   if (path === `/applications/${app.id}/service-directory`)
     return data(app.id === 'retail' ? services : [])
+  const service = services.find((item) => path === `/applications/${app.id}/services/${item.id}`)
+  if (app.id === 'retail' && service) return data(service)
   const summary = path.match(
     /^\/applications\/[^/]+\/application-environments\/([^/]+)\/runtime-summary$/,
   )

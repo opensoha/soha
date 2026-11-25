@@ -7,7 +7,7 @@ import enUS from 'antd/locale/en_US'
 import App from './App'
 import { GlobalApiErrorHandler } from './components/global-api-error-handler'
 import { SessionQueryProvider } from './components/session-query-provider'
-import { useBrandingSettings } from '@/features/settings'
+import { useBrandingSettings } from '@/features/settings/use-branding-settings'
 import { I18nProvider } from './i18n'
 import { usePreferencesStore } from './stores/preferences-store'
 import {
