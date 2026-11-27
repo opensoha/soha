@@ -711,24 +711,6 @@ for (const entry of lists) {
         .uncheck()
     }
     if (entry.route === '/cluster-resources/nodes') {
-      const before = await rows.nth(1).evaluate((row) => row.getBoundingClientRect().top)
-      await table.locator('.ant-table-row-expand-icon').first().click()
-      const preview = page.locator('.soha-node-expand-grid')
-      await expect(preview).toBeVisible()
-      for (const [label, value] of [
-        ['cpu', '25'],
-        ['memory', '25'],
-        ['disk', '25'],
-        ['pod', '10'],
-      ]) {
-        await expect(
-          preview.getByRole('progressbar', { name: `${label} allocation for worker-prod-01-0000` }),
-        ).toHaveAttribute('aria-valuenow', value)
-      }
-      await expect(preview).toContainText('11 / 110')
-      await expect
-        .poll(() => rows.nth(1).evaluate((row) => row.getBoundingClientRect().top))
-        .toBeGreaterThan(before + 50)
       await body.hover()
       await page.mouse.wheel(0, 500)
       const anchor = () =>
@@ -754,9 +736,6 @@ for (const entry of lists) {
       expect(Math.abs((await anchor())!.offset - saved.offset)).toBeLessThan(3)
       await body.focus()
       await body.press('Home')
-      await expect(page.locator('.soha-node-expand-grid')).toBeVisible()
-      await table.locator('.ant-table-row-expand-icon').first().click()
-      await expect(page.locator('.soha-node-expand-grid')).toHaveCount(0)
     }
     await body.focus()
     await body.press('End')

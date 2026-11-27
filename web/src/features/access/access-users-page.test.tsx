@@ -281,7 +281,7 @@ describe('access users page columns', () => {
   it('permission-gates and confirms the administrative MFA reset action', async () => {
     const viewOnlyContainer = await renderWithProviders(<AccessUsersPage />, '/access/users')
     await waitForRow(viewOnlyContainer, 'row-u-admin')
-    expect(viewOnlyContainer.querySelector('button[aria-label="重置 MFA"]')).toBeNull()
+    expect(viewOnlyContainer.querySelector('button[aria-label="更多操作：admin"]')).toBeNull()
 
     testState.snapshot.permissionKeys = ['access.users.view', 'access.users.update']
     const result = {
@@ -295,13 +295,28 @@ describe('access users page columns', () => {
     const managerContainer = await renderWithProviders(<AccessUsersPage />, '/access/users')
     await waitForRow(managerContainer, 'row-u-admin')
 
-    const resetButton = managerContainer.querySelector(
-      'button[aria-label="重置 MFA"]',
+    const moreButton = managerContainer.querySelector(
+      'button[aria-label="更多操作：admin"]',
     ) as HTMLButtonElement | null
-    expect(resetButton).not.toBeNull()
-    await act(async () => resetButton?.click())
+    expect(moreButton).not.toBeNull()
+    await act(async () => {
+      moreButton?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const resetMenuItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((item) => item.textContent?.trim() === '重置 MFA')
+    expect(resetMenuItem).toBeDefined()
+    await act(async () => {
+      resetMenuItem?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     const confirmButton = document.body.querySelector(
-      '.ant-popconfirm-buttons .ant-btn-primary',
+      'button[aria-label="确认重置 MFA"]',
     ) as HTMLButtonElement | null
     expect(confirmButton).not.toBeNull()
     await act(async () => confirmButton?.click())
@@ -443,11 +458,22 @@ describe('access users page columns', () => {
     const container = await renderWithProviders(<AccessRolesPage />, '/access/roles')
     await waitForRow(container, 'row-ops')
 
-    const editButton = container.querySelector(
-      'button[aria-label="编辑角色"]',
+    const moreButton = container.querySelector(
+      'button[aria-label="更多操作：运维角色"]',
     ) as HTMLButtonElement | null
-    expect(editButton).not.toBeNull()
-    await act(async () => editButton?.click())
+    expect(moreButton).not.toBeNull()
+    await act(async () => {
+      moreButton?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const editItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((item) => item.textContent?.trim() === '编辑')
+    expect(editItem).toBeDefined()
+    await act(async () => editItem?.click())
 
     const modal = document.body.querySelector('.ant-modal')
     expect(modal?.textContent).toContain('角色权限')

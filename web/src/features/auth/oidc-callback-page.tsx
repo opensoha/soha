@@ -4,12 +4,13 @@ import {
   logoutAuthSession,
 } from '@/features/auth/auth-api'
 import { normalizeLocalReturnTo, shouldUseDocumentNavigation } from '@/features/auth/return-to'
-import { appBrowserPath, appRouterPath } from '@/utils/app-base'
 import { findLandingPath } from '@/routes/meta'
 import { usePreferencesStore } from '@/stores/preferences-store'
-import { App, Spin, theme, Typography } from 'antd'
+import { appBrowserPath, appRouterPath } from '@/utils/app-base'
+import { App, Button, Spin, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import './browser-handoff-page.css'
 
 const { Title, Text } = Typography
 
@@ -17,7 +18,6 @@ export function OIDCCallbackPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { message } = App.useApp()
-  const { token } = theme.useToken()
   const [error, setError] = useState<string | null>(null)
   const handledRef = useRef(false)
 
@@ -56,12 +56,12 @@ export function OIDCCallbackPage() {
           return
         }
         navigate(nextPath, { replace: true })
-      } catch (err: any) {
-        setError(err?.message ?? 'OIDC 登录失败')
+      } catch (err: unknown) {
+        setError(err instanceof Error && err.message ? err.message : 'OIDC 登录失败')
       }
     }
 
-    exchangeCode(code)
+    void exchangeCode(code)
   }, [message, navigate, searchParams])
 
   useEffect(() => {
@@ -74,40 +74,47 @@ export function OIDCCallbackPage() {
     }
   }, [])
 
-  const handleBackToLogin = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleBackToLogin = async (event: React.MouseEvent<HTMLElement>) => {
     event.preventDefault()
     await logoutAuthSession()
     navigate('/login', { replace: true, state: { skipSessionRestore: true } })
   }
 
   return (
-    <div
-      className="soha-viewport-center"
-      style={{ backgroundColor: token.colorBgLayout }}
-    >
-      <div className="soha-stack-lg items-center">
-        {error ? (
-          <>
-            <Title level={4}>登录失败</Title>
-            <Text role="alert" type="danger">
-              {error}
-            </Text>
-            <a
-              href={appBrowserPath('/login')}
-              className="soha-mt-md"
-              style={{ color: token.colorPrimary }}
-              onClick={handleBackToLogin}
-            >
-              返回登录
-            </a>
-          </>
-        ) : (
-          <>
-            <Spin size="large" />
-            <Text type="secondary">正在完成登录...</Text>
-          </>
-        )}
+    <main className="soha-browser-handoff-page">
+      <div className="soha-browser-handoff-bezel">
+        <section className="soha-browser-handoff-card">
+          <div className="soha-browser-handoff-brand" style={{ justifyContent: 'center' }}>
+            <img src={appBrowserPath('/logo.svg')} alt="" />
+            <Text strong>Soha</Text>
+          </div>
+          <div className="soha-oidc-callback-status">
+            {error ? (
+              <>
+                <Title level={4} style={{ margin: 0 }}>
+                  登录失败
+                </Title>
+                <Text role="alert" type="danger">
+                  {error}
+                </Text>
+                <Button
+                  type="primary"
+                  href={appBrowserPath('/login')}
+                  onClick={handleBackToLogin}
+                  style={{ marginTop: 8 }}
+                >
+                  返回登录
+                </Button>
+              </>
+            ) : (
+              <>
+                <Spin size="large" />
+                <Text type="secondary">正在完成登录...</Text>
+              </>
+            )}
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }

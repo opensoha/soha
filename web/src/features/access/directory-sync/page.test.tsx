@@ -64,6 +64,8 @@ async function renderPage() {
 
 describe('directory sync page', () => {
   beforeAll(() => {
+    const getComputedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal(
       'ResizeObserver',
@@ -187,10 +189,17 @@ describe('directory sync page', () => {
     ]
 
     await renderPage()
-    const detailsButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看同步记录"]',
+    const moreButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="更多操作：飞书通讯录"]',
     )
-    await act(async () => detailsButton?.click())
+    await act(async () => moreButton?.click())
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+    const recordsItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === '同步记录',
+    )
+    await act(async () => recordsItem?.click())
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0))
     })
@@ -217,10 +226,17 @@ describe('directory sync page', () => {
     expect(document.body.textContent).toContain('contact.user.updated_v3')
     expect(document.body.textContent).toContain('无需对账')
 
-    const retryButton = [...document.body.querySelectorAll('button')].find(
-      (button) => button.textContent === '重试',
+    const eventMoreButton = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="更多操作：provider-event-1"]',
     )
-    await act(async () => retryButton?.click())
+    await act(async () => eventMoreButton?.click())
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+    const retryItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === '重试',
+    )
+    await act(async () => retryItem?.click())
     expect(state.retryEvent).toHaveBeenCalledWith('dir-1', 'event-1')
   })
 })

@@ -313,11 +313,27 @@ async function renderEditor(saved?: DeliveryWorkflow) {
   })
 }
 async function click(label: string) {
-  const button = Array.from(document.querySelectorAll('button')).find(
-    (item) =>
-      item.getAttribute('aria-label') === label ||
-      item.textContent?.replace(/\s/g, '') === label.replace(/\s/g, ''),
-  )
+  const findItem = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('button, [role="menuitem"]')).find(
+      (item) =>
+        item.getAttribute('aria-label') === label ||
+        item.textContent?.replace(/\s/g, '') === label.replace(/\s/g, ''),
+    )
+  let button = findItem()
+  if (!button) {
+    const rowMatch = label.match(/第\s*(\d+)\s*项/)
+    const triggerSelector = rowMatch
+      ? `button[aria-label="更多操作：第 ${rowMatch[1]} 项"]`
+      : 'button[aria-label^="更多操作"]'
+    const more = document.querySelector<HTMLButtonElement>(triggerSelector)
+    if (more) {
+      await act(async () => {
+        more.click()
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+      button = findItem()
+    }
+  }
   expect(button, label).toBeDefined()
   await act(async () => {
     button!.click()

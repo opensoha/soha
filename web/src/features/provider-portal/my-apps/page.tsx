@@ -28,7 +28,6 @@ import { App, Button, Collapse, Empty, Input, Select, Space, Typography } from '
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../provider-portal-pages.css'
-import { PortalAccountMenu } from '../shared/account-menu'
 import { formatPortalDateTime } from '../shared/formatters'
 import { PortalViewNav } from '../shared/portal-view-nav'
 import { HostedAppDetailDrawer } from './app-detail-drawer'
@@ -200,14 +199,9 @@ export function PortalMyHostedAppsPage() {
   const hasFilters = Boolean(keyword.trim() || statusFilter !== 'all')
 
   return (
-    <div className="soha-provider-portal soha-provider-portal-home soha-portal-my-apps">
-      <main className="soha-portal-main">
-        <PortalViewNav
-          active="my-apps"
-          myAppsCount={appsData?.total}
-          extra={<PortalAccountMenu />}
-        />
-        <ReadFeedback query={appsQuery} label="我的作品" canRead={canView} />
+    <div className="soha-page soha-provider-portal soha-provider-portal-home is-app-shell soha-portal-my-apps">
+      <PortalViewNav active="my-apps" myAppsCount={appsData?.total} />
+      <ReadFeedback query={appsQuery} label="我的作品" canRead={canView} />
 
         {!canView ? (
           <ManagementState
@@ -351,7 +345,6 @@ export function PortalMyHostedAppsPage() {
           onClose={() => setActiveAppId(null)}
           onDeleted={() => setActiveAppId(null)}
         />
-      </main>
     </div>
   )
 }

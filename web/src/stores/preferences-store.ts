@@ -1,13 +1,26 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { BusinessWorkspaceType } from '@/types'
-import type { AppThemeId, LightCanvasPreset, ThemeMode } from '@/theme/app-theme'
+import type {
+  AppThemeId,
+  DrawerPresentationMode,
+  DualRailStage,
+  LightCanvasPreset,
+  Overview3DMorphology,
+  OverviewGradientPresetId,
+  OverviewHeroStyle,
+  ThemeMode,
+} from '@/theme/app-theme'
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_APP_THEME_ID,
+  DEFAULT_CORNER_RADIUS,
   DEFAULT_DARK_CANVAS_COLOR,
   DEFAULT_LIGHT_CANVAS_COLOR,
+  DEFAULT_OVERVIEW_GRADIENT_STOPS,
+  DEFAULT_OVERVIEW_HERO_STYLE,
   DEFAULT_THEME_MODE,
+  OVERVIEW_GRADIENT_PRESETS,
 } from '@/theme/app-theme'
 
 export interface ApplicationListFilters {
@@ -29,6 +42,13 @@ interface PreferencesState {
   lightCanvasColor: string
   darkCanvasColor: string
   paperGrain: boolean
+  overviewHeroStyle: OverviewHeroStyle
+  overviewGradientPreset: OverviewGradientPresetId
+  overviewGradientStops: [string, string, string]
+  overview3dMorphology: Overview3DMorphology
+  drawerPresentation: DrawerPresentationMode
+  dualRailStage: DualRailStage
+  cornerRadius: number
   localeCode: 'zh_CN' | 'en_US'
   companionMode: 'companion' | 'icon'
   companionBubbleEnabled: boolean
@@ -46,6 +66,13 @@ interface PreferencesState {
   setLightCanvasColor: (color: string) => void
   setDarkCanvasColor: (color: string) => void
   setPaperGrain: (enabled: boolean) => void
+  setOverviewHeroStyle: (style: OverviewHeroStyle) => void
+  setOverviewGradientPreset: (preset: OverviewGradientPresetId) => void
+  setOverviewGradientStop: (index: 0 | 1 | 2, color: string) => void
+  setOverview3dMorphology: (mode: Overview3DMorphology) => void
+  setDrawerPresentation: (mode: DrawerPresentationMode) => void
+  setDualRailStage: (stage: DualRailStage) => void
+  setCornerRadius: (radius: number) => void
   resetAppearanceDefaults: () => void
   setLocaleCode: (localeCode: 'zh_CN' | 'en_US') => void
   setCompanionMode: (mode: 'companion' | 'icon') => void
@@ -65,6 +92,13 @@ export const usePreferencesStore = create<PreferencesState>()(
       lightCanvasColor: DEFAULT_LIGHT_CANVAS_COLOR,
       darkCanvasColor: DEFAULT_DARK_CANVAS_COLOR,
       paperGrain: true,
+      overviewHeroStyle: DEFAULT_OVERVIEW_HERO_STYLE,
+      overviewGradientPreset: 'workbench',
+      overviewGradientStops: DEFAULT_OVERVIEW_GRADIENT_STOPS,
+      overview3dMorphology: 'auto',
+      drawerPresentation: 'split-card',
+      dualRailStage: 'expanded',
+      cornerRadius: DEFAULT_CORNER_RADIUS,
       localeCode: 'zh_CN',
       companionMode: 'companion',
       companionBubbleEnabled: true,
@@ -117,6 +151,28 @@ export const usePreferencesStore = create<PreferencesState>()(
       setLightCanvasColor: (lightCanvasColor) => set({ lightCanvasColor }),
       setDarkCanvasColor: (darkCanvasColor) => set({ darkCanvasColor }),
       setPaperGrain: (paperGrain) => set({ paperGrain }),
+      setOverviewHeroStyle: (overviewHeroStyle) => set({ overviewHeroStyle }),
+      setOverviewGradientPreset: (overviewGradientPreset) =>
+        set((state) => {
+          const matched = OVERVIEW_GRADIENT_PRESETS.find((item) => item.id === overviewGradientPreset)
+          return {
+            overviewGradientPreset,
+            overviewGradientStops: matched ? [...matched.stops] : state.overviewGradientStops,
+          }
+        }),
+      setOverviewGradientStop: (index, color) =>
+        set((state) => {
+          const next: [string, string, string] = [...state.overviewGradientStops]
+          next[index] = color
+          return {
+            overviewGradientPreset: 'custom',
+            overviewGradientStops: next,
+          }
+        }),
+      setOverview3dMorphology: (overview3dMorphology) => set({ overview3dMorphology }),
+      setDrawerPresentation: (drawerPresentation) => set({ drawerPresentation }),
+      setDualRailStage: (dualRailStage) => set({ dualRailStage }),
+      setCornerRadius: (cornerRadius) => set({ cornerRadius }),
       resetAppearanceDefaults: () =>
         set({
           accentColor: DEFAULT_ACCENT_COLOR,
@@ -124,6 +180,13 @@ export const usePreferencesStore = create<PreferencesState>()(
           lightCanvasColor: DEFAULT_LIGHT_CANVAS_COLOR,
           darkCanvasColor: DEFAULT_DARK_CANVAS_COLOR,
           paperGrain: true,
+          overviewHeroStyle: DEFAULT_OVERVIEW_HERO_STYLE,
+          overviewGradientPreset: 'workbench',
+          overviewGradientStops: DEFAULT_OVERVIEW_GRADIENT_STOPS,
+          overview3dMorphology: 'auto',
+          drawerPresentation: 'split-card',
+          dualRailStage: 'expanded',
+          cornerRadius: DEFAULT_CORNER_RADIUS,
         }),
       setLocaleCode: (localeCode) => set({ localeCode }),
       setCompanionMode: (companionMode) => set({ companionMode }),
@@ -131,6 +194,26 @@ export const usePreferencesStore = create<PreferencesState>()(
       setSelectedCompanionPluginId: (selectedCompanionPluginId) =>
         set({ selectedCompanionPluginId }),
     }),
-    { name: 'soha-prefs' },
+    {
+      name: 'soha-prefs',
+      version: 5,
+      migrate: (persistedState, version) => {
+        const prev = (persistedState ?? {}) as Partial<PreferencesState> & {
+          dualRailStage?: string
+        }
+        if (version < 5) {
+          return {
+            ...prev,
+            overviewHeroStyle: prev.overviewHeroStyle ?? 'prism',
+            overviewGradientPreset: prev.overviewGradientPreset ?? 'workbench',
+            overviewGradientStops: prev.overviewGradientStops ?? DEFAULT_OVERVIEW_GRADIENT_STOPS,
+            drawerPresentation: prev.drawerPresentation ?? 'split-card',
+            dualRailStage: prev.dualRailStage === 'rail-only' ? 'rail-only' : 'expanded',
+            cornerRadius: DEFAULT_CORNER_RADIUS,
+          }
+        }
+        return prev as PreferencesState
+      },
+    },
   ),
 )

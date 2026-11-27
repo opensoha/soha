@@ -1,9 +1,3 @@
-.soha-role-detail .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-role-detail .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-role-detail .soha-role-section-title,
 .soha-role-detail .soha-role-rules-toolbar {
   display: flex;

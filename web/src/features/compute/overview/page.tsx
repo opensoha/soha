@@ -2,7 +2,6 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import {
-  ApiOutlined,
   AppstoreOutlined,
   ArrowRightOutlined,
   ClockCircleOutlined,
@@ -22,8 +21,8 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useAIPageContext } from '@/features/copilot'
 import {
-  OverviewChip,
-  type OverviewChipItem,
+  OverviewHeroCard,
+  OverviewNodeMatrix,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
@@ -43,7 +42,6 @@ const { Text } = Typography
 const SummaryChart = lazy(() => import('./summary-chart'))
 
 type NavigableMetricItem = OverviewMetricItem & { path: string }
-type NavigableChipItem = OverviewChipItem & { path: string }
 
 function OverviewLink({
   snapshot,
@@ -384,177 +382,8 @@ export function ComputeOverviewPage() {
     return canViewDocker
   })
 
-  const accessStats = [
-    {
-      key: 'connections',
-      className: 'soha-compute-metric-vms',
-      label: localeText(localeCode, '虚拟化连接', 'Virtualization connections'),
-      value: connectionSummary?.connectionsTotal ?? '—',
-      helper: localeText(localeCode, '未取得连接统计', 'Connection counts unavailable'),
-      counts: connectionSummary
-        ? [
-            {
-              value: connectionSummary.connectionsHealthy,
-              label: localeText(localeCode, '健康', 'healthy'),
-              tone: 'success',
-            },
-            {
-              value: connectionSummary.connectionsDegraded,
-              label: localeText(localeCode, '异常', 'unhealthy'),
-              tone: 'danger',
-            },
-          ]
-        : undefined,
-      icon: <ApiOutlined />,
-      path: '/compute/virtualization/clusters',
-    },
-    {
-      key: 'agents',
-      className: 'soha-compute-metric-hosts',
-      label: localeText(localeCode, 'Agent 主机', 'Agent hosts'),
-      value: agentSummary?.total ?? '—',
-      helper: localeText(localeCode, '未取得 Agent 统计', 'Agent counts unavailable'),
-      counts: agentSummary
-        ? [
-            {
-              value: agentSummary.online,
-              label: localeText(localeCode, '在线', 'online'),
-              tone: 'success',
-            },
-            {
-              value: agentSummary.offline,
-              label: localeText(localeCode, '离线', 'offline'),
-              tone: 'danger',
-            },
-          ]
-        : undefined,
-      icon: <ClusterOutlined />,
-      path: '/compute/runtimes/hosts',
-    },
-    {
-      key: 'runtime-hosts',
-      className: 'soha-compute-metric-hosts',
-      label: localeText(localeCode, '运行时主机', 'Runtime hosts'),
-      value: runtimeSummary?.total ?? '—',
-      helper: localeText(localeCode, '未取得主机统计', 'Host counts unavailable'),
-      counts: runtimeSummary
-        ? [
-            {
-              value: runtimeSummary.available,
-              label: localeText(localeCode, '可用', 'available'),
-              tone: 'success',
-            },
-            {
-              value: runtimeSummary.error,
-              label: localeText(localeCode, '异常', 'unhealthy'),
-              tone: 'danger',
-            },
-          ]
-        : undefined,
-      icon: <ClusterOutlined />,
-      path: '/compute/runtimes/hosts',
-    },
-  ] satisfies (NavigableChipItem & {
-    className: string
-    counts?: { value?: number; label: string; tone: 'success' | 'danger' }[]
-  })[]
-  const visibleAccessStats = accessStats.filter(({ key }) =>
-    key === 'connections' ? canViewVirtualization : canViewDocker,
-  )
-
-  const taskStats = [
-    {
-      key: 'failed',
-      label: localeText(localeCode, '失败 / 超时', 'Failed / timed out'),
-      value: taskSummary?.failed ?? '—',
-      tone: (taskSummary?.failed ?? 0) > 0 ? 'danger' : 'default',
-      className: 'soha-compute-metric-failed',
-      path: '/compute/tasks/operations',
-    },
-    {
-      key: 'running',
-      label: localeText(localeCode, '执行中', 'Running'),
-      value: taskSummary?.running ?? '—',
-      tone: 'default',
-      className: 'soha-compute-metric-tasks',
-      path: '/compute/tasks/operations?status=running',
-    },
-    {
-      key: 'queued',
-      label: localeText(localeCode, '排队', 'Queued'),
-      value: taskSummary?.queued ?? '—',
-      tone: 'default',
-      className: 'soha-compute-metric-queued',
-      path: '/compute/tasks/operations?status=queued',
-    },
-  ] satisfies (NavigableChipItem & { className: string })[]
-
-  return (
-    <div className="soha-page soha-overview-page soha-compute-page soha-compute-overview-page">
-      <h1 className="soha-compute-page-heading">
-        {localeText(localeCode, '计算资源总览', 'Compute overview')}
-      </h1>
-      <section
-        className="soha-compute-snapshot"
-        aria-label={localeText(localeCode, '资源统计', 'Resource counts')}
-      >
-        <div
-          className={`soha-overview-metric-grid ${
-            visibleOverviewStats.length === 4 ? 'is-asymmetric-bento' : ''
-          }`}
-        >
-          {visibleOverviewStats.map(({ key, path, ...item }, index) => {
-            const isHero = visibleOverviewStats.length === 4 && index === 0
-            return (
-              <OverviewLink
-                snapshot={snapshot}
-                aria-label={localeText(
-                  localeCode,
-                  `查看${String(item.label)}`,
-                  `View ${String(item.label)}`,
-                )}
-                className={`soha-overview-card-link ${
-                  isHero ? 'is-bento-hero' : `is-bento-tile is-bento-tile-${index}`
-                }`}
-                key={key}
-                to={path}
-              >
-                <Card
-                  loading={overviewQuery.isLoading}
-                  className={`soha-overview-metric-card ${item.className} ${
-                    isHero ? 'is-hero-sage' : ''
-                  }`}
-                  classNames={{ body: 'soha-compute-metric-body' }}
-                >
-                  <div className="soha-compute-metric-content">
-                    <div>
-                      <span className="soha-compute-metric-label">
-                        {item.icon}
-                        {item.label}
-                      </span>
-                      <strong className="soha-compute-metric-value">{item.value}</strong>
-                    </div>
-                    <Suspense fallback={<div className="soha-compute-chart-placeholder" />}>
-                      <SummaryChart {...item.visual} surface={isHero ? 'hero' : 'default'} />
-                    </Suspense>
-                  </div>
-                  <div className="soha-compute-metric-footer">
-                    <div className="soha-compute-metric-caption">{item.helper}</div>
-                    {isHero ? (
-                      <span className="soha-btn-island is-cream" aria-hidden="true">
-                        <span>{localeText(localeCode, '浏览实例', 'Explore Fleet')}</span>
-                        <span className="soha-btn-island__circle">
-                          <ArrowRightOutlined />
-                        </span>
-                      </span>
-                    ) : null}
-                  </div>
-                </Card>
-              </OverviewLink>
-            )
-          })}
-        </div>
-      </section>
+  const lowerPanels = (
+    <>
       <div className="soha-compute-priority-grid">
         <Card
           classNames={{ header: 'soha-compute-panel-header', body: 'soha-compute-panel-body' }}
@@ -644,10 +473,6 @@ export function ComputeOverviewPage() {
             </Space>
           }
         >
-          <ReadFeedback
-            query={overviewQuery}
-            label={localeText(localeCode, '计算资源总览', 'Compute overview')}
-          />
           {overview?.partial ? (
             <ContextFeedback
               showIcon
@@ -749,145 +574,48 @@ export function ComputeOverviewPage() {
               }
             />
           )}
-        </Card>
-        {canViewTasks ? (
-          <Card
-            classNames={{ header: 'soha-compute-panel-header', body: 'soha-compute-panel-body' }}
-            className="soha-overview-panel-card soha-compute-task-panel"
-            title={
-              <h2 className="soha-compute-section-heading">
-                {localeText(localeCode, '任务运行', 'Task activity')}
-              </h2>
-            }
-          >
-            {overviewQuery.isLoading ? (
-              <ManagementState bordered={false} compact kind="loading" />
-            ) : tasks ? (
-              <div className="soha-overview-chip-grid soha-compute-task-grid">
-                {taskStats.map(({ key, path, ...item }) => (
-                  <OverviewLink
-                    snapshot={snapshot}
-                    aria-label={localeText(
-                      localeCode,
-                      key === 'failed'
-                        ? '查看任务中心，筛选失败或超时任务'
-                        : `查看${String(item.label)}任务`,
-                      key === 'failed'
-                        ? 'Open task center to filter failed or timed-out tasks'
-                        : `View ${String(item.label)} tasks`,
-                    )}
-                    className="soha-overview-card-link"
-                    key={key}
-                    to={path}
-                  >
-                    <OverviewChip {...item} />
-                  </OverviewLink>
-                ))}
-              </div>
-            ) : (
-              <ManagementState
-                bordered={false}
-                compact
-                kind="empty"
-                title={localeText(localeCode, '暂无任务摘要', 'No task summary')}
-              />
-            )}
-            <div className="soha-compute-task-footer">
-              <Button
-                type={(taskSummary?.failed ?? 0) > 0 ? 'primary' : 'default'}
-                icon={<ArrowRightOutlined />}
-                iconPlacement="end"
-                onClick={() =>
-                  navigate(
-                    (taskSummary?.failed ?? 0) > 0
-                      ? '/compute/tasks/operations?status=failed'
-                      : '/compute/tasks/operations',
-                  )
-                }
-              >
-                {(taskSummary?.failed ?? 0) > 0
-                  ? localeText(localeCode, '查看失败任务', 'View failed tasks')
-                  : localeText(localeCode, '查看任务', 'View tasks')}
-              </Button>
-              {(taskSummary?.failed ?? 0) > 0 ? (
-                <Space wrap>
-                  <Link to="/compute/tasks/operations?status=timeout">
-                    {localeText(localeCode, '查看超时任务', 'View timed-out tasks')}
-                  </Link>
-                  <Link to="/compute/tasks/operations">
-                    {localeText(localeCode, '所有任务', 'All tasks')}
-                  </Link>
-                </Space>
-              ) : null}
-            </div>
-            {tasks?.status === 'degraded' ? (
-              <p className="soha-compute-section-note">
-                {localeText(
-                  localeCode,
-                  '部分任务来源读取失败，当前数字仅含已读取记录。',
-                  'Some task sources could not be read; counts cover available records only.',
-                )}
-              </p>
-            ) : null}
-          </Card>
-        ) : null}
-      </div>
-
-      <div className="soha-compute-infrastructure-grid">
-        <Card
-          classNames={{ header: 'soha-compute-panel-header', body: 'soha-compute-panel-body' }}
-          className="soha-overview-panel-card"
-          title={
-            <h2 className="soha-compute-section-heading">
-              {localeText(localeCode, '接入状态', 'Access status')}
-            </h2>
-          }
-        >
-          {overviewQuery.isLoading ? (
-            <ManagementState bordered={false} compact kind="loading" />
-          ) : virtualization || agents || runtimes ? (
-            <div className="soha-compute-access-list">
-              {visibleAccessStats.map(({ key, path, ...item }) => (
-                <OverviewLink
-                  snapshot={snapshot}
-                  aria-label={localeText(
-                    localeCode,
-                    `查看${String(item.label)}`,
-                    `View ${String(item.label)}`,
-                  )}
-                  className={`soha-compute-access-row soha-compute-overview-link-row ${item.className}`}
-                  key={key}
-                  to={path}
+          {canViewTasks ? (
+            <>
+              <div className="soha-compute-task-footer">
+                <Button
+                  type={(taskSummary?.failed ?? 0) > 0 ? 'primary' : 'default'}
+                  size="small"
+                  icon={<ArrowRightOutlined />}
+                  iconPlacement="end"
+                  onClick={() =>
+                    navigate(
+                      (taskSummary?.failed ?? 0) > 0
+                        ? '/compute/tasks/operations?status=failed'
+                        : '/compute/tasks/operations',
+                    )
+                  }
                 >
-                  <span className="soha-compute-source-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <div className="soha-compute-access-main">
-                    <Text strong>{item.label}</Text>
-                    <div className="soha-compute-access-counts">
-                      {item.counts
-                        ? item.counts.map((count) => (
-                            <span
-                              key={count.label}
-                              className={(count.value ?? 0) > 0 ? `is-${count.tone}` : undefined}
-                            >
-                              <b>{count.value ?? '—'}</b> {count.label}
-                            </span>
-                          ))
-                        : item.helper}
-                    </div>
-                  </div>
-                  <div className="soha-compute-access-total">
-                    <strong>{item.value}</strong>
-                    <span>{localeText(localeCode, '总数', 'Total')}</span>
-                  </div>
-                  <ArrowRightOutlined className="soha-compute-overview-row-action" />
-                </OverviewLink>
-              ))}
-            </div>
-          ) : (
-            <ManagementState bordered={false} compact kind="not-configured" />
-          )}
+                  {(taskSummary?.failed ?? 0) > 0
+                    ? localeText(localeCode, '查看失败任务', 'View failed tasks')
+                    : localeText(localeCode, '查看任务', 'View tasks')}
+                </Button>
+                {(taskSummary?.failed ?? 0) > 0 ? (
+                  <Space wrap>
+                    <Link to="/compute/tasks/operations?status=timeout">
+                      {localeText(localeCode, '查看超时任务', 'View timed-out tasks')}
+                    </Link>
+                    <Link to="/compute/tasks/operations">
+                      {localeText(localeCode, '所有任务', 'All tasks')}
+                    </Link>
+                  </Space>
+                ) : null}
+              </div>
+              {tasks?.status === 'degraded' ? (
+                <p className="soha-compute-section-note">
+                  {localeText(
+                    localeCode,
+                    '部分任务来源读取失败，当前数字仅含已读取记录。',
+                    'Some task sources could not be read; counts cover available records only.',
+                  )}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </Card>
 
         <Card
@@ -948,6 +676,9 @@ export function ComputeOverviewPage() {
             />
           )}
         </Card>
+      </div>
+
+      <div className="soha-compute-infrastructure-grid">
         <ProviderInstancesPanel
           canViewTask={
             hasPermission(snapshot, 'virtualization.operations.view') ||
@@ -959,6 +690,449 @@ export function ComputeOverviewPage() {
           localeCode={localeCode}
         />
       </div>
+    </>
+  )
+
+  return (
+    <div className="soha-page soha-overview-page soha-compute-page soha-compute-overview-page">
+      <ReadFeedback
+        query={overviewQuery}
+        label={localeText(localeCode, '计算资源总览', 'Compute overview')}
+      />
+      <h1 className="soha-compute-page-heading">
+        {localeText(localeCode, '计算资源总览', 'Compute overview')}
+      </h1>
+      <section
+        className="soha-compute-snapshot"
+        aria-label={localeText(localeCode, '资源统计', 'Resource counts')}
+      >
+        {visibleOverviewStats.length === 4 ? (
+          <OverviewHeroCard
+            variant="compute"
+            heroMetricClassName={`soha-overview-metric-card ${visibleOverviewStats[0].className}`}
+            eyebrowIcon={visibleOverviewStats[0].icon}
+            eyebrowLabel={visibleOverviewStats[0].label}
+            value={visibleOverviewStats[0].value}
+            valueSuffix={localeText(localeCode, '台受管实例', 'managed VMs')}
+            caption={!vmSummary ? visibleOverviewStats[0].helper : undefined}
+            detailDrawerTitle={localeText(localeCode, '计算资源与提供方明细', 'Compute & Provider Details')}
+            graphicDeck={[
+              {
+                key: 'compute-orbit-rings',
+                kind: 'rings',
+                title: localeText(localeCode, '异构算力在线光谱环', 'Compute Readiness Orbit'),
+                subtitle: localeText(localeCode, '虚拟机与容器运行时', 'VM & Container Runtime'),
+                actionLabel: localeText(localeCode, '虚拟机', 'VMs'),
+                actionTo: canViewVirtualization ? '/compute/virtualization/vms' : undefined,
+                centerValue:
+                  vmSummary?.vmsTotal && vmSummary.vmsTotal > 0
+                    ? `${Math.round(((vmSummary.vmsRunning ?? 0) / vmSummary.vmsTotal) * 100)}%`
+                    : '—',
+                centerLabel: localeText(localeCode, '在线率', 'Online'),
+                rings: [
+                  {
+                    key: 'vm-running',
+                    label: localeText(localeCode, '运行中虚拟机', 'Running VMs'),
+                    value: vmSummary?.vmsRunning ?? '—',
+                    ratio:
+                      vmSummary?.vmsTotal && vmSummary.vmsTotal > 0
+                        ? (vmSummary.vmsRunning ?? 0) / vmSummary.vmsTotal
+                        : 0,
+                    tone: 'success',
+                    to: canViewVirtualization ? '/compute/virtualization/vms' : undefined,
+                  },
+                  {
+                    key: 'hosts-ready',
+                    label: localeText(localeCode, '可用运行时主机', 'Ready Hosts'),
+                    value: runtimeSummary
+                      ? `${runtimeSummary.available ?? 0}/${runtimeSummary.total ?? 0}`
+                      : '—',
+                    ratio:
+                      runtimeSummary?.total && runtimeSummary.total > 0
+                        ? (runtimeSummary.available ?? 0) / runtimeSummary.total
+                        : 0,
+                    tone: 'primary',
+                    to: canViewDocker ? '/compute/runtimes/hosts' : undefined,
+                  },
+                  {
+                    key: 'agents-online',
+                    label: localeText(localeCode, '在线 Agent 通道', 'Online Agents'),
+                    value: agentSummary
+                      ? `${agentSummary.online ?? 0}/${agentSummary.total ?? 0}`
+                      : '—',
+                    ratio:
+                      agentSummary?.total && agentSummary.total > 0
+                        ? (agentSummary.online ?? 0) / agentSummary.total
+                        : 0,
+                    tone: 'primary',
+                  },
+                  {
+                    key: 'vm-error',
+                    label: localeText(localeCode, '异常受管实例', 'Unhealthy VMs'),
+                    value: vmSummary?.vmsError ?? 0,
+                    ratio:
+                      vmSummary?.vmsTotal && vmSummary.vmsTotal > 0
+                        ? (vmSummary.vmsError ?? 0) / vmSummary.vmsTotal
+                        : 0,
+                    tone: (vmSummary?.vmsError ?? 0) > 0 ? 'danger' : 'neutral',
+                  },
+                ],
+              },
+              {
+                key: 'compute-provider-spectrum',
+                kind: 'spectrum',
+                title: localeText(localeCode, '多源算力与任务吞吐频谱', 'Multi-Provider Capacity Spectrum'),
+                subtitle: localeText(localeCode, '跨虚拟化与容器编排栈', 'Across virtualization & runtime'),
+                actionLabel: localeText(localeCode, '集群连接', 'Clusters'),
+                actionTo: canViewVirtualization ? '/compute/virtualization/clusters' : undefined,
+                bars: [
+                  {
+                    key: 'vms',
+                    label: localeText(localeCode, '虚拟机', 'VMs'),
+                    value: vmSummary?.vmsTotal ?? 0,
+                    tone: 'success',
+                    to: canViewVirtualization ? '/compute/virtualization/vms' : undefined,
+                  },
+                  {
+                    key: 'services',
+                    label: localeText(localeCode, '容器服务', 'Services'),
+                    value: serviceSummary?.services ?? 0,
+                    tone: 'primary',
+                    to: canViewDocker ? '/compute/runtimes/projects' : undefined,
+                  },
+                  {
+                    key: 'hosts',
+                    label: localeText(localeCode, '宿主机', 'Hosts'),
+                    value: runtimeSummary?.total ?? 0,
+                    tone: 'primary',
+                    to: canViewDocker ? '/compute/runtimes/hosts' : undefined,
+                  },
+                  {
+                    key: 'projects',
+                    label: localeText(localeCode, '项目栈', 'Projects'),
+                    value: projectSummary?.projects ?? 0,
+                    tone: 'success',
+                  },
+                  {
+                    key: 'tasks',
+                    label: localeText(localeCode, '活跃任务', 'Tasks'),
+                    value: (taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0),
+                    tone: (taskSummary?.failed ?? 0) > 0 ? 'warning' : 'primary',
+                    to: canViewTasks ? '/compute/tasks/operations' : undefined,
+                  },
+                ],
+              },
+              {
+                key: 'compute-risk-radar',
+                kind: 'radar',
+                title: localeText(localeCode, '连接健康与故障态势雷达', 'Provider & Risk Radar'),
+                subtitle: localeText(
+                  localeCode,
+                  `${overview?.providerHealth.length ?? 0} 个提供方接入`,
+                  `${overview?.providerHealth.length ?? 0} providers`,
+                ),
+                actionLabel: localeText(localeCode, '任务中心', 'Tasks'),
+                actionTo: canViewTasks ? '/compute/tasks/operations' : undefined,
+                emptyLabel: localeText(localeCode, '全部虚拟化连接与宿主机健康', 'All compute nodes healthy'),
+                blips: [
+                  ...attention.slice(0, 2).map((item, idx) => ({
+                    key: `attn-${item.code}-${idx}`,
+                    label:
+                      item.resources?.[0]?.displayName ||
+                      attentionLabel(item.code, item.summary, localeCode),
+                    badge: item.severity.toUpperCase(),
+                    tone:
+                      item.severity === 'critical'
+                        ? ('danger' as const)
+                        : ('warning' as const),
+                    to: attentionTarget(
+                      item.code,
+                      item.resources?.length === 1 ? item.resources[0] : undefined,
+                    ),
+                  })),
+                  ...(overview?.providerHealth ?? []).slice(0, 2).map((prov) => ({
+                    key: `prov-${prov.domain}-${prov.providerKey}`,
+                    label: prov.providerKey,
+                    badge: prov.status === 'healthy' ? 'HEALTHY' : prov.status.toUpperCase(),
+                    tone:
+                      prov.status === 'healthy'
+                        ? ('success' as const)
+                        : prov.status === 'degraded'
+                          ? ('warning' as const)
+                          : ('danger' as const),
+                    to:
+                      prov.domain === 'container_runtime'
+                        ? '/compute/runtimes/hosts'
+                        : '/compute/virtualization/clusters',
+                  })),
+                ],
+              },
+            ]}
+            kpis={[
+              ...(connectionSummary
+                ? [
+                    {
+                      key: 'conn',
+                      label: localeText(localeCode, '虚拟化集群', 'Connections'),
+                      value: `${connectionSummary.connectionsHealthy ?? 0}/${connectionSummary.connectionsTotal ?? 0}`,
+                    },
+                  ]
+                : []),
+              ...(agentSummary
+                ? [
+                    {
+                      key: 'agent',
+                      label: localeText(localeCode, 'Agent 在线', 'Agents online'),
+                      value: `${agentSummary.online ?? 0}/${agentSummary.total ?? 0}`,
+                    },
+                  ]
+                : []),
+            ]}
+            telemetryNodes={[
+              {
+                id: 'vm-fleet',
+                label: `VMS · ${vmSummary?.vmsTotal ?? '—'}`,
+                title: localeText(localeCode, '虚拟机实例舰队', 'Virtual Machine Fleet'),
+                metric: localeText(
+                  localeCode,
+                  `${vmSummary?.vmsRunning ?? 0} 台运行中 / ${vmSummary?.vmsStopped ?? 0} 台已停止`,
+                  `${vmSummary?.vmsRunning ?? 0} running / ${vmSummary?.vmsStopped ?? 0} stopped`,
+                ),
+                status: 'primary',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/virtualization/vms'),
+                  snapshot,
+                )
+                  ? '/compute/virtualization/vms'
+                  : undefined,
+              },
+              {
+                id: 'vm-alert',
+                label:
+                  (vmSummary?.vmsError ?? 0) > 0
+                    ? `VM-ERR · ${vmSummary?.vmsError}`
+                    : 'GPU-A100',
+                title: localeText(localeCode, '异常虚拟机巡检', 'VM Health Signal'),
+                metric:
+                  (vmSummary?.vmsError ?? 0) > 0
+                    ? localeText(
+                        localeCode,
+                        `${vmSummary?.vmsError} 台实例状态异常`,
+                        `${vmSummary?.vmsError} unhealthy instances`,
+                      )
+                    : localeText(localeCode, '实例探针健康', 'Instance probes healthy'),
+                status: (vmSummary?.vmsError ?? 0) > 0 ? 'critical' : 'healthy',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/virtualization/vms'),
+                  snapshot,
+                )
+                  ? '/compute/virtualization/vms'
+                  : undefined,
+              },
+              {
+                id: 'virt-conn',
+                label: `CONN · ${connectionSummary?.connectionsHealthy ?? 0}/${connectionSummary?.connectionsTotal ?? 0}`,
+                title: localeText(localeCode, '虚拟化连接池', 'Hypervisor Connections'),
+                metric:
+                  (connectionSummary?.connectionsDegraded ?? 0) > 0
+                    ? localeText(
+                        localeCode,
+                        `${connectionSummary?.connectionsDegraded} 个连接降级`,
+                        `${connectionSummary?.connectionsDegraded} connections degraded`,
+                      )
+                    : localeText(localeCode, '全部连接正常', 'All connections healthy'),
+                status:
+                  (connectionSummary?.connectionsDegraded ?? 0) > 0 ? 'warning' : 'healthy',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/virtualization/clusters'),
+                  snapshot,
+                )
+                  ? '/compute/virtualization/clusters'
+                  : undefined,
+              },
+              {
+                id: 'runtime-svc',
+                label: `SERVICES · ${serviceSummary?.services ?? '—'}`,
+                title: localeText(localeCode, '容器运行时服务', 'Container Services'),
+                metric: localeText(
+                  localeCode,
+                  `${projectSummary?.projects ?? 0} 个编排项目运行中`,
+                  `${projectSummary?.projects ?? 0} projects running`,
+                ),
+                status: 'primary',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/runtimes/projects'),
+                  snapshot,
+                )
+                  ? '/compute/runtimes/projects'
+                  : undefined,
+              },
+              {
+                id: 'runtime-hosts',
+                label: `HOSTS · ${runtimeSummary?.available ?? 0}/${runtimeSummary?.total ?? 0}`,
+                title: localeText(localeCode, '宿主机与 Agent 节点', 'Runtime Hosts'),
+                metric:
+                  (runtimeSummary?.error ?? 0) > 0
+                    ? localeText(
+                        localeCode,
+                        `${runtimeSummary?.error} 台主机异常`,
+                        `${runtimeSummary?.error} hosts unhealthy`,
+                      )
+                    : localeText(
+                        localeCode,
+                        `${agentSummary?.online ?? 0} 个 Agent 在线`,
+                        `${agentSummary?.online ?? 0} agents online`,
+                      ),
+                status: (runtimeSummary?.error ?? 0) > 0 ? 'critical' : 'healthy',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/runtimes/hosts'),
+                  snapshot,
+                )
+                  ? '/compute/runtimes/hosts'
+                  : undefined,
+              },
+              {
+                id: 'tasks-node',
+                label:
+                  (taskSummary?.failed ?? 0) > 0
+                    ? `TASK-FAIL · ${taskSummary?.failed}`
+                    : `TASKS · ${(taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0)}`,
+                title: localeText(localeCode, '计算异步任务队列', 'Compute Task Queue'),
+                metric: localeText(
+                  localeCode,
+                  `${taskSummary?.running ?? 0} 执行中 / ${taskSummary?.failed ?? 0} 失败`,
+                  `${taskSummary?.running ?? 0} running / ${taskSummary?.failed ?? 0} failed`,
+                ),
+                status: (taskSummary?.failed ?? 0) > 0 ? 'warning' : 'healthy',
+                path: canAccessRoute(
+                  getRouteMeta('/compute/tasks/operations'),
+                  snapshot,
+                )
+                  ? '/compute/tasks/operations'
+                  : undefined,
+              },
+            ]}
+            embeddedPods={visibleOverviewStats.slice(1).map((item) => {
+              const allowed = canAccessRoute(getRouteMeta(item.path.split('?')[0]), snapshot)
+              return {
+                key: item.key,
+                className: `soha-overview-metric-card ${item.className}`,
+                label: (
+                  <>
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </>
+                ),
+                value: item.value,
+                helper: item.helper,
+                tone:
+                  item.key === 'runtime-hosts' && (runtimeSummary?.error ?? 0) > 0
+                    ? 'danger'
+                    : 'default',
+                to: item.path,
+                readonly: !allowed,
+                ariaLabel: localeText(
+                  localeCode,
+                  `查看${String(item.label)}`,
+                  `View ${String(item.label)}`,
+                ),
+                visual:
+                  item.key === 'runtime-hosts' && runtimeSummary ? (
+                    <OverviewNodeMatrix
+                      items={[
+                        { count: runtimeSummary.available, tone: 'success' },
+                        { count: runtimeSummary.error, tone: 'danger' },
+                        { count: runtimeSummary.waitingAgent, tone: 'warning' },
+                      ]}
+                    />
+                  ) : (
+                    <Suspense fallback={<div className="soha-compute-chart-placeholder" />}>
+                      <SummaryChart {...item.visual} surface="hero" />
+                    </Suspense>
+                  ),
+              }
+            })}
+            segments={
+              vmSummary
+                ? [
+                    {
+                      key: 'running',
+                      label: localeText(localeCode, '运行中', 'Running'),
+                      value: vmSummary.vmsRunning,
+                      tone: 'success',
+                    },
+                    {
+                      key: 'stopped',
+                      label: localeText(localeCode, '已停止', 'Stopped'),
+                      value: vmSummary.vmsStopped,
+                      tone: 'neutral',
+                    },
+                    {
+                      key: 'error',
+                      label: localeText(localeCode, '异常', 'Unhealthy'),
+                      value: vmSummary.vmsError,
+                      tone: 'danger',
+                    },
+                  ]
+                : undefined
+            }
+            interactiveHint={localeText(
+              localeCode,
+              '拖拽旋转 · 点击 3D 节点下钻',
+              'Drag to rotate · Click 3D nodes to drill down',
+            )}
+            ctaLabel={localeText(localeCode, '浏览实例', 'Explore Fleet')}
+            ctaTo={visibleOverviewStats[0].path}
+            ctaAriaLabel={localeText(
+              localeCode,
+              `查看${String(visibleOverviewStats[0].label)}`,
+              `View ${String(visibleOverviewStats[0].label)}`,
+            )}
+            ctaReadonly={
+              !canAccessRoute(getRouteMeta(visibleOverviewStats[0].path.split('?')[0]), snapshot)
+            }
+          />
+        ) : (
+          <div className="soha-overview-metric-grid">
+            {visibleOverviewStats.map(({ key, path, ...item }) => (
+              <OverviewLink
+                snapshot={snapshot}
+                aria-label={localeText(
+                  localeCode,
+                  `查看${String(item.label)}`,
+                  `View ${String(item.label)}`,
+                )}
+                className="soha-overview-card-link is-bento-tile"
+                key={key}
+                to={path}
+              >
+                <Card
+                  loading={overviewQuery.isLoading}
+                  className={`soha-overview-metric-card ${item.className}`}
+                  classNames={{ body: 'soha-compute-metric-body' }}
+                >
+                  <div className="soha-compute-metric-content">
+                    <div>
+                      <span className="soha-compute-metric-label">
+                        {item.icon}
+                        {item.label}
+                      </span>
+                      <strong className="soha-compute-metric-value">{item.value}</strong>
+                    </div>
+                    <Suspense fallback={<div className="soha-compute-chart-placeholder" />}>
+                      <SummaryChart {...item.visual} surface="default" />
+                    </Suspense>
+                  </div>
+                  <div className="soha-compute-metric-footer">
+                    <div className="soha-compute-metric-caption">{item.helper}</div>
+                  </div>
+                </Card>
+              </OverviewLink>
+            ))}
+          </div>
+        )}
+      </section>
+      {lowerPanels}
     </div>
   )
 }

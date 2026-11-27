@@ -74,7 +74,7 @@ export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
     {
       title: localeCode === 'zh_CN' ? '类别' : 'Category',
       dataIndex: 'category',
-      width: 110,
+      width: 144,
       render: (value: string) => <StatusTag value={value} />,
     },
     {

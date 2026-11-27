@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react'
-import { App, Descriptions, Drawer, Form, Segmented, Space, Typography } from 'antd'
+import { App, Descriptions, Drawer, Form, Segmented, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { FileTextOutlined, PoweroffOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
 } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { localeText, useI18n } from '@/i18n'
 import { dockerApi } from '../docker-api'
@@ -113,7 +114,7 @@ export function OperationsTable({
   const { dockerModuleEnabled, canCancelOperations, canRetryOperations } = useDockerPermissions()
   const { localeCode } = useI18n()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const presetFilter = useMemo<DockerFilterState>(() => {
     if (preset === 'pending') return { pending: true }
     if (preset === 'abnormal') return { abnormal: true }
@@ -154,10 +155,14 @@ export function OperationsTable({
       fixed: 'left',
       width: 190,
       render: (value, record) => (
-        <Space orientation="vertical" size={0}>
+        <button
+          type="button"
+          className="soha-docker-task-primary-trigger"
+          onClick={() => setSelectedOperation(record)}
+        >
           <Text strong>{operationKindLabel(value, localeCode)}</Text>
           <Text type="secondary">{record.id}</Text>
-        </Space>
+        </button>
       ),
     },
     {
@@ -202,45 +207,60 @@ export function OperationsTable({
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 116,
-      render: (_value, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            aria-label={localeText(localeCode, '查看日志', 'View logs')}
-            size="small"
-            tooltip={localeText(localeCode, '日志', 'Logs')}
-            icon={<FileTextOutlined />}
-            onClick={() => setSelectedOperation(record)}
+      render: (_value, record) => {
+        const canCancel =
+          canCancelOperations &&
+          (record.operationState?.cancelable ?? isPendingOperation(record.status))
+        const canRetry =
+          canRetryOperations &&
+          (record.operationState?.retryable ?? isAbnormalOperation(record.status))
+        return (
+          <TableRowActionMenu
+            targetLabel={record.id}
+            items={[
+              {
+                key: 'logs',
+                icon: <FileTextOutlined aria-hidden="true" />,
+                label: localeText(localeCode, '查看日志', 'View logs'),
+                onClick: () => setSelectedOperation(record),
+              },
+              ...(canRetry
+                ? [
+                    {
+                      key: 'retry',
+                      icon: <ReloadOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '重试任务', 'Retry task'),
+                      disabled: retryMutation.isPending,
+                      onClick: () => retryMutation.mutate(record.id),
+                    },
+                  ]
+                : []),
+              { type: 'divider' as const },
+              ...(canCancel
+                ? [
+                    {
+                      key: 'cancel',
+                      icon: <PoweroffOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '取消任务', 'Cancel task'),
+                      danger: true,
+                      disabled: cancelMutation.isPending,
+                      onClick: () =>
+                        modal.confirm({
+                          title: localeText(localeCode, '确认取消任务？', 'Cancel this task?'),
+                          content: record.id,
+                          okButtonProps: { danger: true },
+                          onOk: () => cancelMutation.mutateAsync(record.id),
+                        }),
+                    },
+                  ]
+                : []),
+            ]}
           />
-          {canCancelOperations &&
-          (record.operationState?.cancelable ?? isPendingOperation(record.status)) ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '取消任务', 'Cancel task')}
-              size="small"
-              tooltip={localeText(localeCode, '取消', 'Cancel')}
-              danger
-              icon={<PoweroffOutlined />}
-              loading={cancelMutation.isPending}
-              onClick={() => cancelMutation.mutate(record.id)}
-            />
-          ) : null}
-          {canRetryOperations &&
-          (record.operationState?.retryable ?? isAbnormalOperation(record.status)) ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '重试任务', 'Retry task')}
-              size="small"
-              tooltip={localeText(localeCode, '重试', 'Retry')}
-              icon={<ReloadOutlined />}
-              loading={retryMutation.isPending}
-              onClick={() => retryMutation.mutate(record.id)}
-            />
-          ) : null}
-        </Space>
-      ),
+        )
+      },
     },
   ]
   return (

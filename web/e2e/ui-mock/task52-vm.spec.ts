@@ -762,7 +762,12 @@ test('failed, canceled and unknown tasks retain honest result labels', async ({
   state.operation = 'failed'
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await page.getByRole('tab', { name: '任务历史' }).click()
-  await page.getByRole('button', { name: '查看任务证据', exact: true }).click()
+  await page.locator('.soha-table-row-action-trigger').first().click()
+  await page
+    .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+    .last()
+    .getByRole('menuitem', { name: '查看任务证据', exact: true })
+    .click()
   await expect(page.getByRole('region', { name: '当前操作任务' })).toContainText('任务执行失败')
   await page.screenshot({
     path: info.outputPath('vm-task-failed.png'),
@@ -892,7 +897,14 @@ for (const theme of ['light', 'dark']) {
       animations: 'disabled',
     })
     await page.getByRole('tab', { name: '任务历史', exact: true }).click()
-    await expect(page.getByRole('button', { name: '查看任务证据' })).toBeVisible()
+    await page.locator('.soha-table-row-action-trigger').first().click()
+    await expect(
+      page
+        .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+        .last()
+        .getByRole('menuitem', { name: '查看任务证据', exact: true }),
+    ).toBeVisible()
+    await page.keyboard.press('Escape')
     await page.screenshot({
       path: info.outputPath(`vm-design-history-${theme}.png`),
       fullPage: true,
@@ -1064,9 +1076,13 @@ test('VM design narrow list forms preserve geometry and reduced motion', async (
   const create = page.getByRole('button', { name: '创建虚拟机', exact: true })
   await expect(create).toBeVisible()
   await verifyGeometry(page, create)
-  for (const name of ['启动虚拟机', '停止虚拟机', `更多操作：${state.name}`]) {
-    await verifyGeometry(page, page.getByRole('button', { name, exact: true }))
-  }
+  const rowTrigger = page.getByRole('button', { name: `更多操作：${state.name}`, exact: true })
+  await verifyGeometry(page, rowTrigger)
+  await rowTrigger.click()
+  const rowMenu = page.locator('.ant-dropdown:not(.ant-dropdown-hidden)').last()
+  await expect(rowMenu.getByRole('menuitem', { name: '启动虚拟机', exact: true })).toBeVisible()
+  await expect(rowMenu.getByRole('menuitem', { name: '停止虚拟机', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
   await create.click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('创建计算实例', { exact: true })).toBeVisible()

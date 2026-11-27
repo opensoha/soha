@@ -1,12 +1,13 @@
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { StepForm } from '@/components/step-form'
 import { StepFormModal } from '@/components/step-form-modal'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -387,8 +388,63 @@ export function OnCallSettingsPage() {
     }
   }
 
+  function openScheduleEditor(record: OnCallSchedule) {
+    if (scheduleWriteBlocked || scheduleDenied) return
+    createSchedule.reset()
+    updateSchedule.reset()
+    scheduleForm.resetFields()
+    setEditingSchedule(record)
+    scheduleForm.setFieldsValue({
+      name: record.name,
+      timeZone: record.timeZone || '',
+      description: record.description || '',
+      enabled: record.enabled,
+    })
+    setScheduleOpen(true)
+  }
+
+  function openRotationEditor(record: OnCallRotation) {
+    if (rotationWriteBlocked || rotationDenied) return
+    createRotation.reset()
+    updateRotation.reset()
+    rotationForm.resetFields()
+    setEditingRotation(record)
+    rotationForm.setFieldsValue(toOnCallRotationFormValues(record))
+    setRotationOpen(true)
+  }
+
+  function openEscalationEditor(record: OnCallEscalationPolicy) {
+    if (policyWriteBlocked || policyDenied) return
+    createPolicy.reset()
+    updatePolicy.reset()
+    policyForm.resetFields()
+    setEditingPolicy(record)
+    policyForm.setFieldsValue({
+      name: record.name,
+      steps: toOnCallEscalationStepFormValues(record.steps),
+      enabled: record.enabled,
+    })
+    setPolicyOpen(true)
+  }
+
   const scheduleColumns: TableProps<OnCallSchedule>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateOnCall ? (
+          <Button
+            type="link"
+            disabled={scheduleWriteBlocked || scheduleDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openScheduleEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     { title: '时区', dataIndex: 'timeZone', render: (value: string) => value || '-' },
     { title: '描述', dataIndex: 'description', render: (value: string) => value || '-' },
     {
@@ -398,38 +454,45 @@ export function OnCallSettingsPage() {
     },
     { title: '更新时间', dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateOnCall ? (
-          <ManagementIconButton
-            aria-label="编辑排班"
-            disabled={scheduleWriteBlocked || scheduleDenied}
-            size="small"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            onClick={() => {
-              if (scheduleWriteBlocked || scheduleDenied) return
-              createSchedule.reset()
-              updateSchedule.reset()
-              scheduleForm.resetFields()
-              setEditingSchedule(record)
-              scheduleForm.setFieldsValue({
-                name: record.name,
-                timeZone: record.timeZone || '',
-                description: record.description || '',
-                enabled: record.enabled,
-              })
-              setScheduleOpen(true)
-            }}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑排班',
+                icon: <EditOutlined />,
+                disabled: scheduleWriteBlocked || scheduleDenied,
+                onClick: () => openScheduleEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
   ]
 
   const rotationColumns: TableProps<OnCallRotation>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateOnCall ? (
+          <Button
+            type="link"
+            disabled={rotationWriteBlocked || rotationDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openRotationEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '排班',
       dataIndex: 'scheduleId',
@@ -453,33 +516,45 @@ export function OnCallSettingsPage() {
     },
     { title: '更新时间', dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateOnCall ? (
-          <ManagementIconButton
-            aria-label="编辑轮值"
-            disabled={rotationWriteBlocked || rotationDenied}
-            size="small"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            onClick={() => {
-              if (rotationWriteBlocked || rotationDenied) return
-              createRotation.reset()
-              updateRotation.reset()
-              rotationForm.resetFields()
-              setEditingRotation(record)
-              rotationForm.setFieldsValue(toOnCallRotationFormValues(record))
-              setRotationOpen(true)
-            }}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑轮值',
+                icon: <EditOutlined />,
+                disabled: rotationWriteBlocked || rotationDenied,
+                onClick: () => openRotationEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
   ]
 
   const escalationColumns: TableProps<OnCallEscalationPolicy>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateOnCall ? (
+          <Button
+            type="link"
+            disabled={policyWriteBlocked || policyDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openEscalationEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '步骤数',
       dataIndex: 'steps',
@@ -492,30 +567,22 @@ export function OnCallSettingsPage() {
     },
     { title: '更新时间', dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateOnCall ? (
-          <ManagementIconButton
-            aria-label="编辑升级策略"
-            disabled={policyWriteBlocked || policyDenied}
-            size="small"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            onClick={() => {
-              if (policyWriteBlocked || policyDenied) return
-              createPolicy.reset()
-              updatePolicy.reset()
-              policyForm.resetFields()
-              setEditingPolicy(record)
-              policyForm.setFieldsValue({
-                name: record.name,
-                steps: toOnCallEscalationStepFormValues(record.steps),
-                enabled: record.enabled,
-              })
-              setPolicyOpen(true)
-            }}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑升级策略',
+                icon: <EditOutlined />,
+                disabled: policyWriteBlocked || policyDenied,
+                onClick: () => openEscalationEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
@@ -528,7 +595,24 @@ export function OnCallSettingsPage() {
       width: 78,
       render: (value: number, record) => value || record.priority || '-',
     },
-    { title: '规则名称', dataIndex: 'name', width: 220 },
+    {
+      title: '规则名称',
+      dataIndex: 'name',
+      width: 220,
+      render: (value: string, record) =>
+        canUpdateOnCall ? (
+          <Button
+            type="link"
+            disabled={assignmentWriteBlocked || assignmentDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openAssignmentEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '集成源',
       dataIndex: 'integrationType',
@@ -585,18 +669,22 @@ export function OnCallSettingsPage() {
     },
     { title: '更新时间', dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateOnCall ? (
-          <ManagementIconButton
-            aria-label="编辑分派规则"
-            disabled={assignmentWriteBlocked || assignmentDenied}
-            size="small"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            onClick={() => openAssignmentEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑分派规则',
+                icon: <EditOutlined />,
+                disabled: assignmentWriteBlocked || assignmentDenied,
+                onClick: () => openAssignmentEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
@@ -629,6 +717,7 @@ export function OnCallSettingsPage() {
         </>
       ) : null}
       <Tabs
+        className="soha-resource-tabs"
         items={[
           {
             key: 'assignments',

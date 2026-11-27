@@ -7,7 +7,6 @@ import { useSearchParams } from 'react-router-dom'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryScope,
@@ -16,6 +15,7 @@ import {
 } from '@/components/management-list'
 import { readableQueryData } from '@/utils/query-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { systemQueries } from '../queries'
@@ -56,6 +56,7 @@ function OperationLogDrawer({
     >
       {record ? (
         <Tabs
+          className="soha-resource-tabs"
           items={[
             {
               key: 'overview',
@@ -308,16 +309,19 @@ function OperationLogsPageContent({
     },
     {
       ...tableColumnPresets.action,
-      title: '详情',
-      dataIndex: 'id',
-      width: 64,
+      title: '操作',
+      key: 'actions',
       render: (_: string, record: OperationLog) => (
-        <ManagementIconButton
-          aria-label="查看操作详情"
-          icon={<EyeOutlined />}
-          size="small"
-          tooltip="详情"
-          onClick={() => setActiveRecord(record)}
+        <TableRowActionMenu
+          targetLabel={record.id}
+          items={[
+            {
+              key: 'detail',
+              label: '查看详情',
+              icon: <EyeOutlined />,
+              onClick: () => setActiveRecord(record),
+            },
+          ]}
         />
       ),
     },

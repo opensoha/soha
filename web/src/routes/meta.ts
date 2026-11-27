@@ -253,7 +253,11 @@ function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   ) {
     return 'settings'
   }
-  if (pathname.startsWith('/identity') || pathname.startsWith('/internal-workbench')) {
+  if (
+    pathname.startsWith('/identity') ||
+    pathname.startsWith('/internal-workbench') ||
+    pathname.startsWith('/network-access')
+  ) {
     return 'security'
   }
   return null
@@ -553,6 +557,7 @@ const APPLICATION_SECTION_ORDER: Record<string, number> = {
   'build-templates': 20,
   'deployment-templates': 25,
   'workflow-templates': 30,
+  'delivery-environment-directory': 35,
   registries: 40,
 }
 
@@ -570,6 +575,7 @@ const APPLICATION_MENU_SECTION_OVERRIDES: Record<string, string> = {
   'build-templates': 'delivery-platform',
   'deployment-templates': 'delivery-platform',
   'workflow-templates': 'delivery-platform',
+  'delivery-environment-directory': 'delivery-platform',
   registries: 'delivery-platform',
 }
 

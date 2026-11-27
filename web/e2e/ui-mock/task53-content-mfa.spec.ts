@@ -5,6 +5,7 @@ import type {
   ManagedContentRecord,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { chooseRowAction } from '../fixtures/row-actions'
 
 const pagePath = '/network-access/content-transfers'
 const apiPath = `/api/v1${pagePath}`
@@ -79,7 +80,7 @@ test('persists the archive pin and MFA requirement, then clears MFA when switchi
     return undefined
   })
   await page.goto(pagePath)
-  await page.getByRole('button', { name: /查看 \/ 编辑|View \/ Edit/ }).click()
+  await chooseRowAction(page, draft.name, /查看 \/ 编辑|View \/ Edit/)
   const mfa = page.getByRole('switch', { name: /命中放行前额外验证 MFA|Require MFA/ })
   await expect(mfa).toBeChecked()
   await page.getByLabel(/固定检测器版本|Pinned detector version/, { exact: true }).click()

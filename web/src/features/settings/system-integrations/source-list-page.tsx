@@ -1,21 +1,22 @@
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { OperationFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Popconfirm, Space, Switch, Typography } from 'antd'
+import { App, Button, Space, Switch, Typography } from 'antd'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { systemIntegrationMutations } from './mutations'
@@ -26,6 +27,7 @@ import type { SystemIntegration } from './types'
 const { Text } = Typography
 
 export function SourceConnectionsPage() {
+  const { modal } = App.useApp()
   const location = useLocation()
   const savedSource = location.state?.savedSource as string | undefined
   const navigate = useNavigate()
@@ -76,7 +78,13 @@ export function SourceConnectionsPage() {
       dataIndex: 'name',
       render: (value, row) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{value}</Text>
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => navigate(`/settings/source-control/${row.id}`)}
+          >
+            {value}
+          </Button>
           <Text type="secondary">{row.description || row.providerType}</Text>
         </Space>
       ),
@@ -120,48 +128,54 @@ export function SourceConnectionsPage() {
       ),
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
       key: 'actions',
-      width: 152,
-      className: 'soha-table-actions-column',
-      align: 'right',
       render: (_, row) => (
-        <Space className="soha-row-action-icons" size={4}>
-          <ManagementIconButton
-            aria-label={`测试 ${row.name}`}
-            disabled={!canTest || !row.enabled || blocked}
-            icon={<ThunderboltOutlined />}
-            loading={testMutation.isPending && testMutation.variables === row.id}
-            tooltip="测试连接"
-            onClick={() => testMutation.mutate(row.id)}
-          />
-          <ManagementIconButton
-            aria-label={`编辑 ${row.name}`}
-            icon={<EditOutlined />}
-            tooltip="编辑"
-            onClick={() => navigate(`/settings/source-control/${row.id}`)}
-          />
-          {canDelete ? (
-            <Popconfirm
-              title={`删除代码源连接 ${row.name}？`}
-              description="删除后使用此连接的代码源访问将不可用。"
-              okText="删除"
-              cancelText="取消"
-              disabled={blocked}
-              okButtonProps={{ danger: true, disabled: blocked }}
-              onConfirm={() => deleteMutation.mutate(row.id)}
-            >
-              <ManagementIconButton
-                aria-label={`删除 ${row.name}`}
-                disabled={blocked}
-                danger
-                icon={<DeleteOutlined />}
-                loading={deleteMutation.isPending && deleteMutation.variables === row.id}
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={row.name}
+          loading={
+            (testMutation.isPending && testMutation.variables === row.id) ||
+            (deleteMutation.isPending && deleteMutation.variables === row.id)
+          }
+          items={[
+            {
+              key: 'test',
+              label: '测试连接',
+              icon: <ThunderboltOutlined />,
+              disabled: !canTest || !row.enabled || blocked,
+              onClick: () => testMutation.mutate(row.id),
+            },
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              onClick: () => navigate(`/settings/source-control/${row.id}`),
+            },
+            ...(canDelete
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `删除代码源连接 ${row.name}？`,
+                        content: '删除后使用此连接的代码源访问将不可用。',
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, disabled: blocked },
+                        onOk: () => deleteMutation.mutateAsync(row.id).catch(() => undefined),
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

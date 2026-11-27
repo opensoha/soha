@@ -67,7 +67,7 @@ export function ResourceTaskActions({
   }
 
   return (
-    <div>
+    <span className="soha-resource-task-cell">
       <Space size={4} wrap={false}>
         <StatusTag value={task.normalizedStatus} />
         {task.availableActions.includes('logs') ? (
@@ -129,6 +129,6 @@ export function ResourceTaskActions({
           },
         ]}
       />
-    </div>
+    </span>
   )
 }

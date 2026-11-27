@@ -14,6 +14,7 @@ import { SourcesPanel } from './sources-panel'
 import { RuntimePanel } from './runtime-panel'
 import { RulesPanel } from './rules-panel'
 import { DeploymentPanel } from './deployment-panel'
+import '../styles.css'
 import './styles.css'
 export default function ProxyWorkspacePage() {
   const { instanceID = '' } = useParams()
@@ -77,6 +78,7 @@ function Workspace({
   const [tab, setTab] = useState('sources')
   return (
     <Tabs
+      className="soha-resource-tabs"
       style={{ minWidth: 0 }}
       activeKey={tab}
       onChange={setTab}

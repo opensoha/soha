@@ -1,7 +1,6 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
@@ -9,6 +8,7 @@ import {
 import { ReadFeedback } from '@/components/request-feedback'
 import type { StepFormStep } from '@/components/step-form'
 import { StepFormModal } from '@/components/step-form-modal'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { accessQueries } from '@/features/access'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -25,7 +25,6 @@ import {
   Col,
   Form,
   Input,
-  Popconfirm,
   Row,
   Select,
   Space,
@@ -52,7 +51,7 @@ import {
 const { Text } = Typography
 
 export function LoginSettingsPage({ embedded = false }: SettingsPageProps = {}) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [providerForm] = Form.useForm()
@@ -174,7 +173,28 @@ export function LoginSettingsPage({ embedded = false }: SettingsPageProps = {}) 
         </Avatar>
       ),
     },
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record: LoginProviderSettings) =>
+        canManageLoginSettings && !blocked ? (
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => {
+              providerForm.resetFields()
+              saveMutation.reset()
+              setEditingProvider(record)
+              setProviderStep(0)
+              setProviderModalVisible(true)
+            }}
+          >
+            {value}
+          </Button>
+        ) : (
+          <Text strong>{value}</Text>
+        ),
+    },
     {
       title: '类型',
       dataIndex: 'type',
@@ -237,74 +257,79 @@ export function LoginSettingsPage({ embedded = false }: SettingsPageProps = {}) 
     {
       ...tableColumnPresets.action,
       title: '操作',
-      dataIndex: 'id',
-      render: (_: unknown, record: LoginProviderSettings) =>
-        canManageLoginSettings ? (
-          <Space className="soha-row-action-icons">
-            <ManagementIconButton
-              aria-label="编辑登录源"
-              tooltip="编辑"
-              icon={<EditOutlined />}
-              size="small"
-              disabled={blocked}
-              onClick={() => {
-                providerForm.resetFields()
-                saveMutation.reset()
-                setEditingProvider(record)
-                setProviderStep(0)
-                setProviderModalVisible(true)
-              }}
-            />
-            <Popconfirm
-              title="确认删除登录源？"
-              description="删除后会立即保存；已有账号不会被禁用，关联记录保留，但该入口不可再登录。"
-              disabled={blocked}
-              okButtonProps={{ danger: true, loading: saveMutation.isPending, disabled: blocked }}
-              onConfirm={() => {
-                const nextProviders = providers.filter((item) => item.id !== record.id)
-                saveIdentity({
-                  values: {
-                    providers: nextProviders,
-                    defaultProviderId:
-                      settings?.defaultProviderId === record.id
-                        ? nextProviders[0]?.id || ''
-                        : settings?.defaultProviderId,
-                  },
-                  successMessage: '登录源已删除',
-                })
-              }}
-            >
-              <ManagementIconButton
-                aria-label="删除登录源"
-                tooltip="删除"
-                disabled={blocked}
-                danger
-                icon={<DeleteOutlined />}
-                loading={saveMutation.isPending}
-                size="small"
-              />
-            </Popconfirm>
-            {settings?.defaultProviderId !== record.id ? (
-              <ManagementIconButton
-                aria-label="设为默认登录源"
-                tooltip="设为默认"
-                icon={<StarOutlined />}
-                size="small"
-                onClick={() =>
-                  saveIdentity({
-                    values: {
-                      providers,
-                      defaultProviderId: record.id,
+      key: 'actions',
+      render: (_: unknown, record: LoginProviderSettings) => (
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={
+            canManageLoginSettings
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    disabled: blocked,
+                    onClick: () => {
+                      providerForm.resetFields()
+                      saveMutation.reset()
+                      setEditingProvider(record)
+                      setProviderStep(0)
+                      setProviderModalVisible(true)
                     },
-                  })
-                }
-                disabled={blocked || (record.type === 'saml' && !samlAvailable)}
-              />
-            ) : null}
-          </Space>
-        ) : (
-          '-'
-        ),
+                  },
+                  ...(settings?.defaultProviderId !== record.id
+                    ? [
+                        {
+                          key: 'default',
+                          label: '设为默认',
+                          icon: <StarOutlined />,
+                          disabled: blocked || (record.type === 'saml' && !samlAvailable),
+                          onClick: () =>
+                            saveIdentity({
+                              values: {
+                                providers,
+                                defaultProviderId: record.id,
+                              },
+                            }),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `确认删除登录源 ${record.name}？`,
+                        content:
+                          '删除后会立即保存；已有账号不会被禁用，关联记录保留，但该入口不可再登录。',
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, disabled: blocked },
+                        onOk: () => {
+                          const nextProviders = providers.filter((item) => item.id !== record.id)
+                          saveIdentity({
+                            values: {
+                              providers: nextProviders,
+                              defaultProviderId:
+                                settings?.defaultProviderId === record.id
+                                  ? nextProviders[0]?.id || ''
+                                  : settings?.defaultProviderId,
+                            },
+                            successMessage: '登录源已删除',
+                          })
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
   const providerSteps: StepFormStep[] = [

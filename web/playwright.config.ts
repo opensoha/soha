@@ -1,8 +1,21 @@
 import { defineConfig } from '@playwright/test'
+import { availableParallelism, totalmem } from 'node:os'
 import { join } from 'node:path'
 import { runContext } from './scripts/e2e-run-context.mjs'
 
 const run = runContext()
+
+function resolveMockWorkers(): number {
+  const configured = Number.parseInt(process.env.SOHA_E2E_WORKERS ?? '', 10)
+  if (Number.isFinite(configured) && configured >= 1) return configured
+  const cpus = availableParallelism()
+  const cpuBudget = process.env.CI
+    ? Math.max(1, Math.floor(cpus / 2))
+    : Math.max(1, Math.floor(cpus / 3))
+  const memBudget = Math.max(1, Math.floor(totalmem() / 1024 ** 3 / 4))
+  const cap = process.env.CI ? 2 : 4
+  return Math.min(cpuBudget, memBudget, cap)
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -11,8 +24,11 @@ export default defineConfig({
   testIgnore: ['**/ai/**', '**/api/**', '**/flows/**'],
   forbidOnly: !!process.env.CI,
   retries: 0,
-  workers: 1,
+  workers: resolveMockWorkers(),
   timeout: 30_000,
+  expect: {
+    timeout: 10_000,
+  },
   reporter: run.listOnly
     ? [['list']]
     : [['list'], ['./e2e/fixtures/result-reporter.ts'], ['json', { outputFile: run.jsonReport }]],

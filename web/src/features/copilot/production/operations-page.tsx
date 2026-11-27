@@ -6,10 +6,13 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { ReloadOutlined } from '@ant-design/icons'
-import type { TableColumnsType } from 'antd'
+import type { MenuProps, TableColumnsType } from 'antd'
 import { Space, Tabs } from 'antd'
 import type { ReactNode } from 'react'
+import '../copilot-pages.css'
 
 export interface ProductionRecord {
   id: string
@@ -29,7 +32,7 @@ export interface ProductionTab<T extends ProductionRecord = ProductionRecord> {
   error?: Error | null
   hasReadData?: boolean
   columns?: TableColumnsType<T>
-  actions?: (record: T) => ReactNode
+  actionItems?: (record: T) => MenuProps['items']
   emptyDescription: string
 }
 
@@ -117,12 +120,17 @@ export function ProductionOperationsPage({
                 columns={[
                   ...((tab.columns as TableColumnsType<ProductionRecord> | undefined) ??
                     defaultColumns),
-                  ...(tab.actions
+                  ...(tab.actionItems
                     ? [
                         {
+                          ...tableColumnPresets.action,
                           title: '操作',
-                          key: 'actions',
-                          render: (_: unknown, record: ProductionRecord) => tab.actions?.(record),
+                          render: (_: unknown, record: ProductionRecord) => (
+                            <TableRowActionMenu
+                              ariaLabel={`更多操作 ${String(record.name || record.id)}`}
+                              items={tab.actionItems?.(record)}
+                            />
+                          ),
                         },
                       ]
                     : []),

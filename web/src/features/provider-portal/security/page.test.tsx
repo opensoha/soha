@@ -160,7 +160,8 @@ describe('Provider Portal security page', () => {
         .querySelector('.soha-portal-principal .soha-portal-user-avatar img')
         ?.getAttribute('src'),
     ).toBe('https://example.test/avatar.png')
-    expect(container.querySelector('button[aria-label="Account menu"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="刷新安全记录"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Account menu"]')).toBeNull()
   })
 
   it.each(['/identity/capabilities', '/identity/mfa/credentials'])(

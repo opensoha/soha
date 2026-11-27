@@ -195,6 +195,7 @@ function SessionAnnouncementBell() {
             </div>
             <Tabs
               size="small"
+              defaultActiveKey={unreadCount > 0 ? 'unread' : 'all'}
               items={[
                 {
                   key: 'unread',

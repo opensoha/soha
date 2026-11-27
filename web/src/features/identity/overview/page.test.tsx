@@ -105,6 +105,65 @@ vi.mock('@/components/overview-visuals', () => ({
       {label}:{value}:{helper}
     </div>
   ),
+  OverviewHeroCard: ({
+    eyebrowLabel,
+    value,
+    caption,
+    loading,
+    ctaLabel,
+    ctaTo,
+    embeddedPods,
+    graphicDeck,
+  }: {
+    eyebrowLabel?: ReactNode
+    value?: ReactNode
+    caption?: ReactNode
+    loading?: boolean
+    ctaLabel?: string
+    ctaTo?: string
+    embeddedPods?: Array<{
+      key: string
+      label?: ReactNode
+      value?: ReactNode
+      helper?: ReactNode
+      loading?: boolean
+      tone?: string
+    }>
+    graphicDeck?: Array<{
+      key: string
+      actionLabel?: string
+      actionTo?: string
+    }>
+  }) => (
+    <div>
+      <div
+        data-testid={`metric-${String(eyebrowLabel)}`}
+        data-loading={String(Boolean(loading))}
+      >
+        {eyebrowLabel}:{value}:{caption}
+      </div>
+      {ctaLabel && ctaTo ? (
+        <button onClick={() => navigateMock(ctaTo)}>{ctaLabel}</button>
+      ) : null}
+      {graphicDeck?.map((deck) =>
+        deck.actionLabel && deck.actionTo ? (
+          <button key={deck.key} onClick={() => navigateMock(deck.actionTo)}>
+            {deck.actionLabel}
+          </button>
+        ) : null,
+      )}
+      {embeddedPods?.map((pod) => (
+        <div
+          key={pod.key}
+          data-testid={`metric-${String(pod.label)}`}
+          data-loading={String(Boolean(pod.loading))}
+          data-tone={pod.tone}
+        >
+          {pod.label}:{pod.value}:{pod.helper}
+        </div>
+      ))}
+    </div>
+  ),
   OverviewMetricCard: ({
     helper,
     label,
@@ -386,31 +445,26 @@ async function clickButton(container: HTMLElement, label: string) {
 }
 
 describe('IdentityOverviewPage', () => {
-  it('renders the existing metrics and only the first six audit events', async () => {
+  it('renders the spatial hero metrics and only the first six audit events', async () => {
     const container = await renderPage()
-    const metricGrid = container.querySelector('.soha-overview-metric-grid')
+    const bentoTop = container.querySelector('.soha-overview-bento-top')
     const summaryGrid = container.querySelector('.soha-overview-summary-grid')
 
-    expect(metricGrid?.nextElementSibling).toBe(summaryGrid)
-    expect(summaryGrid?.nextElementSibling?.textContent).toContain('软件库')
+    expect(bentoTop?.nextElementSibling).toBe(summaryGrid)
+    expect(summaryGrid?.textContent).toContain('最近审计')
+    expect(summaryGrid?.textContent).toContain('软件库')
 
     expect(container.querySelector('[data-testid="metric-应用目录"]')?.textContent).toContain(
       '应用目录:2:1 个已启用',
     )
     expect(container.querySelector('[data-testid="metric-Provider"]')?.textContent).toContain(
-      'Provider:3:1 个已启用 / 2 OIDC / 1 Proxy',
+      'Provider:3:1 个已启用 / 2 OIDC / 1 Proxy / 0 SAML',
     )
     expect(container.querySelector('[data-testid="metric-Outpost"]')?.textContent).toContain(
       'Outpost:2:1 个在线',
     )
     expect(container.querySelector('[data-testid="metric-活跃会话"]')?.textContent).toContain(
       '活跃会话:2',
-    )
-    expect(container.querySelector('[data-testid="chip-OIDC Provider"]')?.textContent).toContain(
-      'OIDC Provider:2:已启用',
-    )
-    expect(container.querySelector('[data-testid="chip-Proxy Provider"]')?.textContent).toContain(
-      'Proxy Provider:1:未启用',
     )
     expect(container.querySelector('[data-testid="chip-存储源"]')?.textContent).toContain(
       '存储源:1:S3',
@@ -442,11 +496,11 @@ describe('IdentityOverviewPage', () => {
     expect(container.textContent).not.toContain('最近身份相关操作和协议访问记录')
   })
 
-  it('keeps the remaining provider, software, and audit navigation canonical', async () => {
+  it('keeps the application, provider, software, and audit navigation canonical', async () => {
     const container = await renderPage()
     const targets = [
-      ['Provider', '/identity/providers'],
-      ['管理 Provider', '/identity/providers'],
+      ['管理应用目录', '/identity/applications'],
+      ['身份源', '/identity/providers'],
       ['软件库', '/internal-workbench/software'],
       ['审计', '/system/audit'],
     ] as const
@@ -457,6 +511,7 @@ describe('IdentityOverviewPage', () => {
     }
 
     expect(navigateMock).not.toHaveBeenCalledWith('/identity/audit')
+    expect(navigateMock).not.toHaveBeenCalledWith('/internal-workbench/applications')
   })
 
   it('preserves permission states without disabling card-level route links', async () => {
@@ -476,7 +531,7 @@ describe('IdentityOverviewPage', () => {
           {
             data: [],
             error: null,
-            isEnabled: true,
+            isEnabled: false,
             isError: false,
             isFetching: false,
             refetch: vi.fn(),
@@ -512,10 +567,12 @@ describe('IdentityOverviewPage', () => {
     })
     const container = await renderPage()
 
-    expect(container.textContent).toContain('无 Provider 权限')
+    expect(container.querySelector('[data-testid="metric-Provider"]')?.textContent).toContain(
+      'Provider:—:当前数据不可用',
+    )
     expect(container.textContent).toContain('无软件库权限')
     expect(container.textContent).toContain('无审计权限')
-    expect(buttonByText(container, 'Provider').disabled).toBe(false)
+    expect(buttonByText(container, '身份源').disabled).toBe(false)
     expect(buttonByText(container, '审计').disabled).toBe(false)
   })
 

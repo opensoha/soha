@@ -222,12 +222,13 @@ test('second sample: supporting count, compact fixed menu, keyboard and responsi
   await expect(dialog).toContainText('monitoring / deployment-000')
   expect(state.writes).toHaveLength(0)
   await dialog.getByRole('button', { name: /^取\s*消$/, exact: true }).click()
+  await expect(dialog).not.toBeVisible()
   for (const width of [1440, 768, 320]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(first).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     const action = row(page, 'deployment-000').locator('.soha-table-actions-column')
-    expect(Math.round((await action.boundingBox())!.width)).toBe(64)
+    await expect.poll(async () => Math.round((await action.boundingBox())?.width ?? 0)).toBe(64)
   }
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: '切换到深色模式' }).click()

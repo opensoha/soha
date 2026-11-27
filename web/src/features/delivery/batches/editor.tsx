@@ -20,11 +20,14 @@ import {
   ArrowUpOutlined,
   CopyOutlined,
   DeleteOutlined,
+  EditOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
@@ -622,70 +625,87 @@ export function DeliveryBatchEditor({
                 ]
               : []),
             {
+              ...tableColumnPresets.action,
               title: '操作',
               key: 'actions',
-              width: quick ? 90 : 180,
               render: (_: unknown, item: DeliveryTargetInput, index: number) => (
-                <Space>
-                  {quick ? (
-                    <Button disabled={busy || unknown || !canEdit} onClick={() => setEditing(item)}>
-                      调整
-                    </Button>
-                  ) : (
-                    <>
-                      {[-1, 1].map((direction) => (
-                        <Button
-                          key={direction}
-                          icon={direction < 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                          aria-label={`${direction < 0 ? '上移' : '下移'}第 ${index + 1} 项`}
-                          disabled={
-                            busy ||
-                            !canEdit ||
-                            index + direction < 0 ||
-                            index + direction >= definition.targets.length
-                          }
-                          onClick={() => {
-                            const targets = [...definition.targets]
-                            ;[targets[index], targets[index + direction]] = [
-                              targets[index + direction],
-                              targets[index],
-                            ]
-                            update({ targets })
-                          }}
-                        />
-                      ))}
-                      <Button
-                        icon={<CopyOutlined />}
-                        aria-label={`复制第 ${index + 1} 项到其他环境`}
-                        disabled={busy || !canEdit || definition.targets.length >= 200}
-                        onClick={() =>
-                          setEditing({
-                            ...structuredClone(item),
-                            id: crypto.randomUUID(),
-                            applicationEnvironmentId: undefined,
-                            releaseTargetId: undefined,
-                            dependsOn: [],
-                          })
-                        }
-                      />
-                      <Button
-                        icon={<DeleteOutlined />}
-                        aria-label={`移除第 ${index + 1} 项`}
-                        disabled={busy || unknown || !canEdit}
-                        onClick={() =>
-                          update({
-                            targets: definition.targets
-                              .filter((other) => other.id !== item.id)
-                              .map((other) => ({
-                                ...other,
-                                dependsOn: other.dependsOn?.filter((id) => id !== item.id),
-                              })),
-                          })
-                        }
-                      />
-                    </>
-                  )}
-                </Space>
+                <TableRowActionMenu
+                  targetLabel={`第 ${index + 1} 项`}
+                  items={
+                    quick
+                      ? [
+                          {
+                            key: 'adjust',
+                            label: '调整',
+                            icon: <EditOutlined />,
+                            disabled: busy || unknown || !canEdit,
+                            onClick: () => setEditing(item),
+                          },
+                        ]
+                      : [
+                          {
+                            key: 'move-up',
+                            label: `上移第 ${index + 1} 项`,
+                            icon: <ArrowUpOutlined />,
+                            disabled: busy || !canEdit || index - 1 < 0,
+                            onClick: () => {
+                              const targets = [...definition.targets]
+                              ;[targets[index], targets[index - 1]] = [
+                                targets[index - 1],
+                                targets[index],
+                              ]
+                              update({ targets })
+                            },
+                          },
+                          {
+                            key: 'move-down',
+                            label: `下移第 ${index + 1} 项`,
+                            icon: <ArrowDownOutlined />,
+                            disabled:
+                              busy || !canEdit || index + 1 >= definition.targets.length,
+                            onClick: () => {
+                              const targets = [...definition.targets]
+                              ;[targets[index], targets[index + 1]] = [
+                                targets[index + 1],
+                                targets[index],
+                              ]
+                              update({ targets })
+                            },
+                          },
+                          {
+                            key: 'duplicate',
+                            label: `复制第 ${index + 1} 项到其他环境`,
+                            icon: <CopyOutlined />,
+                            disabled: busy || !canEdit || definition.targets.length >= 200,
+                            onClick: () =>
+                              setEditing({
+                                ...structuredClone(item),
+                                id: crypto.randomUUID(),
+                                applicationEnvironmentId: undefined,
+                                releaseTargetId: undefined,
+                                dependsOn: [],
+                              }),
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'remove',
+                            label: `移除第 ${index + 1} 项`,
+                            icon: <DeleteOutlined />,
+                            danger: true,
+                            disabled: busy || unknown || !canEdit,
+                            onClick: () =>
+                              update({
+                                targets: definition.targets
+                                  .filter((other) => other.id !== item.id)
+                                  .map((other) => ({
+                                    ...other,
+                                    dependsOn: other.dependsOn?.filter((id) => id !== item.id),
+                                  })),
+                              }),
+                          },
+                        ]
+                  }
+                />
               ),
             },
           ]}

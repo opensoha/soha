@@ -3189,7 +3189,12 @@ describe('ApplicationDetailPage workbench', () => {
         (tab) => tab.textContent === '构建定义',
       )!,
     )
-    await click(document.querySelector<HTMLButtonElement>('[aria-label="编辑构建源"]')!)
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label^="更多操作"]')!)
+    await click(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((item) =>
+        item.textContent?.includes('编辑构建源'),
+      )!,
+    )
     const modal = findModal('编辑构建')
     for (const [id, value] of [
       ['name', 'My unsaved build'],

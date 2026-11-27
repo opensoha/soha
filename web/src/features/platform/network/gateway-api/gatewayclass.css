@@ -1,6 +1,3 @@
-.soha-gatewayclass-detail > .soha-workload-detail-page {
-  gap: 0;
-}
 .soha-gatewayclass-query {
   display: flex;
   flex-wrap: wrap;

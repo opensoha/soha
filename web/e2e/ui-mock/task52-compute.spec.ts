@@ -432,7 +432,12 @@ test('task drawer uses fresh task detail and cancellation acceptance remains sep
   await expect(drawer.locator('.ant-descriptions')).toContainText('失败')
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   state.detailStatus = 'running'
-  await page.getByRole('button', { name: '取消任务', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作：task-demo', exact: true }).click()
+  await page
+    .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+    .last()
+    .getByRole('menuitem', { name: '取消任务', exact: true })
+    .click()
   await page.getByRole('button', { name: /^确\s*定$/ }).click()
   await expect(page.getByText('取消请求已提交，请以任务状态为准')).toBeVisible()
   await expect(page.locator('.ant-table-tbody')).toContainText('运行中')

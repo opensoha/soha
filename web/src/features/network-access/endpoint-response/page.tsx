@@ -10,12 +10,11 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Space,
   Tabs,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { EyeOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import type {
   NetworkEndpointResponseEvent,
   NetworkEndpointMaintenanceInput,
@@ -23,6 +22,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import {
   ManagementIconButton,
@@ -34,12 +34,14 @@ import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EndpointResponsePolicies } from './policies'
 import { endpointResponseMutations } from './mutations'
 import { endpointResponseQueries } from './queries'
 import type { EndpointResponseFilters } from './api'
 import { EndpointResponseTag, responseLabel } from './labels'
+import '../styles.css'
 import './styles.css'
 
 type PaneProps = { can: (key: string) => boolean; filters: EndpointResponseFilters }
@@ -99,18 +101,23 @@ export function EndpointResponseEvents({ can, filters }: PaneProps) {
     },
     { title: text('触发时间', 'Triggered'), dataIndex: 'triggeredAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: text('操作', 'Action'),
       key: 'actions',
-      width: 64,
       render: (_, row) => (
-        <ManagementIconButton
-          icon={<EyeOutlined />}
-          aria-label={text('查看会话处置', 'View session response')}
-          tooltip={text('查看', 'View')}
-          onClick={() => {
-            restore.reset()
-            setEventId(row.id)
-          }}
+        <TableRowActionMenu
+          targetLabel={row.id}
+          items={[
+            {
+              key: 'view',
+              icon: <EyeOutlined />,
+              label: text('查看会话处置', 'View session response'),
+              onClick: () => {
+                restore.reset()
+                setEventId(row.id)
+              },
+            },
+          ]}
         />
       ),
     },
@@ -350,6 +357,7 @@ export function EndpointResponseEvents({ can, filters }: PaneProps) {
 }
 
 export function EndpointMaintenance({ can, filters }: PaneProps) {
+  const { modal } = App.useApp()
   const { localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const client = useQueryClient()
@@ -401,21 +409,34 @@ export function EndpointMaintenance({ can, filters }: PaneProps) {
           { title: text('原因', 'Reason'), dataIndex: 'reason' },
           { title: text('到期时间', 'Expires'), dataIndex: 'expiresAt', render: formatDateTime },
           {
+            ...tableColumnPresets.action,
             title: text('操作', 'Action'),
-            key: 'end',
-            render: (_: unknown, row: NetworkEndpointMaintenance) =>
-              can('network_access.endpoint_response_events.maintenance') && (
-                <Popconfirm
-                  title={text('立即结束维护例外？', 'End this maintenance exception now?')}
-                  onConfirm={() => {
-                    if (!pending) end.mutate(row.id)
-                  }}
-                >
-                  <Button size="small" disabled={pending}>
-                    {text('结束', 'End')}
-                  </Button>
-                </Popconfirm>
-              ),
+            key: 'actions',
+            render: (_: unknown, row: NetworkEndpointMaintenance) => (
+              <TableRowActionMenu
+                targetLabel={row.id}
+                items={
+                  can('network_access.endpoint_response_events.maintenance')
+                    ? [
+                        {
+                          key: 'end',
+                          icon: <StopOutlined />,
+                          label: text('结束', 'End'),
+                          danger: true,
+                          disabled: pending,
+                          onClick: () => {
+                            modal.confirm({
+                              title: text('立即结束维护例外？', 'End this maintenance exception now?'),
+                              okButtonProps: { danger: true },
+                              onOk: () => end.mutateAsync(row.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []
+                }
+              />
+            ),
           },
         ]}
         toolbar={
@@ -526,7 +547,7 @@ export default function EndpointResponsePage() {
     return <ReadFeedback query={permissions} label={text('权限', 'Permissions')} />
   if (!canPolicies && !canEvents && !canMaintenance) return <ManagementState kind="no-permission" />
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-endpoint-response-page">
       <h1 className="endpoint-response-sr-only">{text('终端联动', 'Endpoint response')}</h1>
       <ManagementQueryPanel
         form={form}
@@ -555,6 +576,7 @@ export default function EndpointResponsePage() {
         </Form.Item>
       </ManagementQueryPanel>
       <Tabs
+        className="soha-resource-tabs"
         items={[
           ...(canPolicies
             ? [

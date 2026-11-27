@@ -6,6 +6,85 @@ export type AppThemeId = 'soha'
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedThemeMode = 'light' | 'dark'
 export type LightCanvasPreset = 'apple' | 'google' | 'anthropic' | 'mist'
+export type OverviewHeroStyle = 'spotlight' | 'prism'
+export type DualRailStage = 'expanded' | 'rail-only'
+export type SiderFloatingStyle =
+  | 'split-pods'
+  | 'dual-rail'
+  | 'vision-glass'
+  | 'ghost-rail'
+  | 'frosted'
+  | 'recessed-well'
+  | 'obsidian'
+export type Overview3DMorphology = 'auto' | 'monoliths' | 'decks' | 'polyhedron' | 'terrain'
+export type DrawerPresentationMode = 'floating' | 'split-card'
+export type OverviewGradientPresetId =
+  | 'workbench'
+  | 'crystal-nebula'
+  | 'aurora-jade'
+  | 'sunset-amber'
+  | 'titanium-ice'
+  | 'cyber-orchid'
+  | 'custom'
+
+export interface OverviewGradientPresetOption {
+  id: Exclude<OverviewGradientPresetId, 'custom'>
+  labelZh: string
+  labelEn: string
+  descZh: string
+  stops: [string, string, string]
+}
+
+export const OVERVIEW_GRADIENT_PRESETS: OverviewGradientPresetOption[] = [
+  {
+    id: 'workbench',
+    labelZh: '跟随工作台语义',
+    labelEn: 'Workbench Adaptive',
+    descZh: '按 K8s / 计算 / 交付 / AI 等工作台自动匹配三色光场',
+    stops: ['#3b82f6', '#6366f1', '#06b6d4'],
+  },
+  {
+    id: 'crystal-nebula',
+    labelZh: '冰晶星云',
+    labelEn: 'Crystal Nebula',
+    descZh: '星际靛蓝 → 冰川青 → 极光紫三色通透折射',
+    stops: ['#4f46e5', '#06b6d4', '#a855f7'],
+  },
+  {
+    id: 'aurora-jade',
+    labelZh: '极光翡冷翠',
+    labelEn: 'Aurora Jade',
+    descZh: '翡翠青 → 晴空蓝 → 深海靛，清爽生机感',
+    stops: ['#059669', '#0ea5e9', '#6366f1'],
+  },
+  {
+    id: 'sunset-amber',
+    labelZh: '晨曦珊瑚珀',
+    labelEn: 'Coral Amber',
+    descZh: '绯红珊瑚 → 流金琥珀 → 暮光紫暖调高反差',
+    stops: ['#e11d48', '#f59e0b', '#8b5cf6'],
+  },
+  {
+    id: 'titanium-ice',
+    labelZh: '钛银冷光',
+    labelEn: 'Titanium Ice',
+    descZh: '深海钴蓝 → 冷钛岩灰 → 冰蓝金属精密感',
+    stops: ['#2563eb', '#475569', '#0284c7'],
+  },
+  {
+    id: 'cyber-orchid',
+    labelZh: '幻彩霓虹兰',
+    labelEn: 'Cyber Orchid',
+    descZh: '电光紫 → 霓虹洋红 → 荧光青未来空间感',
+    stops: ['#7c3aed', '#ec4899', '#06b6d4'],
+  },
+]
+
+export const DEFAULT_OVERVIEW_GRADIENT_STOPS: [string, string, string] = [
+  '#4f46e5',
+  '#06b6d4',
+  '#a855f7',
+]
 
 export interface AccentPresetOption {
   id: string
@@ -83,6 +162,27 @@ export const DARK_CANVAS_PRESETS: CanvasPresetOption[] = [
 export const DEFAULT_ACCENT_COLOR = '#364fc7'
 export const DEFAULT_LIGHT_CANVAS_COLOR = '#f5f5f7'
 export const DEFAULT_DARK_CANVAS_COLOR = '#0b0e13'
+export const DEFAULT_OVERVIEW_HERO_STYLE: OverviewHeroStyle = 'prism'
+export const DEFAULT_CORNER_RADIUS = 10
+
+export const CORNER_RADIUS_PRESETS = [
+  { id: 'sharp', value: 4, labelZh: '硬朗 4', labelEn: 'Sharp 4' },
+  { id: 'compact', value: 8, labelZh: '克制 8', labelEn: 'Crisp 8' },
+  { id: 'crisp', value: 10, labelZh: '利落 10', labelEn: 'Balanced 10' },
+  { id: 'soft', value: 16, labelZh: '柔和 16', labelEn: 'Soft 16' },
+] as const
+
+export function deriveCornerRadiusScale(rawRadius?: number) {
+  const r = Math.max(4, Math.min(20, Math.round(rawRadius ?? DEFAULT_CORNER_RADIUS)))
+  const xs = Math.max(3, Math.round(r * 0.55))
+  const control = Math.max(4, Math.round(r * 0.8))
+  const panel = r
+  const large = Math.round(r * 1.15)
+  const bezel = large + 3
+  const headerIsland = r >= 18 ? 999 : large
+  const button = r >= 18 ? 999 : control
+  return { r, xs, control, panel, large, bezel, headerIsland, button }
+}
 
 function normalizeHexColor(input?: string, fallback: string = DEFAULT_ACCENT_COLOR): string {
   const value = (input || '').trim()
@@ -270,9 +370,6 @@ const APP_CARD_PADDING = 20
 // Shared by the overview canvas and its CSS slot; not a global chart size.
 export const OVERVIEW_COMPACT_CHART_SIZE = 64
 const APP_CONTROL_HEIGHT = 32
-const APP_CONTROL_RADIUS = 10
-const APP_PANEL_RADIUS = 18
-const APP_LARGE_RADIUS = 24
 // The app sidebar is compact; other menus retain the component's standard height.
 const APP_SIDEBAR_ITEM_HEIGHT = 31
 const GLASS_BLUR = '20px'
@@ -597,10 +694,12 @@ export function getAntdTheme(
   themeMode: ThemeMode | ResolvedThemeMode,
   accentColor?: string,
   canvasColor?: string,
+  cornerRadius?: number,
 ): ThemeConfig {
   const resolvedMode = themeMode === 'system' ? resolveThemeMode(themeMode) : themeMode
   const palette = getThemePalette(resolvedMode, accentColor, canvasColor)
   const accent = deriveAccentTokens(accentColor, resolvedMode)
+  const radiusScale = deriveCornerRadiusScale(cornerRadius)
 
   return {
     algorithm: resolvedMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
@@ -703,10 +802,10 @@ export function getAntdTheme(
       lineHeightHeading3: 28 / 20,
       lineHeightHeading4: 24 / 16,
       lineHeightHeading5: 22 / 14,
-      borderRadius: 10,
-      borderRadiusXS: 2,
-      borderRadiusSM: APP_CONTROL_RADIUS,
-      borderRadiusLG: APP_LARGE_RADIUS,
+      borderRadius: radiusScale.panel,
+      borderRadiusXS: radiusScale.xs,
+      borderRadiusSM: radiusScale.control,
+      borderRadiusLG: radiusScale.large,
       padding: 16,
       paddingSM: 12,
       paddingLG: 24,
@@ -843,7 +942,7 @@ export function getAntdTheme(
         solidTextColor: '#f7f4ee',
         dangerColor: '#ffffff',
         fontWeight: 600,
-        borderRadius: 999,
+        borderRadius: radiusScale.button,
       },
       Input: {
         inputFontSize: APP_CONTROL_FONT_SIZE,
@@ -856,7 +955,7 @@ export function getAntdTheme(
         warningActiveShadow: 'none',
         hoverBorderColor: palette.colorPrimaryBorderHover,
         activeBorderColor: palette.primary,
-        borderRadius: APP_CONTROL_RADIUS,
+        borderRadius: radiusScale.control,
       },
       InputNumber: {
         inputFontSize: APP_CONTROL_FONT_SIZE,
@@ -880,7 +979,7 @@ export function getAntdTheme(
         optionSelectedFontWeight: 500,
         multipleItemBg: palette.colorFillQuaternary,
         multipleItemBorderColor: palette.colorBorder,
-        borderRadius: APP_CONTROL_RADIUS,
+        borderRadius: radiusScale.control,
       },
       Form: {
         labelFontSize: APP_CONTROL_FONT_SIZE,
@@ -893,19 +992,23 @@ export function getAntdTheme(
         horizontalItemGutter: 24,
       },
       Alert: {
-        borderRadiusLG: APP_PANEL_RADIUS,
+        borderRadiusLG: radiusScale.panel,
       },
       Drawer: {
         colorBgElevated: palette.colorBgContainer,
+        colorBgMask:
+          resolvedMode === 'dark' ? 'rgba(3, 6, 14, 0.58)' : 'rgba(15, 23, 42, 0.22)',
       },
       Modal: {
         titleFontSize: APP_SECTION_FONT_SIZE,
         titleLineHeight: APP_SECTION_LINE_HEIGHT_PX / APP_SECTION_FONT_SIZE,
-        borderRadiusLG: 12,
-        headerBg: palette.colorBgContainer,
+        borderRadiusLG: radiusScale.large,
+        headerBg: 'transparent',
         contentBg: palette.colorBgContainer,
-        footerBg: palette.colorBgContainer,
+        footerBg: 'transparent',
         titleColor: palette.colorText,
+        colorBgMask:
+          resolvedMode === 'dark' ? 'rgba(3, 6, 14, 0.58)' : 'rgba(15, 23, 42, 0.22)',
       },
       Progress: {
         defaultColor: palette.primary,
@@ -935,7 +1038,7 @@ export function getAntdTheme(
         railSize: 6,
       },
       ColorPicker: {
-        borderRadius: APP_CONTROL_RADIUS,
+        borderRadius: radiusScale.control,
       },
     },
   }
@@ -952,6 +1055,10 @@ export function applyAppTheme(
   canvasColor?: string,
   options?: {
     paperGrain?: boolean
+    overviewHeroStyle?: OverviewHeroStyle
+    overviewGradientPreset?: OverviewGradientPresetId
+    overviewGradientStops?: [string, string, string]
+    cornerRadius?: number
   },
 ) {
   if (typeof document === 'undefined') return
@@ -959,11 +1066,37 @@ export function applyAppTheme(
   const palette = getThemePalette(resolvedMode, accentColor, canvasColor)
   const accent = deriveAccentTokens(accentColor, resolvedMode)
   const canvas = deriveCanvasTokens(canvasColor, resolvedMode)
+  const radiusScale = deriveCornerRadiusScale(options?.cornerRadius)
   const root = document.documentElement
   delete root.dataset.lightCanvas
   delete root.dataset.tableStyle
   root.dataset.paperGrain = options?.paperGrain === false ? 'off' : 'on'
-  const motion = antdTheme.getDesignToken(getAntdTheme(resolvedMode, accentColor, canvasColor))
+  root.dataset.overviewHero = options?.overviewHeroStyle === 'spotlight' ? 'spotlight' : 'prism'
+  root.dataset.siderStyle = 'dual-rail'
+
+  const gradPresetId: OverviewGradientPresetId = options?.overviewGradientPreset ?? 'workbench'
+  const matchedPreset = OVERVIEW_GRADIENT_PRESETS.find((item) => item.id === gradPresetId)
+  const rawStops =
+    gradPresetId === 'custom'
+      ? (options?.overviewGradientStops ?? DEFAULT_OVERVIEW_GRADIENT_STOPS)
+      : (matchedPreset?.stops ?? DEFAULT_OVERVIEW_GRADIENT_STOPS)
+  const stop1 = normalizeHexColor(rawStops[0], DEFAULT_OVERVIEW_GRADIENT_STOPS[0])
+  const stop2 = normalizeHexColor(rawStops[1], DEFAULT_OVERVIEW_GRADIENT_STOPS[1])
+  const stop3 = normalizeHexColor(rawStops[2], DEFAULT_OVERVIEW_GRADIENT_STOPS[2])
+  const stop1Rgb = hexToRgbTuple(stop1)
+  const stop2Rgb = hexToRgbTuple(stop2)
+  const stop3Rgb = hexToRgbTuple(stop3)
+
+  root.dataset.overviewGradient = gradPresetId
+  root.style.setProperty('--soha-stage-custom-c1', stop1)
+  root.style.setProperty('--soha-stage-custom-c2', stop2)
+  root.style.setProperty('--soha-stage-custom-c3', stop3)
+  root.style.setProperty('--soha-stage-custom-c1-rgb', `${stop1Rgb[0]}, ${stop1Rgb[1]}, ${stop1Rgb[2]}`)
+  root.style.setProperty('--soha-stage-custom-c2-rgb', `${stop2Rgb[0]}, ${stop2Rgb[1]}, ${stop2Rgb[2]}`)
+  root.style.setProperty('--soha-stage-custom-c3-rgb', `${stop3Rgb[0]}, ${stop3Rgb[1]}, ${stop3Rgb[2]}`)
+  const motion = antdTheme.getDesignToken(
+    getAntdTheme(resolvedMode, accentColor, canvasColor, options?.cornerRadius),
+  )
   root.style.setProperty(
     '--soha-motion-duration-fast',
     motion.motion ? motion.motionDurationFast : '0s',
@@ -1133,10 +1266,14 @@ export function applyAppTheme(
   root.style.setProperty('--soha-overview-chart-size', `${OVERVIEW_COMPACT_CHART_SIZE}px`)
   root.style.setProperty('--soha-control-height', `${APP_CONTROL_HEIGHT}px`)
   root.style.setProperty('--soha-sidebar-item-height', `${APP_SIDEBAR_ITEM_HEIGHT}px`)
-  root.style.setProperty('--soha-radius', `${APP_CONTROL_RADIUS}px`)
-  root.style.setProperty('--soha-radius-control', `${APP_CONTROL_RADIUS}px`)
-  root.style.setProperty('--soha-radius-panel', `${APP_PANEL_RADIUS}px`)
-  root.style.setProperty('--soha-radius-lg', `${APP_LARGE_RADIUS}px`)
+  root.style.setProperty('--soha-radius-xs', `${radiusScale.xs}px`)
+  root.style.setProperty('--soha-radius', `${radiusScale.control}px`)
+  root.style.setProperty('--soha-radius-control', `${radiusScale.control}px`)
+  root.style.setProperty('--soha-radius-panel', `${radiusScale.panel}px`)
+  root.style.setProperty('--soha-radius-lg', `${radiusScale.large}px`)
+  root.style.setProperty('--soha-radius-bezel', `${radiusScale.bezel}px`)
+  root.style.setProperty('--soha-radius-header', `${radiusScale.headerIsland}px`)
+  root.style.setProperty('--soha-radius-btn', `${radiusScale.button}px`)
   root.style.setProperty('--soha-management-query-field-default-width', '300px')
   root.style.setProperty('--soha-management-toolbar-search-width', '300px')
   root.style.setProperty('color-scheme', resolvedMode)

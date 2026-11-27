@@ -125,7 +125,7 @@
 .soha-proxy-traffic-bar {
   height: 8px;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--soha-radius-2xs, 4px);
   background: var(--soha-accent-cyan);
 }
 

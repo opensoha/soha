@@ -1,8 +1,7 @@
 import { RadiusServicesPanel } from './radius-services/panel'
-import { ManagementProofAction } from './management-proof'
+import { ManagementProofModal } from './management-proof'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
-  ManagementIconButton,
   ManagementQueryField,
   ManagementQueryPanel,
   ManagementState,
@@ -10,12 +9,20 @@ import {
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
-import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  EditOutlined,
+  EyeOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons'
 import type {
   EndpointDevice,
   EndpointDeviceInput,
@@ -44,14 +51,13 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
-  Space,
   Switch,
   Tabs,
 } from 'antd'
@@ -162,6 +168,7 @@ function parsePorts(value?: string) {
   return parseTextList(value).map(Number)
 }
 export function NetworkAccessPage() {
+  const { modal } = App.useApp()
   const { localeCode, t } = useI18n()
   const { pathname } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -300,6 +307,7 @@ export function NetworkAccessPage() {
     Boolean(activeRead && queryAccessDenied(activeRead))
   const [editor, setEditor] = useState<Editor | null>(null)
   const [deviceDetail, setDeviceDetail] = useState<EndpointDevice | null>(null)
+  const [proofDevice, setProofDevice] = useState<EndpointDevice | null>(null)
   const [editorForm] = Form.useForm<EditorValues>()
   const editorRead = editor
     ? { device: devices, site: sites, space: spaces, resource: resources, gateway: gateways }[
@@ -566,28 +574,38 @@ export function NetworkAccessPage() {
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
       key: 'actions',
       render: (_: unknown, record: EndpointDevice) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            aria-label={t('networkAccess.device.view', '查看终端详情')}
-            icon={<EyeOutlined />}
-            tooltip={t('common.view', '查看')}
-            onClick={() => setDeviceDetail(record)}
-          />
-          {canUpdateDevices ? (
-            <ManagementProofAction device={record} disabled={operationBlocked} />
-          ) : null}
-          {canUpdateDevices ? (
-            <ManagementIconButton
-              aria-label={t('networkAccess.edit.device', '编辑设备')}
-              icon={<EditOutlined />}
-              tooltip={t('common.edit', '编辑')}
-              onClick={() => openEditor({ kind: 'device', record })}
-              disabled={operationBlocked}
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            {
+              key: 'view',
+              icon: <EyeOutlined />,
+              label: t('networkAccess.device.view', '查看终端详情'),
+              onClick: () => setDeviceDetail(record),
+            },
+            ...(canUpdateDevices
+              ? [
+                  {
+                    key: 'proof',
+                    icon: <SafetyCertificateOutlined />,
+                    label: localeCode === 'zh_CN' ? '提交可信管理证明' : 'Submit trusted management proof',
+                    disabled: operationBlocked || !record.siteId,
+                    onClick: () => setProofDevice(record),
+                  },
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: t('networkAccess.edit.device', '编辑设备'),
+                    disabled: operationBlocked,
+                    onClick: () => openEditor({ kind: 'device', record }),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
@@ -613,34 +631,44 @@ export function NetworkAccessPage() {
     ...(canUpdateSites || canDeleteSites
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
             render: (_: unknown, record: NetworkSite) => (
-              <Space className="soha-row-action-icons">
-                {canUpdateSites ? (
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.edit.site', '编辑站点')}
-                    icon={<EditOutlined />}
-                    tooltip={t('common.edit', '编辑')}
-                    onClick={() => openEditor({ kind: 'site', record })}
-                    disabled={operationBlocked}
-                  />
-                ) : null}
-                {canDeleteSites ? (
-                  <Popconfirm
-                    title={t('networkAccess.confirmDelete.site', '确认删除站点？')}
-                    onConfirm={() => siteDelete.mutate(record.id)}
-                    okButtonProps={{ disabled: operationBlocked }}
-                    disabled={operationBlocked}
-                  >
-                    <ManagementIconButton
-                      aria-label={t('networkAccess.delete.site', '删除站点')}
-                      danger
-                      icon={<DeleteOutlined />}
-                      tooltip={t('common.delete', '删除')}
-                    />
-                  </Popconfirm>
-                ) : null}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={record.name}
+                items={[
+                  ...(canUpdateSites
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('networkAccess.edit.site', '编辑站点'),
+                          disabled: operationBlocked,
+                          onClick: () => openEditor({ kind: 'site', record }),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(canDeleteSites
+                    ? [
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('networkAccess.delete.site', '删除站点'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.confirmDelete.site', '确认删除站点？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => siteDelete.mutateAsync(record.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]
@@ -659,34 +687,44 @@ export function NetworkAccessPage() {
     ...(canUpdateSpaces || canDeleteSpaces
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
             render: (_: unknown, record: NetworkSpace) => (
-              <Space className="soha-row-action-icons">
-                {canUpdateSpaces ? (
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.edit.space', '编辑网络空间')}
-                    icon={<EditOutlined />}
-                    tooltip={t('common.edit', '编辑')}
-                    onClick={() => openEditor({ kind: 'space', record })}
-                    disabled={operationBlocked}
-                  />
-                ) : null}
-                {canDeleteSpaces ? (
-                  <Popconfirm
-                    title={t('networkAccess.confirmDelete.space', '确认删除网络空间？')}
-                    onConfirm={() => spaceDelete.mutate(record.id)}
-                    okButtonProps={{ disabled: operationBlocked }}
-                    disabled={operationBlocked}
-                  >
-                    <ManagementIconButton
-                      aria-label={t('networkAccess.delete.space', '删除网络空间')}
-                      danger
-                      icon={<DeleteOutlined />}
-                      tooltip={t('common.delete', '删除')}
-                    />
-                  </Popconfirm>
-                ) : null}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={record.name}
+                items={[
+                  ...(canUpdateSpaces
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('networkAccess.edit.space', '编辑网络空间'),
+                          disabled: operationBlocked,
+                          onClick: () => openEditor({ kind: 'space', record }),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(canDeleteSpaces
+                    ? [
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('networkAccess.delete.space', '删除网络空间'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.confirmDelete.space', '确认删除网络空间？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => spaceDelete.mutateAsync(record.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]
@@ -720,34 +758,44 @@ export function NetworkAccessPage() {
     ...(canUpdateResources || canDeleteResources
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
             render: (_: unknown, record: NetworkResource) => (
-              <Space className="soha-row-action-icons">
-                {canUpdateResources ? (
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.edit.resource', '编辑资源')}
-                    icon={<EditOutlined />}
-                    tooltip={t('common.edit', '编辑')}
-                    onClick={() => openEditor({ kind: 'resource', record })}
-                    disabled={operationBlocked}
-                  />
-                ) : null}
-                {canDeleteResources ? (
-                  <Popconfirm
-                    title={t('networkAccess.confirmDelete.resource', '确认删除资源？')}
-                    onConfirm={() => resourceDelete.mutate(record.id)}
-                    okButtonProps={{ disabled: operationBlocked }}
-                    disabled={operationBlocked}
-                  >
-                    <ManagementIconButton
-                      aria-label={t('networkAccess.delete.resource', '删除资源')}
-                      danger
-                      icon={<DeleteOutlined />}
-                      tooltip={t('common.delete', '删除')}
-                    />
-                  </Popconfirm>
-                ) : null}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={record.name}
+                items={[
+                  ...(canUpdateResources
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('networkAccess.edit.resource', '编辑资源'),
+                          disabled: operationBlocked,
+                          onClick: () => openEditor({ kind: 'resource', record }),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(canDeleteResources
+                    ? [
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('networkAccess.delete.resource', '删除资源'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.confirmDelete.resource', '确认删除资源？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => resourceDelete.mutateAsync(record.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]
@@ -813,14 +861,20 @@ export function NetworkAccessPage() {
     ...(canUpdateGateways
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
             render: (_: unknown, record: NetworkGateway) => (
-              <ManagementIconButton
-                aria-label={t('networkAccess.edit.gateway', '编辑网关')}
-                icon={<EditOutlined />}
-                tooltip={t('common.edit', '编辑')}
-                onClick={() => openEditor({ kind: 'gateway', record })}
-                disabled={operationBlocked}
+              <TableRowActionMenu
+                targetLabel={record.name}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: t('networkAccess.edit.gateway', '编辑网关'),
+                    disabled: operationBlocked,
+                    onClick: () => openEditor({ kind: 'gateway', record }),
+                  },
+                ]}
               />
             ),
           },
@@ -1224,6 +1278,7 @@ export function NetworkAccessPage() {
           key: 'policy',
           children: (
             <Tabs
+              className="soha-resource-tabs"
               items={[
                 {
                   key: 'policies',
@@ -1287,6 +1342,11 @@ export function NetworkAccessPage() {
         onClose={() => {
           if (!operationBlocked) (() => setDeviceDetail(null))()
         }}
+      />
+      <ManagementProofModal
+        device={proofDevice}
+        disabled={operationBlocked}
+        onClose={() => setProofDevice(null)}
       />
       <Modal
         styles={operationModalStyles}

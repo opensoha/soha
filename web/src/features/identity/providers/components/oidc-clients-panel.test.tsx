@@ -88,12 +88,20 @@ vi.mock('@/components/management-list', async (original) => ({
     disabled,
     onClick,
     tooltip,
+    ...rest
   }: {
+    'aria-label'?: string
+    className?: string
     disabled?: boolean
-    onClick?: () => void
+    onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
     tooltip: string
   }) => (
-    <button aria-label={tooltip} disabled={disabled} onClick={onClick}>
+    <button
+      {...rest}
+      aria-label={rest['aria-label'] ?? tooltip}
+      disabled={disabled}
+      onClick={onClick}
+    >
       {tooltip}
     </button>
   ),
@@ -197,6 +205,8 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   )
+  const getComputedStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
 })
 
 beforeEach(() => {
@@ -294,9 +304,16 @@ describe('OIDC clients panel behavior', () => {
         button.textContent?.includes('新建 client'),
       )?.disabled,
     ).toBe(true)
-    expect(
-      (container.querySelector('button[aria-label="编辑"]') as HTMLButtonElement).disabled,
-    ).toBe(true)
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button.soha-table-row-action-trigger',
+    )
+    expect(trigger).not.toBeNull()
+    await act(async () => trigger?.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    const editItem = Array.from(document.body.querySelectorAll('.ant-dropdown-menu-item')).find(
+      (item) => item.textContent?.trim() === '编辑',
+    )
+    expect(editItem?.getAttribute('aria-disabled')).toBe('true')
   })
 
   it('creates clients and forwards the one-time secret exactly once', async () => {
@@ -326,8 +343,19 @@ describe('OIDC clients panel behavior', () => {
 
   it('updates and deletes clients with explicit provider cache context', async () => {
     const { container, queryClient } = await renderPanel(true)
-    const editButton = container.querySelector('button[aria-label="编辑"]') as HTMLButtonElement
-    await act(async () => editButton.click())
+    const openMenuAndClick = async (label: string) => {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        'button.soha-table-row-action-trigger',
+      )
+      await act(async () => trigger?.click())
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+      const item = Array.from(
+        document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+      ).find((el) => el.textContent?.trim() === label)
+      await act(async () => item?.click())
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    }
+    await openMenuAndClick('编辑')
     await clickButton('提交 client')
     await settle(queryClient)
 
@@ -336,10 +364,11 @@ describe('OIDC clients panel behavior', () => {
       expect.objectContaining({ providerId: 'provider/id' }),
     )
 
-    const confirmDelete = container.querySelector(
-      'button[aria-label="confirm-删除 grafana"]',
-    ) as HTMLButtonElement
-    await act(async () => confirmDelete.click())
+    await openMenuAndClick('删除')
+    const confirmDelete = document.body.querySelector<HTMLButtonElement>(
+      '.ant-modal-confirm-btns .ant-btn-primary',
+    )
+    await act(async () => confirmDelete?.click())
     await settle(queryClient)
     expect(testState.apiDelete).toHaveBeenCalledWith('/identity/oidc-clients/client%2Fid')
   })
@@ -348,10 +377,20 @@ describe('OIDC clients panel behavior', () => {
     const onSecretCreated = vi.fn()
     const { container, queryClient } = await renderPanel(true, onSecretCreated)
 
-    const confirmReveal = container.querySelector(
-      'button[aria-label="confirm-查看 grafana 的 Client Secret"]',
-    ) as HTMLButtonElement
-    await act(async () => confirmReveal.click())
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button.soha-table-row-action-trigger',
+    )
+    await act(async () => trigger?.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    const revealItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((el) => el.textContent?.includes('查看 Client Secret'))
+    await act(async () => revealItem?.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    const confirmReveal = document.body.querySelector<HTMLButtonElement>(
+      '.ant-modal-confirm-btns .ant-btn-primary',
+    )
+    await act(async () => confirmReveal?.click())
     await settle(queryClient)
 
     expect(testState.apiPost).toHaveBeenCalledWith(

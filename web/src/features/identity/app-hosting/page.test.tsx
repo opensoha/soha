@@ -460,6 +460,49 @@ function findButtonByText(scope: ParentNode, text: string) {
   )
 }
 
+async function openRowActionMenu(scope: ParentNode, targetLabel: string) {
+  const trigger = scope.querySelector<HTMLButtonElement>(
+    `button[aria-label="更多操作：${targetLabel}"]`,
+  )
+  expect(trigger).toBeTruthy()
+  await act(async () => {
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  })
+  await flush()
+  await act(async () => {
+    trigger?.click()
+  })
+  await flush()
+}
+
+function findMenuItem(text: string) {
+  const dropdowns = Array.from(
+    document.body.querySelectorAll<HTMLElement>('.ant-dropdown:not(.ant-dropdown-hidden)'),
+  )
+  const activeDropdown = dropdowns[dropdowns.length - 1]
+  if (!activeDropdown) return undefined
+  return Array.from(activeDropdown.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (item) => item.textContent?.replace(/\s+/g, '') === text.replace(/\s+/g, ''),
+  )
+}
+
+function isMenuItemDisabled(item: HTMLElement | undefined) {
+  return (
+    item?.getAttribute('aria-disabled') === 'true' ||
+    item?.classList.contains('ant-dropdown-menu-item-disabled')
+  )
+}
+
+async function clickRowAction(scope: ParentNode, targetLabel: string, actionLabel: string) {
+  await openRowActionMenu(scope, targetLabel)
+  const item = findMenuItem(actionLabel)
+  expect(item).toBeTruthy()
+  await act(async () => {
+    item?.click()
+  })
+  await flush()
+}
+
 async function switchTab(container: HTMLElement, tabLabelFragment: string) {
   const tab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((node) =>
     node.textContent?.includes(tabLabelFragment),
@@ -512,16 +555,20 @@ describe('InternalWorkbenchAppHostingPage', () => {
     expect(container.textContent).toContain('total:2')
     expect(tableState.propsList[0]?.rowKey).toBe('id')
 
-    expect(findButtonByText(container, '强制封停')?.disabled).toBe(true)
-    expect(findButtonByText(container, '解除封停')?.disabled).toBe(true)
-    expect(findButtonByText(container, '转交')?.disabled).toBe(true)
-    expect(findButtonByText(container, '删除')?.disabled).toBe(true)
+    await openRowActionMenu(container, '季度经营看板')
+    expect(isMenuItemDisabled(findMenuItem('详情'))).toBe(false)
+    expect(isMenuItemDisabled(findMenuItem('强制封停'))).toBe(true)
+    expect(isMenuItemDisabled(findMenuItem('转交'))).toBe(true)
+    expect(isMenuItemDisabled(findMenuItem('删除'))).toBe(true)
 
-    const detailBtn = findButtonByText(container, '详情')
+    const detailItem = findMenuItem('详情')
     await act(async () => {
-      detailBtn?.click()
+      detailItem?.click()
     })
     await flush()
+
+    await openRowActionMenu(container, '异常轮询测试页')
+    expect(isMenuItemDisabled(findMenuItem('解除封停'))).toBe(true)
 
     const drawer = document.body.querySelector('.ant-drawer')
     expect(drawer?.textContent).toContain('应用详情 · 季度经营看板')
@@ -574,8 +621,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
     expect(apiMocks.get.mock.calls.some(([path]) => path.endsWith('/visitor-attributes'))).toBe(
       false,
     )
-    await act(async () => findButtonByText(container, '详情')?.click())
-    await flush()
+    await clickRowAction(container, '季度经营看板', '详情')
     const drawer = document.body.querySelector('.ant-drawer')!
     expect(drawer.textContent).toContain('暂时无法获取用量')
     expect(drawer.textContent).toContain('区分团队')
@@ -620,10 +666,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
     })
     await flush()
 
-    await act(async () => {
-      findButtonByText(container, '强制封停')?.click()
-    })
-    await flush()
+    await clickRowAction(container, '季度经营看板', '强制封停')
 
     expect(document.body.textContent).toContain(
       '封停后立即切断所有网关访问，且作者无法自行恢复上线',
@@ -651,10 +694,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
 
     apiMocks.post.mockClear()
     apiMocks.post.mockResolvedValueOnce({ data: { ...suspendedApp, status: 'offline' } })
-    await act(async () => {
-      findButtonByText(container, '解除封停')?.click()
-    })
-    await flush()
+    await clickRowAction(container, '异常轮询测试页', '解除封停')
     await act(async () => {
       findButtonByText(document.body, '确认解除封停')?.click()
     })
@@ -666,13 +706,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
     const { container } = await renderPage()
 
     apiMocks.post.mockResolvedValueOnce({ data: { ...onlineApp, ownerUserId: 'user-2' } })
-    const transferButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).filter((btn) => btn.textContent?.trim() === '转交')
-    await act(async () => {
-      transferButtons[0]?.click()
-    })
-    await flush()
+    await clickRowAction(container, '季度经营看板', '转交')
 
     expect(document.body.textContent).toContain(
       '固定链接保持不变，原作者私有访问权与待审申请将立即重算/失效',
@@ -698,13 +732,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
     apiMocks.post.mockResolvedValueOnce({
       data: { appId: 'app-online', deleted: true },
     })
-    const deleteButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).filter((btn) => btn.textContent?.trim() === '删除')
-    await act(async () => {
-      deleteButtons[0]?.click()
-    })
-    await flush()
+    await clickRowAction(container, '季度经营看板', '删除')
 
     expect(findButtonByText(document.body, '确认彻底删除')?.disabled).toBe(true)
 
@@ -742,10 +770,13 @@ describe('InternalWorkbenchAppHostingPage', () => {
     const selfRow = rows.find((row) => row.textContent?.includes('安全值班速查表'))!
     const otherRow = rows.find((row) => row.textContent?.includes('季度经营看板'))!
 
-    expect(findButtonByText(selfRow, '批准')?.disabled).toBe(true)
-    expect(findButtonByText(selfRow, '拒绝')?.disabled).toBe(true)
-    expect(findButtonByText(otherRow, '批准')?.disabled).toBe(false)
-    expect(findButtonByText(otherRow, '拒绝')?.disabled).toBe(false)
+    await openRowActionMenu(selfRow, '安全值班速查表')
+    expect(isMenuItemDisabled(findMenuItem('批准'))).toBe(true)
+    expect(isMenuItemDisabled(findMenuItem('拒绝'))).toBe(true)
+
+    await openRowActionMenu(otherRow, '季度经营看板')
+    expect(isMenuItemDisabled(findMenuItem('批准'))).toBe(false)
+    expect(isMenuItemDisabled(findMenuItem('拒绝'))).toBe(false)
 
     apiMocks.post.mockResolvedValueOnce({
       data: {
@@ -753,8 +784,9 @@ describe('InternalWorkbenchAppHostingPage', () => {
         app: { ...onlineApp, visibility: { mode: 'organization' } },
       },
     })
+    const approveItem = findMenuItem('批准')
     await act(async () => {
-      findButtonByText(otherRow, '批准')?.click()
+      approveItem?.click()
     })
     await flush()
 
@@ -782,10 +814,7 @@ describe('InternalWorkbenchAppHostingPage', () => {
     const refreshedOtherRow = Array.from(
       container.querySelectorAll<HTMLTableRowElement>('tbody tr'),
     ).find((row) => row.textContent?.includes('季度经营看板'))!
-    await act(async () => {
-      findButtonByText(refreshedOtherRow, '拒绝')?.click()
-    })
-    await flush()
+    await clickRowAction(refreshedOtherRow, '季度经营看板', '拒绝')
 
     await act(async () => {
       findButtonByText(document.body, '确认拒绝')?.click()

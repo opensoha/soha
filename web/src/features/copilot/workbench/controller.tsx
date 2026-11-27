@@ -717,7 +717,7 @@ export function AIWorkbenchController() {
       }
       const events = [
         ...sortedAgentRunReplayEvents(run, requestedSessionId),
-        ...(page && !page.page.resyncRequired ? page.page.items : []),
+        ...(page && !page.page.resyncRequired ? (page.page.items ?? []) : []),
       ]
       for (const event of events) {
         const eventKey = workbenchStreamEventKey(event)

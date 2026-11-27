@@ -1,6 +1,7 @@
 import { scrollableModalBodyStyle, viewportModalStyle } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
@@ -19,6 +20,7 @@ import {
 } from '@/features/settings'
 import { localeText, useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -29,6 +31,7 @@ import {
 } from '@ant-design/icons'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  App,
   Badge,
   Button,
   Descriptions,
@@ -36,7 +39,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -81,6 +83,7 @@ const cloudStorageHints = {
   },
 }
 export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const { localeCode } = useI18n()
   const [form] = Form.useForm<S3StorageFormValues>()
@@ -226,7 +229,7 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
           integrationsQuery.isEnabled && (!drawerOpen || queryAccessDenied(integrationsQuery))
         }
         query={integrationsQuery}
-        label="身份数据"
+        label="对象存储"
       />
 
       <Button
@@ -368,52 +371,50 @@ export function ObjectStorageConfig({ storage }: { storage?: SoftwareStorage }) 
                   ),
                 },
                 {
+                  ...tableColumnPresets.action,
                   title: '操作',
                   key: 'actions',
-                  width: 108,
                   render: (_, item) => (
-                    <Space size={0}>
-                      <Button
-                        aria-label={`测试 ${item.name} 连接`}
-                        disabled={operationBlocked || !canTest || !item.enabled}
-                        icon={<ThunderboltOutlined />}
-                        loading={testMutation.isPending && testMutation.variables === item.id}
-                        size="small"
-                        type="text"
-                        onClick={() => testConnection(item)}
-                      />
-                      <Button
-                        aria-label={`编辑 ${item.name}`}
-                        disabled={operationBlocked || !canUpdate}
-                        icon={<EditOutlined />}
-                        size="small"
-                        type="text"
-                        onClick={() => {
-                          setEditing(item)
-                          setModalOpen(true)
-                        }}
-                      />
-                      <Popconfirm
-                        cancelText="取消"
-                        disabled={operationBlocked || !canDelete}
-                        okButtonProps={{
-                          ...{ danger: true, loading: removeMutation.isPending },
-                          disabled: operationBlocked,
-                        }}
-                        okText="删除"
-                        title={`删除对象存储 ${item.name}？`}
-                        onConfirm={() => removeMutation.mutate(item.id)}
-                      >
-                        <Button
-                          aria-label={`删除 ${item.name}`}
-                          danger
-                          disabled={!canDelete}
-                          icon={<DeleteOutlined />}
-                          size="small"
-                          type="text"
-                        />
-                      </Popconfirm>
-                    </Space>
+                    <TableRowActionMenu
+                      targetLabel={item.name}
+                      loading={testMutation.isPending && testMutation.variables === item.id}
+                      items={[
+                        {
+                          key: 'test',
+                          icon: <ThunderboltOutlined />,
+                          label: `测试 ${item.name} 连接`,
+                          disabled: operationBlocked || !canTest || !item.enabled,
+                          onClick: () => testConnection(item),
+                        },
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: `编辑 ${item.name}`,
+                          disabled: operationBlocked || !canUpdate,
+                          onClick: () => {
+                            setEditing(item)
+                            setModalOpen(true)
+                          },
+                        },
+                        { type: 'divider' },
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: `删除 ${item.name}`,
+                          danger: true,
+                          disabled: operationBlocked || !canDelete,
+                          onClick: () => {
+                            modal.confirm({
+                              title: `删除对象存储 ${item.name}？`,
+                              okText: '删除',
+                              cancelText: '取消',
+                              okButtonProps: { danger: true },
+                              onOk: () => removeMutation.mutateAsync(item.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]}
+                    />
                   ),
                 },
               ]}

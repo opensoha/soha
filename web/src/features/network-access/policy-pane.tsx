@@ -1,10 +1,11 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type {
   EndpointDevicePostureStatus,
@@ -23,6 +24,7 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import {
+  App,
   Button,
   Card,
   Descriptions,
@@ -30,7 +32,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -121,6 +122,7 @@ function textList(values: string[]) {
   return values.join('\n')
 }
 export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPolicyPaneProps) {
+  const { modal } = App.useApp()
   const { t, localeCode } = useI18n()
   const queryClient = useQueryClient()
   const policies = useQuery(networkAccessQueries.policies(LIST_FILTER))
@@ -288,35 +290,44 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
     ...(canUpdate || canDelete
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 90,
             render: (_: unknown, policy: NetworkAccessPolicy) => (
-              <Space className="soha-row-action-icons">
-                {canUpdate ? (
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.policy.edit', '编辑策略')}
-                    icon={<EditOutlined />}
-                    tooltip={t('common.edit', '编辑')}
-                    onClick={() => openEditor(policy)}
-                    disabled={operationBlocked}
-                  />
-                ) : null}
-                {canDelete ? (
-                  <Popconfirm
-                    title={t('networkAccess.policy.confirmDelete', '确认删除策略？')}
-                    onConfirm={() => deletePolicy.mutate(policy.id)}
-                    okButtonProps={{ disabled: operationBlocked }}
-                    disabled={operationBlocked}
-                  >
-                    <ManagementIconButton
-                      aria-label={t('networkAccess.policy.delete', '删除策略')}
-                      danger
-                      icon={<DeleteOutlined />}
-                      tooltip={t('common.delete', '删除')}
-                    />
-                  </Popconfirm>
-                ) : null}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={policy.name}
+                items={[
+                  ...(canUpdate
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('networkAccess.policy.edit', '编辑策略'),
+                          disabled: operationBlocked,
+                          onClick: () => openEditor(policy),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(canDelete
+                    ? [
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('networkAccess.policy.delete', '删除策略'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.policy.confirmDelete', '确认删除策略？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => deletePolicy.mutateAsync(policy.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]

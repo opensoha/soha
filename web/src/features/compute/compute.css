@@ -71,12 +71,30 @@
   animation: soha-reveal-up 0.62s var(--soha-ease-expo) 0.08s both;
 }
 
+.soha-compute-priority-grid > .ant-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 0;
+  border-radius: var(--soha-radius-lg, 12px);
+}
+
+.soha-compute-priority-grid > .ant-card > .ant-card-body.soha-compute-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .soha-compute-infrastructure-grid {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   animation: soha-reveal-up 0.68s var(--soha-ease-expo) 0.14s both;
+}
+
+.soha-compute-provider-instances.ant-card {
+  border-radius: var(--soha-radius-lg, 12px);
 }
 
 .soha-compute-priority-grid > :only-child {
@@ -112,7 +130,7 @@
   flex-wrap: wrap;
   padding: 13px 15px;
   border: 1px solid var(--soha-hairline-strong);
-  border-radius: 16px;
+  border-radius: var(--soha-radius-panel, 10px);
   background: color-mix(in srgb, var(--soha-bg-surface-soft) 72%, var(--soha-bg-surface));
   box-shadow: var(--soha-inner-highlight);
 }
@@ -183,7 +201,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: auto;
+  padding-top: 16px;
 }
 
 .soha-compute-data-notes {
@@ -208,7 +227,7 @@
   margin: 12px 0 0;
 }
 
-/* ─── Stroll Asymmetric 24-Col Bento Grid (13:11 + 6:5) ─── */
+/* ─── Asymmetric 24-Col Bento Grid (13:11 + 6:5) ─── */
 .soha-compute-overview-page .soha-overview-metric-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
@@ -216,7 +235,7 @@
 
 .soha-compute-overview-page .soha-overview-metric-grid.is-asymmetric-bento {
   grid-template-columns: repeat(24, minmax(0, 1fr));
-  grid-auto-rows: minmax(122px, auto);
+  grid-auto-rows: minmax(124px, auto);
   gap: 14px;
 }
 
@@ -237,35 +256,13 @@
   grid-column: span 5;
 }
 
-/* Double-Bezel Machined Outer Ring on Bento Links */
 .soha-compute-overview-page .soha-overview-card-link.is-bento-hero,
 .soha-compute-overview-page .soha-overview-card-link.is-bento-tile {
-  padding: 5px;
-  border-radius: 26px;
-  background: var(--soha-bezel-bg);
-  box-shadow:
-    0 0 0 1px var(--soha-hairline-strong),
-    var(--soha-shadow-soft);
-  transition:
-    transform 0.4s var(--soha-ease-fluid),
-    box-shadow 0.4s var(--soha-ease-fluid),
-    background-color 0.35s var(--soha-ease-fluid);
-}
-
-.soha-compute-overview-page .soha-overview-card-link.is-bento-hero {
-  padding: 6px;
-  border-radius: 28px;
-  background: rgba(31, 71, 53, 0.13);
-  box-shadow:
-    0 0 0 1px rgba(31, 71, 53, 0.2),
-    0 24px 52px -18px rgba(21, 49, 36, 0.3);
-}
-
-:root[data-theme-mode='dark'] .soha-compute-overview-page .soha-overview-card-link.is-bento-hero {
-  background: rgba(94, 194, 158, 0.1);
-  box-shadow:
-    0 0 0 1px rgba(94, 194, 158, 0.22),
-    0 26px 56px -18px rgba(0, 0, 0, 0.55);
+  padding: 0;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 5px);
+  background: transparent;
+  box-shadow: none;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .soha-compute-overview-page .soha-overview-card-link.is-bento-hero:hover,
@@ -278,35 +275,7 @@
 }
 
 .soha-compute-overview-page .soha-overview-metric-card.ant-card {
-  border-radius: 21px;
-  border-color: var(--soha-hairline);
-  background: var(--soha-bg-surface);
-  box-shadow: var(--soha-inner-highlight);
-}
-
-/* Warm Oat Accent Surface on 4th Bento Tile (Active Tasks) */
-.soha-compute-overview-page .is-bento-tile-3 > .soha-overview-metric-card.ant-card {
-  background: linear-gradient(
-    160deg,
-    var(--soha-bg-surface-muted) 0%,
-    color-mix(in srgb, var(--soha-bg-oat) 80%, var(--soha-bg-surface)) 100%
-  );
-}
-
-/* Dynamic Accent Hero Bento Card (follows user Palette Accent in Light & Titanium-Aurora in Dark) */
-.soha-compute-overview-page .soha-overview-metric-card.is-hero-sage.ant-card {
-  border-radius: 22px;
-  border-color: rgba(255, 255, 255, 0.18);
-  background:
-    radial-gradient(120% 110% at 96% 0%, rgba(255, 255, 255, 0.22) 0%, transparent 56%),
-    radial-gradient(80% 90% at 0% 100%, rgba(56, 189, 248, 0.14) 0%, transparent 50%),
-    linear-gradient(
-      148deg,
-      var(--soha-primary) 0%,
-      color-mix(in srgb, var(--soha-primary) 70%, #090d16) 100%
-    );
-  color: #f8fafc;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  border-radius: var(--soha-radius-lg, 12px);
 }
 
 :root[data-theme-mode='dark']
@@ -396,7 +365,36 @@
 }
 
 .soha-compute-task-actions-column {
-  --soha-table-actions-column-width: 96px;
+  --soha-table-actions-column-width: 64px;
+}
+
+.soha-resource-task-cell {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.soha-compute-task-primary-trigger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.soha-compute-task-primary-trigger:hover .ant-typography:first-child {
+  color: var(--soha-primary);
+}
+
+.soha-compute-task-primary-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .soha-compute-provider-instance-list {
@@ -429,17 +427,21 @@
   overflow-wrap: anywhere;
 }
 
+.soha-compute-relation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .soha-compute-relation-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-block: 12px;
-  border-bottom: 1px solid var(--soha-border-color);
-}
-
-.soha-compute-relation-row:last-child {
-  border-bottom: 0;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--soha-radius-control, 8px);
+  background: var(--soha-fill-weak);
 }
 
 .soha-compute-relation-chain {
@@ -447,6 +449,19 @@
   min-width: 0;
   align-items: center;
   gap: 10px;
+}
+
+.soha-compute-task-drawer-meta {
+  padding: 14px 16px;
+  border-radius: var(--soha-radius-panel, 10px);
+  background: var(--soha-fill-weak);
+}
+
+.soha-compute-task-log-list {
+  padding: 4px 14px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, 10px);
+  background: var(--soha-bg-surface-muted);
 }
 
 .soha-compute-task-log-row {

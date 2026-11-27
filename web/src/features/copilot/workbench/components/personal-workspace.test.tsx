@@ -193,7 +193,9 @@ it.each([401, 403])(
       expect(document.body.textContent).not.toContain('PRIVATE-RUNTIME-OUTPUT'),
     )
     expect(button('打开个人工作空间').disabled).toBe(true)
-    expect(document.body.textContent).toContain(status === 401 ? '登录状态失效' : '无访问权限')
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(status === 401 ? '登录状态失效' : '无访问权限'),
+    )
     expect(state.invoke).not.toHaveBeenCalled()
   },
 )

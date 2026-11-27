@@ -709,7 +709,7 @@ describe('AdminTable', () => {
   it('pins the shared action preset to the right side', () => {
     expect(tableColumnPresets.action.fixed).toBe('right')
     expect(tableColumnPresets.action.className).toBe('soha-table-actions-column')
-    expect(tableColumnPresets.action.width).toBe(140)
+    expect(tableColumnPresets.action.width).toBe(64)
   })
 
   it('keeps normalized name-backed actions unsortable, including explicit sort state', async () => {
@@ -882,7 +882,7 @@ describe('AdminTable', () => {
     expect(captured.tableProps.columns[1]).toMatchObject({
       className: expect.stringContaining('soha-table-actions-column'),
       fixed: 'right',
-      width: 140,
+      width: 64,
     })
   })
 

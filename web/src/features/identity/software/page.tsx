@@ -1,7 +1,6 @@
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementRefreshButton,
@@ -11,6 +10,7 @@ import {
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
@@ -20,9 +20,11 @@ import {
 } from '@/features/settings'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import {
   CloudDownloadOutlined,
   DeleteOutlined,
+  EyeOutlined,
   FileAddOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
@@ -36,7 +38,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -707,7 +708,7 @@ function SoftwareFileDetailDrawer({
   )
 }
 export function SoftwareLibraryPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [queryForm] = Form.useForm<SoftwarePackageFilters>()
@@ -784,29 +785,33 @@ export function SoftwareLibraryPage() {
       setPublishing(false)
     }
   }
-  const deleteAction = useCallback(
-    (record: SoftwarePackage) => (
-      <Popconfirm
-        cancelText={t('common.cancel', '取消')}
-        disabled={operationBlocked || !canDelete}
-        okButtonProps={{
-          ...{ danger: true, loading: deleteMutation.isPending },
-          disabled: operationBlocked,
-        }}
-        okText={t('common.delete', '删除')}
-        title={`${t('software.delete.title', '删除软件版本')} ${record.name} ${record.version}`}
-        onConfirm={() => deleteMutation.mutate(record.id)}
-      >
-        <ManagementIconButton
-          aria-label={t('common.delete', '删除')}
-          danger
-          disabled={!canDelete}
-          icon={<DeleteOutlined />}
-          tooltip={t('common.delete', '删除')}
-        />
-      </Popconfirm>
-    ),
-    [canDelete, deleteMutation, message, t],
+  const storageActionItems = useCallback(
+    (record: SoftwarePackage) => [
+      {
+        key: 'detail',
+        icon: <EyeOutlined />,
+        label: t('common.view', '查看详情'),
+        onClick: () => setSelectedStorageFile(record),
+      },
+      { type: 'divider' as const },
+      {
+        key: 'delete',
+        icon: <DeleteOutlined />,
+        label: t('common.delete', '删除'),
+        danger: true,
+        disabled: operationBlocked || !canDelete,
+        onClick: () => {
+          modal.confirm({
+            title: `${t('software.delete.title', '删除软件版本')} ${record.name} ${record.version}`,
+            okText: t('common.delete', '删除'),
+            cancelText: t('common.cancel', '取消'),
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutateAsync(record.id).catch(() => undefined),
+          })
+        },
+      },
+    ],
+    [canDelete, deleteMutation, modal, operationBlocked, t],
   )
   const columns = useMemo<TableColumnsType<SoftwarePackage>>(
     () => [
@@ -885,14 +890,18 @@ export function SoftwareLibraryPage() {
         render: (value: string) => dayjs(value).format('YYYY-MM-DD HH:mm'),
       },
       {
+        ...tableColumnPresets.action,
         title: t('common.actions', '操作'),
-        key: 'storage-actions',
-        fixed: 'right',
-        width: 64,
-        render: (_, record) => deleteAction(record),
+        key: 'actions',
+        render: (_, record) => (
+          <TableRowActionMenu
+            targetLabel={record.fileName}
+            items={storageActionItems(record)}
+          />
+        ),
       },
     ],
-    [deleteAction, storageById, t],
+    [storageActionItems, storageById, t],
   )
   const resetFilters = () => {
     queryForm.resetFields()
@@ -915,11 +924,11 @@ export function SoftwareLibraryPage() {
         </>
       )}
 
-      <ReadFeedback canRead={storageQuery.isEnabled} query={storageQuery} label="身份数据" />
+      <ReadFeedback canRead={storageQuery.isEnabled} query={storageQuery} label="软件存储" />
       <ReadFeedback
         canRead={storageIntegrationsQuery.isEnabled}
         query={storageIntegrationsQuery}
-        label="身份数据"
+        label="对象存储"
       />
 
       <ManagementDataPage
@@ -1083,5 +1092,5 @@ export function SoftwareLibraryPage() {
   )
 }
 function integrationConfiguration(item: SystemIntegration, key: string) {
-  return item.configuration.find((field) => field.key === key)?.value ?? ''
+  return (item.configuration ?? []).find((field) => field.key === key)?.value ?? ''
 }

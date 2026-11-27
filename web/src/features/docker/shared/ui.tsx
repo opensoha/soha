@@ -381,18 +381,31 @@ export function DockerTableHeader({
 }) {
   const { localeCode } = useI18n()
   return (
-    <ManagementDetailHeader
-      title={
-        <Space size={8} wrap>
-          <span>{title}</span>
-          {status ? (
-            <Badge status={badgeStatusForTone(tone)} text={formatStatusLabel(status, localeCode)} />
-          ) : null}
-        </Space>
-      }
-      meta={meta.length > 0 ? meta.map((item) => <span key={item}>{item}</span>) : undefined}
-      actions={actions ? <ManagementTableToolbar>{actions}</ManagementTableToolbar> : undefined}
-    />
+    <div className="soha-docker-detail-bezel">
+      <ManagementDetailHeader
+        title={
+          <Space size={8} wrap>
+            <span>{title}</span>
+            {status ? (
+              <Badge
+                status={badgeStatusForTone(tone)}
+                text={formatStatusLabel(status, localeCode)}
+              />
+            ) : null}
+          </Space>
+        }
+        meta={
+          meta.length > 0
+            ? meta.map((item) => (
+                <span key={item} className="soha-docker-meta-pill">
+                  {item}
+                </span>
+              ))
+            : undefined
+        }
+        actions={actions ? <ManagementTableToolbar>{actions}</ManagementTableToolbar> : undefined}
+      />
+    </div>
   )
 }
 

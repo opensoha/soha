@@ -1,169 +1,297 @@
 .soha-cli-device-page {
+  position: relative;
   box-sizing: border-box;
+  min-height: 100vh;
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 64px 24px;
-  background: var(--soha-bg-base);
+  padding: clamp(24px, 5vh, 56px) 20px;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(var(--soha-primary-rgb), 0.08), transparent 44%),
+    radial-gradient(circle at 82% 80%, rgba(var(--soha-brand-teal-rgb), 0.07), transparent 46%),
+    var(--soha-bg-layout);
   color: var(--soha-text-primary);
+  isolation: isolate;
 }
+
+.soha-cli-device-theme-toggle.ant-btn {
+  position: absolute;
+  top: clamp(14px, 2vw, 24px);
+  right: clamp(14px, 2vw, 24px);
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: 999px;
+  background: var(--soha-bg-surface);
+  color: var(--soha-text-secondary);
+  box-shadow: var(--soha-inner-highlight), 0 2px 8px rgba(9, 9, 11, 0.05);
+}
+
+:root[data-theme-mode='dark'] .soha-cli-device-theme-toggle.ant-btn {
+  background: var(--soha-bg-surface-elevated);
+}
+
+.soha-cli-device-bezel {
+  width: min(100%, 448px);
+  padding: 6px;
+  border-radius: calc(var(--soha-radius-lg, 14px) + 8px);
+  border: 1px solid var(--soha-hairline-strong);
+  background: var(--soha-bezel-bg, rgba(255, 255, 255, 0.65));
+  box-shadow:
+    0 28px 64px -22px rgba(15, 23, 42, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  backdrop-filter: blur(20px);
+}
+
+:root[data-theme-mode='dark'] .soha-cli-device-bezel {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 32px 70px -20px rgba(0, 0, 0, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+}
+
 .soha-cli-device-content {
-  width: min(100%, 400px);
+  box-sizing: border-box;
+  width: 100%;
   display: grid;
-  gap: 24px;
+  gap: 18px;
+  padding: 28px 26px 24px;
+  border-radius: calc(var(--soha-radius-lg, 14px) + 2px);
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
   overflow-wrap: anywhere;
 }
+
 .soha-cli-device-brand {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.6px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
+
 .soha-cli-device-brand img {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
 }
+
 .soha-cli-device-heading {
   text-align: center;
 }
+
 .soha-cli-device-heading h1 {
   margin: 0;
-  font-size: 28px;
-  line-height: 1.4;
-  font-weight: 600;
-  letter-spacing: -0.5px;
+  font-size: 23px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
+
 .soha-cli-device-heading p {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: var(--soha-text-secondary);
-  line-height: 1.7;
+  font-size: 13.5px;
+  line-height: 1.65;
 }
+
 .soha-cli-device-account {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-size: 14px;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-panel, 10px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 78%, var(--soha-bg-surface));
+  font-size: 13.5px;
 }
+
+.soha-cli-device-account > .anticon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: color-mix(in srgb, var(--soha-primary) 12%, transparent);
+  color: var(--soha-primary);
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
 .soha-cli-device-account > span:last-child {
   min-width: 0;
 }
+
 .soha-cli-device-account-label {
   display: block;
   margin-bottom: 2px;
   color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
-  font-weight: 400;
+  font-size: 11.5px;
+  font-weight: 500;
 }
+
 .soha-cli-device-request {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius-panel);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--soha-radius-panel, 10px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 78%, var(--soha-bg-surface));
 }
+
 .soha-cli-device-request > div {
   min-width: 0;
 }
+
 .soha-cli-device-request strong {
   display: block;
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.45;
 }
+
 .soha-cli-device-terminal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: color-mix(in srgb, var(--soha-primary) 11%, transparent);
+  color: var(--soha-primary);
   flex-shrink: 0;
-  font-size: 28px;
-  color: var(--soha-text-secondary);
+  font-size: 18px;
 }
+
 .soha-cli-device-instance {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
+  font-size: 12px;
 }
+
 .soha-cli-device-lifetime {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
-  margin: -8px 0;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 56%, var(--soha-bg-surface));
   color: var(--soha-text-secondary);
+  font-size: 13px;
 }
+
 .soha-cli-device-lifetime strong {
   color: var(--soha-text-primary);
-  font-weight: 500;
+  font-weight: 600;
 }
+
+.soha-cli-device-disclosures {
+  display: grid;
+  gap: 8px;
+}
+
 .soha-cli-device-details {
-  border-bottom: 1px solid var(--soha-border-color);
+  padding: 0 14px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 56%, var(--soha-bg-surface));
 }
+
 .soha-cli-device-details summary {
   cursor: pointer;
-  padding: 12px 0;
+  padding: 10px 0;
   color: var(--soha-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
 }
+
 .soha-cli-device-details summary:focus-visible,
 .soha-cli-device-details ul:focus-visible {
   outline: 2px solid var(--soha-primary);
-  outline-offset: 4px;
-  border-radius: var(--soha-radius-control);
+  outline-offset: 3px;
+  border-radius: var(--soha-radius-control, 8px);
 }
+
 .soha-cli-device-details ul {
-  max-height: 180px;
+  max-height: 168px;
   overflow: auto;
-  padding-left: 24px;
-  margin: 0 0 16px;
+  padding-left: 20px;
+  margin: 0 0 12px;
 }
+
 .soha-cli-device-details li {
   padding-block: 3px;
-  font-size: var(--soha-font-size-supporting);
+  font-size: 12px;
 }
+
 .soha-cli-device-details dl {
   display: grid;
   gap: 4px;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
+
 .soha-cli-device-details dt {
   color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
+  font-size: 11.5px;
 }
+
 .soha-cli-device-details dd {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
 }
+
 .soha-cli-device-actions,
 .soha-cli-device-flow {
   display: grid;
   gap: 8px;
 }
+
 .soha-cli-device-code {
   text-align: center;
-  letter-spacing: 0.45em;
+  letter-spacing: 0.42em;
+  font-size: 18px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
 .soha-cli-device-note,
 .soha-cli-device-footer {
   margin: 0;
   text-align: center;
   color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.65;
 }
+
 .soha-cli-device-form .soha-cli-device-note {
-  margin-top: 16px;
+  margin-top: 12px;
 }
+
 .soha-cli-device-footer {
-  margin-top: 16px;
+  padding-top: 6px;
+  border-top: 1px solid var(--soha-hairline);
+  color: var(--soha-text-tertiary);
 }
+
 .soha-cli-device-countdown {
-  margin-bottom: 24px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  justify-self: center;
+  background: color-mix(in srgb, var(--soha-primary) 10%, transparent);
 }
+
 .soha-cli-device-countdown .soha-cli-device-note {
   margin: 0;
+  color: var(--soha-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
+
 .soha-cli-device-sr-only {
   position: absolute;
   width: 1px;
@@ -175,37 +303,43 @@
   white-space: nowrap;
   border: 0;
 }
+
 .soha-cli-device-loading {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 12px;
+  min-height: 96px;
   color: var(--soha-text-secondary);
 }
+
 .soha-cli-device-result {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 24px;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
   border-radius: 50%;
   background: var(--soha-bg-surface-muted);
   color: var(--soha-text-secondary);
-  font-size: 24px;
+  font-size: 22px;
 }
+
 .soha-cli-device-result.is-approved {
   color: var(--soha-success);
-  background: color-mix(in srgb, var(--soha-success) 10%, var(--soha-bg-base));
+  background: color-mix(in srgb, var(--soha-success) 12%, var(--soha-bg-surface));
 }
+
 @media (max-width: 480px) {
   .soha-cli-device-page {
-    padding: 48px 24px;
+    padding: 28px 14px;
   }
+
+  .soha-cli-device-content {
+    padding: 22px 18px 20px;
+  }
+
   .soha-cli-device-heading h1 {
-    font-size: 24px;
-  }
-  .soha-cli-device-request {
-    padding: 16px;
-    gap: 12px;
+    font-size: 20px;
   }
 }

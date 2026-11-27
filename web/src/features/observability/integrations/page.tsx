@@ -5,6 +5,7 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied } from '@/utils/query-feedback'
@@ -287,10 +288,19 @@ export function AlertIntegrationsPage() {
       width: 220,
       render: (value: string, record) => (
         <Space orientation="vertical" size={2}>
-          <Text strong>{value || record.id}</Text>
-          <Text type="secondary">
-            {record.id}
-          </Text>
+          {canUpdateIntegration ? (
+            <Button
+              type="link"
+              disabled={blocked}
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openEditor(record)}
+            >
+              {value || record.id}
+            </Button>
+          ) : (
+            <Text strong>{value || record.id}</Text>
+          )}
+          <Text type="secondary">{record.id}</Text>
         </Space>
       ),
     },
@@ -359,33 +369,35 @@ export function AlertIntegrationsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record) => (
-        <Space className="soha-row-action-icons" size={2}>
-          <ManagementIconButton
-            aria-label="测试告警集成"
-            disabled={!canTestIntegration || testIntegration.isPending || denied}
-            icon={<ExperimentOutlined />}
-            size="small"
-            tooltip="测试"
-            onClick={() => openTest(record)}
-          />
-          <ManagementIconButton
-            aria-label="复制 Webhook 地址"
-            icon={<CopyOutlined />}
-            size="small"
-            tooltip="复制地址"
-            onClick={() => copyText(buildWebhookURL(record.webhookPath), 'Webhook 地址')}
-          />
-          {canUpdateIntegration ? (
-            <ManagementIconButton
-              aria-label="编辑告警集成"
-              disabled={blocked}
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => openEditor(record)}
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name || record.id}
+          items={[
+            {
+              key: 'test',
+              label: '测试告警集成',
+              icon: <ExperimentOutlined />,
+              disabled: !canTestIntegration || testIntegration.isPending || denied,
+              onClick: () => openTest(record),
+            },
+            {
+              key: 'copy',
+              label: '复制 Webhook 地址',
+              icon: <CopyOutlined />,
+              onClick: () => copyText(buildWebhookURL(record.webhookPath), 'Webhook 地址'),
+            },
+            ...(canUpdateIntegration
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑告警集成',
+                    icon: <EditOutlined />,
+                    disabled: blocked,
+                    onClick: () => openEditor(record),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

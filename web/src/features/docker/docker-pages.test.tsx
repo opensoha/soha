@@ -569,10 +569,27 @@ describe('docker pages', () => {
         for (const item of items) {
           const row = container.querySelector(`tr[data-row-key="${item.id}"]`)
           expect(row).not.toBeNull()
-          expect(row?.querySelector('button[aria-label="查看日志"]')).not.toBeNull()
-          expect(row?.querySelector('button[aria-label="重试任务"]') !== null).toBe(
-            item.operationState?.retryable ?? true,
+          expect(row?.querySelector('.soha-docker-task-primary-trigger')).not.toBeNull()
+          const trigger = row?.querySelector<HTMLButtonElement>(
+            `button[aria-label="更多操作：${item.id}"]`,
           )
+          expect(trigger).not.toBeNull()
+          await act(async () => {
+            trigger?.click()
+            await Promise.resolve()
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          })
+          const menuLabels = Array.from(
+            document.body.querySelectorAll<HTMLElement>(
+              '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+            ),
+          ).map((node) => node.textContent?.trim())
+          expect(menuLabels).toContain('查看日志')
+          expect(menuLabels.includes('重试任务')).toBe(item.operationState?.retryable ?? true)
+          await act(async () => {
+            trigger?.click()
+            await Promise.resolve()
+          })
         }
         expect(testState.apiPost).not.toHaveBeenCalled()
       },
@@ -595,9 +612,19 @@ describe('docker pages', () => {
       const container = await renderWithProviders(
         <ServicesTable embedded fixedProjectId="project-1" />,
       )
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="查看日志"]')?.click(),
-      )
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="更多操作：web"]')?.click()
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      const viewLogsItem = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((node) => node.textContent?.trim() === '查看日志')
+      expect(viewLogsItem).toBeDefined()
+      await act(async () => {
+        viewLogsItem?.click()
+        await Promise.resolve()
+      })
       for (let i = 0; i < 30 && !testState.apiPostWithSignal.mock.calls.length; i++) {
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 0))
@@ -959,8 +986,8 @@ describe('docker pages', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(testState.apiDelete).toHaveBeenCalledWith('/docker/hosts/host-created')
-    expect(document.body.textContent).toContain('Soha 对外访问地址尚未配置')
+    await vi.waitFor(() => expect(testState.apiDelete).toHaveBeenCalledWith('/docker/hosts/host-created'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Soha 对外访问地址尚未配置'))
     expect(document.body.textContent).not.toContain('Agent 安装命令生成失败')
     expect(document.body.textContent).toContain('临时主机记录已自动清理')
   })
@@ -1064,13 +1091,39 @@ describe('docker pages', () => {
     } as never)
     await renderWithProviders(<DockerProjectsPage />)
 
-    const redeployButton = document.querySelector(
-      'button[aria-label="销毁重建应用"]',
-    ) as HTMLButtonElement | null
-    expect(redeployButton).not.toBeNull()
-    expect(document.querySelectorAll('button[aria-label="销毁重建应用"]')).toHaveLength(1)
     await act(async () => {
-      redeployButton?.click()
+      ;(
+        document.querySelector(
+          'button[aria-label="更多操作：soha-compose-stack"]',
+        ) as HTMLButtonElement | null
+      )?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const composeMenuLabels = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).map((node) => node.textContent?.trim())
+    expect(composeMenuLabels).not.toContain('销毁重建应用')
+
+    const smokeTrigger = document.querySelector(
+      'button[aria-label="更多操作：soha-orbstack-smoke"]',
+    ) as HTMLButtonElement | null
+    expect(smokeTrigger).not.toBeNull()
+    await act(async () => {
+      smokeTrigger?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const redeployItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((node) => node.textContent?.trim() === '销毁重建应用')
+    expect(redeployItem).toBeDefined()
+    await act(async () => {
+      redeployItem?.click()
       await Promise.resolve()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })

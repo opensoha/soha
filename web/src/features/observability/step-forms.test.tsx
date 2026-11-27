@@ -90,9 +90,25 @@ async function click(label: string) {
     (item) =>
       item.getAttribute('aria-label') === label || item.textContent?.replace(/\s/g, '') === label,
   )
-  expect(button, label).toBeTruthy()
+  if (button) {
+    await act(async () => {
+      button.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    return
+  }
+  const trigger = document.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+  expect(trigger, `menu trigger for ${label}`).toBeTruthy()
   await act(async () => {
-    button!.click()
+    trigger!.click()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  const menuItem = Array.from(
+    document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+  ).find((item) => item.textContent?.replace(/\s/g, '') === label)
+  expect(menuItem, label).toBeTruthy()
+  await act(async () => {
+    menuItem!.click()
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
 }

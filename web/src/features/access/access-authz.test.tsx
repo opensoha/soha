@@ -118,6 +118,21 @@ function getButtonTexts(container: HTMLElement) {
     .filter(Boolean)
 }
 
+async function clickMenuItem(label: string) {
+  const item = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+    ),
+  )
+    .reverse()
+    .find((node) => node.textContent?.replace(/\s/g, '') === label)
+  expect(item, label).toBeDefined()
+  await act(async () => {
+    item!.click()
+    await vi.advanceTimersByTimeAsync(300)
+  })
+}
+
 async function clickButton(container: HTMLElement, label: string) {
   const button = Array.from(container.querySelectorAll('button')).find(
     (node) => node.textContent?.replace(/\s/g, '') === label || node.ariaLabel === label,
@@ -259,8 +274,7 @@ describe('frontend access authorization splits', () => {
     expect(container.querySelector('.ant-table-medium')).not.toBeNull()
     await clickButton(container, '切换角色表格密度')
     expect(container.querySelector('.ant-table-small')).not.toBeNull()
-    expect(container.querySelector('[aria-label="编辑角色"]')).toBeNull()
-    expect(container.querySelector('[aria-label="删除角色"]')).toBeNull()
+    expect(container.querySelector('[aria-label="更多操作：Support"]')).toBeNull()
   })
 
   it('keeps edited permissions and compatibility keys through a failed update and refreshes after retry', async () => {
@@ -278,7 +292,8 @@ describe('frontend access authorization splits', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
-    await clickButton(container, '编辑角色')
+    await clickButton(container, '更多操作：Support')
+    await clickMenuItem('编辑')
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
     const name = dialog.querySelector<HTMLInputElement>('input[id="name"]')!
     expect(name.value).toBe('Support')
@@ -335,14 +350,16 @@ describe('frontend access authorization splits', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
-    await clickButton(container, '删除角色')
+    await clickButton(container, '更多操作：Support')
+    await clickMenuItem('删除')
     expect(document.body.textContent).toContain('确认删除？')
     expect(apiDeleteMock).not.toHaveBeenCalled()
-    await clickButton(document.querySelector<HTMLElement>('.ant-popconfirm')!, 'Cancel')
+    await clickButton(document.querySelector<HTMLElement>('.ant-modal-confirm-btns')!, '取消')
     expect(apiDeleteMock).not.toHaveBeenCalled()
     expect(container.querySelector('table')?.textContent).toContain('Support')
-    await clickButton(container, '删除角色')
-    await clickButton(document.querySelector<HTMLElement>('.ant-popconfirm')!, 'OK')
+    await clickButton(container, '更多操作：Support')
+    await clickMenuItem('删除')
+    await clickButton(document.querySelector<HTMLElement>('.ant-modal-confirm-btns')!, '删除')
     expect(apiDeleteMock).toHaveBeenCalledExactlyOnceWith('/access/roles/role-1')
     expect(container.querySelector('table')?.textContent).not.toContain('Support')
     expect(apiGetMock.mock.calls.filter(([path]) => path === '/access/roles')).toHaveLength(2)

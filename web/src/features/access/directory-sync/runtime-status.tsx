@@ -1,10 +1,12 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { Button, Descriptions, Space, Typography } from 'antd'
+import { Descriptions, Space, Typography } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import type { TableColumnsType } from 'antd'
 import { RedoOutlined } from '@ant-design/icons'
 import { ManagementState } from '@/components/management-list'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import type { DirectoryConnection, DirectoryEvent, DirectoryRuntimeStatus } from './types'
 
@@ -73,21 +75,28 @@ export function DirectoryRuntimePanel({
       render: (value?: string) => (value ? <Text type="danger">{value}</Text> : '-'),
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
       key: 'actions',
-      width: 90,
-      fixed: 'right',
-      render: (_value, event) =>
-        canRetry && event.status === 'failed' ? (
-          <Button
-            size="small"
-            icon={<RedoOutlined />}
-            loading={retryingEventId === event.id}
-            onClick={() => onRetry(event.id)}
-          >
-            重试
-          </Button>
-        ) : null,
+      render: (_value, event) => (
+        <TableRowActionMenu
+          targetLabel={event.providerEventId || event.id}
+          loading={retryingEventId === event.id}
+          items={
+            canRetry && event.status === 'failed'
+              ? [
+                  {
+                    key: 'retry',
+                    label: '重试',
+                    icon: <RedoOutlined />,
+                    disabled: retryingEventId === event.id,
+                    onClick: () => onRetry(event.id),
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
 

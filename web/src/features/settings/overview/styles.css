@@ -2,7 +2,18 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  margin-top: 16px;
+}
+
+.soha-settings-overview-panels > .ant-card {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.soha-settings-overview-panels > .ant-card > .ant-card-body {
+  flex: 1;
 }
 
 .soha-settings-overview-panels .ant-card-extra a,

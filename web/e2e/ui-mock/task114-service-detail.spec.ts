@@ -225,12 +225,7 @@ for (const width of [1440, 390]) {
     await relations.getByText('资源列表', { exact: true }).click()
     await expect(relations.getByRole('columnheader', { name: '关联依据' })).toBeVisible()
     for (const label of ['配置与模板', '状态', '发布与工作流', '资源关系']) {
-      if (width === 390 && label === '资源关系') {
-        await page.locator('.soha-service-detail .ant-tabs-nav-more').hover()
-        await page.getByRole('option', { name: label, exact: true }).click()
-      } else {
-        await page.getByRole('tab', { name: label, exact: true }).click()
-      }
+      await page.getByRole('tab', { name: label, exact: true }).click()
       await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeVisible()
     }
     await page.getByRole('button', { name: /查看 Pods/ }).click()

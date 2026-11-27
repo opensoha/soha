@@ -1,7 +1,6 @@
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -10,6 +9,7 @@ import {
   useManagementTextFilter,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { loginProviderLabel, loginProviderTagColor } from '@/utils/login-provider'
@@ -19,7 +19,7 @@ import { formatDateTime, formatRelativeTime } from '@/utils/time'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Popconfirm, Select } from 'antd'
+import { App, Button, Select } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { systemMutations } from '../mutations'
 import { systemQueries } from '../queries'
@@ -31,6 +31,7 @@ function SourceTag({ value }: { value?: string }) {
 }
 
 export function OnlineUsersPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
@@ -175,35 +176,43 @@ export function OnlineUsersPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      width: 88,
-      dataIndex: 'id',
-      render: (_: string, record: OnlineUser) =>
-        canManageOnlineUsers ? (
-          <Popconfirm
-            title="确认下线该用户会话？"
-            disabled={blocked}
-            okButtonProps={{ disabled: blocked }}
-            onConfirm={() =>
-              revokeMutation.mutate(record.id, {
-                onSuccess: () => {
-                  setSelectedSessionIds((current) => current.filter((id) => id !== record.id))
-                },
-              })
-            }
-          >
-            <ManagementIconButton
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              aria-label="下线用户"
-              disabled={blocked}
-              loading={revokeMutation.isPending}
-              tooltip="下线用户"
-            />
-          </Popconfirm>
-        ) : (
-          '-'
-        ),
+      key: 'actions',
+      render: (_: string, record: OnlineUser) => (
+        <TableRowActionMenu
+          targetLabel={record.userName || record.id}
+          loading={revokeMutation.isPending && revokeMutation.variables === record.id}
+          items={
+            canManageOnlineUsers
+              ? [
+                  {
+                    key: 'revoke',
+                    label: '下线用户',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: '确认下线该用户会话？',
+                        okText: '下线',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, disabled: blocked },
+                        onOk: () =>
+                          revokeMutation
+                            .mutateAsync(record.id)
+                            .then(() => {
+                              setSelectedSessionIds((current) =>
+                                current.filter((id) => id !== record.id),
+                              )
+                            })
+                            .catch(() => undefined),
+                      })
+                    },
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
 

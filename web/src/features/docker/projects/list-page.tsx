@@ -10,7 +10,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -33,11 +32,10 @@ import {
   SyncOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { accessQueries } from '@/features/access'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -46,6 +44,7 @@ import {
 import { StepFormModal } from '@/components/step-form-modal'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import type { OperationalPlan } from '@opensoha/contracts/gen/ts/sohaapi'
 import { createUUID } from '@/utils/uuid'
 import { tableColumnPresets } from '@/utils/table-columns'
@@ -283,8 +282,9 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     includeProjects: false,
     includeServices: false,
   })
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { localeCode } = useI18n()
   const permissionSnapshot = usePermissionSnapshot().data?.data
   const sourceKind = Form.useWatch('sourceKind', form) || 'inline_compose'
@@ -539,7 +539,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: localeText(localeCode, '项目', 'Project'),
       fixed: 'left',
-      width: 190,
+      width: 168,
       render: (_value, record) =>
         record.kind === 'project' ? (
           <Space orientation="vertical" size={4}>
@@ -554,7 +554,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     },
     {
       title: localeText(localeCode, '服务', 'Service'),
-      width: 190,
+      width: 148,
       render: (_value, record) =>
         record.kind === 'service' && record.service ? (
           <Space orientation="vertical" size={4}>
@@ -570,13 +570,13 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     },
     {
       title: localeText(localeCode, '状态', 'Status'),
-      width: 110,
+      width: 96,
       render: (_value, record) =>
         statusTag(record.kind === 'service' ? record.service?.status : record.project.status),
     },
     {
       title: localeText(localeCode, '主机', 'Host'),
-      width: 170,
+      width: 128,
       render: (_value, record) => {
         const hostId = record.kind === 'service' ? record.service?.hostId : record.project.hostId
         return hostOptions.find((item) => item.value === hostId)?.label || hostId || '-'
@@ -584,7 +584,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     },
     {
       title: localeText(localeCode, '镜像', 'Image'),
-      width: 210,
+      width: 176,
       render: (_value, record) => {
         const image =
           record.kind === 'service'
@@ -602,7 +602,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     },
     {
       title: localeText(localeCode, '端口', 'Ports'),
-      width: 220,
+      width: 164,
       render: (_value, record) =>
         record.kind === 'project' && isSingleContainerProject(record.project) ? (
           renderProjectPortSummary(record.project)
@@ -629,127 +629,123 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
         ),
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 200,
       render: (_value, record) => {
         if (record.kind === 'service' && record.service) {
           return (
-            <Space className="soha-row-action-icons">
-              {serviceActions.map(({ action, icon }) => (
-                <ManagementIconButton
-                  key={action}
-                  aria-label={localeText(
-                    localeCode,
-                    `${operationActionLabel(action, localeCode)}服务`,
-                    `${operationActionLabel(action, localeCode)} service`,
-                  )}
-                  size="small"
-                  tooltip={operationActionLabel(action, localeCode)}
-                  icon={icon}
-                  loading={serviceActionMutation.isPending}
-                  onClick={() => serviceActionMutation.mutate({ id: record.service!.id, action })}
-                />
-              ))}
-            </Space>
+            <TableRowActionMenu
+              targetLabel={record.service.name}
+              items={serviceActions.map(({ action, icon }) => ({
+                key: action,
+                icon,
+                label: localeText(
+                  localeCode,
+                  `${operationActionLabel(action, localeCode)}服务`,
+                  `${operationActionLabel(action, localeCode)} service`,
+                ),
+                disabled: serviceActionMutation.isPending,
+                onClick: () => serviceActionMutation.mutate({ id: record.service!.id, action }),
+              }))}
+            />
           )
         }
         const project = record.project
+        const deployBusy = deployPlanMutation.isPending || deployMutation.isPending
         return (
-          <Space className="soha-row-action-icons">
-            {canDeployProjects ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '部署项目', 'Deploy project')}
-                size="small"
-                tooltip={localeText(localeCode, '部署', 'Deploy')}
-                icon={<PlayCircleOutlined />}
-                loading={deployPlanMutation.isPending || deployMutation.isPending}
-                onClick={() => reviewDeploy(project, 'deploy')}
-              />
-            ) : null}
-            {canDeployProjects ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '重启项目', 'Restart project')}
-                size="small"
-                tooltip={localeText(localeCode, '重启', 'Restart')}
-                icon={<ReloadOutlined />}
-                loading={deployPlanMutation.isPending || deployMutation.isPending}
-                onClick={() => reviewDeploy(project, 'restart')}
-              />
-            ) : null}
-            {canDeployProjects ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '停止项目', 'Stop project')}
-                size="small"
-                tooltip={localeText(localeCode, '停止', 'Stop')}
-                icon={<PoweroffOutlined />}
-                loading={deployPlanMutation.isPending || deployMutation.isPending}
-                onClick={() => reviewDeploy(project, 'down')}
-              />
-            ) : null}
-            {canDeployProjects && isSingleContainerProject(project) ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '销毁重建应用', 'Recreate application')}
-                size="small"
-                tooltip={localeText(localeCode, '销毁重建', 'Recreate')}
-                danger
-                icon={<SyncOutlined />}
-                loading={deployPlanMutation.isPending || deployMutation.isPending}
-                onClick={() => reviewDeploy(project, 'redeploy')}
-              />
-            ) : null}
-            <Link to={`/compute/runtimes/projects/${project.id}`}>
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '查看容器详情', 'View container details')}
-                size="small"
-                tooltip={localeText(localeCode, '详情', 'Details')}
-                icon={<FileTextOutlined />}
-              />
-            </Link>
-            {canUpdateProjects ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '编辑项目', 'Edit project')}
-                size="small"
-                tooltip={localeText(localeCode, '编辑', 'Edit')}
-                icon={<EditOutlined />}
-                onClick={() => {
-                  if (saveMutation.isPending) return
-                  if (!writeOutcomeUnknown(saveMutation.error)) saveMutation.reset()
-                  setEditing(project)
-                  setCurrentStep(0)
-                  setDrawerOpen(true)
-                }}
-              />
-            ) : null}
-            {canDeleteProjects ? (
-              <Popconfirm
-                title={
-                  isSingleContainerProject(project)
-                    ? localeText(
-                        localeCode,
-                        '确认删除单容器服务？',
-                        'Delete this single-container service?',
-                      )
-                    : localeText(
-                        localeCode,
-                        '确认删除 Compose 项目？',
-                        'Delete this Compose project?',
-                      )
-                }
-                onConfirm={() => deleteMutation.mutate(project.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '删除项目', 'Delete project')}
-                  size="small"
-                  tooltip={localeText(localeCode, '删除', 'Delete')}
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
+          <TableRowActionMenu
+            targetLabel={project.name}
+            items={[
+              {
+                key: 'details',
+                icon: <FileTextOutlined aria-hidden="true" />,
+                label: localeText(localeCode, '查看容器详情', 'View container details'),
+                onClick: () => navigate(`/compute/runtimes/projects/${project.id}`),
+              },
+              ...(canDeployProjects
+                ? [
+                    {
+                      key: 'deploy',
+                      icon: <PlayCircleOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '部署项目', 'Deploy project'),
+                      disabled: deployBusy,
+                      onClick: () => reviewDeploy(project, 'deploy'),
+                    },
+                    {
+                      key: 'restart',
+                      icon: <ReloadOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '重启项目', 'Restart project'),
+                      disabled: deployBusy,
+                      onClick: () => reviewDeploy(project, 'restart'),
+                    },
+                    {
+                      key: 'stop',
+                      icon: <PoweroffOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '停止项目', 'Stop project'),
+                      disabled: deployBusy,
+                      onClick: () => reviewDeploy(project, 'down'),
+                    },
+                  ]
+                : []),
+              ...(canDeployProjects && isSingleContainerProject(project)
+                ? [
+                    {
+                      key: 'redeploy',
+                      icon: <SyncOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '销毁重建应用', 'Recreate application'),
+                      danger: true,
+                      disabled: deployBusy,
+                      onClick: () => reviewDeploy(project, 'redeploy'),
+                    },
+                  ]
+                : []),
+              ...(canUpdateProjects
+                ? [
+                    {
+                      key: 'edit',
+                      icon: <EditOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '编辑项目', 'Edit project'),
+                      onClick: () => {
+                        if (saveMutation.isPending) return
+                        if (!writeOutcomeUnknown(saveMutation.error)) saveMutation.reset()
+                        setEditing(project)
+                        setCurrentStep(0)
+                        setDrawerOpen(true)
+                      },
+                    },
+                  ]
+                : []),
+              { type: 'divider' as const },
+              ...(canDeleteProjects
+                ? [
+                    {
+                      key: 'delete',
+                      icon: <DeleteOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '删除项目', 'Delete project'),
+                      danger: true,
+                      onClick: () =>
+                        modal.confirm({
+                          title: isSingleContainerProject(project)
+                            ? localeText(
+                                localeCode,
+                                '确认删除单容器服务？',
+                                'Delete this single-container service?',
+                              )
+                            : localeText(
+                                localeCode,
+                                '确认删除 Compose 项目？',
+                                'Delete this Compose project?',
+                              ),
+                          content: project.name,
+                          okButtonProps: { danger: true },
+                          onOk: () => deleteMutation.mutateAsync(project.id),
+                        }),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         )
       },
     },

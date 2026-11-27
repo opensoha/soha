@@ -8,7 +8,7 @@ import { App as AntdApp } from 'antd'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { IdentityLoginRecordsPage } from './page'
 
 const state = vi.hoisted(() => ({
@@ -147,6 +147,19 @@ it('falls back to application IDs when the audit reader cannot view applications
   expect(html).toContain('app-1')
   expect(html).not.toContain('Docs App')
   expect(state.enabled).toEqual([true, false])
+})
+
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn(() => ({
+      matches: false,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  })
 })
 
 it('labels stale cached audit rows and keeps them readable after a transient failure', async () => {

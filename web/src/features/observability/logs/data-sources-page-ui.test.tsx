@@ -136,10 +136,32 @@ async function clickButton(text: string) {
     (item) =>
       item.textContent?.replace(/\s/g, '') === text || item.getAttribute('aria-label') === text,
   )
-  expect(button, text).toBeTruthy()
+  if (button) {
+    await act(async () => {
+      button.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    return
+  }
+  const targetRow =
+    text === '停用旧日志数据源'
+      ? document.querySelector('[data-row="logs-retired"]')
+      : document.querySelector('[data-row="logs-main"]')
+  const trigger =
+    targetRow?.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger') ??
+    document.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+  expect(trigger, `menu trigger for ${text}`).toBeTruthy()
   await act(async () => {
-    button!.click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    trigger!.click()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  const menuItem = Array.from(
+    document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+  ).find((item) => item.textContent?.replace(/\s/g, '') === text)
+  expect(menuItem, text).toBeTruthy()
+  await act(async () => {
+    menuItem!.click()
+    await new Promise((resolve) => setTimeout(resolve, 20))
   })
 }
 

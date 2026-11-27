@@ -347,7 +347,8 @@ function publishReadNotice() {
     description: <ReadFailureNotice entries={entries} owner={owner} />,
     type: 'warning',
     role: 'status',
-    placement: 'topRight',
+    placement:
+      typeof window !== 'undefined' && window.innerWidth <= 768 ? 'topRight' : 'bottomLeft',
     style: { width: 'min(384px, calc(100vw - 48px))', background: 'var(--soha-bg-surface)' },
     duration: 0,
     onClose: () => {
@@ -543,6 +544,9 @@ const notificationOwners = new Map<
   string,
   {
     owners: number
+    activeKey?: string
+    epoch?: number
+    wasTimed?: boolean
     notice?: { signature: string; showAt: number; expiresAt?: number; dismissed: boolean }
   }
 >()
@@ -588,8 +592,9 @@ export function OperationFeedback({
     return () => {
       owner.owners -= 1
       if (!owner.owners) {
+        const activeKey = owner.activeKey ?? key
         notificationOwners.delete(key)
-        notification.destroy?.(key)
+        notification.destroy?.(activeKey)
       }
     }
   }, [key, notification])
@@ -598,8 +603,10 @@ export function OperationFeedback({
     const owner = notificationOwners.get(key)
     if (!owner) return
     if (!active) {
+      const activeKey = owner.activeKey ?? key
       owner.notice = undefined
-      notification.destroy?.(key)
+      owner.wasTimed = false
+      notification.destroy?.(activeKey)
       return
     }
     const now = Date.now()
@@ -617,15 +624,26 @@ export function OperationFeedback({
       if (!current || current.signature !== signature || current.dismissed) return
       const duration = current.expiresAt ? (current.expiresAt - Date.now()) / 1_000 : 0
       if (current.expiresAt && duration <= 0) {
+        const activeKey = owner.activeKey ?? key
         current.dismissed = true
-        notification.destroy?.(key)
+        owner.wasTimed = false
+        notification.destroy?.(activeKey)
         return
       }
+      if (owner.wasTimed && !current.expiresAt) {
+        notification.destroy?.(owner.activeKey ?? key)
+        owner.epoch = (owner.epoch ?? 0) + 1
+        owner.activeKey = `${key}:${owner.epoch}`
+      } else if (!owner.activeKey) {
+        owner.activeKey = key
+      }
+      owner.wasTimed = Boolean(current.expiresAt)
       notification.open?.({
-        key,
+        key: owner.activeKey,
         className: 'soha-operation-feedback',
         style: { width: 'min(384px, calc(100vw - 48px))', background: 'var(--soha-bg-surface)' },
-        placement: 'topRight',
+        placement:
+          typeof window !== 'undefined' && window.innerWidth <= 768 ? 'topRight' : 'bottomLeft',
         role: error ? 'alert' : 'status',
         type: error
           ? uncertain || refreshUnavailable

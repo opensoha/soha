@@ -1,8 +1,18 @@
 import { ContextFeedback } from '@/components/context-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
+import {
+  CheckCircleOutlined,
+  CloudUploadOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  LinkOutlined,
+} from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  App,
   Button,
   Checkbox,
   Form,
@@ -36,6 +46,7 @@ const modes: { value: NetworkProxyDeliveryMode; label: string }[] = [
 const modeLabel = (mode: NetworkProxyDeliveryMode) => modes.find((x) => x.value === mode)?.label
 const tokens = (value?: string) => value?.split(/[，,\s]+/).filter(Boolean) ?? []
 export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean }) {
+  const { modal } = App.useApp()
   const client = useQueryClient()
   const sources = useQuery(workspaceQueries.sources(id, true))
   const bundles = useQuery(workspaceQueries.bundles(id, true))
@@ -184,23 +195,49 @@ export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean
             render: (_: unknown, s: NetworkProxySource) => (s.configured ? '已配置' : '未配置'),
           },
           {
+            ...tableColumnPresets.action,
             title: '操作',
+            key: 'actions',
             render: (_: unknown, s: NetworkProxySource) => (
-              <Space wrap>
-                <Button onClick={() => setTarget(s)}>发布</Button>
-                {canUpdate && (
-                  <>
-                    <Button disabled={busy} onClick={() => edit(s)}>
-                      编辑
-                    </Button>
-                    <Popconfirm title="删除来源并撤回相关访问？" onConfirm={() => remove.mutate(s)}>
-                      <Button danger disabled={busy}>
-                        删除
-                      </Button>
-                    </Popconfirm>
-                  </>
-                )}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={s.name}
+                items={[
+                  {
+                    key: 'publish',
+                    icon: <CloudUploadOutlined />,
+                    label: '发布',
+                    onClick: () => setTarget(s),
+                  },
+                  ...(canUpdate
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: '编辑',
+                          disabled: busy,
+                          onClick: () => edit(s),
+                        },
+                        { type: 'divider' as const },
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: '删除',
+                          danger: true,
+                          disabled: busy,
+                          onClick: () => {
+                            modal.confirm({
+                              title: '删除来源并撤回相关访问？',
+                              okText: '删除',
+                              cancelText: '取消',
+                              okButtonProps: { danger: true },
+                              onOk: () => remove.mutateAsync(s).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]}
@@ -453,24 +490,43 @@ export function SourcesPanel({ id, canUpdate }: { id: string; canUpdate: boolean
           },
           { title: '原因', dataIndex: 'reasonCode' },
           {
+            ...tableColumnPresets.action,
             title: '操作',
-            render: (_: unknown, b: NetworkProxyBundle) =>
-              b.state === 'activated' ? (
-                <Link to="/network-access/mihomo-profiles">配置员工 Mihomo</Link>
-              ) : (
-                <Popconfirm
-                  title={
-                    b.deliveryMode === 'direct_subscription'
-                      ? '确认向授权设备披露真实上游参数？'
-                      : '确认激活该版本？'
-                  }
-                  onConfirm={() => activate.mutate(b)}
-                >
-                  <Button disabled={!canUpdate || busy || b.state !== 'client_eligible'}>
-                    激活
-                  </Button>
-                </Popconfirm>
-              ),
+            key: 'actions',
+            render: (_: unknown, b: NetworkProxyBundle) => (
+              <TableRowActionMenu
+                targetLabel={b.bundleId}
+                items={
+                  b.state === 'activated'
+                    ? [
+                        {
+                          key: 'configure',
+                          icon: <LinkOutlined />,
+                          label: <Link to="/network-access/mihomo-profiles">配置员工 Mihomo</Link>,
+                        },
+                      ]
+                    : [
+                        {
+                          key: 'activate',
+                          icon: <CheckCircleOutlined />,
+                          label: '激活',
+                          disabled: !canUpdate || busy || b.state !== 'client_eligible',
+                          onClick: () => {
+                            modal.confirm({
+                              title:
+                                b.deliveryMode === 'direct_subscription'
+                                  ? '确认向授权设备披露真实上游参数？'
+                                  : '确认激活该版本？',
+                              okText: '激活',
+                              cancelText: '取消',
+                              onOk: () => activate.mutateAsync(b).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                }
+              />
+            ),
           },
         ]}
       />

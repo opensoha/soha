@@ -1,9 +1,10 @@
-import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { BooleanTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { NetworkWorkloadBinding } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -109,15 +110,20 @@ export function NetworkWorkloadsPane({ canUpdate }: { canUpdate: boolean }) {
     ...(canUpdate
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 70,
             render: (_: unknown, item: NetworkWorkloadBinding) => (
-              <ManagementIconButton
-                aria-label={t('common.edit', '编辑')}
-                tooltip={t('common.edit', '编辑')}
-                icon={<EditOutlined />}
-                disabled={blocked}
-                onClick={() => edit(item)}
+              <TableRowActionMenu
+                targetLabel={item.id}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: t('common.edit', '编辑'),
+                    disabled: blocked,
+                    onClick: () => edit(item),
+                  },
+                ]}
               />
             ),
           },

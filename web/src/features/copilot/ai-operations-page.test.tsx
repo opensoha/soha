@@ -253,14 +253,43 @@ function findButtonByLabel(container: ParentNode, label: string) {
   ) as HTMLButtonElement | undefined
 }
 
-async function confirmPopconfirm() {
+async function openRowActionMenu(container: ParentNode, ariaLabel: string) {
+  const trigger = findButtonByLabel(container, ariaLabel)
+  expect(trigger).toBeTruthy()
+  await act(async () => {
+    trigger!.click()
+  })
+  await flush()
+}
+
+function findOpenMenuItem(label: string) {
+  return Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+    ),
+  ).find((item) => item.textContent?.includes(label))
+}
+
+async function clickOpenMenuItem(label: string) {
+  const item = findOpenMenuItem(label)
+  expect(item).toBeTruthy()
+  await act(async () => {
+    item!.click()
+  })
+  await flush()
+}
+
+async function confirmDangerModal() {
   await flush()
   const buttons = Array.from(
-    document.body.querySelectorAll('.ant-popconfirm-buttons button'),
+    document.body.querySelectorAll('.ant-modal-confirm-btns button'),
   ) as HTMLButtonElement[]
   const confirm =
-    buttons.find((button) => button.className.includes('ant-btn-primary')) ??
-    buttons[buttons.length - 1]
+    buttons.find(
+      (button) =>
+        button.className.includes('ant-btn-dangerous') ||
+        button.className.includes('ant-btn-primary'),
+    ) ?? buttons[buttons.length - 1]
   expect(confirm).toBeTruthy()
   await act(async () => {
     confirm.click()
@@ -331,17 +360,13 @@ describe('AIOperationsPage delete actions', () => {
     testState.capability = true
     apiPostMock.mockRejectedValueOnce(new Error('reply lost')).mockResolvedValueOnce({ data: {} })
     const container = await renderOperationsPage()
-    const runButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="立即执行巡检"]',
-    )
-    expect(runButton).toBeTruthy()
-    await act(async () => runButton!.click())
-    await flush()
+    await openRowActionMenu(container, '更多操作 支付命名空间巡检')
+    await clickOpenMenuItem('立即执行')
     const originalPath = apiPostMock.mock.calls[0][0]
     expect(originalPath).toContain('expectedRevision=3')
     expect(localStorage.getItem('soha:inspection:inspection-user:task-1')).toBeTruthy()
-    await act(async () => runButton!.click())
-    await flush()
+    await openRowActionMenu(container, '更多操作 支付命名空间巡检')
+    await clickOpenMenuItem('立即执行')
     expect(apiPostMock.mock.calls[1][0]).toBe(originalPath)
     expect(localStorage.getItem('soha:inspection:inspection-user:task-1')).toBeNull()
     expect(container.textContent).toContain('查看目标与证据')
@@ -350,9 +375,8 @@ describe('AIOperationsPage delete actions', () => {
   it('retains the capability plan and registration version when editing', async () => {
     testState.capability = true
     const container = await renderOperationsPage()
-    const edit = container.querySelector<HTMLButtonElement>('button[aria-label="编辑巡检任务"]')
-    await act(async () => edit!.click())
-    await flush()
+    await openRowActionMenu(container, '更多操作 支付命名空间巡检')
+    await clickOpenMenuItem('编辑')
     const dialog = document.body.querySelector('[role="dialog"]')!
     expect(dialog.textContent).toContain('版本固定的能力计划 JSON')
     expect(dialog.querySelector('textarea')?.value).toContain('Check current delivery')
@@ -410,13 +434,9 @@ describe('AIOperationsPage delete actions', () => {
     const container = await renderOperationsPage()
 
     expect(container.textContent).toContain('支付命名空间巡检')
-    const deleteTaskButton = findButtonByLabel(container, '删除巡检任务')
-    expect(deleteTaskButton).toBeTruthy()
-
-    await act(async () => {
-      deleteTaskButton?.click()
-    })
-    await confirmPopconfirm()
+    await openRowActionMenu(container, '更多操作 支付命名空间巡检')
+    await clickOpenMenuItem('删除')
+    await confirmDangerModal()
 
     expect(apiDeleteMock).toHaveBeenCalledWith('/copilot/inspection-tasks/task-1')
 
@@ -430,13 +450,9 @@ describe('AIOperationsPage delete actions', () => {
     await flush()
 
     expect(container.textContent).toContain('P1 告警根因分析')
-    const deletePolicyButton = findButtonByLabel(container, '删除自动化策略')
-    expect(deletePolicyButton).toBeTruthy()
-
-    await act(async () => {
-      deletePolicyButton?.click()
-    })
-    await confirmPopconfirm()
+    await openRowActionMenu(container, '更多操作 P1 告警根因分析')
+    await clickOpenMenuItem('删除')
+    await confirmDangerModal()
 
     expect(apiDeleteMock).toHaveBeenCalledWith('/copilot/automation-policies/policy-1')
   })
@@ -465,11 +481,11 @@ describe('AIOperationsPage delete actions', () => {
     })
     await flush()
 
-    const createSessionButton = findButtonByLabel(container, '创建 AI 会话')
-    expect(createSessionButton).toBeTruthy()
-    expect(createSessionButton?.disabled).toBe(true)
-    expect(createSessionButton?.getAttribute('aria-description')).toBe('缺少 observe.ai.view 权限')
-    expect(createSessionButton?.hasAttribute('title')).toBe(false)
+    await openRowActionMenu(container, '更多操作 run-1')
+    const createSessionItem = findOpenMenuItem('创建 AI 会话')
+    expect(createSessionItem).toBeTruthy()
+    expect(createSessionItem?.getAttribute('aria-disabled')).toBe('true')
+    expect(createSessionItem?.textContent).toContain('缺少 observe.ai.view 权限')
   })
 
   it('opens directly on a linked inspection run from an artifact context link', async () => {

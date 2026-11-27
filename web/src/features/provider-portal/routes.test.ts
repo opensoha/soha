@@ -37,7 +37,7 @@ describe('Provider Portal route manifest', () => {
     ])
 
     expect(providerPortalRoutes).toHaveLength(6)
-    expect(providerPortalRoutes.every((route) => route.shell === 'portal')).toBe(true)
+    expect(providerPortalRoutes.every((route) => route.shell === 'app')).toBe(true)
     expect(providerPortalRoutes[0].meta).toMatchObject({
       path: '/portal',
       title: '门户首页',

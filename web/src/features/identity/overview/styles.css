@@ -2,17 +2,25 @@
   align-items: stretch;
 }
 
-.soha-identity-overview-audit-card.ant-card {
+.soha-identity-overview-page .soha-overview-summary-grid > .soha-overview-panel-card.ant-card {
   display: flex;
+  height: 100%;
   min-height: 0;
   flex-direction: column;
 }
 
 .soha-identity-overview-audit-card.ant-card .ant-card-body {
   position: relative;
-  min-height: 0;
+  min-height: 220px;
   flex: 1 1 auto;
   overflow: hidden;
+}
+
+.soha-identity-overview-software-card.ant-card .ant-card-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .soha-identity-overview-audit-list {

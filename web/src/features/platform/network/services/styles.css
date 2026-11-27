@@ -11,9 +11,6 @@
 .soha-service-detail .ant-card-body {
   min-width: 0;
 }
-.soha-service-detail .soha-workload-detail-page {
-  gap: 0;
-}
 .soha-service-detail .ant-card-body {
   overflow-wrap: anywhere;
 }

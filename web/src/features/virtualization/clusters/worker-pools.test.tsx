@@ -132,13 +132,27 @@ async function click(label: string) {
   await act(async () => button!.click())
   await settle()
 }
+async function choosePoolAction(label: string) {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="更多操作：Build workers"]',
+  )
+  expect(trigger).toBeTruthy()
+  await act(async () => trigger!.click())
+  await settle()
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (node) => node.textContent?.replace(/\s/g, '') === label.replace(/\s/g, ''),
+  )
+  expect(item, label).toBeTruthy()
+  await act(async () => item!.click())
+  await settle()
+}
 it('keeps a lost creation receipt across drawer remounts and reuses its exact key and revision', async () => {
   state.post
     .mockRejectedValueOnce(new Error('reply lost'))
     .mockResolvedValueOnce({ data: { id: 'original-operation', status: 'queued' } })
   await render()
   expect(document.body.textContent).toContain('Build workers')
-  await click('创建节点')
+  await choosePoolAction('创建节点')
   await click('确认创建')
   const original = state.post.mock.calls[0]
   expect(original[1]).toMatchObject({ poolRevision: 3 })
@@ -160,11 +174,7 @@ it('keeps a lost creation receipt across drawer remounts and reuses its exact ke
 it('hides worker writes without creation permission', async () => {
   state.canCreate = false
   await render()
-  expect(
-    [...document.querySelectorAll('button')].some(
-      (button) => button.textContent?.replace(/\s/g, '') === '创建节点',
-    ),
-  ).toBe(false)
+  expect(document.querySelector('button[aria-label="更多操作：Build workers"]')).toBeNull()
   expect(state.post).not.toHaveBeenCalled()
 })
 it('validates daemon references and unique node labels before sending configuration', () => {

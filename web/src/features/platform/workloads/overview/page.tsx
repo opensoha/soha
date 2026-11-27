@@ -322,25 +322,27 @@ export function WorkloadsOverviewPage() {
       <ReadFeedback canRead={cronJobsQuery.isEnabled} query={cronJobsQuery} label="CronJob" />
       <ReadFeedback canRead={eventsQuery.isEnabled} query={eventsQuery} label="资源事件" />
 
-      <div className="soha-workload-overview-toolbar">
-        <span className="soha-kubernetes-resource-count">
-          {localeCode === 'zh_CN' ? `${stats.length} 类工作负载` : `${stats.length} workload types`}
-        </span>
-        <ManagementTableToolbar>
-          <ResourceStreamStatus
-            status={workloadStream.status}
-            refreshing={refreshingOverview}
-            refreshFailed={overviewReads.some((query) => query.isEnabled && query.isError)}
-            lastEventAt={workloadStream.lastEventAt}
-            localeCode={localeCode}
-          />
-          <WorkloadRefreshButton
-            label={localeCode === 'zh_CN' ? '刷新概览' : 'Refresh overview'}
-            loading={refreshingOverview}
-            disabled={refreshingOverview}
-            onRefresh={() => refreshOverview()}
-          />
-        </ManagementTableToolbar>
+      <div className="soha-workload-overview-bezel">
+        <div className="soha-workload-overview-toolbar">
+          <span className="soha-kubernetes-resource-count">
+            {localeCode === 'zh_CN' ? `${stats.length} 类工作负载` : `${stats.length} workload types`}
+          </span>
+          <ManagementTableToolbar>
+            <ResourceStreamStatus
+              status={workloadStream.status}
+              refreshing={refreshingOverview}
+              refreshFailed={overviewReads.some((query) => query.isEnabled && query.isError)}
+              lastEventAt={workloadStream.lastEventAt}
+              localeCode={localeCode}
+            />
+            <WorkloadRefreshButton
+              label={localeCode === 'zh_CN' ? '刷新概览' : 'Refresh overview'}
+              loading={refreshingOverview}
+              disabled={refreshingOverview}
+              onRefresh={() => refreshOverview()}
+            />
+          </ManagementTableToolbar>
+        </div>
       </div>
       <div className="soha-overview-metric-grid soha-workload-overview-metric-grid">
         {stats.map((item) => (

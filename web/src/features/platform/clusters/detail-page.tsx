@@ -263,6 +263,8 @@ function ClusterDetailContent({ clusterId }: { clusterId: string }) {
                   key: 'ready',
                   label: zh ? '就绪' : 'Ready',
                   value: nodes?.filter((n) => n.status?.toLowerCase() === 'ready').length,
+                  target: nodes?.length,
+                  showTarget: true,
                 },
               ]}
             />

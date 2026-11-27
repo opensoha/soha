@@ -3,7 +3,8 @@
 .soha-dag-editor-shell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 320px;
-  gap: 16px;
+  align-items: stretch;
+  gap: 14px;
 }
 
 .soha-dag-editor-shell--embedded {
@@ -12,12 +13,13 @@
 }
 
 .soha-dag-editor-shell--palette-right {
-  grid-template-columns: minmax(0, 1fr) 240px;
+  grid-template-columns: minmax(0, 1fr) 248px;
 }
 
 .soha-dag-panel,
 .soha-dag-canvas-card {
   min-height: 720px;
+  border-radius: var(--soha-radius-panel);
 }
 
 .soha-dag-editor-shell--embedded .soha-dag-panel,
@@ -30,17 +32,18 @@
   min-height: 0;
   flex-direction: column;
   border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel);
   background: var(--soha-bg-surface);
   overflow: hidden;
 }
 
 .soha-dag-embedded-panel__head {
   flex: 0 0 auto;
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--soha-border-color);
   color: var(--soha-text-primary);
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .soha-dag-embedded-panel__body {
@@ -61,12 +64,24 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+}
+
+.soha-dag-palette > .ant-btn {
+  justify-content: flex-start;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+  border-color: transparent;
+}
+
+.soha-dag-palette > .ant-btn:hover {
+  border-color: color-mix(in srgb, var(--soha-primary) 42%, var(--soha-border-color));
+  background: var(--soha-fill-weak);
 }
 
 .soha-dag-canvas {
   --soha-workflow-canvas-height: 640px;
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel);
 }
 
 .soha-dag-node {
@@ -76,9 +91,12 @@
 .soha-dag-node-card {
   padding: 14px 16px;
   border: 1px solid var(--soha-workflow-node-border);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel);
   background: var(--soha-workflow-node-bg);
   box-shadow: var(--soha-shadow-soft);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .soha-dag-node.is-selected .soha-dag-node-card {
@@ -109,9 +127,9 @@
 }
 
 .soha-dag-approval-window {
-  padding: 10px;
-  border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius);
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--soha-radius-control);
   background: var(--soha-bg-surface-muted);
 }
 
@@ -123,17 +141,34 @@
   min-height: 32px;
 }
 
+.soha-dag-floating-toolbar {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--soha-glass-border);
+  border-radius: calc(var(--soha-radius-control, 8px) + 4px);
+  background: var(--soha-workflow-inspector-bg);
+  box-shadow: var(--soha-glass-shadow);
+  backdrop-filter: blur(var(--soha-glass-blur));
+}
+
 .soha-dag-floating-inspector {
   position: absolute;
   z-index: 5;
   top: 12px;
   right: 12px;
-  width: min(320px, calc(100% - 24px));
+  width: min(336px, calc(100% - 24px));
   max-height: calc(100% - 24px);
   overflow: auto;
-  padding: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--soha-glass-border);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel);
   background: var(--soha-workflow-inspector-bg);
   box-shadow: var(--soha-glass-shadow);
   backdrop-filter: blur(var(--soha-glass-blur));

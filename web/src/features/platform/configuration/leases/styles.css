@@ -1,12 +1,6 @@
 .soha-lease-detail {
   min-width: 0;
 }
-.soha-lease-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-lease-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-lease-detail .soha-workload-overview-config dd {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -26,13 +20,16 @@
 .soha-lease-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 24px;
+  gap: 12px;
+  margin-top: 16px;
 }
 .soha-lease-summary > div {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 .soha-lease-summary span {
   color: var(--soha-text-secondary);

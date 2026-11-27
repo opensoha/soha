@@ -1,11 +1,8 @@
 import { ManagementDataPage } from '@/components/management-data-page'
-import {
-  ManagementIconButton,
-  ManagementState,
-  ManagementTableToolbar,
-} from '@/components/management-list'
+import { ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
@@ -16,7 +13,7 @@ import { DeleteOutlined, EyeOutlined, ImportOutlined } from '@ant-design/icons'
 import type { ObservabilityDashboard } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableProps } from 'antd'
-import { Button, Flex, Popconfirm, Space } from 'antd'
+import { App, Button, Flex } from 'antd'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ImportDashboardModal } from './import-modal'
@@ -25,6 +22,7 @@ import { observabilityDashboardQueries } from './queries'
 import './styles.css'
 
 export function ObservabilityDashboardsPage() {
+  const { modal } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const permissionQuery = usePermissionSnapshot()
@@ -64,6 +62,7 @@ export function ObservabilityDashboardsPage() {
       render: (name: string, record) => (
         <Button
           type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
           onClick={() =>
             navigate(`/monitoring-workbench/dashboards/${encodeURIComponent(record.id)}`)
           }
@@ -128,40 +127,44 @@ export function ObservabilityDashboardsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       render: (_: unknown, record) => (
-        <Space className="soha-row-action-icons" size={2}>
-          <ManagementIconButton
-            aria-label="打开仪表盘"
-            icon={<EyeOutlined />}
-            size="small"
-            tooltip="打开"
-            onClick={() =>
-              navigate(`/monitoring-workbench/dashboards/${encodeURIComponent(record.id)}`)
-            }
-          />
-          {canDelete ? (
-            <Popconfirm
-              title="删除仪表盘"
-              description={record.name}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{
-                danger: true,
-                loading: deleteMutation.isPending,
-                disabled: deleteMutation.blocked,
-              }}
-              onConfirm={() => deleteMutation.mutate(record.id)}
-            >
-              <ManagementIconButton
-                aria-label="删除仪表盘"
-                disabled={deleteMutation.blocked}
-                danger
-                icon={<DeleteOutlined />}
-                size="small"
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            {
+              key: 'open',
+              label: '打开仪表盘',
+              icon: <EyeOutlined />,
+              onClick: () =>
+                navigate(`/monitoring-workbench/dashboards/${encodeURIComponent(record.id)}`),
+            },
+            ...(canDelete
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除仪表盘',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: deleteMutation.blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: '删除仪表盘',
+                        content: record.name,
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: {
+                          danger: true,
+                          loading: deleteMutation.isPending,
+                          disabled: deleteMutation.blocked,
+                        },
+                        onOk: () => deleteMutation.mutate(record.id),
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

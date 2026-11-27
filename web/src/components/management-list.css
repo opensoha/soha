@@ -2,7 +2,7 @@
 
 .soha-management-query-card.ant-card {
   border: 1px solid var(--soha-hairline-strong) !important;
-  border-radius: 22px !important;
+  border-radius: var(--soha-radius-lg, 12px) !important;
   background: var(--soha-glass-bg) !important;
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
@@ -25,7 +25,7 @@
   .soha-management-query-card.ant-card {
   min-height: 48px;
   border: 1px solid var(--soha-hairline-strong) !important;
-  border-radius: 22px !important;
+  border-radius: var(--soha-radius-lg, 12px) !important;
   background: var(--soha-glass-bg) !important;
   box-shadow:
     var(--soha-inner-highlight),
@@ -46,7 +46,7 @@
 .soha-management-query-card .ant-input-affix-wrapper,
 .soha-management-query-card .ant-select-selector,
 .soha-management-query-card .ant-picker {
-  border-radius: 999px !important;
+  border-radius: var(--soha-radius-btn, 8px) !important;
 }
 
 :is(
@@ -268,9 +268,9 @@
 }
 
 .soha-management-table-shell.soha-admin-table-shell.is-panel {
-  padding: 6px;
+  padding: 5px;
   overflow: hidden;
-  border-radius: 26px;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 5px);
   border: 1px solid var(--soha-hairline-strong);
   background: var(--soha-bezel-bg);
   box-shadow: var(--soha-shadow-soft);
@@ -279,7 +279,7 @@
 .soha-management-table-shell-plain.soha-admin-table-shell {
   overflow: hidden;
   border: 1px solid var(--soha-hairline-strong);
-  border-radius: 20px;
+  border-radius: var(--soha-radius-lg, 12px);
   background: var(--soha-bg-surface);
 }
 
@@ -626,8 +626,14 @@
 }
 
 .soha-management-searchable-list-pane__item.is-active {
-  border-color: var(--soha-list-item-active-border);
-  background: var(--soha-list-item-active-bg);
+  border-color: color-mix(in srgb, var(--soha-accent, #2563eb) 32%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--soha-accent, #2563eb) 10%, var(--soha-bg-surface));
+  box-shadow: inset 3px 0 0 var(--soha-accent, #2563eb);
+}
+
+:root[data-theme-mode='dark'] .soha-management-searchable-list-pane__item.is-active {
+  border-color: color-mix(in srgb, var(--soha-accent, #3b82f6) 42%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--soha-accent, #3b82f6) 16%, var(--soha-bg-surface));
 }
 
 .soha-management-searchable-list-pane__item-select:focus-visible {

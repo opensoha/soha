@@ -254,15 +254,27 @@ describe('proxy runtime pages', () => {
       await act(async () =>
         vi.waitFor(() => expect(container.textContent).toContain('example.com:443')),
       )
-      const disconnect = container.querySelector<HTMLButtonElement>(
-        '.ant-table-row button.ant-btn-dangerous',
-      )
+      const openDisconnectItem = async () => {
+        const trigger = container.querySelector<HTMLButtonElement>(
+          '.ant-table-row button.soha-table-row-action-trigger',
+        )
+        expect(trigger).not.toBeNull()
+        await act(async () => trigger?.click())
+        await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+        return Array.from(
+          document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+        ).find((item) => item.textContent?.includes('断开'))
+      }
+      const disconnect = await openDisconnectItem()
       expect(disconnect).toBeDefined()
       await act(async () => disconnect?.click())
       expect(apiMocks.closeConnection).not.toHaveBeenCalled()
-      const confirm = document.querySelector<HTMLButtonElement>('.ant-popconfirm .ant-btn-primary')
-      expect(confirm).toBeDefined()
+      const confirm = document.querySelector<HTMLButtonElement>(
+        '.ant-modal-confirm-btns .ant-btn-primary',
+      )
+      expect(confirm).not.toBeNull()
       await act(async () => confirm?.click())
+      await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
       expect(apiMocks.closeConnection).toHaveBeenCalledWith(
         'proxy-mihomo',
         'connection-1',
@@ -281,7 +293,8 @@ describe('proxy runtime pages', () => {
             ),
           ),
         )
-        expect(disconnect?.disabled).toBe(false)
+        const nextItem = await openDisconnectItem()
+        expect(nextItem?.getAttribute('aria-disabled')).not.toBe('true')
         expect(apiMocks.getCloseCommand).not.toHaveBeenCalled()
       }
       if (scenario === 'unknown') {
@@ -291,7 +304,8 @@ describe('proxy runtime pages', () => {
             expect(apiMocks.getCloseCommand).toHaveBeenCalledWith('proxy-mihomo', input.requestId),
           ),
         )
-        expect(disconnect?.disabled).toBe(true)
+        const nextItem = await openDisconnectItem()
+        expect(nextItem?.getAttribute('aria-disabled')).toBe('true')
         expect(container.textContent).toContain('关闭命令 · 未知')
         state.instance.processEpoch = 'next-epoch'
         apiMocks.getCloseCommand.mockResolvedValue(receiptFor(connectionId, input, 'closed'))

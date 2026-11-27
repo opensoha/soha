@@ -2,15 +2,19 @@
   display: grid;
   grid-template-columns: minmax(190px, 224px) minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 .soha-crd-kind-directory,
 .soha-crd-instance-content {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.soha-crd-kind-directory.soha-management-searchable-list-pane {
+  height: 100%;
+  border-radius: var(--soha-radius-panel, 16px);
+}
 .soha-crd-kind-directory .soha-management-searchable-list-pane__items {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   max-height: min(74vh, 900px);
 }
 .soha-crd-kind-directory .soha-management-searchable-list-pane__item-select strong {
@@ -99,7 +103,19 @@
 }
 
 .soha-crd-group-detail > .soha-crd-instance-workspace {
-  margin-top: 16px;
+  margin-top: 0;
+}
+.soha-crd-kind-panel > .soha-resource-tabs > .ant-tabs-nav {
+  margin: 12px 0;
+  padding: 0 16px;
+  min-height: 44px;
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: var(--soha-radius-panel, 14px);
+  background: var(--soha-bg-surface);
+  box-shadow: var(--soha-shadow-xs);
+}
+.soha-crd-kind-panel > .soha-resource-tabs > .ant-tabs-nav::before {
+  display: none;
 }
 .soha-crd-kind-panel[hidden] {
   display: none;

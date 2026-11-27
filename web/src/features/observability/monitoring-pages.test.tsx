@@ -612,7 +612,8 @@ describe('observability monitoring pages', () => {
     const container = await renderWithProviders(<AlertsPage />, '/observability/alerts')
 
     expect(container.textContent).toContain('活跃告警')
-    await clickButtonByLabel('查看告警详情')
+    await clickButtonByLabel('更多操作：CPU High')
+    await clickElementByText('查看告警详情')
     await flushAsyncWork()
 
     expect(document.body.textContent).toContain('CPU High')

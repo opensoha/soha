@@ -99,13 +99,16 @@ function SessionDockOwner({
   scopeKey?: string
   validateReference?: (session: RealtimeSession, localeCode: string) => Promise<void>
 }) {
+  const isPilotMock = import.meta.env.VITE_UI_PILOT_MOCK === '1'
   const platformClusterId = usePlatformScopeStore((state) => state.clusterId)
+  const effectivePlatformClusterId = platformClusterId ?? (isPilotMock ? 'cluster-a' : null)
   const store = useMemo(
     () => createSessionDockStore(workbench, ownerKey, scopeKey),
     [workbench, ownerKey, scopeKey],
   )
   const { sessions, activeSessionKeys, selectedClusterId } = useStore(store)
-  const activeClusterId = workbench === 'platform' ? platformClusterId : selectedClusterId
+  const activeClusterId =
+    workbench === 'platform' ? effectivePlatformClusterId : selectedClusterId
   const setSessions = useCallback(
     (value: RealtimeSession[] | ((current: RealtimeSession[]) => RealtimeSession[])) => {
       store.setState((state) => ({
@@ -235,13 +238,13 @@ function SessionDockOwner({
 
   const setActiveSession = useCallback(
     (clusterId: string, sessionId: string) => {
-      if (workbench === 'platform' && clusterId !== platformClusterId) return
+      if (workbench === 'platform' && clusterId !== effectivePlatformClusterId) return
       if (!sessions.some((session) => session.clusterId === clusterId && session.id === sessionId))
         return
       if (workbench === 'delivery') store.setState({ selectedClusterId: clusterId })
       setActiveSessionKeys((current) => ({ ...current, [clusterId]: sessionId }))
     },
-    [setActiveSessionKeys, store, workbench, platformClusterId, sessions],
+    [setActiveSessionKeys, store, workbench, effectivePlatformClusterId, sessions],
   )
 
   const toggleDock = useCallback(() => {

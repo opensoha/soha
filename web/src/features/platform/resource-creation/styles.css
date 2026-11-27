@@ -46,6 +46,7 @@
 
 .soha-resource-create-form {
   border: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface);
   padding: 20px;
 }
 
@@ -59,6 +60,9 @@
 .soha-resource-create-manifest-preview {
   max-height: 280px;
   margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;

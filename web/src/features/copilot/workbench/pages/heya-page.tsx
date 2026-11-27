@@ -90,35 +90,41 @@ export function HeyaPage() {
           <Button onClick={() => navigate('/heya/access')}>开通管理</Button>
         ) : null}
       </Flex>
-      <Result
-        icon={<img className="soha-heya-access__avatar" src="/heya-avatar.svg" alt="Heya 嘿呀" />}
-        title="Heya · 嘿呀"
-        subTitle="你的个人 Agent，拥有独立对话、动态与执行环境。新助手的默认名字是 heya，你也可以给它改名。"
-        extra={
-          <Space wrap>
-            {status === 'approved' ? (
-              <Button type="primary" onClick={() => navigate('/heya')}>
-                进入 Heya
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                loading={request.isPending}
-                disabled={!canChat || !status || status === 'pending' || request.blocked}
-                onClick={() => request.mutate()}
-              >
-                {status === 'pending'
-                  ? '申请已提交'
-                  : status === 'rejected' || status === 'revoked'
-                    ? '重新申请'
-                    : '申请开通'}
-              </Button>
-            )}
-            <Button onClick={() => navigate('/ai-workbench/chat')}>普通 AI 对话</Button>
-          </Space>
-        }
-      />
-      <Card size="small" title="开通状态">
+      <div className="soha-heya-access__bezel">
+        <div className="soha-heya-access__hero">
+          <Result
+            icon={
+              <img className="soha-heya-access__avatar" src="/heya-avatar.svg" alt="Heya 嘿呀" />
+            }
+            title="Heya · 嘿呀"
+            subTitle="你的个人 Agent，拥有独立对话、动态与执行环境。新助手的默认名字是 heya，你也可以给它改名。"
+            extra={
+              <Space wrap>
+                {status === 'approved' ? (
+                  <Button type="primary" onClick={() => navigate('/heya')}>
+                    进入 Heya
+                  </Button>
+                ) : (
+                  <Button
+                    type="primary"
+                    loading={request.isPending}
+                    disabled={!canChat || !status || status === 'pending' || request.blocked}
+                    onClick={() => request.mutate()}
+                  >
+                    {status === 'pending'
+                      ? '申请已提交'
+                      : status === 'rejected' || status === 'revoked'
+                        ? '重新申请'
+                        : '申请开通'}
+                  </Button>
+                )}
+                <Button onClick={() => navigate('/ai-workbench/chat')}>普通 AI 对话</Button>
+              </Space>
+            }
+          />
+        </div>
+      </div>
+      <Card variant="borderless" className="soha-heya-access__card" size="small" title="开通状态">
         <Typography.Paragraph>
           {!canChat && !permissions.isPending
             ? '当前账号没有 AI 对话权限。'
@@ -136,6 +142,8 @@ export function HeyaPage() {
       </Card>
       {canManage && location.pathname === '/heya/access' ? (
         <Card
+          variant="borderless"
+          className="soha-heya-access__card"
           title="个人 Agent 开通申请"
           extra={
             <Button loading={requests.isFetching} onClick={() => void requests.refetch()}>

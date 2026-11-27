@@ -1,13 +1,6 @@
 .soha-sa-detail {
   min-width: 0;
 }
-.soha-sa-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-/* Scoped detail shell spacing, matching storage detail tabs. */
-.soha-sa-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-sa-detail .soha-sa-section-title {
   display: flex;
   align-items: center;

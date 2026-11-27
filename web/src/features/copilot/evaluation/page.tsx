@@ -2,19 +2,21 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
-  ManagementIconButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { EyeOutlined, PlusOutlined, ReloadOutlined, RocketOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Button, Descriptions, Drawer, Form, Input, Modal, Select, Space, Tabs } from 'antd'
 import { useEffect, useState } from 'react'
+import '../copilot-pages.css'
 import { evaluationMutations } from './mutations'
 import { evaluationQueries } from './queries'
 import type {
@@ -100,7 +102,20 @@ export function EvaluationStudioPage() {
     if (queryAccessDenied(runsQuery) || queryAccessDenied(resultsQuery)) setSelectedRun(undefined)
   }, [runsQuery.error, resultsQuery.error])
   const runColumns: TableColumnsType<EvaluationRun> = [
-    { title: 'Run', dataIndex: 'id', key: 'id' },
+    {
+      title: 'Run',
+      dataIndex: 'id',
+      key: 'id',
+      render: (_value, run) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => setSelectedRun(run)}
+        >
+          {run.id}
+        </Button>
+      ),
+    },
     {
       title: 'Dataset',
       key: 'dataset',
@@ -148,14 +163,19 @@ export function EvaluationStudioPage() {
     },
     { title: '开始时间', dataIndex: 'startedAt', key: 'startedAt', width: 190, render: formatDate },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       render: (_, run) => (
-        <ManagementIconButton
-          icon={<EyeOutlined />}
-          tooltip="查看运行结果"
-          aria-label={`查看评测运行 ${run.id}`}
-          onClick={() => setSelectedRun(run)}
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${run.id}`}
+          items={[
+            {
+              key: 'view',
+              label: '查看运行结果',
+              icon: <EyeOutlined />,
+              onClick: () => setSelectedRun(run),
+            },
+          ]}
         />
       ),
     },

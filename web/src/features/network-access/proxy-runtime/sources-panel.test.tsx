@@ -97,8 +97,19 @@ async function click(text: string) {
   const button = [...container.querySelectorAll('button')].find(
     (b) => b.textContent?.replace(/\s/g, '') === text.replace(/\s/g, ''),
   )
-  expect(button).toBeDefined()
-  await act(async () => button!.click())
+  if (button) {
+    await act(async () => button.click())
+    return
+  }
+  const trigger = container.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+  expect(trigger).not.toBeNull()
+  await act(async () => trigger!.click())
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  const item = [...document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')].find(
+    (el) => el.textContent?.replace(/\s/g, '') === text.replace(/\s/g, ''),
+  )
+  expect(item).toBeDefined()
+  await act(async () => item!.click())
 }
 function field(text: string) {
   const label = [...container.querySelectorAll('label')].find((l) => l.textContent === text)

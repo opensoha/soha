@@ -22,11 +22,11 @@
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  background: var(--soha-bg-layout);
-  border: 1px solid var(--soha-border-color);
-  border-radius: 8px;
-  padding: 32px 20px;
-  min-height: 400px;
+  background: var(--soha-fill-weak);
+  border: 0;
+  border-radius: var(--soha-radius-panel);
+  padding: 28px 20px;
+  min-height: 360px;
 }
 .soha-sts-relation-group {
   display: flex;
@@ -45,7 +45,7 @@
   padding: 16px;
   border: 1px solid var(--soha-border-color);
   background: var(--soha-bg-surface);
-  border-radius: 6px;
+  border-radius: var(--soha-radius-control);
   overflow-wrap: anywhere;
 }
 .soha-sts-relation-node.is-root {

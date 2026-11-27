@@ -1,5 +1,25 @@
 .soha-monitoring-page {
-  gap: 16px;
+  gap: 14px;
+}
+.soha-monitoring-bezel {
+  padding: 5px;
+  border-radius: calc(var(--soha-radius-lg) + 5px);
+  border: 1px solid var(--soha-border-color);
+  background: color-mix(in srgb, var(--soha-bg-surface) 58%, transparent);
+  box-shadow:
+    0 12px 28px -20px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+:root[data-theme-mode='dark'] .soha-monitoring-bezel {
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow:
+    0 16px 34px -20px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.soha-monitoring-toolbar-card.ant-card {
+  margin-bottom: 0;
+  border-radius: var(--soha-radius-lg);
+  border-color: color-mix(in srgb, var(--soha-border-color) 72%, transparent);
 }
 .soha-monitoring-page > .soha-detail-card {
   margin-bottom: 0;
@@ -43,8 +63,21 @@
 .soha-monitoring-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.soha-monitoring-summary-card.ant-card {
+  border-radius: var(--soha-radius-panel);
+  border-color: var(--soha-border-color);
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.soha-monitoring-summary-card.ant-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--soha-primary) 34%, var(--soha-border-color));
+  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.18);
 }
 .soha-monitoring-summary-card .ant-card-body {
   padding: 16px;
@@ -109,8 +142,16 @@
   flex-direction: column;
   gap: 16px;
 }
-.soha-monitoring-tabs .ant-tabs-nav {
+.soha-monitoring-tabs > .ant-tabs-nav {
+  padding: 0 18px;
+  min-height: 44px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
   margin-bottom: 16px;
+}
+.soha-monitoring-tabs > .ant-tabs-nav::before {
+  display: none;
 }
 .soha-monitoring-snapshot-note {
   font-size: var(--soha-font-size-supporting);

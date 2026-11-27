@@ -2,18 +2,25 @@ import { MutationFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
 import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
-import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
-import { CopyOutlined, PlusOutlined, StopOutlined, UploadOutlined } from '@ant-design/icons'
+import { App, Button, Form, Input, Modal, Space, Switch, Tabs, Typography } from 'antd'
+import {
+  CopyOutlined,
+  DiffOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+  StopOutlined,
+  UploadOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementState,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { MetadataTag, BooleanTag } from '@/components/status-tag'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
@@ -88,6 +95,8 @@ const emptyTemplate: ServiceDeploymentTemplateInput = {
 
 export function DeploymentTemplatesPage() {
   const { message, modal } = App.useApp()
+  const [versionHistoryTargetId, setVersionHistoryTargetId] = useState('')
+  const [updateCheckTargetId, setUpdateCheckTargetId] = useState('')
   const permissions = usePermissionSnapshot()
   const allowed = (action: string) =>
     hasPermission(permissions.data?.data, `delivery.deployment-templates.${action}`)
@@ -255,7 +264,11 @@ export function DeploymentTemplatesPage() {
               dataIndex: 'name',
               width: 180,
               render: (name: string, item: ServiceDeploymentTemplate) => (
-                <Button type="link" onClick={() => openEditor(item)}>
+                <Button
+                  type="link"
+                  style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                  onClick={() => openEditor(item)}
+                >
                   {name}
                 </Button>
               ),
@@ -288,69 +301,105 @@ export function DeploymentTemplatesPage() {
               render: (enabled: boolean) => <BooleanTag value={enabled} />,
             },
             {
+              ...tableColumnPresets.action,
               title: '操作',
               key: 'actions',
-              width: 144,
-              fixed: 'right',
-              className: TABLE_ACTIONS_COLUMN_CLASS_NAME,
               render: (_: unknown, item: ServiceDeploymentTemplate) => (
-                <Space className="soha-row-action-icons" size={2}>
-                  <TemplateVersionHistory kind="deployment" templateId={item.id} iconOnly />
-                  <TemplateUpdateEntry kind="deployment" templateId={item.id} iconOnly />
-                  {allowed('create') ? (
-                    <ManagementIconButton
-                      aria-label="复制模板"
-                      tooltip="复制"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      onClick={() => openEditor(item, true)}
-                    />
-                  ) : null}
-                  {allowed('update') && item.publicationState === 'draft' ? (
-                    <Popconfirm
-                      title="发布此草稿为新版本？"
-                      description="固定版本保持不变；已显式订阅的应用按各自策略采用。"
-                      onConfirm={() =>
-                        publish
-                          .mutateAsync({ id: item.id, expectedRevision: item.revision })
-                          .then(() => {
-                            message.success('新版本已发布')
-                          })
-                      }
-                    >
-                      <ManagementIconButton
-                        aria-label="发布模板"
-                        tooltip="发布"
-                        size="small"
-                        icon={<UploadOutlined />}
-                        loading={publish.isPending}
-                      />
-                    </Popconfirm>
-                  ) : null}
-                  {allowed('delete') && item.publicationState !== 'deprecated' ? (
-                    <Popconfirm
-                      title="废弃此模板？"
-                      description="保留历史版本供已有服务使用。"
-                      onConfirm={() => deprecate.mutateAsync(item.id)}
-                    >
-                      <ManagementIconButton
-                        aria-label="废弃模板"
-                        tooltip="废弃"
-                        size="small"
-                        icon={<StopOutlined />}
-                        danger
-                        loading={deprecate.isPending}
-                      />
-                    </Popconfirm>
-                  ) : null}
-                </Space>
+                <TableRowActionMenu
+                  targetLabel={item.name}
+                  items={[
+                    {
+                      key: 'versions',
+                      label: '已发布版本',
+                      icon: <HistoryOutlined />,
+                      onClick: () => setVersionHistoryTargetId(item.id),
+                    },
+                    allowed('view')
+                      ? {
+                          key: 'updates',
+                          label: '检查模板更新',
+                          icon: <DiffOutlined />,
+                          onClick: () => setUpdateCheckTargetId(item.id),
+                        }
+                      : null,
+                    allowed('create')
+                      ? {
+                          key: 'copy',
+                          label: '复制模板',
+                          icon: <CopyOutlined />,
+                          onClick: () => openEditor(item, true),
+                        }
+                      : null,
+                    allowed('update') && item.publicationState === 'draft'
+                      ? {
+                          key: 'publish',
+                          label: '发布模板',
+                          icon: <UploadOutlined />,
+                          disabled: publish.isPending,
+                          onClick: () => {
+                            modal.confirm({
+                              title: '发布此草稿为新版本？',
+                              content: '固定版本保持不变；已显式订阅的应用按各自策略采用。',
+                              okText: '确认发布',
+                              onOk: () =>
+                                publish
+                                  .mutateAsync({ id: item.id, expectedRevision: item.revision })
+                                  .then(() => {
+                                    message.success('新版本已发布')
+                                  }),
+                            })
+                          },
+                        }
+                      : null,
+                    allowed('delete') && item.publicationState !== 'deprecated'
+                      ? { type: 'divider' }
+                      : null,
+                    allowed('delete') && item.publicationState !== 'deprecated'
+                      ? {
+                          key: 'deprecate',
+                          label: '废弃模板',
+                          icon: <StopOutlined />,
+                          danger: true,
+                          disabled: deprecate.isPending,
+                          onClick: () => {
+                            modal.confirm({
+                              title: '废弃此模板？',
+                              content: '保留历史版本供已有服务使用。',
+                              okText: '确认废弃',
+                              okButtonProps: { danger: true },
+                              onOk: () => deprecate.mutateAsync(item.id),
+                            })
+                          },
+                        }
+                      : null,
+                  ]}
+                />
               ),
             },
           ],
         }}
         afterTable={
-          <Modal
-            title={editor?.item ? editor.item.name : '新建部署模板'}
+          <>
+            <TemplateVersionHistory
+              kind="deployment"
+              templateId={versionHistoryTargetId}
+              hideTrigger
+              open={Boolean(versionHistoryTargetId)}
+              onOpenChange={(next) => {
+                if (!next) setVersionHistoryTargetId('')
+              }}
+            />
+            <TemplateUpdateEntry
+              kind="deployment"
+              templateId={updateCheckTargetId}
+              hideTrigger
+              open={Boolean(updateCheckTargetId)}
+              onOpenChange={(next) => {
+                if (!next) setUpdateCheckTargetId('')
+              }}
+            />
+            <Modal
+              title={editor?.item ? editor.item.name : '新建部署模板'}
             open={Boolean(editor)}
             onCancel={close}
             width={900}
@@ -477,7 +526,8 @@ export function DeploymentTemplatesPage() {
                 />
               </Suspense>
             ) : null}
-          </Modal>
+            </Modal>
+          </>
         }
       />
       {importing ? (

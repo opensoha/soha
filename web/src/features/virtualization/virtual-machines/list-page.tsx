@@ -10,7 +10,6 @@ import {
   AutoComplete,
   Button,
   Collapse,
-  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -30,7 +29,6 @@ import {
   PoweroffOutlined,
   ReloadOutlined,
   SettingOutlined,
-  MoreOutlined,
 } from '@ant-design/icons'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
@@ -45,6 +43,7 @@ import { createUUID } from '@/utils/uuid'
 import { StepFormModal } from '@/components/step-form-modal'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import type { OperationalPlan } from '@opensoha/contracts/gen/ts/sohaapi'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
@@ -700,7 +699,7 @@ export function VirtualizationVmsPage() {
       title: localeText(localeCode, '电源', 'Power'),
       dataIndex: 'powerState',
       render: (_value, record) => statusTag(virtualMachineDisplayStatus(record)),
-      width: 96,
+      width: 112,
     },
     {
       key: 'resources',
@@ -746,7 +745,7 @@ export function VirtualizationVmsPage() {
       title: localeText(localeCode, '提供方', 'Provider'),
       dataIndex: 'provider',
       render: (value) => providerTag(value),
-      width: 88,
+      width: 108,
     },
     {
       key: 'connection',
@@ -780,23 +779,52 @@ export function VirtualizationVmsPage() {
       ...tableColumnPresets.action,
       key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      width: 104,
       render: (_value, record) => {
         const canPower = (action: string) => hasAllowedAction(record.allowedActions, action)
+        const powerBusy = powerMutation.isPending || writeOutcomeUnknown(powerMutation.error)
 
         const menuItems = [
+          ...(canPower('start')
+            ? [
+                {
+                  key: 'start',
+                  icon: <PlayCircleOutlined aria-hidden="true" />,
+                  label: localeText(localeCode, '启动虚拟机', 'Start virtual machine'),
+                  disabled: powerBusy,
+                  onClick: () => powerMutation.mutate({ id: record.id, action: 'start' }),
+                },
+              ]
+            : []),
           ...(canPower('restart')
             ? [
                 {
                   key: 'restart',
                   icon: <ReloadOutlined aria-hidden="true" />,
                   label: localeText(localeCode, '重启虚拟机', 'Restart virtual machine'),
-                  disabled: powerMutation.isPending || writeOutcomeUnknown(powerMutation.error),
+                  disabled: powerBusy,
                   onClick: () =>
                     modal.confirm({
                       title: localeText(localeCode, '确认重启虚拟机？', 'Restart this VM?'),
                       content: record.name,
                       onOk: () => powerMutation.mutateAsync({ id: record.id, action: 'restart' }),
+                    }),
+                },
+              ]
+            : []),
+          ...(canPower('stop')
+            ? [
+                {
+                  key: 'stop',
+                  icon: <PoweroffOutlined aria-hidden="true" />,
+                  label: localeText(localeCode, '停止虚拟机', 'Stop virtual machine'),
+                  danger: true,
+                  disabled: powerBusy,
+                  onClick: () =>
+                    modal.confirm({
+                      title: localeText(localeCode, '确认停止虚拟机？', 'Stop this VM?'),
+                      content: record.name,
+                      okButtonProps: { danger: true },
+                      onOk: () => powerMutation.mutateAsync({ id: record.id, action: 'stop' }),
                     }),
                 },
               ]
@@ -826,6 +854,7 @@ export function VirtualizationVmsPage() {
                 },
               ]
             : []),
+          { type: 'divider' as const },
           ...(canPower('delete')
             ? [
                 {
@@ -838,52 +867,7 @@ export function VirtualizationVmsPage() {
               ]
             : []),
         ]
-        return (
-          <Space className="soha-row-action-icons">
-            {canPower('start') ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '启动虚拟机', 'Start virtual machine')}
-                size="small"
-                tooltip={localeText(localeCode, '启动', 'Start')}
-                icon={<PlayCircleOutlined />}
-                loading={powerMutation.isPending && powerMutation.variables?.id === record.id}
-                disabled={powerMutation.isPending || writeOutcomeUnknown(powerMutation.error)}
-                onClick={() => powerMutation.mutate({ id: record.id, action: 'start' })}
-              />
-            ) : null}
-            {canPower('stop') ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '停止虚拟机', 'Stop virtual machine')}
-                size="small"
-                tooltip={localeText(localeCode, '停止', 'Stop')}
-                icon={<PoweroffOutlined />}
-                disabled={powerMutation.isPending || writeOutcomeUnknown(powerMutation.error)}
-                onClick={() =>
-                  modal.confirm({
-                    title: localeText(localeCode, '确认停止虚拟机？', 'Stop this VM?'),
-                    content: record.name,
-                    okButtonProps: { danger: true },
-                    onOk: () => powerMutation.mutateAsync({ id: record.id, action: 'stop' }),
-                  })
-                }
-              />
-            ) : null}
-            {menuItems.length ? (
-              <Dropdown trigger={['click']} menu={{ items: menuItems }} placement="bottomRight">
-                <ManagementIconButton
-                  size="small"
-                  aria-label={localeText(
-                    localeCode,
-                    `更多操作：${record.name}`,
-                    `More actions: ${record.name}`,
-                  )}
-                  tooltip={localeText(localeCode, '更多操作', 'More actions')}
-                  icon={<MoreOutlined />}
-                />
-              </Dropdown>
-            ) : null}
-          </Space>
-        )
+        return <TableRowActionMenu targetLabel={record.name} items={menuItems} />
       },
     },
   ]

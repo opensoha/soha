@@ -9,7 +9,6 @@ import {
   Empty,
   Form,
   Input,
-  Popconfirm,
   Progress,
   Select,
   Space,
@@ -30,7 +29,6 @@ import type {
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
@@ -39,6 +37,7 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag, type MetadataTagTone } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useAIPageContext } from '@/features/copilot'
 import { localeText, useI18n } from '@/i18n'
 import { formatStatusLabel } from '@/i18n/status'
@@ -193,7 +192,7 @@ export function searchFromTaskFilters(
 }
 
 export function ComputeTasksPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { localeCode } = useI18n()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -339,12 +338,22 @@ export function ComputeTasksPage() {
       sorter: true,
       sortOrder: activeSortBy === 'kind' ? tableSortOrder : null,
       width: 250,
-      render: (_value, record) => (
-        <Space orientation="vertical" size={0}>
-          <Text strong>{taskKindLabel(record.kind, localeCode)}</Text>
-          <Text type="secondary">{record.id}</Text>
-        </Space>
-      ),
+      render: (_value, record) =>
+        record.availableActions.includes('logs') ? (
+          <button
+            type="button"
+            className="soha-compute-task-primary-trigger"
+            onClick={() => openLogs(record)}
+          >
+            <Text strong>{taskKindLabel(record.kind, localeCode)}</Text>
+            <Text type="secondary">{record.id}</Text>
+          </button>
+        ) : (
+          <Space orientation="vertical" size={0}>
+            <Text strong>{taskKindLabel(record.kind, localeCode)}</Text>
+            <Text type="secondary">{record.id}</Text>
+          </Space>
+        ),
     },
     {
       title: localeText(localeCode, '领域', 'Domain'),
@@ -419,52 +428,61 @@ export function ComputeTasksPage() {
     {
       title: localeText(localeCode, '操作', 'Actions'),
       key: 'actions',
+      align: 'center',
       className: 'soha-compute-task-actions-column soha-table-actions-column',
       fixed: 'right',
-      width: 96,
+      width: 64,
       render: (_value, record) => (
-        <Space className="soha-row-action-icons" size={4}>
-          {record.availableActions.includes('logs') ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '查看任务日志', 'View task logs')}
-              icon={<FileTextOutlined />}
-              size="small"
-              tooltip={localeText(localeCode, '查看日志', 'View logs')}
-              onClick={() => openLogs(record)}
-            />
-          ) : null}
-          {record.availableActions.includes('cancel') ? (
-            <Popconfirm
-              title={localeText(localeCode, '确认取消任务？', 'Cancel this task?')}
-              onConfirm={() => mutateTask('cancel', record)}
-            >
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '取消任务', 'Cancel task')}
-                danger
-                disabled={cancelMutation.isPending || retryMutation.isPending}
-                icon={<StopOutlined />}
-                size="small"
-                loading={cancelMutation.isPending && cancelMutation.variables?.taskId === record.id}
-                tooltip={localeText(localeCode, '取消', 'Cancel')}
-              />
-            </Popconfirm>
-          ) : null}
-          {record.availableActions.includes('retry') ? (
-            <Popconfirm
-              title={localeText(localeCode, '确认重试任务？', 'Retry this task?')}
-              onConfirm={() => mutateTask('retry', record)}
-            >
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '重试任务', 'Retry task')}
-                disabled={cancelMutation.isPending || retryMutation.isPending}
-                icon={<RedoOutlined />}
-                size="small"
-                loading={retryMutation.isPending && retryMutation.variables?.taskId === record.id}
-                tooltip={localeText(localeCode, '重试', 'Retry')}
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.id}
+          items={[
+            ...(record.availableActions.includes('logs')
+              ? [
+                  {
+                    key: 'logs',
+                    icon: <FileTextOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '查看任务日志', 'View task logs'),
+                    onClick: () => openLogs(record),
+                  },
+                ]
+              : []),
+            ...(record.availableActions.includes('retry')
+              ? [
+                  {
+                    key: 'retry',
+                    icon: <RedoOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '重试任务', 'Retry task'),
+                    disabled: cancelMutation.isPending || retryMutation.isPending,
+                    onClick: () =>
+                      modal.confirm({
+                        title: localeText(localeCode, '确认重试任务？', 'Retry this task?'),
+                        content: record.id,
+                        onOk: () => mutateTask('retry', record),
+                      }),
+                  },
+                ]
+              : []),
+            { type: 'divider' as const },
+            ...(record.availableActions.includes('cancel')
+              ? [
+                  {
+                    key: 'cancel',
+                    icon: <StopOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '取消任务', 'Cancel task'),
+                    danger: true,
+                    disabled: cancelMutation.isPending || retryMutation.isPending,
+                    onClick: () =>
+                      modal.confirm({
+                        title: localeText(localeCode, '确认取消任务？', 'Cancel this task?'),
+                        content: record.id,
+                        okButtonProps: { danger: true },
+                        onOk: () => mutateTask('cancel', record),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
@@ -689,51 +707,56 @@ export function ComputeTasksPage() {
                 title={selectedTask.failure.message || selectedTask.failure.code}
               />
             ) : null}
-            <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label={localeText(localeCode, '任务', 'Task')}>
-                {taskKindLabel(selectedTask.kind, localeCode)}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '状态', 'Status')}>
-                <StatusTag value={selectedTask.normalizedStatus} />
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '任务 ID', 'Task ID')}>
-                <Text copyable>{selectedTask.id}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '领域', 'Domain')}>
-                {selectedTask.domain === 'container_runtime'
-                  ? localeText(localeCode, '容器运行时', 'Container runtime')
-                  : localeText(localeCode, '虚拟化', 'Virtualization')}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '创建时间', 'Created at')}>
-                {formatDateTime(selectedTask.createdAt)}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '提供方', 'Provider')}>
-                {[selectedTask.providerKey, selectedTask.providerSource]
-                  .filter(Boolean)
-                  .join(' / ') || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '发起人', 'Requested by')}>
-                {selectedTask.requestedBy || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '尝试次数', 'Attempts')}>
-                {selectedTask.attemptCount ?? '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '结束时间', 'Finished at')}>
-                {formatDateTime(selectedTask.finishedAt)}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '摘要', 'Summary')}>
-                {selectedTask.summary || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '心跳', 'Heartbeat')}>
-                <StatusTag value={selectedTask.heartbeat?.status || 'unknown'} />
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '结果验证', 'Result verification')}>
-                <StatusTag value={selectedTask.verification?.status || 'unknown'} />
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '验证说明', 'Verification details')}>
-                {verificationSummaryLabel(selectedTask.verification?.summary, localeCode)}
-              </Descriptions.Item>
-            </Descriptions>
+            <div className="soha-compute-task-drawer-meta">
+              <Descriptions size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label={localeText(localeCode, '任务', 'Task')}>
+                  {taskKindLabel(selectedTask.kind, localeCode)}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '状态', 'Status')}>
+                  <StatusTag value={selectedTask.normalizedStatus} />
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '任务 ID', 'Task ID')} span={2}>
+                  <Text copyable>{selectedTask.id}</Text>
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '领域', 'Domain')}>
+                  {selectedTask.domain === 'container_runtime'
+                    ? localeText(localeCode, '容器运行时', 'Container runtime')
+                    : localeText(localeCode, '虚拟化', 'Virtualization')}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '创建时间', 'Created at')}>
+                  {formatDateTime(selectedTask.createdAt)}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '提供方', 'Provider')}>
+                  {[selectedTask.providerKey, selectedTask.providerSource]
+                    .filter(Boolean)
+                    .join(' / ') || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '发起人', 'Requested by')}>
+                  {selectedTask.requestedBy || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '尝试次数', 'Attempts')}>
+                  {selectedTask.attemptCount ?? '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '结束时间', 'Finished at')}>
+                  {formatDateTime(selectedTask.finishedAt)}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '摘要', 'Summary')} span={2}>
+                  {selectedTask.summary || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '心跳', 'Heartbeat')}>
+                  <StatusTag value={selectedTask.heartbeat?.status || 'unknown'} />
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '结果验证', 'Result verification')}>
+                  <StatusTag value={selectedTask.verification?.status || 'unknown'} />
+                </Descriptions.Item>
+                <Descriptions.Item
+                  label={localeText(localeCode, '验证说明', 'Verification details')}
+                  span={2}
+                >
+                  {verificationSummaryLabel(selectedTask.verification?.summary, localeCode)}
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
             {logsQuery.isLoading ? (
               <Spin
                 description={localeText(localeCode, '正在加载任务日志...', 'Loading task logs...')}

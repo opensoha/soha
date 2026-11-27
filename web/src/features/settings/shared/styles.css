@@ -11,5 +11,5 @@
 }
 
 .soha-settings-table-shell.soha-management-table-shell.soha-admin-table-shell.is-panel {
-  border-radius: 8px;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 5px);
 }

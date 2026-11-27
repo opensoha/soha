@@ -76,6 +76,8 @@ function pickStatusColor(value?: null | string): TagColor {
       'allow',
       'live',
       'accepted',
+      'approved',
+      'delivered',
       'fresh',
       'verified',
     ].includes(normalized)
@@ -88,6 +90,8 @@ function pickStatusColor(value?: null | string): TagColor {
       'warning',
       'approval',
       'pending',
+      'pending_approval',
+      'waiting_approval',
       'queued',
       'building',
       'waiting',
@@ -114,6 +118,7 @@ function pickStatusColor(value?: null | string): TagColor {
       'error',
       'blocked',
       'denied',
+      'rejected',
       'failure',
       'failed',
       'disconnected',
@@ -166,13 +171,20 @@ function pickStatusColor(value?: null | string): TagColor {
 export function StatusTag({ label, value }: { label?: ReactNode; value?: null | string }) {
   const { localeCode } = useI18n()
   const displayLabel = label ?? formatStatusLabel(value, localeCode)
+  const isPrimitive = typeof displayLabel === 'string' || typeof displayLabel === 'number'
   return (
     <Tag
       className="soha-status-tag"
       color={resolveAntdTagColor(pickStatusColor(value))}
       variant="filled"
     >
-      {displayLabel}
+      {isPrimitive ? (
+        <span className="soha-tag-label" title={String(displayLabel)}>
+          {displayLabel}
+        </span>
+      ) : (
+        displayLabel
+      )}
     </Tag>
   )
 }
@@ -188,6 +200,8 @@ export function MetadataTag({
   className?: string
   title?: string
 }) {
+  const isPrimitive = typeof label === 'string' || typeof label === 'number'
+  const resolvedTitle = title ?? (isPrimitive ? String(label) : undefined)
   return (
     <Tag
       className={['soha-metadata-tag', className].filter(Boolean).join(' ')}
@@ -195,7 +209,13 @@ export function MetadataTag({
       color={resolveAntdTagColor(tone)}
       variant="filled"
     >
-      {label}
+      {isPrimitive ? (
+        <span className="soha-tag-label" title={title ? undefined : resolvedTitle}>
+          {label}
+        </span>
+      ) : (
+        label
+      )}
     </Tag>
   )
 }
@@ -213,13 +233,16 @@ export function BooleanTag({
   trueColor?: TagColor
   falseColor?: TagColor
 }) {
+  const displayLabel = value ? trueLabel : falseLabel
   return (
     <Tag
       className="soha-status-tag"
       color={resolveAntdTagColor(value ? trueColor : falseColor)}
       variant="filled"
     >
-      {value ? trueLabel : falseLabel}
+      <span className="soha-tag-label" title={displayLabel}>
+        {displayLabel}
+      </span>
     </Tag>
   )
 }

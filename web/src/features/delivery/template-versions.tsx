@@ -40,14 +40,25 @@ export function TemplateVersionHistory({
   kind,
   templateId,
   iconOnly = false,
+  hideTrigger = false,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   kind: 'build' | 'workflow' | 'deployment'
   templateId: string
   iconOnly?: boolean
+  hideTrigger?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { localeCode } = useI18n()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [version, setVersion] = useState<number>()
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const group =
     kind === 'build'
       ? 'buildTemplates'
@@ -63,7 +74,7 @@ export function TemplateVersionHistory({
   const title = localeCode === 'zh_CN' ? '已发布版本' : 'Published versions'
   return (
     <>
-      {iconOnly ? (
+      {hideTrigger ? null : iconOnly ? (
         <ManagementIconButton
           aria-label={title}
           tooltip={title}

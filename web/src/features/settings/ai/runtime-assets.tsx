@@ -1,9 +1,12 @@
 import { BooleanTag, MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { ApiError } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
+import { CheckCircleOutlined, PoweroffOutlined, RadarChartOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Popconfirm, Space, Typography } from 'antd'
+import { App, Space, Typography } from 'antd'
 import { settingsMutations } from '../mutations'
 import { settingsQueries } from '../queries'
 import { SettingsAdminTable, SettingsCard } from '../shared/components'
@@ -13,6 +16,7 @@ const kindLabels = { mcp: 'MCP', skill: 'Skill', hook: 'Hook' }
 const scopeLabels = { chat: 'Chat', heya: 'Heya' }
 
 export function RuntimeAssetsSettings({ owner, canManage }: { owner: string; canManage: boolean }) {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const catalog = useQuery(settingsQueries.ai.runtimeAssets(owner))
   const assets = readableQueryData(catalog)
@@ -109,59 +113,66 @@ export function RuntimeAssetsSettings({ owner, canManage }: { owner: string; can
             ...(canManage
               ? [
                   {
+                    ...tableColumnPresets.action,
                     title: '操作',
-                    key: 'actions',
                     render: (_: unknown, asset: WorkbenchRuntimeAsset) => {
                       const { kind, id, version, enabled } = asset
                       const target = `${id} @ ${version}`
-                      const toggle = () =>
-                        setEnabled.mutate({ kind, id, version, enabled: !enabled })
+                      const probeScopes =
+                        kind === 'mcp' && asset.executionPosition !== 'personal-docker'
+                          ? asset.transport === 'stdio'
+                            ? (['heya'] as const)
+                            : (['chat', 'heya'] as const)
+                          : []
                       return (
-                        <Space wrap>
-                          {enabled ? (
-                            <Popconfirm
-                              title={`停用 ${target}？`}
-                              description="停用后，仍引用此版本的配置无法启动新的运行。"
-                              okText="停用"
-                              cancelText="取消"
-                              disabled={enableBlocked}
-                              onConfirm={toggle}
-                            >
-                              <Button
-                                size="small"
-                                aria-label={`停用 ${target}`}
-                                disabled={enableBlocked}
-                              >
-                                停用
-                              </Button>
-                            </Popconfirm>
-                          ) : (
-                            <Button
-                              size="small"
-                              aria-label={`启用 ${target}`}
-                              disabled={enableBlocked}
-                              onClick={toggle}
-                            >
-                              启用
-                            </Button>
-                          )}
-                          {kind === 'mcp' &&
-                            asset.executionPosition !== 'personal-docker' &&
-                            (asset.transport === 'stdio'
-                              ? (['heya'] as const)
-                              : (['chat', 'heya'] as const)
-                            ).map((scope) => (
-                              <Button
-                                key={scope}
-                                size="small"
-                                aria-label={`探测 ${target} · ${scopeLabels[scope]}`}
-                                disabled={probeBlocked}
-                                onClick={() => probe.mutate({ id, version, scope })}
-                              >
-                                探测 {scopeLabels[scope]}
-                              </Button>
-                            ))}
-                        </Space>
+                        <TableRowActionMenu
+                          ariaLabel={`更多操作 ${target}`}
+                          items={[
+                            ...probeScopes.map((scope) => ({
+                              key: `probe:${scope}`,
+                              label: `探测 ${scopeLabels[scope]}`,
+                              icon: <RadarChartOutlined />,
+                              disabled: probeBlocked,
+                              onClick: () => probe.mutate({ id, version, scope }),
+                            })),
+                            ...(enabled
+                              ? [
+                                  ...(probeScopes.length ? [{ type: 'divider' as const }] : []),
+                                  {
+                                    key: 'disable',
+                                    label: '停用',
+                                    icon: <PoweroffOutlined />,
+                                    danger: true,
+                                    disabled: enableBlocked,
+                                    onClick: () =>
+                                      modal.confirm({
+                                        title: `停用 ${target}？`,
+                                        content: '停用后，仍引用此版本的配置无法启动新的运行。',
+                                        okText: '停用',
+                                        cancelText: '取消',
+                                        okButtonProps: { danger: true },
+                                        onOk: () =>
+                                          setEnabled.mutateAsync({
+                                            kind,
+                                            id,
+                                            version,
+                                            enabled: false,
+                                          }),
+                                      }),
+                                  },
+                                ]
+                              : [
+                                  {
+                                    key: 'enable',
+                                    label: '启用',
+                                    icon: <CheckCircleOutlined />,
+                                    disabled: enableBlocked,
+                                    onClick: () =>
+                                      setEnabled.mutate({ kind, id, version, enabled: true }),
+                                  },
+                                ]),
+                          ]}
+                        />
                       )
                     },
                   },

@@ -46,6 +46,7 @@ import {
   ArrowRightOutlined,
   DeleteOutlined,
   DeploymentUnitOutlined,
+  DiffOutlined,
   DownOutlined,
   EditOutlined,
   LinkOutlined,
@@ -60,6 +61,8 @@ import {
   ManagementRefreshButton,
   ManagementState,
 } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { visuallyHiddenModalTitleStyle } from '@/components/modal-styles'
 import { OverviewMetricCard, OverviewSectionBar } from '@/components/overview-visuals'
 import { analyzeReleaseDagDefinition } from '@/components/release-flow-dag-definition'
@@ -552,7 +555,8 @@ export function ApplicationDetailWorkspace({
   const settingsLabel = localeText(localeCode, '应用设置', 'Application settings')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
+  const [buildTemplateUpdateTargetId, setBuildTemplateUpdateTargetId] = useState('')
   const queryClient = useQueryClient()
   const requestedTab = searchParams.get('tab')
   const requestedLaunch = searchParams.get('launch')
@@ -2387,17 +2391,26 @@ export function ApplicationDetailWorkspace({
                 },
               },
               {
+                ...tableColumnPresets.action,
                 title: '操作',
                 key: 'actions',
                 render: (_: unknown, environment: ApplicationRuntimeEnvironment) => (
-                  <Button
-                    type="link"
-                    onClick={() =>
-                      setActiveTab('verification', environment.applicationEnvironmentId)
+                  <TableRowActionMenu
+                    targetLabel={
+                      environment.environmentName ||
+                      environment.environmentKey ||
+                      environment.applicationEnvironmentId
                     }
-                  >
-                    测试验证
-                  </Button>
+                    items={[
+                      {
+                        key: 'verify',
+                        label: '测试验证',
+                        icon: <ArrowRightOutlined />,
+                        onClick: () =>
+                          setActiveTab('verification', environment.applicationEnvironmentId),
+                      },
+                    ]}
+                  />
                 ),
               },
             ]}
@@ -2996,7 +3009,22 @@ export function ApplicationDetailWorkspace({
                           dataSource={repositories}
                           loading={repositoriesQuery.isLoading}
                           columns={[
-                            { title: '名称', dataIndex: 'name' },
+                            {
+                              title: '名称',
+                              dataIndex: 'name',
+                              render: (name: string, record: DeliveryRepository) =>
+                                canManageRepositories ? (
+                                  <Button
+                                    type="link"
+                                    style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                                    onClick={() => openRepositoryModal(record.id)}
+                                  >
+                                    {name}
+                                  </Button>
+                                ) : (
+                                  <strong>{name}</strong>
+                                ),
+                            },
                             {
                               title: '提供方',
                               dataIndex: 'provider',
@@ -3008,29 +3036,38 @@ export function ApplicationDetailWorkspace({
                             ...(canManageRepositories
                               ? [
                                   {
+                                    ...tableColumnPresets.action,
                                     title: '操作',
+                                    key: 'actions',
                                     dataIndex: 'id',
-                                    width: 96,
-                                    render: (id: string) => (
-                                      <Space size={2}>
-                                        <ManagementIconButton
-                                          aria-label="编辑代码仓库"
-                                          icon={<EditOutlined />}
-                                          tooltip="编辑"
-                                          onClick={() => openRepositoryModal(id)}
-                                        />
-                                        <Popconfirm
-                                          title="确认删除该代码仓库？"
-                                          onConfirm={() => deleteRepositoryMutation.mutate(id)}
-                                        >
-                                          <ManagementIconButton
-                                            aria-label="删除代码仓库"
-                                            danger
-                                            icon={<DeleteOutlined />}
-                                            tooltip="删除"
-                                          />
-                                        </Popconfirm>
-                                      </Space>
+                                    render: (id: string, record: DeliveryRepository) => (
+                                      <TableRowActionMenu
+                                        targetLabel={record.name}
+                                        items={[
+                                          {
+                                            key: 'edit',
+                                            label: '编辑代码仓库',
+                                            icon: <EditOutlined />,
+                                            onClick: () => openRepositoryModal(id),
+                                          },
+                                          { type: 'divider' },
+                                          {
+                                            key: 'delete',
+                                            label: '删除代码仓库',
+                                            icon: <DeleteOutlined />,
+                                            danger: true,
+                                            onClick: () => {
+                                              modal.confirm({
+                                                title: '确认删除该代码仓库？',
+                                                content: `代码仓库：${record.name}`,
+                                                okText: '确认删除',
+                                                okButtonProps: { danger: true },
+                                                onOk: () => deleteRepositoryMutation.mutate(id),
+                                              })
+                                            },
+                                          },
+                                        ]}
+                                      />
                                     ),
                                   },
                                 ]
@@ -3043,120 +3080,164 @@ export function ApplicationDetailWorkspace({
                       key: 'builds',
                       label: '构建定义',
                       children: (
-                        <DeliveryTable
-                          title="共享构建定义"
-                          actions={
-                            managementState.canUpdateApplication ? (
-                              <Button
-                                type="primary"
-                                icon={<PlusOutlined />}
-                                onClick={() => openBuildSourceModal()}
-                              >
-                                添加构建
-                              </Button>
-                            ) : null
-                          }
-                          rowKey="id"
-                          pagination={false}
-                          dataSource={application.buildSources ?? []}
-                          columns={[
-                            { title: '名称', dataIndex: 'name' },
-                            {
-                              title: '类型',
-                              dataIndex: 'type',
-                              render: (_: unknown, record: BuildSource) => (
-                                <MetadataTag label={summarizeBuildSource(record)} />
-                              ),
-                            },
-                            {
-                              title: '镜像',
-                              dataIndex: 'buildImage',
-                              render: (value: string) => value || '-',
-                            },
-                            {
-                              title: '默认 Tag',
-                              dataIndex: 'defaultTag',
-                              render: (value: string) => value || '-',
-                            },
-                            {
-                              title: '默认',
-                              dataIndex: 'isDefault',
-                              render: (value: boolean) => (
-                                <StatusTag value={value ? 'enabled' : 'disabled'} />
-                              ),
-                            },
-                            {
-                              title: '启用',
-                              dataIndex: 'enabled',
-                              render: (value: boolean) => (
-                                <StatusTag value={value ? 'enabled' : 'disabled'} />
-                              ),
-                            },
-                            ...(managementState.canUpdateApplication
-                              ? [
-                                  {
-                                    title: '操作',
-                                    dataIndex: 'id',
-                                    width: 96,
-                                    render: (id: string, record: BuildSource) => (
-                                      <Space size={2}>
-                                        {record.type === 'platform_build_template' &&
-                                        typeof record.config?.buildTemplateId === 'string' ? (
-                                          <TemplateUpdateEntry
-                                            kind="build"
-                                            templateId={record.config.buildTemplateId}
-                                            applicationId={application.id}
-                                            iconOnly
-                                            label="采用构建模板版本"
-                                          />
-                                        ) : null}
-                                        <ManagementIconButton
-                                          aria-label="编辑构建源"
-                                          icon={<EditOutlined />}
-                                          tooltip="编辑"
-                                          onClick={() => openBuildSourceModal(record)}
-                                        />
-                                        <Popconfirm
-                                          title="确认删除该构建源？"
-                                          disabled={
-                                            managementState.updateAppMutation.isPending ||
-                                            writeOutcomeUnknown(
-                                              managementState.updateAppMutation.error,
-                                            )
-                                          }
-                                          onConfirm={() => {
-                                            if (
-                                              managementState.updateAppMutation.isPending ||
-                                              writeOutcomeUnknown(
-                                                managementState.updateAppMutation.error,
-                                              )
-                                            )
-                                              return
-                                            managementState.updateAppMutation.mutate({
-                                              id: application.id,
-                                              payload: {
-                                                ...application,
-                                                buildSources: (
-                                                  application.buildSources ?? []
-                                                ).filter((item) => item.id !== id),
+                        <>
+                          <DeliveryTable
+                            title="共享构建定义"
+                            actions={
+                              managementState.canUpdateApplication ? (
+                                <Button
+                                  type="primary"
+                                  icon={<PlusOutlined />}
+                                  onClick={() => openBuildSourceModal()}
+                                >
+                                  添加构建
+                                </Button>
+                              ) : null
+                            }
+                            rowKey="id"
+                            pagination={false}
+                            dataSource={application.buildSources ?? []}
+                            columns={[
+                              {
+                                title: '名称',
+                                dataIndex: 'name',
+                                render: (name: string, record: BuildSource) =>
+                                  managementState.canUpdateApplication ? (
+                                    <Button
+                                      type="link"
+                                      style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                                      onClick={() => openBuildSourceModal(record)}
+                                    >
+                                      {name}
+                                    </Button>
+                                  ) : (
+                                    <strong>{name}</strong>
+                                  ),
+                              },
+                              {
+                                title: '类型',
+                                dataIndex: 'type',
+                                render: (_: unknown, record: BuildSource) => (
+                                  <MetadataTag label={summarizeBuildSource(record)} />
+                                ),
+                              },
+                              {
+                                title: '镜像',
+                                dataIndex: 'buildImage',
+                                render: (value: string) => value || '-',
+                              },
+                              {
+                                title: '默认 Tag',
+                                dataIndex: 'defaultTag',
+                                render: (value: string) => value || '-',
+                              },
+                              {
+                                title: '默认',
+                                dataIndex: 'isDefault',
+                                render: (value: boolean) => (
+                                  <StatusTag value={value ? 'enabled' : 'disabled'} />
+                                ),
+                              },
+                              {
+                                title: '启用',
+                                dataIndex: 'enabled',
+                                render: (value: boolean) => (
+                                  <StatusTag value={value ? 'enabled' : 'disabled'} />
+                                ),
+                              },
+                              ...(managementState.canUpdateApplication
+                                ? [
+                                    {
+                                      ...tableColumnPresets.action,
+                                      title: '操作',
+                                      key: 'actions',
+                                      dataIndex: 'id',
+                                      render: (id: string, record: BuildSource) => {
+                                        const buildLocked =
+                                          managementState.updateAppMutation.isPending ||
+                                          writeOutcomeUnknown(
+                                            managementState.updateAppMutation.error,
+                                          )
+                                        const templateId =
+                                          record.type === 'platform_build_template' &&
+                                          typeof record.config?.buildTemplateId === 'string'
+                                            ? record.config.buildTemplateId
+                                            : ''
+                                        return (
+                                          <TableRowActionMenu
+                                            targetLabel={record.name}
+                                            items={[
+                                              templateId
+                                                ? {
+                                                    key: 'adopt-template',
+                                                    label: '采用构建模板版本',
+                                                    icon: <DiffOutlined />,
+                                                    onClick: () =>
+                                                      setBuildTemplateUpdateTargetId(templateId),
+                                                  }
+                                                : null,
+                                              {
+                                                key: 'edit',
+                                                label: '编辑构建源',
+                                                icon: <EditOutlined />,
+                                                onClick: () => openBuildSourceModal(record),
                                               },
-                                            })
-                                          }}
-                                        >
-                                          <ManagementIconButton
-                                            aria-label="删除构建源"
-                                            danger
-                                            icon={<DeleteOutlined />}
-                                            tooltip="删除"
+                                              { type: 'divider' },
+                                              {
+                                                key: 'delete',
+                                                label: '删除构建源',
+                                                icon: <DeleteOutlined />,
+                                                danger: true,
+                                                disabled: buildLocked,
+                                                onClick: () => {
+                                                  modal.confirm({
+                                                    title: '确认删除该构建源？',
+                                                    content: `构建源：${record.name}`,
+                                                    okText: '确认删除',
+                                                    okButtonProps: { danger: true },
+                                                    onOk: () => {
+                                                      if (
+                                                        managementState.updateAppMutation
+                                                          .isPending ||
+                                                        writeOutcomeUnknown(
+                                                          managementState.updateAppMutation.error,
+                                                        )
+                                                      )
+                                                        return
+                                                      managementState.updateAppMutation.mutate({
+                                                        id: application.id,
+                                                        payload: {
+                                                          ...application,
+                                                          buildSources: (
+                                                            application.buildSources ?? []
+                                                          ).filter((item) => item.id !== id),
+                                                        },
+                                                      })
+                                                    },
+                                                  })
+                                                },
+                                              },
+                                            ]}
                                           />
-                                        </Popconfirm>
-                                      </Space>
-                                    ),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        />
+                                        )
+                                      },
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
+                          <TemplateUpdateEntry
+                            kind="build"
+                            templateId={buildTemplateUpdateTargetId}
+                            applicationId={application.id}
+                            hideTrigger
+                            open={Boolean(buildTemplateUpdateTargetId)}
+                            onOpenChange={(next) => {
+                              if (!next) setBuildTemplateUpdateTargetId('')
+                            }}
+                            label="采用构建模板版本"
+                          />
+                        </>
                       ),
                     },
                   ]}
@@ -3212,7 +3293,7 @@ export function ApplicationDetailWorkspace({
                               </Space>
                             }
                             extra={
-                              <Space className="soha-row-action-icons" size={2}>
+                              <Space size={4}>
                                 <ManagementIconButton
                                   aria-label="查看运行态"
                                   icon={<ArrowRightOutlined />}

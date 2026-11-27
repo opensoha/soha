@@ -216,9 +216,11 @@ describe('DeliveryOverviewPage', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    expect(container.querySelector('.soha-delivery-overview-metrics')?.textContent).toBe(
-      '应用2服务3发布目标涉及集群2',
+    const podTexts = [...container.querySelectorAll('.soha-overview-spatial-pod')].map(
+      (pod) =>
+        `${pod.querySelector('.soha-overview-spatial-pod__label')?.textContent ?? ''}${pod.querySelector('.soha-overview-spatial-pod__value')?.textContent ?? ''}`,
     )
+    expect(podTexts.join('')).toBe('应用2服务3发布目标涉及集群2')
     expect(container.querySelector('[role="combobox"]')).toBeNull()
   })
 

@@ -1,9 +1,3 @@
-.soha-clusterrole-detail .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-clusterrole-detail .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-clusterrole-detail .soha-clusterrole-section-title,
 .soha-clusterrole-detail .soha-clusterrole-rules-toolbar {
   display: flex;
@@ -24,9 +18,10 @@
   display: block;
 }
 .soha-clusterrole-detail .soha-clusterrole-selector {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--soha-border-color);
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
   min-width: 0;
   overflow-wrap: anywhere;
 }

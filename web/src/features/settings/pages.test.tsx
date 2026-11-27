@@ -3,7 +3,7 @@
 import type { PermissionSnapshot } from '@/types'
 import { useAuthStore } from '@/stores/auth-store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { App as AntdApp } from 'antd'
+import { App as AntdApp, ConfigProvider } from 'antd'
 import type { ReactNode } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -415,11 +415,13 @@ async function renderWithProviders(node: ReactNode, route: string) {
 
   await act(async () => {
     root.render(
-      <MemoryRouter initialEntries={[route]}>
-        <AntdApp>
-          <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
-        </AntdApp>
-      </MemoryRouter>,
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <MemoryRouter initialEntries={[route]}>
+          <AntdApp>
+            <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+          </AntdApp>
+        </MemoryRouter>
+      </ConfigProvider>,
     )
   })
 
@@ -573,15 +575,23 @@ describe('settings ai page rendering', () => {
     expect(container.textContent).toContain('保留 90 天')
     expect(container.querySelectorAll('.soha-overview-section-bar')).toHaveLength(0)
     expect(container.querySelectorAll('.soha-overview-panel-card > .ant-card-head')).toHaveLength(2)
-    expect(container.querySelector('a[href="/access/users"]')?.textContent).toContain('查看用户')
-    expect(container.querySelector('a[href="/system/online-users"]')?.textContent).toContain(
-      '查看会话',
-    )
-    expect(container.querySelector('a[href="/system/operations"]')?.textContent).toContain(
-      '查看操作',
-    )
-    expect(container.querySelector('a[href="/system/audit"]')?.textContent).toContain('查看审计')
-    expect(container.querySelectorAll('.soha-overview-metric-card.is-default')).toHaveLength(4)
+    expect(
+      container.querySelector('.soha-settings-overview-panels a[href="/access/users"]')
+        ?.textContent,
+    ).toContain('查看用户')
+    expect(
+      container.querySelector('.soha-settings-overview-panels a[href="/system/online-users"]')
+        ?.textContent,
+    ).toContain('查看会话')
+    expect(
+      container.querySelector('.soha-settings-overview-panels a[href="/system/operations"]')
+        ?.textContent,
+    ).toContain('查看操作')
+    expect(
+      container.querySelector('.soha-settings-overview-panels a[href="/system/audit"]')
+        ?.textContent,
+    ).toContain('查看审计')
+    expect(container.querySelectorAll('.soha-overview-spatial-pod')).toHaveLength(3)
     expect(container.querySelector('.soha-settings-overview-chip-grid')).toBeNull()
     expect(container.textContent).not.toContain('常用入口')
     expect(container.textContent).not.toContain('品牌配置')
@@ -914,14 +924,28 @@ describe('settings ai page rendering', () => {
 
   it('advances the login source step form without saving', async () => {
     await renderWithProviders(<LoginSettingsPage />, '/settings/login')
-    const editButton = document.body.querySelector(
-      'button[aria-label="编辑登录源"]',
+    const moreButton = document.body.querySelector(
+      'button[aria-label="更多操作：OIDC"]',
     ) as HTMLButtonElement | null
 
-    expect(editButton).toBeTruthy()
+    expect(moreButton).toBeTruthy()
 
     await act(async () => {
-      editButton?.click()
+      moreButton?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const editMenuItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((item) => item.textContent?.trim() === '编辑')
+
+    expect(editMenuItem).toBeTruthy()
+
+    await act(async () => {
+      editMenuItem?.click()
       await Promise.resolve()
     })
 
@@ -942,12 +966,22 @@ describe('settings ai page rendering', () => {
 
   it('offers system roles in the login source default role selector', async () => {
     await renderWithProviders(<LoginSettingsPage />, '/settings/login')
-    const editButton = document.body.querySelector(
-      'button[aria-label="编辑登录源"]',
+    const moreButton = document.body.querySelector(
+      'button[aria-label="更多操作：OIDC"]',
     ) as HTMLButtonElement | null
 
     await act(async () => {
-      editButton?.click()
+      moreButton?.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const editItem = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('编辑'),
+    ) as HTMLElement | undefined
+
+    await act(async () => {
+      editItem?.click()
       await Promise.resolve()
     })
 
@@ -1323,37 +1357,57 @@ describe('settings ai page rendering', () => {
         <AISettingsPage embedded />,
         '/ai-workbench/model-settings',
       )
-      const button = (label: string) =>
-        container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+      const trigger = () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="更多操作 evidence @ 1.2"]')
       const waitFor = async (ready: () => boolean) => {
         for (let attempt = 0; attempt < 20 && !ready(); attempt++) {
           await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
         }
       }
-      const click = async (label: string) => {
-        const target = button(label)
-        expect(target?.disabled).toBe(false)
-        await act(async () => target?.click())
+      const openMenu = async () => {
+        await waitFor(() => Boolean(trigger()))
+        if (!trigger()?.classList.contains('ant-dropdown-open')) {
+          await act(async () => trigger()?.click())
+          await waitFor(() => Boolean(trigger()?.classList.contains('ant-dropdown-open')))
+        }
       }
-      await waitFor(() => Boolean(button('启用 evidence @ 1.2')))
-      await click('启用 evidence @ 1.2')
-      await waitFor(() =>
-        Boolean(button('停用 evidence @ 1.2') && !button('停用 evidence @ 1.2')?.disabled),
-      )
+      const menuItem = (label: string) =>
+        Array.from(
+          document.body.querySelectorAll<HTMLElement>(
+            '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+          ),
+        )
+          .reverse()
+          .find((item) => item.textContent?.trim() === label)
+      const clickMenu = async (label: string) => {
+        await openMenu()
+        const target = menuItem(label)
+        expect(target).toBeTruthy()
+        expect(target?.getAttribute('aria-disabled')).not.toBe('true')
+        await act(async () => target?.click())
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      }
+      const allFeedback = () =>
+        Array.from(document.querySelectorAll('.soha-operation-feedback'))
+          .map((notice) => notice.textContent ?? '')
+          .join(' || ')
+      await clickMenu('启用')
+      await waitFor(() => allFeedback().includes('此资产版本已启用'))
       expect(apiPutMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2`, { enabled: true })
       const probeFeedback = (scope: string) =>
         Array.from(document.querySelectorAll('.soha-operation-feedback')).find((notice) =>
           notice.textContent?.includes(`evidence @ 1.2 · ${scope}`),
         )?.textContent ?? ''
-      await click('探测 evidence @ 1.2 · Chat')
+      await clickMenu('探测 Chat')
       await waitFor(() => probeFeedback('Chat').includes('探测就绪'))
       expect(probeFeedback('Chat')).toContain('tool:read')
       expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'chat' })
-      await click('探测 evidence @ 1.2 · Heya')
+      await clickMenu('探测 Heya')
       await waitFor(() => probeFeedback('Heya').includes('探测进程清理未确认'))
       expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'heya' })
       expect(probeFeedback('Heya')).toContain('探测进程清理未确认')
-      expect(button('探测 evidence @ 1.2 · Heya')?.disabled).toBe(true)
+      await openMenu()
+      expect(menuItem('探测 Heya')?.getAttribute('aria-disabled')).toBe('true')
     } finally {
       await act(async () => roots.pop()?.unmount())
       await act(async () => {
@@ -1413,13 +1467,21 @@ describe('settings ai page rendering', () => {
       '/ai-workbench/data-sources',
     )
     expect(page.textContent).toContain('后端已退役')
-    expect(page.querySelector('[aria-label="编辑数据源"]')).toBeNull()
-    expect(page.querySelector('[aria-label="校验数据源连接"]')).toBeNull()
-    const disable = page.querySelector<HTMLButtonElement>('[aria-label="停用旧 AI 数据源"]')!
-    await act(async () => disable.click())
+    const more = page.querySelector<HTMLButtonElement>('button[aria-label="更多操作 Old traces"]')!
+    expect(more).toBeTruthy()
+    await act(async () => more.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+    const openItems = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    )
+    expect(openItems.map((item) => item.textContent?.trim())).toEqual(['停用'])
+    await act(async () => openItems[0].click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
     expect(apiPutMock).not.toHaveBeenCalled()
     const confirmation = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('button'),
+      document.body.querySelectorAll<HTMLButtonElement>('.ant-modal-confirm-btns button'),
     ).find((button) => button.textContent?.replace(/\s/g, '') === '停用')!
     await act(async () => confirmation.click())
     expect(apiPutMock).toHaveBeenCalledWith('/copilot/data-sources/old-traces', {

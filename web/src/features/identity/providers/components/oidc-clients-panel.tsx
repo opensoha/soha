@@ -8,6 +8,7 @@ import {
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { isApiError } from '@/services/api-error'
@@ -22,7 +23,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Popconfirm, Space, Typography } from 'antd'
+import { App, Button, Popconfirm, Space, Typography } from 'antd'
 import { useMemo, useState } from 'react'
 import { createIdentityOIDCClient, revealIdentityOIDCClientSecret } from '../api'
 import { identityProviderKeys } from '../keys'
@@ -54,6 +55,7 @@ export function OIDCClientsPanel({
   onSecretCreated,
   provider,
 }: OIDCClientsPanelProps) {
+  const { modal } = App.useApp()
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [modalOpen, setModalOpen] = useState(false)
@@ -256,63 +258,58 @@ export function OIDCClientsPanel({
         ...tableColumnPresets.action,
         key: 'actions',
         render: (_, record) => (
-          <Space size={4}>
-            <Popconfirm
-              cancelText="取消"
-              description="查看操作会记录到审计日志。"
-              disabled={
-                operationBlocked ||
-                !canUpdate ||
-                record.clientType === 'public' ||
-                record.clientSecretAvailable === false
-              }
-              okButtonProps={{
-                ...{ loading: revealingClientId === record.id },
-                disabled: operationBlocked,
-              }}
-              okText="查看"
-              title={`查看 ${record.clientId} 的 Client Secret`}
-              onConfirm={() => void revealSecret(record)}
-            >
-              <ManagementIconButton
-                aria-label="查看 Client Secret"
-                disabled={
+          <TableRowActionMenu
+            targetLabel={record.clientId}
+            loading={revealingClientId === record.id}
+            items={[
+              {
+                key: 'reveal',
+                icon: <EyeOutlined />,
+                label: '查看 Client Secret',
+                disabled:
+                  operationBlocked ||
                   !canUpdate ||
                   record.clientType === 'public' ||
-                  record.clientSecretAvailable === false
-                }
-                icon={<EyeOutlined />}
-                tooltip={
-                  record.clientType === 'public'
-                    ? 'Public client 不使用 Secret'
-                    : record.clientSecretAvailable === false
-                      ? 'Secret 不可查看，请编辑并设置新 Secret'
-                      : '查看 Client Secret'
-                }
-              />
-            </Popconfirm>
-            <ManagementIconButton
-              disabled={operationBlocked || !canUpdate}
-              icon={<EditOutlined />}
-              onClick={() => openEdit(record)}
-              tooltip="编辑"
-            />
-            <Popconfirm
-              cancelText="取消"
-              disabled={operationBlocked || !canDelete}
-              okButtonProps={{
-                ...{ danger: true, loading: deleteMutation.isPending },
-                disabled: operationBlocked,
-              }}
-              okText="删除"
-              onConfirm={() =>
-                deleteMutation.mutate({ providerId: provider.id, clientId: record.id })
-              }
-              title={`删除 ${record.clientId}`}
-            >
-              <Button danger disabled={!canDelete} icon={<DeleteOutlined />} size="small" />
-            </Popconfirm>
-          </Space>
+                  record.clientSecretAvailable === false,
+                onClick: () => {
+                  modal.confirm({
+                    title: `查看 ${record.clientId} 的 Client Secret`,
+                    content: '查看操作会记录到审计日志。',
+                    okText: '查看',
+                    cancelText: '取消',
+                    onOk: () => revealSecret(record),
+                  })
+                },
+              },
+              {
+                key: 'edit',
+                icon: <EditOutlined />,
+                label: '编辑',
+                disabled: operationBlocked || !canUpdate,
+                onClick: () => openEdit(record),
+              },
+              { type: 'divider' },
+              {
+                key: 'delete',
+                icon: <DeleteOutlined />,
+                label: '删除',
+                danger: true,
+                disabled: operationBlocked || !canDelete,
+                onClick: () => {
+                  modal.confirm({
+                    title: `删除 ${record.clientId}`,
+                    okText: '删除',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true },
+                    onOk: () =>
+                      deleteMutation
+                        .mutateAsync({ providerId: provider.id, clientId: record.id })
+                        .catch(() => undefined),
+                  })
+                },
+              },
+            ]}
+          />
         ),
       },
     ],
@@ -320,9 +317,10 @@ export function OIDCClientsPanel({
       canDelete,
       canUpdate,
       deleteMutation,
-      onSecretCreated,
+      modal,
+      operationBlocked,
+      openEdit,
       provider.id,
-      queryClient,
       revealSecret,
       revealingClientId,
       t,

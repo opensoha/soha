@@ -1,17 +1,18 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import {
-  ManagementIconButton,
   ManagementState,
   useManagementTextFilter,
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAuthStore } from '@/stores/auth-store'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
 import {
+  AimOutlined,
   CheckOutlined,
   CloseOutlined,
   CopyOutlined,
@@ -24,9 +25,10 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Descriptions, Form, Input, Modal, Popconfirm, Space, Typography } from 'antd'
+import { App, Button, Descriptions, Form, Input, Modal, Space, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import '../copilot-pages.css'
 import { gatewayKeys } from './keys'
 import {
   decideGatewayApproval,
@@ -548,6 +550,7 @@ function isPendingApproval(record: ApprovalRequest) {
 }
 
 export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey }) {
+  const { modal } = App.useApp()
   const [form] = Form.useForm<GatewayDrawerFormValues>()
   const [decisionForm] = Form.useForm<{ comment?: string }>()
   const queryClient = useQueryClient()
@@ -1187,7 +1190,17 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       width: 220,
       render: (_, record) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{record.name}</Text>
+          {canUpdateClients && !blocked ? (
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openDrawer({ kind: 'ai-client', record })}
+            >
+              {record.name}
+            </Button>
+          ) : (
+            <Text strong>{record.name}</Text>
+          )}
           <Text type="secondary">{record.id}</Text>
         </Space>
       ),
@@ -1207,38 +1220,38 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     { title: 'Redirect URIs', dataIndex: 'redirectUris', render: (value) => compactList(value, 2) },
     { title: '更新时间', dataIndex: 'updatedAt', width: 140, render: formatDateTime },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 120,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            size="small"
-            tooltip="编辑"
-            aria-label="编辑 client"
-            icon={<EditOutlined />}
-            disabled={blocked || !canUpdateClients}
-            onClick={() => openDrawer({ kind: 'ai-client', record })}
-          />
-          <Popconfirm
-            disabled={blocked}
-            title="确认禁用 client？"
-            description="该操作会立即更新 AI Gateway 控制面。"
-            okButtonProps={{ danger: true, loading: disableClientMutation.isPending }}
-            onConfirm={() => disableClientMutation.mutate(record)}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="禁用"
-              aria-label="禁用 client"
-              danger
-              icon={<StopOutlined />}
-              loading={disableClientMutation.isPending}
-              disabled={blocked || !canUpdateClients || record.status === 'disabled'}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={[
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              disabled: blocked || !canUpdateClients,
+              onClick: () => openDrawer({ kind: 'ai-client', record }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'disable',
+              label: '禁用',
+              icon: <StopOutlined />,
+              danger: true,
+              disabled: blocked || !canUpdateClients || record.status === 'disabled',
+              onClick: () =>
+                modal.confirm({
+                  title: '确认禁用 client？',
+                  content: '该操作会立即更新 AI Gateway 控制面。',
+                  okText: '禁用',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => disableClientMutation.mutateAsync(record),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1250,7 +1263,17 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       width: 240,
       render: (_, record) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{record.name}</Text>
+          {canRelayUpdate && !blocked ? (
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openDrawer({ kind: 'relay-upstream', record })}
+            >
+              {record.name}
+            </Button>
+          ) : (
+            <Text strong>{record.name}</Text>
+          )}
           <Text type="secondary">{record.id}</Text>
         </Space>
       ),
@@ -1304,52 +1327,44 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     { title: '更新时间', dataIndex: 'updatedAt', width: 140, render: formatDateTime },
     {
       ...tableColumnPresets.action,
-      title: '',
-      key: 'actions',
-      width: 150,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            size="small"
-            tooltip="测试连接"
-            aria-label="测试上游连接"
-            icon={<CheckOutlined />}
-            disabled={blocked || !canRelayTest || record.status === 'disabled'}
-            loading={
-              testUpstreamMutation.isPending &&
-              !!testUpstreamMutation.variables &&
-              'record' in testUpstreamMutation.variables &&
-              !testUpstreamMutation.variables.importModels &&
-              testUpstreamMutation.variables.record.id === record.id
-            }
-            onClick={() => testUpstreamMutation.mutate({ record })}
-          />
-          <ManagementIconButton
-            size="small"
-            tooltip="编辑"
-            aria-label="编辑上游"
-            icon={<EditOutlined />}
-            disabled={blocked || !canRelayUpdate}
-            onClick={() => openDrawer({ kind: 'relay-upstream', record })}
-          />
-          <Popconfirm
-            disabled={blocked}
-            title="禁用上游？"
-            description="该操作会停止新的模型中转请求选择该上游。"
-            okButtonProps={{ danger: true, loading: disableUpstreamMutation.isPending }}
-            onConfirm={() => disableUpstreamMutation.mutate(record)}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="禁用"
-              aria-label="禁用上游"
-              danger
-              icon={<StopOutlined />}
-              loading={disableUpstreamMutation.isPending}
-              disabled={blocked || !canRelayUpdate || record.status === 'disabled'}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={[
+            {
+              key: 'test',
+              label: '测试连接',
+              icon: <CheckOutlined />,
+              disabled: blocked || !canRelayTest || record.status === 'disabled',
+              onClick: () => testUpstreamMutation.mutate({ record }),
+            },
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              disabled: blocked || !canRelayUpdate,
+              onClick: () => openDrawer({ kind: 'relay-upstream', record }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'disable',
+              label: '禁用',
+              icon: <StopOutlined />,
+              danger: true,
+              disabled: blocked || !canRelayUpdate || record.status === 'disabled',
+              onClick: () =>
+                modal.confirm({
+                  title: '禁用上游？',
+                  content: '该操作会停止新的模型中转请求选择该上游。',
+                  okText: '禁用',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => disableUpstreamMutation.mutateAsync(record),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1361,7 +1376,17 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       width: 220,
       render: (_, record) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{record.publicModel}</Text>
+          {canRelayUpdate && !blocked ? (
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openDrawer({ kind: 'relay-route', record })}
+            >
+              {record.publicModel}
+            </Button>
+          ) : (
+            <Text strong>{record.publicModel}</Text>
+          )}
           <Text type="secondary">{record.routeGroup || 'default'}</Text>
         </Space>
       ),
@@ -1413,58 +1438,57 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     { title: '更新时间', dataIndex: 'updatedAt', width: 140, render: formatDateTime },
     {
       ...tableColumnPresets.action,
-      title: '',
-      key: 'actions',
-      width: 130,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            size="small"
-            tooltip="复制"
-            aria-label="复制模型路由"
-            icon={<CopyOutlined />}
-            disabled={blocked || !canRelayCreate}
-            onClick={() =>
-              openDrawer({
-                kind: 'relay-route',
-                initialValues: {
-                  ...record,
-                  id: undefined,
-                  publicModel: `${record.publicModel}-copy`,
-                  enabled: 'true',
-                  transformPolicyJson: jsonTextFromRecord(record.transformPolicy),
-                  fallbackPolicyJson: jsonTextFromRecord(record.fallbackPolicy),
-                  cachePolicyJson: jsonTextFromRecord(record.cachePolicy),
-                  metadataJson: jsonTextFromRecord(record.metadata),
-                },
-              })
-            }
-          />
-          <ManagementIconButton
-            size="small"
-            tooltip="编辑"
-            aria-label="编辑模型路由"
-            icon={<EditOutlined />}
-            disabled={blocked || !canRelayUpdate}
-            onClick={() => openDrawer({ kind: 'relay-route', record })}
-          />
-          <Popconfirm
-            disabled={blocked}
-            title="删除模型路由？"
-            description="删除后该 public model 不再使用这条路由。"
-            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-            onConfirm={() => deleteMutation.mutate({ kind: 'model-route', id: record.id })}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="删除"
-              aria-label="删除模型路由"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={blocked || !canRelayDelete}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.publicModel}`}
+          items={[
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              disabled: blocked || !canRelayUpdate,
+              onClick: () => openDrawer({ kind: 'relay-route', record }),
+            },
+            {
+              key: 'copy',
+              label: '复制',
+              icon: <CopyOutlined />,
+              disabled: blocked || !canRelayCreate,
+              onClick: () =>
+                openDrawer({
+                  kind: 'relay-route',
+                  initialValues: {
+                    ...record,
+                    id: undefined,
+                    publicModel: `${record.publicModel}-copy`,
+                    enabled: 'true',
+                    transformPolicyJson: jsonTextFromRecord(record.transformPolicy),
+                    fallbackPolicyJson: jsonTextFromRecord(record.fallbackPolicy),
+                    cachePolicyJson: jsonTextFromRecord(record.cachePolicy),
+                    metadataJson: jsonTextFromRecord(record.metadata),
+                  },
+                }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: blocked || !canRelayDelete,
+              onClick: () =>
+                modal.confirm({
+                  title: '删除模型路由？',
+                  content: '删除后该 public model 不再使用这条路由。',
+                  okText: '删除',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => deleteMutation.mutateAsync({ kind: 'model-route', id: record.id }),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1580,51 +1604,51 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       render: (_, record) => <StatusTag value={tokenStatus(record)} />,
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 120,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => {
         const isOwner = record.userId === currentUser?.userId
         const canRotate = canInvoke && isOwner
         const canRevoke = canRevokeTokens || (canInvoke && isOwner)
         return (
-          <Space className="soha-row-action-icons">
-            <Popconfirm
-              disabled={blocked}
-              title="轮换 personal login key？"
-              description="旧 key 会被吊销，新明文只展示一次。只有 owner 本人可以轮换。"
-              okButtonProps={{ loading: rotateTokenMutation.isPending }}
-              onConfirm={() =>
-                rotateTokenMutation.mutate({ kind: 'personal-token', id: record.id })
-              }
-            >
-              <ManagementIconButton
-                size="small"
-                tooltip="轮换"
-                aria-label="轮换 personal login key"
-                icon={<ReloadOutlined />}
-                loading={rotateTokenMutation.isPending}
-                disabled={blocked || !canRotate || !!record.revokedAt}
-              />
-            </Popconfirm>
-            <Popconfirm
-              disabled={blocked}
-              title="吊销 personal login key？"
-              description="吊销后该 key 将不能再登录或调用 AI Gateway，审计记录会保留。"
-              okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-              onConfirm={() => deleteMutation.mutate({ kind: 'personal-token', id: record.id })}
-            >
-              <ManagementIconButton
-                size="small"
-                tooltip="吊销"
-                aria-label="吊销 personal login key"
-                danger
-                icon={<StopOutlined />}
-                disabled={blocked || !canRevoke || !!record.revokedAt}
-              />
-            </Popconfirm>
-          </Space>
+          <TableRowActionMenu
+            ariaLabel={`更多操作 ${record.name}`}
+            items={[
+              {
+                key: 'rotate',
+                label: '轮换',
+                icon: <ReloadOutlined />,
+                disabled: blocked || !canRotate || !!record.revokedAt,
+                onClick: () =>
+                  modal.confirm({
+                    title: '轮换 personal login key？',
+                    content: '旧 key 会被吊销，新明文只展示一次。只有 owner 本人可以轮换。',
+                    okText: '轮换',
+                    cancelText: '取消',
+                    onOk: () =>
+                      rotateTokenMutation.mutateAsync({ kind: 'personal-token', id: record.id }),
+                  }),
+              },
+              { type: 'divider' as const },
+              {
+                key: 'revoke',
+                label: '吊销',
+                icon: <StopOutlined />,
+                danger: true,
+                disabled: blocked || !canRevoke || !!record.revokedAt,
+                onClick: () =>
+                  modal.confirm({
+                    title: '吊销 personal login key？',
+                    content: '吊销后该 key 将不能再登录或调用 AI Gateway，审计记录会保留。',
+                    okText: '吊销',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true },
+                    onOk: () =>
+                      deleteMutation.mutateAsync({ kind: 'personal-token', id: record.id }),
+                  }),
+              },
+            ]}
+          />
         )
       },
     },
@@ -1651,19 +1675,21 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     { title: '角色', dataIndex: 'roleIds', render: (value) => compactList(value, 3) },
     { title: '组织', dataIndex: 'teamIds', render: (value) => compactList(value, 2) },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 150,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space>
-          <Button
-            size="small"
-            icon={<KeyOutlined />}
-            disabled={blocked || !canCreateTokens || record.status !== 'active'}
-            onClick={() => openDrawer({ kind: 'service-token', record })}
-          />
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={[
+            {
+              key: 'issue-token',
+              label: '签发 Token',
+              icon: <KeyOutlined />,
+              disabled: blocked || !canCreateTokens || record.status !== 'active',
+              onClick: () => openDrawer({ kind: 'service-token', record }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1709,40 +1735,39 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       render: (_, record) => <StatusTag value={tokenStatus(record)} />,
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 120,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <Popconfirm
-            disabled={blocked}
-            title="轮换服务账号 token？"
-            description="系统会生成新明文并吊销旧 token，新明文只展示一次。"
-            okButtonProps={{ loading: rotateTokenMutation.isPending }}
-            onConfirm={() => rotateTokenMutation.mutate({ kind: 'service-token', id: record.id })}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="轮换"
-              aria-label="轮换服务 token"
-              icon={<ReloadOutlined />}
-              loading={rotateTokenMutation.isPending}
-              disabled={blocked || !canRotateTokens || !!record.revokedAt}
-            />
-          </Popconfirm>
-          <ManagementIconButton
-            size="small"
-            tooltip="吊销"
-            aria-label="吊销服务 token"
-            danger
-            icon={<StopOutlined />}
-            disabled={blocked || !canRevokeTokens || !!record.revokedAt}
-            onClick={() =>
-              openDrawer({ kind: 'service-token-revoke', initialValues: { tokenId: record.id } })
-            }
-          />
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name || record.id}`}
+          items={[
+            {
+              key: 'rotate',
+              label: '轮换',
+              icon: <ReloadOutlined />,
+              disabled: blocked || !canRotateTokens || !!record.revokedAt,
+              onClick: () =>
+                modal.confirm({
+                  title: '轮换服务账号 token？',
+                  content: '系统会生成新明文并吊销旧 token，新明文只展示一次。',
+                  okText: '轮换',
+                  cancelText: '取消',
+                  onOk: () =>
+                    rotateTokenMutation.mutateAsync({ kind: 'service-token', id: record.id }),
+                }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'revoke',
+              label: '吊销',
+              icon: <StopOutlined />,
+              danger: true,
+              disabled: blocked || !canRevokeTokens || !!record.revokedAt,
+              onClick: () =>
+                openDrawer({ kind: 'service-token-revoke', initialValues: { tokenId: record.id } }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1782,27 +1807,30 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     },
     { title: 'Scope', dataIndex: 'resourceScopes', render: scopeSummary },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 80,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Popconfirm
-          disabled={blocked}
-          title="删除 MCP tool grant？"
-          description="该操作会立即更新 AI Gateway 控制面。"
-          okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-          onConfirm={() => deleteMutation.mutate({ kind: 'grant', id: record.id })}
-        >
-          <ManagementIconButton
-            size="small"
-            tooltip="删除"
-            aria-label="删除 MCP tool grant"
-            danger
-            icon={<DeleteOutlined />}
-            disabled={blocked || !canDeleteGrants}
-          />
-        </Popconfirm>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.toolName}`}
+          items={[
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: blocked || !canDeleteGrants,
+              onClick: () =>
+                modal.confirm({
+                  title: '删除 MCP tool grant？',
+                  content: '该操作会立即更新 AI Gateway 控制面。',
+                  okText: '删除',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => deleteMutation.mutateAsync({ kind: 'grant', id: record.id }),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1814,7 +1842,17 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       width: 240,
       render: (_, record) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{record.name}</Text>
+          {canUpdatePolicies && !blocked ? (
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openDrawer({ kind: 'access-policy', record })}
+            >
+              {record.name}
+            </Button>
+          ) : (
+            <Text strong>{record.name}</Text>
+          )}
           <Text type="secondary">{record.id}</Text>
         </Space>
       ),
@@ -1850,37 +1888,38 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       render: (value) => <StatusTag value={value ? 'enabled' : 'disabled'} />,
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 96,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            size="small"
-            tooltip="编辑"
-            aria-label="编辑 access policy"
-            icon={<EditOutlined />}
-            disabled={blocked || !canUpdatePolicies}
-            onClick={() => openDrawer({ kind: 'access-policy', record })}
-          />
-          <Popconfirm
-            disabled={blocked}
-            title="删除 access policy？"
-            description="该操作会立即更新 AI Gateway 控制面。"
-            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-            onConfirm={() => deleteMutation.mutate({ kind: 'policy', id: record.id })}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="删除"
-              aria-label="删除 access policy"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={blocked || !canDeletePolicies}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={[
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              disabled: blocked || !canUpdatePolicies,
+              onClick: () => openDrawer({ kind: 'access-policy', record }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: blocked || !canDeletePolicies,
+              onClick: () =>
+                modal.confirm({
+                  title: '删除 access policy？',
+                  content: '该操作会立即更新 AI Gateway 控制面。',
+                  okText: '删除',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => deleteMutation.mutateAsync({ kind: 'policy', id: record.id }),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -1892,7 +1931,17 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       width: 220,
       render: (_, record) => (
         <Space orientation="vertical" size={0}>
-          <Text strong>{record.subjectId}</Text>
+          {canUpdateSkills && !blocked ? (
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openDrawer({ kind: 'skill-binding', record })}
+            >
+              {record.subjectId}
+            </Button>
+          ) : (
+            <Text strong>{record.subjectId}</Text>
+          )}
           <Text type="secondary">
             {record.subjectType}
             {record.aiClientId ? ` / ${record.aiClientId}` : ''}
@@ -1918,37 +1967,38 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       render: (value) => <StatusTag value={value ? 'enabled' : 'disabled'} />,
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 96,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space className="soha-row-action-icons">
-          <ManagementIconButton
-            size="small"
-            tooltip="编辑"
-            aria-label="编辑 skill binding"
-            icon={<EditOutlined />}
-            disabled={blocked || !canUpdateSkills}
-            onClick={() => openDrawer({ kind: 'skill-binding', record })}
-          />
-          <Popconfirm
-            disabled={blocked}
-            title="删除 skill binding？"
-            description="该操作会立即更新 AI Gateway 控制面。"
-            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-            onConfirm={() => deleteMutation.mutate({ kind: 'binding', id: record.id })}
-          >
-            <ManagementIconButton
-              size="small"
-              tooltip="删除"
-              aria-label="删除 skill binding"
-              danger
-              icon={<DeleteOutlined />}
-              disabled={blocked || !canDeleteSkills}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.subjectId}`}
+          items={[
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              disabled: blocked || !canUpdateSkills,
+              onClick: () => openDrawer({ kind: 'skill-binding', record }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: blocked || !canDeleteSkills,
+              onClick: () =>
+                modal.confirm({
+                  title: '删除 skill binding？',
+                  content: '该操作会立即更新 AI Gateway 控制面。',
+                  okText: '删除',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => deleteMutation.mutateAsync({ kind: 'binding', id: record.id }),
+                }),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -2060,13 +2110,13 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     {
       title: 'Risk',
       dataIndex: 'riskLevel',
-      width: 100,
+      width: 116,
       render: (value) => <StatusTag value={value} />,
     },
     {
       title: '策略',
       dataIndex: 'strategy',
-      width: 170,
+      width: 184,
       render: (value) => <MetadataTag label={value} />,
     },
     {
@@ -2103,50 +2153,52 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       ),
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 150,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space>
-          <Button
-            size="small"
-            icon={<CheckOutlined />}
-            disabled={blocked || !canApprove || !isPendingApproval(record)}
-            loading={decisionMutation.isPending}
-            onClick={() => {
-              if (!blocked) {
-                decisionMutation.reset()
-                setDecisionTarget({ action: 'approve', record })
-              }
-            }}
-          />
-          <Button
-            size="small"
-            danger
-            icon={<CloseOutlined />}
-            disabled={blocked || !canReject || !isPendingApproval(record)}
-            loading={decisionMutation.isPending}
-            onClick={() => {
-              if (!blocked) {
-                decisionMutation.reset()
-                setDecisionTarget({ action: 'reject', record })
-              }
-            }}
-          />
-          <Button
-            size="small"
-            icon={<StopOutlined />}
-            disabled={blocked || !canCancel || !isPendingApproval(record)}
-            loading={decisionMutation.isPending}
-            onClick={() => {
-              if (!blocked) {
-                decisionMutation.reset()
-                setDecisionTarget({ action: 'cancel', record })
-              }
-            }}
-          />
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.id}`}
+          items={[
+            {
+              key: 'approve',
+              label: '批准',
+              icon: <CheckOutlined />,
+              disabled: blocked || !canApprove || !isPendingApproval(record),
+              onClick: () => {
+                if (!blocked) {
+                  decisionMutation.reset()
+                  setDecisionTarget({ action: 'approve', record })
+                }
+              },
+            },
+            {
+              key: 'cancel',
+              label: '取消申请',
+              icon: <StopOutlined />,
+              disabled: blocked || !canCancel || !isPendingApproval(record),
+              onClick: () => {
+                if (!blocked) {
+                  decisionMutation.reset()
+                  setDecisionTarget({ action: 'cancel', record })
+                }
+              },
+            },
+            { type: 'divider' as const },
+            {
+              key: 'reject',
+              label: '拒绝',
+              icon: <CloseOutlined />,
+              danger: true,
+              disabled: blocked || !canReject || !isPendingApproval(record),
+              onClick: () => {
+                if (!blocked) {
+                  decisionMutation.reset()
+                  setDecisionTarget({ action: 'reject', record })
+                }
+              },
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -2189,21 +2241,28 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
     { title: 'Configured', dataIndex: 'configured', width: 120 },
     { title: 'Total', dataIndex: 'total', width: 100 },
     {
-      title: '',
-      key: 'actions',
-      width: 130,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Button
-          size="small"
-          type="link"
-          onClick={() => applyGovernanceDrilldown(governanceCoverageDrilldown(record))}
-        >
-          {['access_policies', 'budget', 'rate_limit', 'redaction', 'resource_scopes'].includes(
-            record.key,
-          )
-            ? '创建 policy'
-            : '定位'}
-        </Button>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.label}`}
+          items={[
+            {
+              key: 'drilldown',
+              label: [
+                'access_policies',
+                'budget',
+                'rate_limit',
+                'redaction',
+                'resource_scopes',
+              ].includes(record.key)
+                ? '创建 policy'
+                : '定位',
+              icon: <AimOutlined />,
+              onClick: () => applyGovernanceDrilldown(governanceCoverageDrilldown(record)),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -2244,25 +2303,20 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       ),
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 230,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Space wrap size={4}>
-          {governanceFindingDrilldownActions(record)
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.type}`}
+          items={governanceFindingDrilldownActions(record)
             .slice(0, 4)
-            .map((action) => (
-              <Button
-                key={`${record.type}:${action.label}`}
-                size="small"
-                type="link"
-                onClick={() => applyGovernanceDrilldown(action.target)}
-              >
-                {action.label}
-              </Button>
-            ))}
-        </Space>
+            .map((action) => ({
+              key: `${record.type}:${action.label}`,
+              label: action.label,
+              icon: <AimOutlined />,
+              onClick: () => applyGovernanceDrilldown(action.target),
+            }))}
+        />
       ),
     },
   ]
@@ -2285,17 +2339,25 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
         ),
     },
     {
-      title: '',
-      key: 'actions',
-      width: 120,
-      render: (_, record) =>
-        record.target ? (
-          <Button size="small" type="link" onClick={() => applyGovernanceDrilldown(record.target!)}>
-            定位
-          </Button>
-        ) : (
-          <Text type="secondary">-</Text>
-        ),
+      ...tableColumnPresets.action,
+      title: '操作',
+      render: (_, record) => (
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.label}`}
+          items={
+            record.target
+              ? [
+                  {
+                    key: 'locate',
+                    label: '定位',
+                    icon: <AimOutlined />,
+                    onClick: () => applyGovernanceDrilldown(record.target!),
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
 
@@ -2327,20 +2389,27 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
         ),
     },
     {
-      title: '',
-      key: 'actions',
-      width: 120,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Button
-          size="small"
-          type="link"
-          disabled={!record.refs.length}
-          onClick={() =>
-            applyGovernanceDrilldown(governanceQueueDrilldown(record, record.refs[0] ?? ''))
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.label}`}
+          items={
+            record.refs.length
+              ? [
+                  {
+                    key: 'locate',
+                    label: '定位',
+                    icon: <AimOutlined />,
+                    onClick: () =>
+                      applyGovernanceDrilldown(
+                        governanceQueueDrilldown(record, record.refs[0] ?? ''),
+                      ),
+                  },
+                ]
+              : []
           }
-        >
-          定位
-        </Button>
+        />
       ),
     },
   ]
@@ -2388,18 +2457,20 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       ),
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 150,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => (
-        <Button
-          size="small"
-          type="link"
-          onClick={() => applyGovernanceDrilldown(governanceTokenFindingDrilldown(record))}
-        >
-          {record.kind === 'service_account_token' ? '吊销 token' : '查看 PAT'}
-        </Button>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name || record.id}`}
+          items={[
+            {
+              key: 'drilldown',
+              label: record.kind === 'service_account_token' ? '吊销 token' : '查看 PAT',
+              icon: <AimOutlined />,
+              onClick: () => applyGovernanceDrilldown(governanceTokenFindingDrilldown(record)),
+            },
+          ]}
+        />
       ),
     },
   ]
@@ -2445,18 +2516,26 @@ export function GatewayPageCoordinator({ section }: { section: GatewaySectionKey
       ),
     },
     {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      width: 130,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, record) => {
         const action = governanceRecommendationDrilldownAction(record)
-        return action ? (
-          <Button size="small" type="link" onClick={() => applyGovernanceDrilldown(action.target)}>
-            {action.label}
-          </Button>
-        ) : (
-          <Text type="secondary">-</Text>
+        return (
+          <TableRowActionMenu
+            ariaLabel={`更多操作 ${record.type}`}
+            items={
+              action
+                ? [
+                    {
+                      key: 'drilldown',
+                      label: action.label,
+                      icon: <AimOutlined />,
+                      onClick: () => applyGovernanceDrilldown(action.target),
+                    },
+                  ]
+                : []
+            }
+          />
         )
       },
     },

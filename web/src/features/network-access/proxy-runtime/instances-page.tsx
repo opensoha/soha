@@ -1,5 +1,5 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementKeywordField,
@@ -9,13 +9,21 @@ import {
   ManagementState,
 } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { ApiError } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
-import { PlusOutlined } from '@ant-design/icons'
+import {
+  AppstoreOutlined,
+  HistoryOutlined,
+  KeyOutlined,
+  PlusOutlined,
+  SettingOutlined,
+} from '@ant-design/icons'
 import type {
   NetworkProxyConfigurationPatchInput,
   NetworkProxyEngine,
@@ -34,9 +42,10 @@ import { networkAccessKeys } from '../keys'
 import { createEnrollment, createInstance, updateConfiguration } from './api'
 import { proxyKeys, proxyQueries } from './queries'
 import './styles.css'
-import { ProxyConfigurationHistory } from './history'
+import { ProxyConfigurationHistoryModal } from './history'
 const engines: NetworkProxyEngine[] = ['mihomo', 'sing-box', 'v2ray', 'external']
 export default function ProxyInstancesPage() {
+  const navigate = useNavigate()
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const { message } = App.useApp()
@@ -56,6 +65,7 @@ export default function ProxyInstancesPage() {
     instances.isEnabled === false ? undefined : readableQueryData(instances)
   const [createOpen, setCreateOpen] = useState(false)
   const [configurationTarget, setConfigurationTarget] = useState<NetworkProxyInstance>()
+  const [historyTarget, setHistoryTarget] = useState<NetworkProxyInstance>()
   const [secret, setSecret] = useState<NetworkRuntimeEnrollmentSecret>()
   const [createForm] = Form.useForm<NetworkProxyInstanceInput>()
   const [configurationForm] = Form.useForm<NetworkProxyConfigurationPatchInput>()
@@ -126,7 +136,19 @@ export default function ProxyInstancesPage() {
     enroll.blocked ||
     (instances.isEnabled !== false && queryAccessDenied(instances))
   const columns: TableColumnsType<NetworkProxyInstance> = [
-    { title: t('networkAccess.proxyRuntime.name', '名称'), dataIndex: 'name', ellipsis: true },
+    {
+      title: t('networkAccess.proxyRuntime.name', '名称'),
+      dataIndex: 'name',
+      ellipsis: true,
+      render: (value: string, item) => (
+        <Link
+          to={`/network-access/proxy-instances/${encodeURIComponent(item.id)}/workspace`}
+          style={{ fontWeight: 600 }}
+        >
+          {value}
+        </Link>
+      ),
+    },
     { title: t('networkAccess.proxyRuntime.id', '实例 ID'), dataIndex: 'id', ellipsis: true },
     {
       title: t('networkAccess.proxyRuntime.engine', '引擎'),
@@ -209,49 +231,61 @@ export default function ProxyInstancesPage() {
       render: (value?: string) => (value ? formatDateTime(value) : '—'),
     },
     {
+      ...tableColumnPresets.action,
       title: t('common.actions', '操作'),
       key: 'actions',
-      className: 'soha-table-actions-column',
-      width: 245,
-      fixed: 'right',
       render: (_, item) => (
-        <Space size={4}>
-          <Link to={`/network-access/proxy-instances/${encodeURIComponent(item.id)}/workspace`}>
-            工作区
-          </Link>
-          <ProxyConfigurationHistory
-            instance={item}
-            canUpdate={canUpdate}
-            disabled={operationBlocked}
-          />
-          {canUpdate ? (
-            <Button
-              size="small"
-              onClick={() => {
-                setConfigurationTarget(item)
-                configurationForm.setFieldsValue({
-                  expectedRevision: item.desiredRevision,
-                  enabled: item.enabled,
-                  content: '',
-                  binding: item.binding,
-                  clearBinding: false,
-                })
-              }}
-            >
-              {t('networkAccess.proxyRuntime.configure', '配置')}
-            </Button>
-          ) : null}
-          {canEnroll ? (
-            <Button
-              size="small"
-              loading={enroll.isPending && enroll.variables === item.id}
-              onClick={() => enroll.mutate(item.id)}
-              disabled={operationBlocked}
-            >
-              {t('networkAccess.proxyRuntime.enroll', '登记令牌')}
-            </Button>
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={item.name}
+          loading={enroll.isPending && enroll.variables === item.id}
+          items={[
+            {
+              key: 'workspace',
+              icon: <AppstoreOutlined />,
+              label: text('工作区', 'Workspace'),
+              onClick: () =>
+                navigate(`/network-access/proxy-instances/${encodeURIComponent(item.id)}/workspace`),
+            },
+            {
+              key: 'history',
+              icon: <HistoryOutlined />,
+              label: text('历史', 'History'),
+              disabled: operationBlocked,
+              onClick: () => setHistoryTarget(item),
+            },
+            ...(canUpdate
+              ? [
+                  {
+                    key: 'configure',
+                    icon: <SettingOutlined />,
+                    label: t('networkAccess.proxyRuntime.configure', '配置'),
+                    disabled: operationBlocked,
+                    onClick: () => {
+                      setConfigurationTarget(item)
+                      configurationForm.setFieldsValue({
+                        expectedRevision: item.desiredRevision,
+                        enabled: item.enabled,
+                        content: '',
+                        binding: item.binding,
+                        clearBinding: false,
+                      })
+                    },
+                  },
+                ]
+              : []),
+            ...(canEnroll
+              ? [
+                  {
+                    key: 'enroll',
+                    icon: <KeyOutlined />,
+                    label: t('networkAccess.proxyRuntime.enroll', '登记令牌'),
+                    disabled: operationBlocked,
+                    onClick: () => enroll.mutate(item.id),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
@@ -355,6 +389,13 @@ export default function ProxyInstancesPage() {
           ) : null
         }
         empty={t('networkAccess.proxyRuntime.noInstances', '尚无代理实例。请先创建并登记运行时。')}
+      />
+      <ProxyConfigurationHistoryModal
+        instance={historyTarget}
+        canUpdate={canUpdate}
+        disabled={operationBlocked}
+        open={Boolean(historyTarget)}
+        onClose={() => setHistoryTarget(undefined)}
       />
       <Modal
         styles={operationModalStyles}

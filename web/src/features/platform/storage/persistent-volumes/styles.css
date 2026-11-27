@@ -1,12 +1,6 @@
 .soha-pv-detail {
   min-width: 0;
 }
-.soha-pv-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-pv-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-pv-detail .soha-pv-section-title,
 .soha-pv-detail .soha-pv-capacity,
 .soha-pv-detail .soha-pv-node-requirement {
@@ -18,7 +12,10 @@
 }
 .soha-pv-detail .soha-pv-capacity {
   justify-content: space-between;
-  margin-bottom: 20px;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  margin-bottom: 16px;
 }
 .soha-pv-detail .soha-pv-capacity dl {
   margin: 0;

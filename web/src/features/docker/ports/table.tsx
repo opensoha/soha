@@ -9,7 +9,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -20,13 +19,14 @@ import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
 } from '@/components/management-list'
 import { scrollableModalBodyStyle } from '@/components/modal-styles'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { dockerApi } from '../docker-api'
 import { dockerQueries } from '../queries'
 import type { DockerPortMapping, DockerPortMappingInput } from '../docker-types'
@@ -88,7 +88,7 @@ export function PortsTable({
     includeServices: canViewServices,
   })
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const portsQuery = useQuery(dockerQueries.ports(filters, dockerModuleEnabled))
   const saveMutation = useMutation({
     mutationFn: (values: DockerPortFormValues) =>
@@ -211,43 +211,52 @@ export function PortsTable({
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 96,
-      render: (_value, record) =>
-        canUpdatePorts || canDeletePorts ? (
-          <Space className="soha-row-action-icons">
-            {canUpdatePorts ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '编辑端口映射', 'Edit port mapping')}
-                size="small"
-                tooltip={localeText(localeCode, '编辑', 'Edit')}
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setEditing(record)
-                  form.setFieldsValue(record)
-                  setDrawerOpen(true)
-                }}
-              />
-            ) : null}
-            {canDeletePorts ? (
-              <Popconfirm
-                title={localeText(localeCode, '确认删除端口映射？', 'Delete this port mapping?')}
-                onConfirm={() => deleteMutation.mutate(record.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '删除端口映射', 'Delete port mapping')}
-                  size="small"
-                  tooltip={localeText(localeCode, '删除', 'Delete')}
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        ) : null,
+      render: (_value, record) => (
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canUpdatePorts
+              ? [
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '编辑端口映射', 'Edit port mapping'),
+                    onClick: () => {
+                      setEditing(record)
+                      form.setFieldsValue(record)
+                      setDrawerOpen(true)
+                    },
+                  },
+                ]
+              : []),
+            { type: 'divider' as const },
+            ...(canDeletePorts
+              ? [
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '删除端口映射', 'Delete port mapping'),
+                    danger: true,
+                    onClick: () =>
+                      modal.confirm({
+                        title: localeText(
+                          localeCode,
+                          '确认删除端口映射？',
+                          'Delete this port mapping?',
+                        ),
+                        content: record.name,
+                        okButtonProps: { danger: true },
+                        onOk: () => deleteMutation.mutateAsync(record.id),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ),
     },
   ]
   return (

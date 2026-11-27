@@ -10,6 +10,7 @@ import { TransferContext, type TransferAccess } from './context'
 import { TransferForm } from './transfer-form'
 import { Records } from './records'
 import { Destinations } from './destinations'
+import '../styles.css'
 
 export default function ManagedContentPage() {
   const viewer = useAuthStore((s) => s.user?.userId ?? '')
@@ -57,7 +58,7 @@ function Workspace({ viewer, access }: { viewer: string; access: TransferAccess 
     )
   return (
     <TransferContext.Provider value={{ viewer, scope, access, text, resume }}>
-      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+      <Space className="soha-managed-content-page" orientation="vertical" size={16} style={{ width: '100%' }}>
         <ContextFeedback
           type="info"
           showIcon
@@ -71,6 +72,7 @@ function Workspace({ viewer, access }: { viewer: string; access: TransferAccess 
           )}
         />
         <Tabs
+          className="soha-resource-tabs"
           activeKey={tab}
           onChange={setTab}
           items={[

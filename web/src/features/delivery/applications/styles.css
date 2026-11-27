@@ -126,7 +126,29 @@
 .soha-application-runtime-verification-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 16px;
+}
+
+.soha-application-runtime-delivery-grid > .ant-card,
+.soha-application-runtime-pipeline-grid > .ant-card,
+.soha-application-runtime-settings-grid > .ant-card,
+.soha-application-runtime-verification-grid > .ant-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  box-shadow: none;
+}
+
+.soha-application-runtime-delivery-grid > .ant-card > .ant-card-body,
+.soha-application-runtime-pipeline-grid > .ant-card > .ant-card-body,
+.soha-application-runtime-settings-grid > .ant-card > .ant-card-body,
+.soha-application-runtime-verification-grid > .ant-card > .ant-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .soha-application-workflow-workspace {
@@ -797,8 +819,8 @@
 }
 
 .soha-environment-production-label {
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 5px;
+  border-radius: var(--soha-radius-2xs, 4px);
   background: var(--ant-color-error-bg);
   color: var(--ant-color-error-text);
   font-size: 10px;

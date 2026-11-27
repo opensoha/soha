@@ -2,10 +2,12 @@ import type { ApplicationServiceDirectoryItem } from '@opensoha/contracts/gen/ts
 import { useState, type ReactNode } from 'react'
 import { Button, Card, Segmented, Typography } from 'antd'
 import './service-cards.css'
-import { DeploymentUnitOutlined } from '@ant-design/icons'
+import { DeploymentUnitOutlined, RocketOutlined } from '@ant-design/icons'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { tableColumnPresets } from '@/utils/table-columns'
 import type {
   ApplicationRuntimeWorkload,
   DeliveryApplicationBindingSummary,
@@ -144,7 +146,26 @@ export function ServiceCards({
       render: (_: unknown, { readiness }: Item) =>
         readiness ? `${readiness.ready} / ${readiness.desired}` : '待观测',
     },
-    { key: 'actions', title: '操作', render: (_: unknown, { card }: Item) => buildAction(card) },
+    {
+      ...tableColumnPresets.action,
+      key: 'actions',
+      title: '操作',
+      render: (_: unknown, { card }: Item) => (
+        <TableRowActionMenu
+          targetLabel={card.name}
+          items={[
+            card.service && canConfigure
+              ? {
+                  key: 'configure',
+                  label: '构建与更新',
+                  icon: <RocketOutlined />,
+                  onClick: () => onConfigure(card.id),
+                }
+              : null,
+          ]}
+        />
+      ),
+    },
   ]
   return (
     <section className="soha-service-overview-grid" aria-label="服务总览">

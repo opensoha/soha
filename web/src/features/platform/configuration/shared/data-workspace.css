@@ -16,8 +16,8 @@
 .soha-configuration-data-layout {
   display: grid;
   grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  gap: 16px;
+  align-items: stretch;
 }
 .soha-configuration-data-directory {
   min-width: 0;
@@ -26,12 +26,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 60px;
+  min-height: 54px;
   padding: 12px 16px;
 }
 .soha-configuration-data-keys {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   max-height: min(62vh, 580px);
   overflow: auto;
   padding: 0 12px 12px;
@@ -41,14 +41,17 @@
   width: 100%;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px 10px;
-  border: 1px solid var(--soha-border-color);
+  padding: 10px 12px;
+  border: 1px solid transparent;
   border-radius: var(--soha-radius-control);
-  background: var(--soha-bg-surface-muted);
+  background: var(--soha-fill-weak);
   color: var(--soha-text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease;
 }
 .soha-configuration-data-key > .anticon {
   margin-top: 3px;

@@ -75,3 +75,8 @@
     opacity: 0.35;
   }
 }
+.soha-operation-feedback.ant-notification-fade-leave {
+  pointer-events: none !important;
+  animation-duration: 0.001s !important;
+  transition-duration: 0.001s !important;
+}

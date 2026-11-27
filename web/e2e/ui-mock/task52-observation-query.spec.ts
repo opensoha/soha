@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
+import { chooseRowAction } from '../fixtures/row-actions'
 
 const from = '2026-10-16T01:00:00Z'
 const to = '2026-10-16T02:00:00Z'
@@ -271,13 +272,14 @@ test('overview retains independent stale evidence and hides a refused region', a
 }, info) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/overview')
-  await expect(page.getByText('Checkout latency QA', { exact: true })).toBeVisible()
+  const recentGrid = page.locator('.soha-monitoring-recent-grid')
+  await expect(recentGrid.getByText('Checkout latency QA', { exact: true })).toBeVisible()
   state.failedPath = '/alert-events'
   state.status = 503
   await page.getByRole('button', { name: '刷新观测总览' }).click()
   await expect(page.getByText(/最近告警未更新/)).toBeVisible()
-  await expect(page.getByText('Checkout latency QA', { exact: true })).toBeVisible()
-  await expect(page.getByText('Checkout event QA', { exact: true })).toBeVisible()
+  await expect(recentGrid.getByText('Checkout latency QA', { exact: true })).toBeVisible()
+  await expect(recentGrid.getByText('Checkout event QA', { exact: true })).toBeVisible()
   await page.screenshot({
     path: info.outputPath('observation-overview-stale.png'),
     animations: 'disabled',
@@ -285,7 +287,7 @@ test('overview retains independent stale evidence and hides a refused region', a
   state.status = 403
   await page.getByRole('button', { name: '重试读取' }).click()
   await expect(page.getByText('最近告警无访问权限')).toBeVisible()
-  await expect(page.getByText('Checkout latency QA', { exact: true })).toBeHidden()
+  await expect(recentGrid.getByText('Checkout latency QA', { exact: true })).toBeHidden()
   verifyBrowserEvidence(evidence)
 })
 
@@ -350,7 +352,7 @@ test('trace evidence keeps its absolute window when opening associated logs', as
   const { evidence } = await mocks(context, page)
   await page.goto(`/monitoring-workbench/traces?traceId=trace-qa&${windowQuery}`)
   await expect(page.getByText('GET /checkout', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '查看关联日志' }).click()
+  await chooseRowAction(page, 'checkout GET /checkout', '查看关联日志')
   await expect(page).toHaveURL(/monitoring-workbench\/logs/)
   const url = new URL(page.url())
   for (const [key, value] of Object.entries({
@@ -430,7 +432,7 @@ test('service drawer keeps independently readable dependencies and hides refused
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto(`/monitoring-workbench/services?${windowQuery}`)
-  await page.getByRole('button', { name: '查看服务详情' }).click()
+  await chooseRowAction(page, 'Checkout QA', '查看服务详情')
   const drawer = page.getByRole('dialog')
   await expect(drawer.getByText('inventory-qa', { exact: true })).toBeVisible()
   state.failedPath = '/observability/services/checkout/topology'
@@ -470,7 +472,7 @@ test('refused data source save clears private draft while preserving the write r
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/log-data-sources')
-  await page.getByRole('button', { name: '编辑日志数据源' }).click()
+  await chooseRowAction(page, '生产日志 QA', '编辑日志数据源')
   await page.getByRole('button', { name: '下一步' }).click()
   await page.getByRole('button', { name: '下一步' }).click()
   await page.getByLabel('Bearer Token').fill('qa-private-draft-canary')
@@ -481,7 +483,7 @@ test('refused data source save clears private draft while preserving the write r
     .click()
   await expect(page.getByRole('dialog')).toBeHidden()
   await expect(page.getByText(/更新日志数据源：操作请求失败/)).toBeVisible()
-  await page.getByRole('button', { name: '编辑日志数据源' }).click()
+  await chooseRowAction(page, '生产日志 QA', '编辑日志数据源')
   await page.getByRole('button', { name: '下一步' }).click()
   await page.getByRole('button', { name: '下一步' }).click()
   await expect(page.getByLabel('Bearer Token')).toHaveValue('')
@@ -495,7 +497,7 @@ test('unknown data source update preserves its reviewed form and prevents replay
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/log-data-sources')
-  await page.getByRole('button', { name: '编辑日志数据源' }).click()
+  await chooseRowAction(page, '生产日志 QA', '编辑日志数据源')
   await page.getByLabel('名称', { exact: true }).fill('生产日志 draft QA')
   await page.getByRole('button', { name: '下一步' }).click()
   await page.getByRole('button', { name: '下一步' }).click()
@@ -518,10 +520,10 @@ test('validation returned unhealthy is an observed failure and can be retried', 
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/log-data-sources')
   state.validationStatus = 'failed'
-  await page.getByRole('button', { name: '验证日志数据源' }).click()
+  await chooseRowAction(page, '生产日志 QA', '验证日志数据源')
   await expect(page.getByText('验证目标未就绪')).toBeVisible()
   state.validationStatus = 'healthy'
-  await page.getByRole('button', { name: '验证日志数据源' }).click()
+  await chooseRowAction(page, '生产日志 QA', '验证日志数据源')
   await expect(page.getByText('连接验证记录已返回')).toBeVisible()
   expect(state.writes.filter((r) => r.path.endsWith('/validate'))).toHaveLength(2)
   verifyBrowserEvidence(evidence)

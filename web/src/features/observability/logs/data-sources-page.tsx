@@ -1,16 +1,14 @@
 import { AdminTable } from '@/components/admin-table'
-import {
-  ManagementIconButton,
-  ManagementState,
-  ManagementTableToolbar,
-} from '@/components/management-list'
+import { ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { StepForm } from '@/components/step-form'
 import { StepFormModal } from '@/components/step-form-modal'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EditOutlined, ExperimentOutlined, PlusOutlined, PoweroffOutlined } from '@ant-design/icons'
 import type {
@@ -20,12 +18,12 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Collapse,
   Form,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -158,6 +156,7 @@ function isRetiredLogSource(item: ObservabilityDataSource) {
 }
 
 export function LogDataSourcesPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const snapshot = usePermissionSnapshot().data?.data
   const canCreate = hasPermission(snapshot, 'observe.log-data-sources.create')
@@ -288,10 +287,19 @@ export function LogDataSourcesPage() {
       width: 260,
       render: (name: string, item) => (
         <Space orientation="vertical" size={2}>
-          <Text strong>{name}</Text>
-          <Text type="secondary">
-            {item.config.endpoint}
-          </Text>
+          {canUpdate && !isRetiredLogSource(item) ? (
+            <Button
+              type="link"
+              disabled={writeBlocked}
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() => openEditor(item)}
+            >
+              {name}
+            </Button>
+          ) : (
+            <Text strong>{name}</Text>
+          )}
+          <Text type="secondary">{item.config.endpoint}</Text>
         </Space>
       ),
     },
@@ -329,9 +337,7 @@ export function LogDataSourcesPage() {
           {!isRetiredLogSource(item) &&
           item.validationStatus !== 'healthy' &&
           item.validationMessage ? (
-            <Text type="secondary">
-              {item.validationMessage}
-            </Text>
+            <Text type="secondary">{item.validationMessage}</Text>
           ) : null}
         </Space>
       ),
@@ -349,48 +355,56 @@ export function LogDataSourcesPage() {
       render: (value?: string) => (value ? formatDateTime(value) : '-'),
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
-      fixed: 'right',
-      width: 104,
       render: (_, item) => {
         if (isRetiredLogSource(item)) {
-          if (!canUpdate || !item.enabled) return '-'
+          if (!canUpdate || !item.enabled) return null
           return (
-            <Popconfirm
-              title={`停用日志数据源 ${item.name}？`}
-              okText="停用"
-              cancelText="取消"
-              disabled={writeBlocked}
-              onConfirm={() => disableRetiredSource(item)}
-            >
-              <ManagementIconButton
-                aria-label="停用旧日志数据源"
-                disabled={writeBlocked}
-                icon={<PoweroffOutlined />}
-                tooltip="停用"
-              />
-            </Popconfirm>
+            <TableRowActionMenu
+              targetLabel={item.name}
+              items={[
+                {
+                  key: 'disable',
+                  label: '停用旧日志数据源',
+                  icon: <PoweroffOutlined />,
+                  danger: true,
+                  disabled: writeBlocked,
+                  onClick: () => {
+                    modal.confirm({
+                      title: `停用日志数据源 ${item.name}？`,
+                      okText: '停用',
+                      cancelText: '取消',
+                      okButtonProps: { danger: true, disabled: writeBlocked },
+                      onOk: () => disableRetiredSource(item),
+                    })
+                  },
+                },
+              ]}
+            />
           )
         }
         return (
-          <Space size={2}>
-            <ManagementIconButton
-              aria-label="验证日志数据源"
-              disabled={!canValidate || validateMutation.blocked || denied}
-              icon={<ExperimentOutlined />}
-              loading={validateMutation.isPending && validateMutation.variables === item.id}
-              tooltip="验证连接"
-              onClick={() => validateMutation.mutate(item.id)}
-            />
-            <ManagementIconButton
-              aria-label="编辑日志数据源"
-              disabled={!canUpdate || writeBlocked}
-              icon={<EditOutlined />}
-              tooltip="编辑"
-              onClick={() => openEditor(item)}
-            />
-          </Space>
+          <TableRowActionMenu
+            targetLabel={item.name}
+            loading={validateMutation.isPending && validateMutation.variables === item.id}
+            items={[
+              {
+                key: 'validate',
+                label: '验证日志数据源',
+                icon: <ExperimentOutlined />,
+                disabled: !canValidate || validateMutation.blocked || denied,
+                onClick: () => validateMutation.mutate(item.id),
+              },
+              {
+                key: 'edit',
+                label: '编辑日志数据源',
+                icon: <EditOutlined />,
+                disabled: !canUpdate || writeBlocked,
+                onClick: () => openEditor(item),
+              },
+            ]}
+          />
         )
       },
     },

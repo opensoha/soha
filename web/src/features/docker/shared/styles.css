@@ -12,7 +12,7 @@
   min-height: 64px;
   padding: 14px 16px;
   border: 1px solid var(--soha-border-color);
-  border-radius: 14px;
+  border-radius: var(--soha-radius-lg, 12px);
   background: var(--soha-bg-surface);
   box-shadow: none;
 }
@@ -114,7 +114,7 @@
   min-height: 22px;
   padding: 2px 7px;
   border: 1px solid var(--soha-border-color);
-  border-radius: 6px;
+  border-radius: var(--soha-radius-control, 6px);
   background: var(--soha-fill-weak);
   white-space: nowrap;
 }
@@ -130,13 +130,26 @@
   border: 0;
 }
 
-.soha-vrt-table .soha-row-action-icons.ant-space {
-  flex-wrap: nowrap !important;
-  white-space: nowrap;
+.soha-docker-task-primary-trigger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.soha-vrt-table .soha-row-action-icons .ant-space-item {
-  flex: 0 0 auto;
+.soha-docker-task-primary-trigger:hover .ant-typography:first-child {
+  color: var(--soha-primary);
+}
+
+.soha-docker-task-primary-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .soha-vrt-metric-grid {
@@ -214,7 +227,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1.62fr) minmax(320px, 0.88fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .soha-vrt-workbench-main,
@@ -243,7 +256,7 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--soha-border-color);
-  border-radius: 12px;
+  border-radius: var(--soha-radius-control, 8px);
   background: var(--soha-fill-weak);
 }
 
@@ -302,9 +315,165 @@
 .soha-docker-panel-card.ant-card {
   overflow: hidden;
   border-color: var(--soha-border-color);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-panel, 8px);
   background: var(--soha-bg-surface);
   box-shadow: none;
+}
+
+.soha-docker-detail-bezel {
+  padding: 5px;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 5px);
+  border: 1px solid var(--soha-hairline-strong);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 72%, var(--soha-bg-surface));
+  box-shadow:
+    var(--soha-inner-highlight),
+    0 12px 28px -16px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme-mode='dark'] .soha-docker-detail-bezel {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.56);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 34px -18px rgba(0, 0, 0, 0.55);
+}
+
+.soha-docker-detail-bezel > .soha-management-detail-header {
+  padding: 16px 20px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-lg, 12px);
+  background: var(--soha-bg-surface);
+  box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.05);
+}
+
+.soha-docker-detail-bezel .soha-management-detail-header-title {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.soha-docker-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: var(--soha-radius-control, 6px);
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-docker-page > .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
+  min-height: 44px;
+  padding: 4px 6px;
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: var(--soha-radius-lg, 12px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 74%, var(--soha-bg-surface));
+  box-shadow: var(--soha-inner-highlight);
+}
+
+:root[data-theme-mode='dark'] .soha-docker-page > .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.soha-docker-page > .soha-resource-tabs.ant-tabs .ant-tabs-nav-list {
+  gap: 4px;
+}
+
+.soha-docker-page > .soha-resource-tabs.ant-tabs .ant-tabs-tab {
+  margin: 0 !important;
+  padding: 6px 14px !important;
+  border-radius: var(--soha-radius-control, 8px);
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.soha-docker-page > .soha-resource-tabs.ant-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--soha-bg-surface);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme-mode='dark']
+  .soha-docker-page
+  > .soha-resource-tabs.ant-tabs
+  .ant-tabs-tab.ant-tabs-tab-active {
+  background: rgba(30, 41, 59, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.soha-docker-page > .soha-resource-tabs.ant-tabs .ant-tabs-ink-bar {
+  display: none;
+}
+
+.soha-docker-page .soha-detail-card.ant-card {
+  border-radius: var(--soha-radius-lg, 12px);
+}
+
+.soha-docker-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.soha-docker-overview-grid > .ant-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 0;
+  border-radius: var(--soha-radius-lg, 12px);
+}
+
+.soha-docker-spec-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.soha-docker-spec-tiles > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: var(--soha-fill-weak);
+}
+
+.soha-docker-spec-tiles dt {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting, 12px);
+}
+
+.soha-docker-spec-tiles dd {
+  margin: 0;
+  color: var(--soha-text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.soha-docker-host-expanded {
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control, 8px);
+  background: var(--soha-fill-weak);
+}
+
+@media (max-width: 900px) {
+  .soha-docker-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-docker-spec-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .soha-docker-panel-card.ant-card .ant-card-body {

@@ -1,9 +1,10 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { PlusOutlined, QuestionCircleOutlined, StopOutlined } from '@ant-design/icons'
 import type {
   NetworkRuntimeEnrollment,
@@ -13,12 +14,12 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Popover,
   Select,
   Space,
@@ -42,6 +43,7 @@ export function NetworkEnrollmentPane({
   canRevoke,
   runtimeKind,
 }: NetworkEnrollmentPaneProps) {
+  const { modal } = App.useApp()
   const { localeCode, t } = useI18n()
   const queryClient = useQueryClient()
   const enrollments = useQuery(networkAccessQueries.enrollments(LIST_FILTER))
@@ -164,24 +166,33 @@ export function NetworkEnrollmentPane({
     ...(canRevoke
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 70,
-            render: (_: unknown, item: NetworkRuntimeEnrollment) =>
-              item.status === 'pending' ? (
-                <Popconfirm
-                  title={t('networkAccess.enrollment.confirmRevoke', '确认吊销此注册令牌？')}
-                  onConfirm={() => revokeEnrollment.mutate(item.id)}
-                  okButtonProps={{ disabled: operationBlocked }}
-                  disabled={operationBlocked}
-                >
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.enrollment.revoke', '吊销注册令牌')}
-                    danger
-                    icon={<StopOutlined />}
-                    tooltip={t('networkAccess.enrollment.revoke', '吊销注册令牌')}
-                  />
-                </Popconfirm>
-              ) : null,
+            render: (_: unknown, item: NetworkRuntimeEnrollment) => (
+              <TableRowActionMenu
+                targetLabel={item.runtimeId}
+                items={
+                  item.status === 'pending'
+                    ? [
+                        {
+                          key: 'revoke',
+                          icon: <StopOutlined />,
+                          label: t('networkAccess.enrollment.revoke', '吊销注册令牌'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.enrollment.confirmRevoke', '确认吊销此注册令牌？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => revokeEnrollment.mutateAsync(item.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []
+                }
+              />
+            ),
           },
         ]
       : []),

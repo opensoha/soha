@@ -174,18 +174,32 @@ async function renderWithProviders(node: ReactNode, route: string) {
   return container
 }
 
-function getRowEditButton(rowId: string) {
+async function openRowEdit(rowId: string) {
   const row = document.querySelector(`[data-testid="row-${rowId}"]`)
   if (!(row instanceof HTMLElement)) {
     throw new Error(`row not found: ${rowId}`)
   }
 
-  const button = row.querySelector('button')
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`edit button not found: ${rowId}`)
+  const trigger = row.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')
+  if (!trigger) {
+    throw new Error(`action trigger not found: ${rowId}`)
   }
+  await clickButton(trigger)
 
-  return button
+  const editItem = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+    ),
+  )
+    .reverse()
+    .find((item) => item.textContent?.trim() === '编辑')
+  if (!editItem) {
+    throw new Error(`edit menu item not found: ${rowId}`)
+  }
+  await act(async () => {
+    editItem.click()
+  })
+  await flushAsyncWork()
 }
 
 function getVisibleInputValues() {
@@ -269,14 +283,14 @@ describe('menus page modal state', () => {
   it('rebinds modal field values after updating one menu and opening another', async () => {
     await renderWithProviders(<MenusPage />, '/system/menus')
 
-    await clickButton(getRowEditButton('virtualization-workbench'))
+    await openRowEdit('virtualization-workbench')
     expect(getVisibleInputValues()).toContain('虚拟化管理工作台')
     expect(getVisibleInputValues()).toContain('/virtualization')
 
     await clickButtonByText('更新')
     expect(apiPutMock).toHaveBeenCalledWith('/menus/virtualization-workbench', expect.any(Object))
 
-    await clickButton(getRowEditButton('configuration'))
+    await openRowEdit('configuration')
 
     const inputValues = getVisibleInputValues()
     expect(inputValues).toContain('配置')
@@ -293,11 +307,11 @@ describe('menus page modal state', () => {
     expect(document.body.textContent).toContain('虚拟化管理工作台')
     expect(document.body.textContent).toContain('设置中心')
 
-    await clickButton(getRowEditButton('configuration'))
+    await openRowEdit('configuration')
 
     expect(document.body.textContent).toContain('当前菜单会在 k8s工作台 的导航树内展示。')
 
-    await clickButton(getRowEditButton('virtualization-workbench'))
+    await openRowEdit('virtualization-workbench')
 
     expect(document.body.textContent).toContain('当前菜单会在 计算资源工作台 的导航树内展示。')
   })
@@ -411,7 +425,7 @@ describe('menus page modal state', () => {
     expect(document.body.textContent).toContain('按工作台')
     expect(document.body.textContent).toContain('未分组')
 
-    await clickButton(getRowEditButton('configuration'))
+    await openRowEdit('configuration')
     await clickButtonByText('更新')
 
     expect(apiPutMock).toHaveBeenCalledWith(

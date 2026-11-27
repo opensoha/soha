@@ -1,12 +1,6 @@
 .soha-resourcequota-detail {
   min-width: 0;
 }
-.soha-resourcequota-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-resourcequota-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-resourcequota-detail .soha-workload-overview-config dd {
   min-width: 0;
   overflow-wrap: anywhere;

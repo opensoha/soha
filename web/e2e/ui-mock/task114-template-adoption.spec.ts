@@ -117,7 +117,12 @@ test('read failures retry without writes and readonly users cannot submit', asyn
   const { state, evidence } = await adoptionMocks(context, page, false)
   state.failRead = true
   await page.goto('/deployment-templates')
-  await page.getByRole('button', { name: '检查模板更新', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作：标准应用配置', exact: true }).click()
+  await page
+    .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+    .last()
+    .getByRole('menuitem', { name: '检查模板更新', exact: true })
+    .click()
   const drawer = page.getByRole('dialog', { name: '模板采用 · http' })
   const notice = page.locator('.soha-read-feedback-notification')
   await notice.locator('summary').click()

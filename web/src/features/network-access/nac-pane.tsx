@@ -1,10 +1,11 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -28,6 +29,7 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Descriptions,
   Divider,
@@ -35,7 +37,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -81,6 +82,7 @@ export function NetworkNASBindingsPane({
   siteId,
   view = 'network-device',
 }: NetworkNASBindingsPaneProps) {
+  const { modal } = App.useApp()
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const queryClient = useQueryClient()
@@ -261,31 +263,36 @@ export function NetworkNASBindingsPane({
     ...(canManage
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 96,
             render: (_: unknown, record: NetworkNASBinding) => (
-              <Space className="soha-row-action-icons">
-                <ManagementIconButton
-                  aria-label={editLabel}
-                  icon={<EditOutlined />}
-                  tooltip={t('common.edit', '编辑')}
-                  onClick={() => openEditor(record)}
-                  disabled={operationBlocked}
-                />
-                <Popconfirm
-                  title={confirmDeleteLabel}
-                  onConfirm={() => remove.mutate(record.id)}
-                  okButtonProps={{ disabled: operationBlocked }}
-                  disabled={operationBlocked}
-                >
-                  <ManagementIconButton
-                    aria-label={deleteLabel}
-                    danger
-                    icon={<DeleteOutlined />}
-                    tooltip={t('common.delete', '删除')}
-                  />
-                </Popconfirm>
-              </Space>
+              <TableRowActionMenu
+                targetLabel={record.name}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: editLabel,
+                    disabled: operationBlocked,
+                    onClick: () => openEditor(record),
+                  },
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    label: deleteLabel,
+                    danger: true,
+                    disabled: operationBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: confirmDeleteLabel,
+                        okButtonProps: { danger: true },
+                        onOk: () => remove.mutateAsync(record.id).catch(() => undefined),
+                      })
+                    },
+                  },
+                ]}
+              />
             ),
           },
         ]
@@ -587,6 +594,7 @@ interface SiteProfileValues {
   vlanId?: number
 }
 export function NetworkSiteProfileBindingsPane({ canManage }: { canManage: boolean }) {
+  const { modal } = App.useApp()
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const query = useQuery(networkAccessQueries.siteProfileBindings(LIST_FILTER))
@@ -656,31 +664,36 @@ export function NetworkSiteProfileBindingsPane({ canManage }: { canManage: boole
     ...(canManage
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 96,
             render: (_: unknown, record: NetworkSiteProfileBinding) => (
-              <Space className="soha-row-action-icons">
-                <ManagementIconButton
-                  aria-label={t('networkAccess.edit.siteProfile', '编辑接入等级')}
-                  icon={<EditOutlined />}
-                  tooltip={t('common.edit', '编辑')}
-                  onClick={() => openEditor(record)}
-                  disabled={operationBlocked}
-                />
-                <Popconfirm
-                  title={t('networkAccess.confirmDelete.siteProfile', '确认删除接入等级？')}
-                  onConfirm={() => remove.mutate(record.id)}
-                  okButtonProps={{ disabled: operationBlocked }}
-                  disabled={operationBlocked}
-                >
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.delete.siteProfile', '删除接入等级')}
-                    danger
-                    icon={<DeleteOutlined />}
-                    tooltip={t('common.delete', '删除')}
-                  />
-                </Popconfirm>
-              </Space>
+              <TableRowActionMenu
+                targetLabel={`${record.siteId} / ${record.accessProfile}`}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: t('networkAccess.edit.siteProfile', '编辑接入等级'),
+                    disabled: operationBlocked,
+                    onClick: () => openEditor(record),
+                  },
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    label: t('networkAccess.delete.siteProfile', '删除接入等级'),
+                    danger: true,
+                    disabled: operationBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: t('networkAccess.confirmDelete.siteProfile', '确认删除接入等级？'),
+                        okButtonProps: { danger: true },
+                        onOk: () => remove.mutateAsync(record.id).catch(() => undefined),
+                      })
+                    },
+                  },
+                ]}
+              />
             ),
           },
         ]
@@ -931,15 +944,20 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
     ...(canManage
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 64,
             render: (_: unknown, record: NetworkSession) => (
-              <ManagementIconButton
-                aria-label={t('networkAccess.sessionAction', '调整会话访问')}
-                disabled={record.status !== 'active'}
-                icon={<SafetyCertificateOutlined />}
-                tooltip={t('networkAccess.sessionAction', '调整会话访问')}
-                onClick={() => openAction(record)}
+              <TableRowActionMenu
+                targetLabel={record.id}
+                items={[
+                  {
+                    key: 'session-action',
+                    icon: <SafetyCertificateOutlined />,
+                    label: t('networkAccess.sessionAction', '调整会话访问'),
+                    disabled: record.status !== 'active',
+                    onClick: () => openAction(record),
+                  },
+                ]}
               />
             ),
           },

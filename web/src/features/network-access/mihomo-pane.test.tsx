@@ -152,6 +152,19 @@ async function saveDialog() {
     await new Promise((r) => setTimeout(r, 30))
   })
 }
+async function openRowAction(label: string) {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    'button.soha-table-row-action-trigger',
+  )
+  await act(async () => trigger!.click())
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20))
+  })
+  const item = [...document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')].find((el) =>
+    el.textContent?.includes(label),
+  )
+  await act(async () => item!.click())
+}
 describe('Mihomo profile publication binding', () => {
   it('creates a profile from an activated bundle without legacy material', async () => {
     await render()
@@ -177,9 +190,7 @@ describe('Mihomo profile publication binding', () => {
   it('preserves legacy subscription secrets when editing unrelated fields', async () => {
     api.listNetworkMihomoProfiles.mockResolvedValue([profile])
     await render()
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('button[aria-label="编辑 mihomo 配置"]')!.click(),
-    )
+    await openRowAction('编辑 mihomo 配置')
     await fill('名称', 'Renamed')
     await saveDialog()
     expect(api.updateNetworkMihomoProfile.mock.calls[0][0]).toEqual({
@@ -200,9 +211,7 @@ describe('Mihomo profile publication binding', () => {
       { ...profile, ...bundle, sourceType: undefined, selectedProxy: undefined },
     ])
     await render()
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('button[aria-label="编辑 mihomo 配置"]')!.click(),
-    )
+    await openRowAction('编辑 mihomo 配置')
     expect(document.body.textContent).toContain('无代理实例查看权限')
     await fill('名称', 'Bound rename')
     await saveDialog()

@@ -2,9 +2,11 @@ import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EditOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -423,25 +425,44 @@ export function OnCallBoardPage() {
                   columnSettingIconOnly
                   shellClassName="soha-management-table-shell"
                   columns={[
-                    { title: '日期', dataIndex: 'date' },
+                    {
+                      title: '日期',
+                      dataIndex: 'date',
+                      render: (value: string) =>
+                        canUpdateOnCall ? (
+                          <Button
+                            type="link"
+                            disabled={updateRotationOverride.blocked || denied}
+                            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                            onClick={() => openOverride(dayjs(value))}
+                          >
+                            {value}
+                          </Button>
+                        ) : (
+                          value
+                        ),
+                    },
                     {
                       title: '值班人',
                       dataIndex: 'participants',
                       render: formatParticipantSummary,
                     },
                     {
+                      ...tableColumnPresets.action,
                       title: '操作',
-                      key: 'actions',
-                      dataIndex: 'date',
-                      render: (value: string) =>
+                      render: (_: unknown, record: { date: string }) =>
                         canUpdateOnCall ? (
-                          <ManagementIconButton
-                            aria-label="编辑覆盖记录"
-                            disabled={updateRotationOverride.blocked || denied}
-                            size="small"
-                            tooltip="编辑"
-                            icon={<EditOutlined />}
-                            onClick={() => openOverride(dayjs(value))}
+                          <TableRowActionMenu
+                            targetLabel={record.date}
+                            items={[
+                              {
+                                key: 'edit',
+                                label: '编辑覆盖记录',
+                                icon: <EditOutlined />,
+                                disabled: updateRotationOverride.blocked || denied,
+                                onClick: () => openOverride(dayjs(record.date)),
+                              },
+                            ]}
                           />
                         ) : null,
                     },

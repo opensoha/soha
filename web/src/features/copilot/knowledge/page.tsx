@@ -8,9 +8,11 @@ import {
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import {
   DeleteOutlined,
   EyeOutlined,
@@ -21,13 +23,13 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Card,
   Drawer,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -64,6 +66,7 @@ function KnowledgeList({
 }
 
 export function KnowledgeCenterPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
@@ -145,7 +148,21 @@ export function KnowledgeCenterPage() {
   }, [baseDenied, searchForm])
 
   const columns: TableColumnsType<KnowledgeBase> = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (_value, record) => (
+        <Button
+          type="link"
+          disabled={blocked}
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => setSelectedBase(record)}
+        >
+          {record.name}
+        </Button>
+      ),
+    },
     {
       title: '状态',
       dataIndex: 'status',
@@ -175,37 +192,42 @@ export function KnowledgeCenterPage() {
       render: (value) => value || '-',
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
-      width: 90,
       render: (_, record) => (
-        <Space size={4}>
-          <Button
-            type="text"
-            icon={<EyeOutlined />}
-            aria-label={`查看知识库 ${record.name}`}
-            disabled={blocked}
-            onClick={() => setSelectedBase(record)}
-          />
-          <Popconfirm
-            cancelText="取消"
-            description="知识库及其来源、文档和索引将不可恢复。"
-            disabled={blocked || !canDeleteBase}
-            okButtonProps={{ danger: true }}
-            okText="删除"
-            title={`删除知识库 ${record.name}？`}
-            onConfirm={() => deleteMutation.mutateAsync(record.id)}
-          >
-            <Button
-              danger
-              type="text"
-              icon={<DeleteOutlined />}
-              aria-label={`删除知识库 ${record.name}`}
-              loading={deleteMutation.isPending && deleteMutation.variables === record.id}
-              disabled={blocked || !canDeleteBase}
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={[
+            {
+              key: 'view',
+              label: '查看知识库',
+              icon: <EyeOutlined />,
+              disabled: blocked,
+              onClick: () => setSelectedBase(record),
+            },
+            ...(canDeleteBase
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除知识库',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () =>
+                      modal.confirm({
+                        title: `删除知识库 ${record.name}？`,
+                        content: '知识库及其来源、文档和索引将不可恢复。',
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true },
+                        onOk: () => deleteMutation.mutateAsync(record.id),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

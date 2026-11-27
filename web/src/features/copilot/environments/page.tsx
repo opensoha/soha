@@ -2,7 +2,7 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, Modal, Popconfirm, Select } from 'antd'
+import { App, Button, Form, Input, Modal, Popconfirm, Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -18,6 +18,7 @@ export function EnvironmentsPage() {
 }
 
 function EnvironmentsPageContent() {
+  const { modal } = App.useApp()
   const c = useQueryClient()
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm<CreateEnvironmentTemplateInput>()
@@ -106,17 +107,23 @@ function EnvironmentsPageContent() {
           error: leases.error,
           hasReadData: leases.data !== undefined,
           emptyDescription: 'Agent 或 Evaluation 获取环境后会显示租约。',
-          actions: (row) => (
-            <Popconfirm
-              disabled={blocked}
-              title="确认释放环境租约？"
-              onConfirm={() => release.mutate(row.id)}
-            >
-              <Button disabled={blocked} danger type="link">
-                释放
-              </Button>
-            </Popconfirm>
-          ),
+          actionItems: (row) => [
+            {
+              key: 'release',
+              label: '释放',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: blocked,
+              onClick: () =>
+                modal.confirm({
+                  title: '确认释放环境租约？',
+                  okText: '释放',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => release.mutateAsync(row.id),
+                }),
+            },
+          ],
         },
       ]}
     >

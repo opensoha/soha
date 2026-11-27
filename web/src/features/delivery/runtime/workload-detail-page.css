@@ -90,7 +90,7 @@
   height: 28px;
   padding: 0;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--soha-radius-xs, 6px);
   border: 1px solid currentColor;
 }
 .soha-pod-selector-item.soha-pod-status-success {

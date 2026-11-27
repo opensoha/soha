@@ -51,6 +51,13 @@ vi.mock('@/components/request-feedback', () => ({ OperationFeedback: () => null 
 vi.mock('antd', () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   return {
+    App: {
+      useApp: () => ({
+        modal: { confirm: vi.fn() },
+        message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+        notification: { open: vi.fn(), destroy: vi.fn() },
+      }),
+    },
     Form: Object.assign(Box, { useForm: () => [state.form], Item: Box }),
     Input: Object.assign(Box, { TextArea: Box }),
     InputNumber: Box,

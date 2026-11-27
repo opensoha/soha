@@ -369,112 +369,124 @@ export function ResourceMonitoringRuntimePage() {
           )}
         />
       ) : null}
-      <Card className="soha-detail-card" styles={{ body: { padding: 16 } }}>
-        <div className="soha-monitoring-toolbar">
-          <Select
-            aria-label={localeText(localeCode, '监控节点', 'Monitored node')}
-            showSearch={{ optionFilterProp: 'label' }}
-            value={input.node || ''}
-            onChange={(value) => {
-              selectNames([])
-              update({ node: value || undefined })
-            }}
-            options={[
-              { value: '', label: localeText(localeCode, '全部节点', 'All nodes') },
-              ...(data?.nodeOptions ?? nodes.map((node) => node.nodeRef)).map((node) => ({
-                value: node.name,
-                label: node.name,
-              })),
-            ]}
-          />
-          <Select
-            aria-label={localeText(localeCode, '时间范围', 'Time range')}
-            value={input.from ? 'custom' : String(input.rangeMinutes)}
-            onChange={(value) => {
-              if (value === 'custom') {
-                const end = dayjs()
-                update({
-                  from: end.subtract(input.rangeMinutes || 60, 'minute').toISOString(),
-                  to: end.toISOString(),
-                })
-              } else update({ rangeMinutes: value, from: undefined, to: undefined })
-            }}
-            options={[
-              { value: '15', label: localeText(localeCode, '最近 15 分钟', 'Last 15 minutes') },
-              { value: '60', label: localeText(localeCode, '最近 1 小时', 'Last hour') },
-              { value: '360', label: localeText(localeCode, '最近 6 小时', 'Last 6 hours') },
-              { value: '1440', label: localeText(localeCode, '最近 24 小时', 'Last 24 hours') },
-              { value: 'custom', label: localeText(localeCode, '自定义时间', 'Custom time') },
-            ]}
-          />
-          {input.from && (
-            <DatePicker.RangePicker
-              aria-label={localeText(
-                localeCode,
-                '固定历史时间窗口',
-                'Fixed historical time window',
-              )}
-              showTime
-              value={input.from && input.to ? [dayjs(input.from), dayjs(input.to)] : null}
-              onChange={(dates) =>
-                update({ from: dates?.[0]?.toISOString(), to: dates?.[1]?.toISOString() })
-              }
+      <div className="soha-monitoring-bezel">
+        <Card
+          className="soha-detail-card soha-monitoring-toolbar-card"
+          styles={{ body: { padding: '14px 18px' } }}
+        >
+          <div className="soha-monitoring-toolbar">
+            <Select
+              aria-label={localeText(localeCode, '监控节点', 'Monitored node')}
+              showSearch={{ optionFilterProp: 'label' }}
+              value={input.node || ''}
+              onChange={(value) => {
+                selectNames([])
+                update({ node: value || undefined })
+              }}
+              options={[
+                { value: '', label: localeText(localeCode, '全部节点', 'All nodes') },
+                ...(data?.nodeOptions ?? nodes.map((node) => node.nodeRef)).map((node) => ({
+                  value: node.name,
+                  label: node.name,
+                })),
+              ]}
             />
-          )}
-          <div className="soha-monitoring-toolbar-actions">
-            <Tooltip title={refreshLabel} trigger={['hover', 'focus']}>
-              <Button
-                type="text"
-                size="small"
-                role="switch"
-                aria-checked={autoRefresh && !input.to}
-                aria-label={`${localeText(localeCode, '自动刷新', 'Auto-refresh')}：${refreshLabel}`}
-                disabled={Boolean(input.to) || !clusterId || !canRead}
-                data-refresh-state={refreshState}
-                className="soha-monitoring-refresh-dot"
-                onClick={() => {
-                  const next = !autoRefresh
-                  setAutoRefresh(next)
-                  try {
-                    localStorage.setItem('soha-resource-monitoring-auto', next ? '1' : '0')
-                  } catch {
-                    // Ignore storage restrictions for non-essential UI preference.
-                  }
-                }}
-              >
-                <span aria-hidden />
+            <Select
+              aria-label={localeText(localeCode, '时间范围', 'Time range')}
+              value={input.from ? 'custom' : String(input.rangeMinutes)}
+              onChange={(value) => {
+                if (value === 'custom') {
+                  const end = dayjs()
+                  update({
+                    from: end.subtract(input.rangeMinutes || 60, 'minute').toISOString(),
+                    to: end.toISOString(),
+                  })
+                } else update({ rangeMinutes: value, from: undefined, to: undefined })
+              }}
+              options={[
+                { value: '15', label: localeText(localeCode, '最近 15 分钟', 'Last 15 minutes') },
+                { value: '60', label: localeText(localeCode, '最近 1 小时', 'Last hour') },
+                { value: '360', label: localeText(localeCode, '最近 6 小时', 'Last 6 hours') },
+                { value: '1440', label: localeText(localeCode, '最近 24 小时', 'Last 24 hours') },
+                { value: 'custom', label: localeText(localeCode, '自定义时间', 'Custom time') },
+              ]}
+            />
+            {input.from && (
+              <DatePicker.RangePicker
+                aria-label={localeText(
+                  localeCode,
+                  '固定历史时间窗口',
+                  'Fixed historical time window',
+                )}
+                showTime
+                value={input.from && input.to ? [dayjs(input.from), dayjs(input.to)] : null}
+                onChange={(dates) =>
+                  update({ from: dates?.[0]?.toISOString(), to: dates?.[1]?.toISOString() })
+                }
+              />
+            )}
+            <div className="soha-monitoring-toolbar-actions">
+              <Tooltip title={refreshLabel} trigger={['hover', 'focus']}>
+                <Button
+                  type="text"
+                  size="small"
+                  role="switch"
+                  aria-checked={autoRefresh && !input.to}
+                  aria-label={`${localeText(localeCode, '自动刷新', 'Auto-refresh')}：${refreshLabel}`}
+                  disabled={Boolean(input.to) || !clusterId || !canRead}
+                  data-refresh-state={refreshState}
+                  className="soha-monitoring-refresh-dot"
+                  onClick={() => {
+                    const next = !autoRefresh
+                    setAutoRefresh(next)
+                    try {
+                      localStorage.setItem('soha-resource-monitoring-auto', next ? '1' : '0')
+                    } catch {
+                      // Ignore storage restrictions for non-essential UI preference.
+                    }
+                  }}
+                >
+                  <span aria-hidden />
+                </Button>
+              </Tooltip>
+              <ManagementRefreshButton
+                aria-label={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
+                tooltip={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
+                loading={views.some((item) => item.query.isFetching)}
+                disabled={!clusterId || !canRead}
+                onClick={() => void Promise.all(views.map((item) => item.query.refetch()))}
+              />
+              <Button disabled={!data} onClick={() => setCoverageOpen(true)}>
+                {localeText(localeCode, '来源与覆盖', 'Sources and coverage')}
               </Button>
-            </Tooltip>
-            <ManagementRefreshButton
-              aria-label={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
-              tooltip={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
-              loading={views.some((item) => item.query.isFetching)}
-              disabled={!clusterId || !canRead}
-              onClick={() => void Promise.all(views.map((item) => item.query.refetch()))}
-            />
-            <Button disabled={!data} onClick={() => setCoverageOpen(true)}>
-              {localeText(localeCode, '来源与覆盖', 'Sources and coverage')}
-            </Button>
+            </div>
           </div>
-        </div>
-        {data && (
-          <div className="soha-monitoring-caption">
-            <Text type="secondary">
-              {localeText(localeCode, '已加载', 'Loaded ')}
-              {nodes.length}{' '}
-              {localeText(localeCode, '节点 · 当前容量采样', ' nodes · Current capacity observed ')}{' '}
-              {data.snapshotObservedAt
-                ? formatDateTime(data.snapshotObservedAt)
-                : localeText(localeCode, '未提供', 'Unavailable')}{' '}
-              {localeText(localeCode, '· 历史步长', ' · History step ')}
-              {data.stepSeconds}s
-            </Text>
-            <Quality value={data.snapshotQuality} />
-          </div>
-        )}
-      </Card>
+          {data && (
+            <div className="soha-monitoring-caption">
+              <Text type="secondary">
+                {localeText(localeCode, '已加载', 'Loaded ')}
+                {nodes.length}{' '}
+                {localeText(
+                  localeCode,
+                  '节点 · 当前容量采样',
+                  ' nodes · Current capacity observed ',
+                )}{' '}
+                {data.snapshotObservedAt
+                  ? formatDateTime(data.snapshotObservedAt)
+                  : localeText(localeCode, '未提供', 'Unavailable')}{' '}
+                {localeText(localeCode, '· 历史步长', ' · History step ')}
+                {data.stepSeconds}s
+              </Text>
+              <Quality value={data.snapshotQuality} />
+            </div>
+          )}
+        </Card>
+      </div>
       <Tabs
         className="soha-monitoring-tabs"
+        size="small"
+        tabBarGutter={32}
+        indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
         activeKey={activeView}
         onChange={openView}
         items={[...views]
@@ -641,7 +653,8 @@ function MonitoringSection({
   columns.push({
     title: localeText(localeCode, '状态', 'Status'),
     key: 'status',
-    width: view === 'overview' ? 96 : 136,
+    width: view === 'overview' ? 96 : 184,
+    minWidth: 96,
     render: (_, node) => (
       <Tooltip
         title={`${localeText(localeCode, '当前快照', 'Current snapshot')} ${node.observedAt ? formatDateTime(node.observedAt) : '—'}`}
@@ -668,7 +681,7 @@ function MonitoringSection({
           localeCode === 'zh_CN' ? 'label' : 'englishLabel'
         ],
         key,
-        width: 136,
+        width: 124,
         sorter: (a: MonitoringNode, b: MonitoringNode) =>
           (nodeMetricScore(data, a, key, historical) ?? -1) -
           (nodeMetricScore(data, b, key, historical) ?? -1),

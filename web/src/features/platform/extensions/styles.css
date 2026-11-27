@@ -70,9 +70,9 @@
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border: 1px solid rgba(var(--soha-primary-rgb), 0.22);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control);
   background: rgba(var(--soha-primary-rgb), 0.06);
   box-shadow: none;
   transition:
@@ -106,8 +106,7 @@
   align-items: center;
   max-width: 100%;
   padding: 2px 8px;
-  border: 1px solid var(--soha-border-color);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control);
   background: var(--soha-fill-weak);
   color: var(--soha-text-primary);
   font-size: 12px;
@@ -168,10 +167,10 @@
   flex-direction: column;
   gap: 8px;
   width: 100%;
-  padding: 14px;
-  border: 1px solid var(--soha-border-color);
-  border-radius: 14px;
-  background: var(--soha-bg-surface);
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
   color: var(--soha-text-primary);
   text-align: left;
   cursor: pointer;
@@ -231,13 +230,12 @@
 
 .soha-helm-install-output {
   max-height: 240px;
-  padding: 12px;
+  padding: 12px 14px;
   overflow: auto;
   color: var(--soha-text-secondary);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
-  background: var(--soha-bg-surface-muted);
-  border: 1px solid var(--soha-border-color);
-  border-radius: 6px;
+  background: var(--soha-fill-weak);
+  border-radius: var(--soha-radius-control);
 }

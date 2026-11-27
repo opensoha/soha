@@ -4,17 +4,26 @@ import { ManagementDataPage } from '@/components/management-data-page'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { isApiError } from '@/services/api-error'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
+import {
+  CloudUploadOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  RollbackOutlined,
+} from '@ant-design/icons'
 import type {
   NetworkVPNProfileConfig,
   NetworkVPNSelectionPolicyConfig,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Drawer, Form, Modal, Popconfirm, Space, Typography } from 'antd'
+import { App, Button, Drawer, Form, Modal, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { TablePane } from './table-pane'
@@ -38,6 +47,7 @@ import {
   vpnProfileDefaults,
 } from './vpn-fields'
 export default function VPNDocumentsPage() {
+  const { modal } = App.useApp()
   const { pathname } = useLocation()
   const kind = pathname.endsWith('selection-policies') ? 'selection-policies' : 'profiles'
   const key = kind === 'profiles' ? 'vpn_profiles' : 'vpn_selection_policies'
@@ -149,61 +159,87 @@ export default function VPNDocumentsPage() {
               ),
             },
             {
+              ...tableColumnPresets.action,
               title: text('操作', 'Actions'),
               key: 'actions',
               render: (_, d) => (
-                <Space>
-                  {allowed('update') ? (
-                    <Button size="small" onClick={() => edit(d)}>
-                      {text('编辑', 'Edit')}
-                    </Button>
-                  ) : null}
-                  <Button size="small" onClick={() => setHistory(d)}>
-                    {text('修订与回滚', 'Revisions')}
-                  </Button>
-                  {allowed('publish') ? (
-                    <Popconfirm
-                      title={text(
-                        '发布此修订？安全范围变更将撤销相关会话。',
-                        'Publish this revision? Security changes revoke affected sessions.',
-                      )}
-                      onConfirm={() =>
-                        mutation.mutate({
-                          target: d.id,
-                          action: '发布',
-                          run: () => publishVPNDocument(kind, d),
-                        })
-                      }
-                      okButtonProps={{ disabled: operationBlocked }}
-                      disabled={operationBlocked}
-                    >
-                      <Button
-                        size="small"
-                        disabled={mutation.isPending || d.publishedRevision === d.revision}
-                      >
-                        {text('发布', 'Publish')}
-                      </Button>
-                    </Popconfirm>
-                  ) : null}
-                  {allowed('delete') ? (
-                    <Popconfirm
-                      title={text('删除此配置？', 'Delete this configuration?')}
-                      onConfirm={() =>
-                        mutation.mutate({
-                          target: d.id,
-                          action: '删除',
-                          run: () => deleteVPNDocument(kind, d),
-                        })
-                      }
-                      okButtonProps={{ disabled: operationBlocked }}
-                      disabled={operationBlocked}
-                    >
-                      <Button size="small" danger disabled={mutation.isPending}>
-                        {text('删除', 'Delete')}
-                      </Button>
-                    </Popconfirm>
-                  ) : null}
-                </Space>
+                <TableRowActionMenu
+                  targetLabel={d.configuration.name}
+                  items={[
+                    ...(allowed('update')
+                      ? [
+                          {
+                            key: 'edit',
+                            icon: <EditOutlined />,
+                            label: text('编辑', 'Edit'),
+                            disabled: operationBlocked,
+                            onClick: () => edit(d),
+                          },
+                        ]
+                      : []),
+                    {
+                      key: 'revisions',
+                      icon: <HistoryOutlined />,
+                      label: text('修订与回滚', 'Revisions'),
+                      onClick: () => setHistory(d),
+                    },
+                    ...(allowed('publish')
+                      ? [
+                          {
+                            key: 'publish',
+                            icon: <CloudUploadOutlined />,
+                            label: text('发布', 'Publish'),
+                            disabled:
+                              operationBlocked ||
+                              mutation.isPending ||
+                              d.publishedRevision === d.revision,
+                            onClick: () => {
+                              modal.confirm({
+                                title: text(
+                                  '发布此修订？安全范围变更将撤销相关会话。',
+                                  'Publish this revision? Security changes revoke affected sessions.',
+                                ),
+                                onOk: () =>
+                                  mutation
+                                    .mutateAsync({
+                                      target: d.id,
+                                      action: '发布',
+                                      run: () => publishVPNDocument(kind, d),
+                                    })
+                                    .catch(() => undefined),
+                              })
+                            },
+                          },
+                        ]
+                      : []),
+                    { type: 'divider' as const },
+                    ...(allowed('delete')
+                      ? [
+                          {
+                            key: 'delete',
+                            icon: <DeleteOutlined />,
+                            label: text('删除', 'Delete'),
+                            danger: true,
+                            disabled: operationBlocked || mutation.isPending,
+                            onClick: () => {
+                              modal.confirm({
+                                title: text('删除此配置？', 'Delete this configuration?'),
+                                okButtonProps: { danger: true },
+                                onOk: () =>
+                                  mutation
+                                    .mutateAsync({
+                                      target: d.id,
+                                      action: '删除',
+                                      run: () => deleteVPNDocument(kind, d),
+                                    })
+                                    .catch(() => undefined),
+                              })
+                            },
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               ),
             },
           ]}
@@ -285,27 +321,32 @@ export default function VPNDocumentsPage() {
             { title: text('操作者', 'Actor'), dataIndex: 'createdBy' },
             { title: text('时间', 'Time'), dataIndex: 'createdAt', render: formatDateTime },
             {
+              ...tableColumnPresets.action,
               title: text('操作', 'Action'),
-              key: 'rollback',
+              key: 'actions',
               render: (_: unknown, r: VPNRevision) => (
-                <Button
-                  disabled={
-                    operationBlocked ||
-                    !allowed('publish') ||
-                    mutation.isPending ||
-                    r.revision === history?.publishedRevision
-                  }
-                  onClick={() =>
-                    history &&
-                    mutation.mutate({
-                      target: history.id,
-                      action: '回滚',
-                      run: () => publishVPNDocument(kind, history, r.revision),
-                    })
-                  }
-                >
-                  {text('回滚为新修订', 'Restore as new revision')}
-                </Button>
+                <TableRowActionMenu
+                  targetLabel={`r${r.revision}`}
+                  items={[
+                    {
+                      key: 'rollback',
+                      icon: <RollbackOutlined />,
+                      label: text('回滚为新修订', 'Restore as new revision'),
+                      disabled:
+                        operationBlocked ||
+                        !allowed('publish') ||
+                        mutation.isPending ||
+                        r.revision === history?.publishedRevision,
+                      onClick: () =>
+                        history &&
+                        mutation.mutate({
+                          target: history.id,
+                          action: '回滚',
+                          run: () => publishVPNDocument(kind, history, r.revision),
+                        }),
+                    },
+                  ]}
+                />
               ),
             },
           ]}

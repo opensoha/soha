@@ -222,10 +222,17 @@ describe('SecretsPage', () => {
     })
     await renderPage()
 
-    const useSecret = document.body.querySelector<HTMLButtonElement>(
-      'button[aria-label="使用 Secret"]',
+    const moreButton = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="更多操作：Registry token"]',
     )
-    await act(async () => useSecret?.click())
+    await act(async () => moreButton?.click())
+    await flush()
+    const useSecretItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((item) => item.textContent?.trim() === '使用')
+    await act(async () => useSecretItem?.click())
     await flush()
 
     expect(document.body.textContent).toContain('使用 Registry token')

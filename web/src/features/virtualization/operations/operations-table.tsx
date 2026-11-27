@@ -19,11 +19,8 @@ import { localeText, useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
-import {
-  ManagementIconButton,
-  ManagementQueryField,
-  ManagementQueryPanel,
-} from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { ManagementQueryField, ManagementQueryPanel } from '@/components/management-list'
 import {
   virtualizationMutations,
   withVirtualizationMutationSuccess,
@@ -111,7 +108,7 @@ export function OperationsTable({
   const { virtualizationModuleEnabled, canCancelOperations, canRetryOperations } =
     useVirtualizationPermissions()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { localeCode } = useI18n()
   const operationParams = {
     assetType: assetType ?? parsedSearch.query.assetType,
@@ -197,7 +194,15 @@ export function OperationsTable({
     {
       title: localeText(localeCode, '类型', 'Type'),
       dataIndex: 'operationType',
-      render: (_value, record) => tableTooltipText(operationKindLabel(record, localeCode)),
+      render: (_value, record) => (
+        <Button
+          className="soha-table-cell-link"
+          type="link"
+          onClick={() => setSelectedOperation(record)}
+        >
+          {operationKindLabel(record, localeCode)}
+        </Button>
+      ),
       ellipsis: tableEllipsis,
       width: 140,
     },
@@ -254,74 +259,79 @@ export function OperationsTable({
     },
     {
       ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
       dataIndex: 'id',
-      width: 176,
       render: (_value, record) => {
         const canCancel = canCancelOperations && hasAllowedAction(record.allowedActions, 'cancel')
         const canRetry = canRetryOperations && hasAllowedAction(record.allowedActions, 'retry')
         return (
-          <Space className="soha-row-action-icons" wrap>
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '查看日志', 'View logs')}
-              size="small"
-              tooltip={localeText(localeCode, '日志', 'Logs')}
-              icon={<FileTextOutlined />}
-              onClick={() => setSelectedOperation(record)}
-            />
-            <ManagementIconButton
-              aria-label={localeText(localeCode, 'AI 调查', 'AI investigation')}
-              size="small"
-              tooltip={localeText(localeCode, 'AI 调查', 'AI investigation')}
-              icon={<SearchOutlined />}
-              onClick={() =>
-                navigate(
-                  buildInvestigationPath({
-                    connectionId: record.connectionId,
-                    vmId: record.vmId,
-                    workload: record.targetName || record.vmId || record.connectionId,
-                    timeRangeMinutes: 60,
-                  }),
-                )
-              }
-            />
-            {record.vmId ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '查看虚拟机', 'View virtual machine')}
-                size="small"
-                tooltip="VM"
-                icon={<FileTextOutlined />}
-                onClick={() =>
+          <TableRowActionMenu
+            targetLabel={record.targetName || record.id}
+            items={[
+              {
+                key: 'logs',
+                icon: <FileTextOutlined aria-hidden="true" />,
+                label: localeText(localeCode, '查看日志', 'View logs'),
+                onClick: () => setSelectedOperation(record),
+              },
+              {
+                key: 'investigate',
+                icon: <SearchOutlined aria-hidden="true" />,
+                label: localeText(localeCode, 'AI 调查', 'AI investigation'),
+                onClick: () =>
                   navigate(
-                    `/compute/virtualization/vms/${encodeURIComponent(record.vmId || '')}?focus=operations`,
-                  )
-                }
-              />
-            ) : null}
-            {canCancel ? (
-              <Popconfirm
-                title={localeText(localeCode, '确认取消任务？', 'Cancel this task?')}
-                onConfirm={() => cancelMutation.mutate(record.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '取消任务', 'Cancel task')}
-                  size="small"
-                  tooltip={localeText(localeCode, '取消', 'Cancel')}
-                  danger
-                  icon={<PoweroffOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-            {canRetry ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '重试任务', 'Retry task')}
-                size="small"
-                tooltip={localeText(localeCode, '重试', 'Retry')}
-                icon={<ReloadOutlined />}
-                onClick={() => retryMutation.mutate(record.id)}
-              />
-            ) : null}
-          </Space>
+                    buildInvestigationPath({
+                      connectionId: record.connectionId,
+                      vmId: record.vmId,
+                      workload: record.targetName || record.vmId || record.connectionId,
+                      timeRangeMinutes: 60,
+                    }),
+                  ),
+              },
+              ...(record.vmId
+                ? [
+                    {
+                      key: 'vm',
+                      icon: <FileTextOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '查看虚拟机', 'View virtual machine'),
+                      onClick: () =>
+                        navigate(
+                          `/compute/virtualization/vms/${encodeURIComponent(record.vmId || '')}?focus=operations`,
+                        ),
+                    },
+                  ]
+                : []),
+              ...(canRetry
+                ? [
+                    {
+                      key: 'retry',
+                      icon: <ReloadOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '重试任务', 'Retry task'),
+                      onClick: () => retryMutation.mutate(record.id),
+                    },
+                  ]
+                : []),
+              { type: 'divider' as const },
+              ...(canCancel
+                ? [
+                    {
+                      key: 'cancel',
+                      icon: <PoweroffOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '取消任务', 'Cancel task'),
+                      danger: true,
+                      onClick: () =>
+                        modal.confirm({
+                          title: localeText(localeCode, '确认取消任务？', 'Cancel this task?'),
+                          content: record.targetName || record.id,
+                          okButtonProps: { danger: true },
+                          onOk: () => cancelMutation.mutateAsync(record.id),
+                        }),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         )
       },
     },

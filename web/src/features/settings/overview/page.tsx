@@ -1,6 +1,6 @@
 import { ManagementState } from '@/components/management-list'
 import {
-  OverviewMetricCard,
+  OverviewHeroCard,
   type OverviewChipItem,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
@@ -191,17 +191,214 @@ export function SettingsOverviewPage() {
       <ReadFeedback query={rolesQuery} label="角色" canRead={canViewRoles} />
       <ReadFeedback query={teamsQuery} label="组织" canRead={canViewTeams} />
       <ReadFeedback query={policiesQuery} label="访问策略" canRead={canViewPolicies} />
-      <div className="soha-overview-metric-grid">
-        {overviewStats.map(({ key, ...item }, index) => (
-          <OverviewMetricCard
-            key={key}
-            {...item}
-            loading={
-              permissionLoading ||
-              [usersQuery, rolesQuery, teamsQuery, policiesQuery][index].isLoading
-            }
-          />
-        ))}
+      <div className="soha-overview-bento-top">
+        <OverviewHeroCard
+          variant="governance"
+          eyebrowIcon={<UserOutlined />}
+          eyebrowLabel="平台身份、RBAC 与系统治理"
+          value={overviewStats[0].value}
+          valueSuffix="名平台账户"
+          caption={`用户总数 · ${overviewStats[0].helper}`}
+          kpis={[
+            {
+              key: 'online',
+              label: '当前在线',
+              value: sessionsData !== undefined ? onlineUsers : '—',
+            },
+            {
+              key: 'audit',
+              label: '审计留存',
+              value: auditSummary?.total ?? '—',
+            },
+          ]}
+          telemetryNodes={[
+            {
+              id: 'trust-core',
+              label: `USERS · ${users.length}`,
+              title: '平台账户与认证目录',
+              metric: `正常 ${activeUsers} · 停用 ${disabledUsers}`,
+              status: disabledUsers > 0 ? 'warning' : 'primary',
+              path: canViewUsers ? '/access/users' : undefined,
+            },
+            {
+              id: 'rbac-guard',
+              label: `POLICIES · ${policies.length}`,
+              title: 'RBAC 角色与访问控制策略',
+              metric: `${roles.length} 个角色 · ${policies.length} 条策略`,
+              status: 'healthy',
+              path: canViewPolicies ? '/access/policies' : undefined,
+            },
+            {
+              id: 'org-teams',
+              label: `TEAMS · ${teams.length}`,
+              title: '组织架构与团队映射',
+              metric: `${teams.length} 个业务团队`,
+              status: 'healthy',
+              path: canViewTeams ? '/access/teams' : undefined,
+            },
+            {
+              id: 'audit-ledger',
+              label: `AUDIT · ${auditSummary?.total ?? '—'}`,
+              title: '系统安全与操作审计',
+              metric: `留存周期 ${auditSummary?.retentionDays ?? '—'} 天`,
+              status: 'primary',
+              path: canViewAudit ? '/system/audit' : undefined,
+            },
+          ]}
+          embeddedPods={overviewStats.slice(1).map(({ key, ...item }, index) => ({
+            key,
+            label: item.label,
+            value: item.value,
+            helper: item.helper,
+            icon: item.icon,
+            tone: item.tone,
+            loading:
+              permissionLoading || [rolesQuery, teamsQuery, policiesQuery][index].isLoading,
+            to:
+              key === 'roles' && canViewRoles
+                ? '/access/roles'
+                : key === 'teams' && canViewTeams
+                  ? '/access/teams'
+                  : key === 'policies' && canViewPolicies
+                    ? '/access/policies'
+                    : undefined,
+          }))}
+          segments={[
+            {
+              key: 'active',
+              label: '正常启用',
+              value: activeUsers,
+              tone: 'success',
+            },
+            {
+              key: 'disabled',
+              label: '已停用',
+              value: disabledUsers,
+              tone: 'warning',
+            },
+            {
+              key: 'policies',
+              label: '访问策略',
+              value: policies.length,
+              tone: 'primary',
+            },
+          ]}
+          ctaLabel={canViewUsers ? '进入用户管理' : undefined}
+          ctaTo={canViewUsers ? '/access/users' : undefined}
+          graphicDeck={[
+            {
+              key: 'gov-compliance-rings',
+              kind: 'rings',
+              title: '账户合规与权限覆盖环',
+              subtitle: '身份状态 · 角色绑定 · 策略生效',
+              actionLabel: '角色管理',
+              actionTo: canViewRoles ? '/access/roles' : undefined,
+              centerValue:
+                users.length > 0 ? `${Math.round((activeUsers / users.length) * 100)}%` : '—',
+              centerLabel: '活跃合规',
+              rings: [
+                {
+                  key: 'active-users',
+                  label: '正常启用账户',
+                  value: activeUsers,
+                  ratio: users.length > 0 ? activeUsers / users.length : 1,
+                  tone: 'success',
+                  to: canViewUsers ? '/access/users' : undefined,
+                },
+                {
+                  key: 'role-bound',
+                  label: '已绑定角色账户',
+                  value: users.filter((u) => u.roles.length > 0).length,
+                  ratio:
+                    users.length > 0
+                      ? users.filter((u) => u.roles.length > 0).length / users.length
+                      : 1,
+                  tone: 'primary',
+                  to: canViewRoles ? '/access/roles' : undefined,
+                },
+                {
+                  key: 'team-bound',
+                  label: '已归属团队账户',
+                  value: users.filter((u) => u.teams.length > 0).length,
+                  ratio:
+                    users.length > 0
+                      ? users.filter((u) => u.teams.length > 0).length / users.length
+                      : 1,
+                  tone: 'primary',
+                  to: canViewTeams ? '/access/teams' : undefined,
+                },
+                {
+                  key: 'disabled-users',
+                  label: '已冻结/停用',
+                  value: disabledUsers,
+                  ratio: users.length > 0 ? disabledUsers / users.length : 0,
+                  tone: disabledUsers > 0 ? 'warning' : 'neutral',
+                },
+              ],
+            },
+            {
+              key: 'gov-rbac-spectrum',
+              kind: 'spectrum',
+              title: 'RBAC 策略与组织矩阵频谱',
+              subtitle: '用户 · 角色 · 团队 · Allow/Deny 策略',
+              actionLabel: '访问策略',
+              actionTo: canViewPolicies ? '/access/policies' : undefined,
+              bars: [
+                {
+                  key: 'users',
+                  label: '平台账户',
+                  value: users.length,
+                  tone: 'primary',
+                  to: canViewUsers ? '/access/users' : undefined,
+                },
+                {
+                  key: 'roles',
+                  label: '角色定义',
+                  value: roles.length,
+                  tone: 'primary',
+                  to: canViewRoles ? '/access/roles' : undefined,
+                },
+                {
+                  key: 'teams',
+                  label: '组织团队',
+                  value: teams.length,
+                  tone: 'success',
+                  to: canViewTeams ? '/access/teams' : undefined,
+                },
+                {
+                  key: 'allow-pol',
+                  label: '允许策略',
+                  value: policies.filter((p) => p.effect === 'allow').length,
+                  tone: 'success',
+                  to: canViewPolicies ? '/access/policies' : undefined,
+                },
+                {
+                  key: 'deny-pol',
+                  label: '拒绝边界',
+                  value: policies.filter((p) => p.effect === 'deny').length,
+                  tone: 'warning',
+                  to: canViewPolicies ? '/access/policies' : undefined,
+                },
+              ],
+            },
+            {
+              key: 'gov-audit-radar',
+              kind: 'radar',
+              title: '在线会话·操作·审计留存雷达',
+              subtitle: `保留期 ${auditSummary?.retentionDays ?? '—'} 天`,
+              actionLabel: '审计流水',
+              actionTo: canViewAudit ? '/system/audit' : undefined,
+              emptyLabel: '零失败特权变更记录',
+              blips: systemActivity.map((act) => ({
+                key: act.key,
+                label: act.label,
+                badge: `${act.value} · ${act.helper}`,
+                tone: act.tone === 'warning' ? ('warning' as const) : ('success' as const),
+                to: act.path,
+              })),
+            },
+          ]}
+        />
       </div>
 
       <div className="soha-settings-overview-panels">
@@ -221,7 +418,10 @@ export function SettingsOverviewPage() {
             <>
               <div className="soha-settings-account-summary">
                 {userStatus.slice(0, 2).map((item) => (
-                  <div key={item.key} className={`soha-settings-account-stat is-${item.tone}`}>
+                  <div
+                    key={item.key}
+                    className={`soha-settings-account-stat${item.tone === 'warning' ? ' is-warning' : ''}`}
+                  >
                     <span>{item.label}</span>
                     <strong>{item.value}</strong>
                     <small>{item.helper}</small>

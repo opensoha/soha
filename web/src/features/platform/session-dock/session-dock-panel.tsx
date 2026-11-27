@@ -11,15 +11,18 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
+  AppstoreOutlined,
+  CloseOutlined,
   CodeOutlined,
   CompressOutlined,
   DownOutlined,
   ExpandOutlined,
   FileTextOutlined,
+  PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Select, Spin, Tabs, Typography } from 'antd'
+import { Button, Select, Spin, Tabs, Tooltip, Typography } from 'antd'
 import { ManagementState } from '@/components/management-list'
 import { useInlineApiError } from '@/components/request-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -58,6 +61,32 @@ interface RealtimeSessionDockPanelProps {
   validateReference?: (session: RealtimeSession, localeCode: string) => Promise<void>
 }
 
+type MultiCardCount = 1 | 2 | 3 | 4
+
+interface SessionWorkspaceTag {
+  id: string
+  name: string
+  cardCount: MultiCardCount
+  sessionIds: string[]
+}
+
+function buildDefaultWorkspaceTags(groupByCluster: boolean): SessionWorkspaceTag[] {
+  if (groupByCluster) {
+    return [
+      { id: 'tag-quad', name: 'AI 推理全景联调', cardCount: 4, sessionIds: [] },
+      { id: 'tag-dual', name: '日志+终端双窗', cardCount: 2, sessionIds: [] },
+      { id: 'tag-triple', name: '三路核心观测', cardCount: 3, sessionIds: [] },
+      { id: 'tag-single', name: '单窗专注', cardCount: 1, sessionIds: [] },
+    ]
+  }
+  return [
+    { id: 'tag-quad', name: '发布全链路四窗', cardCount: 4, sessionIds: [] },
+    { id: 'tag-dual', name: '灰度+Runner 双窗', cardCount: 2, sessionIds: [] },
+    { id: 'tag-triple', name: '构建·灰度·迁移三窗', cardCount: 3, sessionIds: [] },
+    { id: 'tag-single', name: '单窗专注', cardCount: 1, sessionIds: [] },
+  ]
+}
+
 interface DockResizeState {
   pointerId: number
   startHeight: number
@@ -81,11 +110,15 @@ function clampDockHeight(height: number) {
 }
 
 function defaultDockHeight() {
-  const preferred = window.innerHeight * (window.innerWidth <= 768 ? 0.56 : 0.44)
+  const isPilotMock = import.meta.env.VITE_UI_PILOT_MOCK === '1'
+  const preferred = window.innerHeight * (window.innerWidth <= 768 ? 0.56 : isPilotMock ? 0.56 : 0.44)
   return clampDockHeight(
     window.innerWidth <= 768
       ? preferred
-      : Math.min(Math.max(preferred, DOCK_DESKTOP_MIN_HEIGHT), DOCK_DESKTOP_MAX_HEIGHT),
+      : Math.min(
+          Math.max(preferred, isPilotMock ? 440 : DOCK_DESKTOP_MIN_HEIGHT),
+          isPilotMock ? 640 : DOCK_DESKTOP_MAX_HEIGHT,
+        ),
   )
 }
 
@@ -495,6 +528,64 @@ export function RealtimeSessionDockPanel({
   const dockRef = useRef<HTMLElement>(null)
   const resizeRef = useRef<DockResizeState | null>(null)
   const [dockHeight, setDockHeight] = useState<number>()
+  const [workspaceTags, setWorkspaceTags] = useState<SessionWorkspaceTag[]>(() =>
+    buildDefaultWorkspaceTags(groupByCluster),
+  )
+  const [activeTagId, setActiveTagId] = useState<string>('tag-single')
+  const [soloSessionId, setSoloSessionId] = useState<string | null>(null)
+
+  const activeWorkspaceTag = useMemo(
+    () => workspaceTags.find((tag) => tag.id === activeTagId) ?? workspaceTags[0],
+    [workspaceTags, activeTagId],
+  )
+  const requestedCardCount: MultiCardCount = activeWorkspaceTag?.cardCount ?? 1
+
+  const setActiveTagCardCount = (count: MultiCardCount) => {
+    setSoloSessionId(null)
+    setWorkspaceTags((prev) =>
+      prev.map((tag) => (tag.id === activeWorkspaceTag.id ? { ...tag, cardCount: count } : tag)),
+    )
+  }
+
+  const handleCreateWorkspaceTag = (clusterSessions: RealtimeSession[]) => {
+    const nextIndex = workspaceTags.length + 1
+    const count: MultiCardCount =
+      clusterSessions.length >= 3 ? 3 : clusterSessions.length >= 2 ? 2 : 1
+    const picked = clusterSessions.slice(0, count).map((s) => s.id)
+    const newTag: SessionWorkspaceTag = {
+      id: `tag-custom-${Date.now()}`,
+      name: localeCode === 'zh_CN' ? `组合视图 ${nextIndex}` : `Workspace ${nextIndex}`,
+      cardCount: count,
+      sessionIds: picked,
+    }
+    setSoloSessionId(null)
+    setWorkspaceTags((prev) => [...prev, newTag])
+    setActiveTagId(newTag.id)
+  }
+
+  const handleToggleSessionInTag = (sessionId: string, clusterSessions: RealtimeSession[]) => {
+    setSoloSessionId(null)
+    setWorkspaceTags((prev) =>
+      prev.map((tag) => {
+        if (tag.id !== activeWorkspaceTag.id) return tag
+        const currentIds =
+          tag.sessionIds.length > 0
+            ? tag.sessionIds.filter((id) => clusterSessions.some((s) => s.id === id))
+            : clusterSessions.slice(0, tag.cardCount).map((s) => s.id)
+        const exists = currentIds.includes(sessionId)
+        let nextIds: string[]
+        if (exists) {
+          if (currentIds.length <= 1) return tag
+          nextIds = currentIds.filter((id) => id !== sessionId)
+        } else {
+          nextIds = [...currentIds, sessionId].slice(-4)
+        }
+        const nextCount = Math.min(Math.max(nextIds.length, 1), 4) as MultiCardCount
+        return { ...tag, sessionIds: nextIds, cardCount: nextCount }
+      }),
+    )
+  }
+
   const clusterGroups = useMemo<[string, RealtimeSession[]][]>(() => {
     if (!groupByCluster) return sessions.length ? [['application', sessions]] : []
     const groups = new Map<string, RealtimeSession[]>()
@@ -503,9 +594,12 @@ export function RealtimeSessionDockPanel({
     })
     return Array.from(groups.entries())
   }, [groupByCluster, sessions])
-  const activeClusterHasSessions = Boolean(
-    sessions.some((session) => !groupByCluster || session.clusterId === activeClusterId),
+  const activeClusterSessions = useMemo(
+    () =>
+      sessions.filter((session) => !groupByCluster || session.clusterId === activeClusterId),
+    [activeClusterId, groupByCluster, sessions],
   )
+  const activeClusterHasSessions = activeClusterSessions.length > 0
   const title = localeCode === 'zh_CN' ? '实时会话' : 'Live sessions'
   const resizeLabel = localeCode === 'zh_CN' ? '调整实时会话高度' : 'Resize live sessions'
 
@@ -615,9 +709,33 @@ export function RealtimeSessionDockPanel({
           <CodeOutlined />
           <strong>{title}</strong>
           {groupByCluster && activeClusterId ? (
-            <Text ellipsis title={activeClusterId} style={{ maxWidth: '36vw' }}>
+            <Text ellipsis title={activeClusterId} style={{ maxWidth: '28vw' }}>
               {activeClusterId}
             </Text>
+          ) : null}
+          {activeClusterSessions.length >= 2 ? (
+            <div
+              className="soha-session-grid-switcher"
+              role="group"
+              aria-label={localeCode === 'zh_CN' ? '多卡片分屏数量' : 'Multi-card split count'}
+            >
+              <AppstoreOutlined className="soha-session-grid-switcher__icon" />
+              {([1, 2, 3, 4] as MultiCardCount[]).map((count) => {
+                const disabled = count > activeClusterSessions.length && count > 1
+                const active = !soloSessionId && requestedCardCount === count
+                return (
+                  <button
+                    key={count}
+                    type="button"
+                    disabled={disabled}
+                    className={`soha-session-grid-btn${active ? ' is-active' : ''}`}
+                    onClick={() => setActiveTagCardCount(count)}
+                  >
+                    {localeCode === 'zh_CN' ? `${count} 卡` : `${count}x`}
+                  </button>
+                )
+              })}
+            </div>
           ) : null}
         </div>
         <div className="soha-realtime-session-dock__actions">
@@ -652,13 +770,99 @@ export function RealtimeSessionDockPanel({
           const activeKey = clusterSessions.some((session) => session.id === requestedActiveKey)
             ? requestedActiveKey
             : clusterSessions[clusterSessions.length - 1]?.id
+
+          const effectiveCount: MultiCardCount = soloSessionId
+            ? 1
+            : (Math.min(requestedCardCount, Math.max(clusterSessions.length, 1)) as MultiCardCount)
+
+          const configuredIds = activeWorkspaceTag.sessionIds.filter((id) =>
+            clusterSessions.some((s) => s.id === id),
+          )
+          const visibleGridIds =
+            soloSessionId && clusterSessions.some((s) => s.id === soloSessionId)
+              ? [soloSessionId]
+              : effectiveCount === 1
+                ? activeKey
+                  ? [activeKey]
+                  : clusterSessions.slice(0, 1).map((s) => s.id)
+                : configuredIds.length > 0
+                  ? configuredIds.slice(0, effectiveCount)
+                  : clusterSessions.slice(0, effectiveCount).map((s) => s.id)
+
+          const showWorkspaceTagBar = requestedCardCount > 1 && clusterSessions.length >= 2
+
           return (
             <div
               key={clusterId}
               className="soha-realtime-session-cluster"
               data-cluster-id={clusterId}
+              data-card-count={effectiveCount}
               hidden={groupByCluster && clusterId !== activeClusterId}
             >
+              {showWorkspaceTagBar ? (
+                <div className="soha-session-workspace-bar">
+                  <div className="soha-session-workspace-tags">
+                    {workspaceTags.map((tag) => {
+                      const isTagActive = tag.id === activeWorkspaceTag.id
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className={`soha-session-workspace-tag${isTagActive ? ' is-active' : ''}`}
+                          onClick={() => {
+                            setSoloSessionId(null)
+                            setActiveTagId(tag.id)
+                          }}
+                        >
+                          <span className="soha-session-workspace-tag__name">{tag.name}</span>
+                          <span className="soha-session-workspace-tag__badge">
+                            {tag.cardCount}窗
+                          </span>
+                        </button>
+                      )
+                    })}
+                    <Tooltip
+                      title={
+                        localeCode === 'zh_CN'
+                          ? '新建单 Tag 多窗口组合视图'
+                          : 'Create multi-window workspace tag'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="soha-session-workspace-tag is-add"
+                        onClick={() => handleCreateWorkspaceTag(clusterSessions)}
+                      >
+                        <PlusOutlined />
+                        <span>{localeCode === 'zh_CN' ? '新建组' : 'New group'}</span>
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <div className="soha-session-window-selector">
+                    <span className="soha-session-window-selector__label">
+                      {localeCode === 'zh_CN' ? '当前 Tag 挂载:' : 'Mounted:'}
+                    </span>
+                    {clusterSessions.map((session) => {
+                      const mounted = visibleGridIds.includes(session.id)
+                      const shortPod =
+                        session.podName.length > 18
+                          ? `${session.podName.slice(0, 18)}…`
+                          : session.podName
+                      return (
+                        <button
+                          key={session.id}
+                          type="button"
+                          className={`soha-session-mount-chip${mounted ? ' is-mounted' : ''}`}
+                          onClick={() => handleToggleSessionInTag(session.id, clusterSessions)}
+                        >
+                          {session.kind === 'logs' ? <FileTextOutlined /> : <CodeOutlined />}
+                          <span>{shortPod}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <Tabs
                 activeKey={activeKey}
                 animated={false}
@@ -686,6 +890,8 @@ export function RealtimeSessionDockPanel({
                   ]
                     .filter(Boolean)
                     .join(' / ')
+                  const isVisibleInGrid = visibleGridIds.includes(session.id)
+                  const isSolo = soloSessionId === session.id
                   return {
                     key: session.id,
                     label: (
@@ -704,12 +910,80 @@ export function RealtimeSessionDockPanel({
                     ),
                     forceRender: true,
                     children: (
-                      <SessionContent
-                        requested={connectRequests.includes(session.id)}
-                        session={session}
-                        onReplaceSession={onReplaceSession}
-                        validateReference={validateReference}
-                      />
+                      <div
+                        className={`soha-session-window-card${isVisibleInGrid ? ' is-grid-visible' : ''}${effectiveCount > 1 || isSolo ? ' is-card-framed' : ''}`}
+                      >
+                        {effectiveCount > 1 || isSolo ? (
+                          <div className="soha-session-window-card__head">
+                            <div className="soha-session-window-card__meta">
+                              <span
+                                className={`soha-session-kind-pill is-${session.kind}`}
+                              >
+                                {session.kind === 'logs' ? <FileTextOutlined /> : <CodeOutlined />}
+                                {kindLabel}
+                              </span>
+                              <strong
+                                className="soha-session-window-card__pod"
+                                title={`${session.namespace}/${session.podName}`}
+                              >
+                                {session.podName}
+                              </strong>
+                              {session.container ? (
+                                <span className="soha-session-window-card__container">
+                                  / {session.container}
+                                </span>
+                              ) : null}
+                              <span className="soha-session-window-card__ns">
+                                {session.namespace}
+                              </span>
+                            </div>
+                            <div className="soha-session-window-card__tools">
+                              <span className="soha-session-live-dot" title="LIVE" />
+                              <Tooltip
+                                title={
+                                  isSolo
+                                    ? localeCode === 'zh_CN'
+                                      ? '返回多卡片分屏'
+                                      : 'Back to multi-card grid'
+                                    : localeCode === 'zh_CN'
+                                      ? '单卡片放大查看'
+                                      : 'Focus single card'
+                                }
+                              >
+                                <button
+                                  type="button"
+                                  className="soha-session-card-tool-btn"
+                                  onClick={() => {
+                                    onActiveSessionChange(session.clusterId, session.id)
+                                    setSoloSessionId((cur) =>
+                                      cur === session.id ? null : session.id,
+                                    )
+                                  }}
+                                >
+                                  {isSolo ? <CompressOutlined /> : <ExpandOutlined />}
+                                </button>
+                              </Tooltip>
+                              <Tooltip title={localeCode === 'zh_CN' ? '关闭此窗口' : 'Close'}>
+                                <button
+                                  type="button"
+                                  className="soha-session-card-tool-btn is-close"
+                                  onClick={() => onCloseSession(session.id)}
+                                >
+                                  <CloseOutlined />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          </div>
+                        ) : null}
+                        <div className="soha-session-window-card__body">
+                          <SessionContent
+                            requested={connectRequests.includes(session.id)}
+                            session={session}
+                            onReplaceSession={onReplaceSession}
+                            validateReference={validateReference}
+                          />
+                        </div>
+                      </div>
                     ),
                   }
                 })}

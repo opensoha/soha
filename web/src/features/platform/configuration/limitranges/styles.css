@@ -1,12 +1,6 @@
 .soha-limitrange-detail {
   min-width: 0;
 }
-.soha-limitrange-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-limitrange-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-limitrange-detail .soha-workload-overview-config dd {
   min-width: 0;
   overflow-wrap: anywhere;

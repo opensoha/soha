@@ -1,8 +1,14 @@
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
-import { PlusOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons'
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  SyncOutlined,
+} from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, Modal, Popconfirm, Select, Space } from 'antd'
+import { App, Button, Form, Input, Modal, Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -21,6 +27,7 @@ export function KnowledgeProductionPage() {
 }
 
 function KnowledgeProductionPageContent() {
+  const { modal } = App.useApp()
   const client = useQueryClient()
   const [connectorOpen, setConnectorOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
@@ -147,16 +154,15 @@ function KnowledgeProductionPageContent() {
           error: connectors.error,
           hasReadData: connectors.data !== undefined,
           emptyDescription: '配置 HTTP、Git 或 Object Store Connector。',
-          actions: (row) => (
-            <Button
-              disabled={blocked}
-              type="link"
-              icon={<SafetyCertificateOutlined />}
-              onClick={() => validateConnector.mutate(row.id)}
-            >
-              验证
-            </Button>
-          ),
+          actionItems: (row) => [
+            {
+              key: 'validate',
+              label: '验证',
+              icon: <SafetyCertificateOutlined />,
+              disabled: blocked,
+              onClick: () => validateConnector.mutate(row.id),
+            },
+          ],
         },
         {
           key: 'pipeline',
@@ -166,26 +172,31 @@ function KnowledgeProductionPageContent() {
           error: jobs.error,
           hasReadData: jobs.data !== undefined,
           emptyDescription: '同步或重建后会显示分阶段任务。',
-          actions: (row) => (
-            <Space>
-              <Button
-                disabled={blocked}
-                type="link"
-                onClick={() => jobAction.mutate({ id: row.id, action: 'retry' })}
-              >
-                重试
-              </Button>
-              <Popconfirm
-                disabled={blocked}
-                title="确认取消同步任务？"
-                onConfirm={() => jobAction.mutate({ id: row.id, action: 'cancel' })}
-              >
-                <Button disabled={blocked} danger type="link">
-                  取消
-                </Button>
-              </Popconfirm>
-            </Space>
-          ),
+          actionItems: (row) => [
+            {
+              key: 'retry',
+              label: '重试',
+              icon: <ReloadOutlined />,
+              disabled: blocked,
+              onClick: () => jobAction.mutate({ id: row.id, action: 'retry' }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'cancel',
+              label: '取消',
+              icon: <StopOutlined />,
+              danger: true,
+              disabled: blocked,
+              onClick: () =>
+                modal.confirm({
+                  title: '确认取消同步任务？',
+                  okText: '取消任务',
+                  cancelText: '返回',
+                  okButtonProps: { danger: true },
+                  onOk: () => jobAction.mutateAsync({ id: row.id, action: 'cancel' }),
+                }),
+            },
+          ],
         },
       ]}
     >

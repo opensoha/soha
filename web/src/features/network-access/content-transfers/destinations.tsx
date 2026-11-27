@@ -11,8 +11,11 @@ import type {
 import { DataLevelFields, DLPShadowPanel } from '@/components/content-dlp-policy-tools'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
+import { EditOutlined } from '@ant-design/icons'
 import {
   adminDestinationQuery,
   saveDestination,
@@ -218,7 +221,15 @@ export function Destinations() {
             key: 'name',
             render: (_: unknown, d: ManagedContentDestination) => (
               <Space orientation="vertical" size={2}>
-                <span>{d.draft.name}</span>
+                <Button
+                  type="link"
+                  size="small"
+                  className="soha-system-linklike"
+                  disabled={busy}
+                  onClick={() => edit(d)}
+                >
+                  {d.draft.name}
+                </Button>
                 <Typography.Text copyable>{d.id}</Typography.Text>
               </Space>
             ),
@@ -238,12 +249,22 @@ export function Destinations() {
                 : text('尚未发布', 'Not published'),
           },
           {
-            title: text('编辑', 'Edit'),
-            key: 'edit',
+            ...tableColumnPresets.action,
+            title: text('操作', 'Actions'),
+            key: 'actions',
             render: (_: unknown, d: ManagedContentDestination) => (
-              <Button size="small" disabled={busy} onClick={() => edit(d)}>
-                {text('查看 / 编辑', 'View / Edit')}
-              </Button>
+              <TableRowActionMenu
+                targetLabel={d.draft.name}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: text('查看 / 编辑', 'View / Edit'),
+                    disabled: busy,
+                    onClick: () => edit(d),
+                  },
+                ]}
+              />
             ),
           },
         ]}

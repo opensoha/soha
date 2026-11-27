@@ -96,6 +96,16 @@ async function clickButton(text: string) {
   await click(button)
 }
 
+async function clickRowAction(text: string) {
+  const trigger = document.querySelector('button.soha-table-row-action-trigger')
+  await click(trigger)
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  const item = Array.from(document.body.querySelectorAll('.ant-dropdown-menu-item')).find(
+    (candidate) => candidate.textContent?.includes(text),
+  )
+  await click(item)
+}
+
 async function selectOption(select: Element | null | undefined, label: string) {
   expect(select).not.toBeNull()
   await act(async () =>
@@ -163,7 +173,7 @@ describe('network sessions pane', () => {
         ),
       )
       await settle(client)
-      await click(document.querySelector('button[aria-label="编辑网络设备"]'))
+      await clickRowAction('编辑网络设备')
       expect(document.querySelector('input[type="password"]')).toBeNull()
       if (scenario === 'tls-switch') {
         await selectOption(
@@ -296,7 +306,7 @@ describe('network sessions pane', () => {
     })
     await settle(queryClient)
 
-    await click(document.querySelector('button[aria-label="调整会话访问"]'))
+    await clickRowAction('调整会话访问')
     await selectOption(
       document.querySelector('#targetAccessProfile')?.closest('.ant-select'),
       'restricted',

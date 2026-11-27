@@ -1,9 +1,5 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import {
-  ManagementIconButton,
-  ManagementRefreshButton,
-  ManagementToolbarSearch,
-} from '@/components/management-list'
+import { ManagementRefreshButton, ManagementToolbarSearch } from '@/components/management-list'
 import {
   hiddenModalHeaderStyle,
   operationModalStyles,
@@ -13,6 +9,7 @@ import {
 import { OverviewMetricCard, type OverviewMetricItem } from '@/components/overview-visuals'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
@@ -36,6 +33,7 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  App,
   Button,
   Card,
   DatePicker,
@@ -45,7 +43,6 @@ import {
   Input,
   Modal,
   Pagination,
-  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -84,6 +81,7 @@ const ANNOUNCEMENT_DURATION_OPTIONS = [
 const RECEIPT_PAGE_SIZE = 15
 
 export function AnnouncementsPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
@@ -253,80 +251,91 @@ export function AnnouncementsPage() {
   ]
 
   const renderAnnouncementActions = (record: Announcement) => (
-    <Space className="soha-row-action-icons">
-      <ManagementIconButton
-        aria-label="查看阅读情况"
-        icon={<TeamOutlined />}
-        size="small"
-        tooltip="阅读情况"
-        onClick={() => {
-          setReceiptState('all')
-          setReceiptKeyword('')
-          setReceiptPage(1)
-          setReceiptTarget(record)
-        }}
-      />
-      <ManagementIconButton
-        aria-label="预览公告"
-        icon={<EyeOutlined />}
-        size="small"
-        tooltip="预览"
-        onClick={() => setPreviewing(record)}
-      />
-      {canUpdateAnnouncement ? (
-        <ManagementIconButton
-          aria-label="编辑公告"
-          disabled={blocked}
-          icon={<EditOutlined />}
-          size="small"
-          tooltip="编辑"
-          onClick={() => {
-            setEditing(record)
-            setDurationPreset('custom')
-            setModalVisible(true)
-          }}
-        />
-      ) : null}
-      {canPublishAnnouncement && buildAnnouncementLifecycle(record) !== 'published' ? (
-        <ManagementIconButton
-          aria-label="发布公告"
-          disabled={blocked}
-          icon={<SendOutlined />}
-          size="small"
-          tooltip="发布"
-          onClick={() => publishMutation.mutate(record.id)}
-          loading={publishMutation.isPending && publishMutation.variables === record.id}
-        />
-      ) : null}
-      {canWithdrawAnnouncement && buildAnnouncementLifecycle(record) === 'published' ? (
-        <ManagementIconButton
-          aria-label="撤回公告"
-          disabled={blocked}
-          icon={<PauseCircleOutlined />}
-          size="small"
-          tooltip="撤回"
-          onClick={() => withdrawMutation.mutate(record.id)}
-          loading={withdrawMutation.isPending && withdrawMutation.variables === record.id}
-        />
-      ) : null}
-      {canDeleteAnnouncement ? (
-        <Popconfirm
-          title="确认删除？"
-          disabled={blocked}
-          okButtonProps={{ disabled: blocked }}
-          onConfirm={() => deleteMutation.mutate(record.id)}
-        >
-          <ManagementIconButton
-            aria-label="删除公告"
-            disabled={blocked}
-            danger
-            icon={<DeleteOutlined />}
-            size="small"
-            tooltip="删除"
-          />
-        </Popconfirm>
-      ) : null}
-    </Space>
+    <TableRowActionMenu
+      targetLabel={record.title}
+      loading={
+        (publishMutation.isPending && publishMutation.variables === record.id) ||
+        (withdrawMutation.isPending && withdrawMutation.variables === record.id) ||
+        (deleteMutation.isPending && deleteMutation.variables === record.id)
+      }
+      items={[
+        {
+          key: 'receipts',
+          label: '阅读情况',
+          icon: <TeamOutlined />,
+          onClick: () => {
+            setReceiptState('all')
+            setReceiptKeyword('')
+            setReceiptPage(1)
+            setReceiptTarget(record)
+          },
+        },
+        {
+          key: 'preview',
+          label: '预览',
+          icon: <EyeOutlined />,
+          onClick: () => setPreviewing(record),
+        },
+        ...(canUpdateAnnouncement
+          ? [
+              {
+                key: 'edit',
+                label: '编辑',
+                icon: <EditOutlined />,
+                disabled: blocked,
+                onClick: () => {
+                  setEditing(record)
+                  setDurationPreset('custom')
+                  setModalVisible(true)
+                },
+              },
+            ]
+          : []),
+        ...(canPublishAnnouncement && buildAnnouncementLifecycle(record) !== 'published'
+          ? [
+              {
+                key: 'publish',
+                label: '发布',
+                icon: <SendOutlined />,
+                disabled: blocked,
+                onClick: () => publishMutation.mutate(record.id),
+              },
+            ]
+          : []),
+        ...(canWithdrawAnnouncement && buildAnnouncementLifecycle(record) === 'published'
+          ? [
+              {
+                key: 'withdraw',
+                label: '撤回',
+                icon: <PauseCircleOutlined />,
+                disabled: blocked,
+                onClick: () => withdrawMutation.mutate(record.id),
+              },
+            ]
+          : []),
+        ...(canDeleteAnnouncement
+          ? [
+              { type: 'divider' as const },
+              {
+                key: 'delete',
+                label: '删除',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: blocked,
+                onClick: () => {
+                  modal.confirm({
+                    title: `确认删除公告「${record.title}」？`,
+                    okText: '删除',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true, disabled: blocked },
+                    onOk: () => deleteMutation.mutateAsync(record.id).catch(() => undefined),
+                  })
+                },
+              },
+            ]
+          : []),
+      ]}
+    />
   )
 
   return (
@@ -341,12 +350,6 @@ export function AnnouncementsPage() {
           {deleteMutation.feedback}
         </>
       ) : null}
-      <ManagementRefreshButton
-        aria-label="刷新公告"
-        tooltip="刷新"
-        loading={announcementQuery.isFetching}
-        onClick={() => void announcementQuery.refetch()}
-      />
       <div className="soha-overview-metric-grid">
         {overviewMetrics.map(({ key, ...item }) => (
           <OverviewMetricCard key={key} {...item} loading={isLoading} />
@@ -357,24 +360,35 @@ export function AnnouncementsPage() {
         variant="outlined"
         className="soha-overview-panel-card"
         extra={
-          canCreateAnnouncement ? (
-            <Button
-              icon={<PlusOutlined />}
-              disabled={blocked}
-              type="primary"
-              onClick={() => {
-                setEditing(null)
-                setDurationPreset('one-day')
-                setModalVisible(true)
-              }}
-            >
-              新建公告
-            </Button>
-          ) : null
+          <Space size={8}>
+            {canCreateAnnouncement ? (
+              <Button
+                icon={<PlusOutlined />}
+                disabled={blocked}
+                type="primary"
+                size="small"
+                onClick={() => {
+                  setEditing(null)
+                  setDurationPreset('one-day')
+                  setModalVisible(true)
+                }}
+              >
+                新建公告
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新公告"
+              size="small"
+              tooltip="刷新"
+              loading={announcementQuery.isFetching}
+              onClick={() => void announcementQuery.refetch()}
+            />
+          </Space>
         }
       >
         <Tabs
           activeKey={statusView}
+          className="soha-resource-tabs"
           onChange={setStatusView}
           items={announcementTabs.map((item) => ({
             key: item.key,

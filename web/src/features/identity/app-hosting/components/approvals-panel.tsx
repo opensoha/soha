@@ -10,6 +10,7 @@ import {
 } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
@@ -17,7 +18,7 @@ import { formatDateTime } from '@/utils/time'
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Form, Input, Modal, Space, Tooltip, Typography } from 'antd'
+import { Button, Form, Input, Modal, Space, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { formatApprovalStatus, formatInvalidationReason, formatVisibilityScope } from '../model'
 import { appHostingAdminMutations } from '../mutations'
@@ -181,12 +182,21 @@ export function VisibilityApprovalsPanel({
         title: '状态与意见',
         dataIndex: 'status',
         key: 'status',
-        width: 220,
+        width: 240,
         render: (status: HostedAppVisibilityApprovalStatus, record) => {
           const meta = formatApprovalStatus(status)
+          const isSelfPending =
+            status === 'pending' &&
+            Boolean(currentUserId) &&
+            record.requesterUserId === currentUserId
           return (
             <Space orientation="vertical" size={2}>
               <StatusTag label={meta.label} value={meta.value} />
+              {isSelfPending ? (
+                <Text type="warning" className="soha-identity-app-hosting-self-guard">
+                  申请人本人需回避审批，请由其他管理员处理
+                </Text>
+              ) : null}
               {status === 'invalidated' ? (
                 <Text
                   type="warning"
@@ -215,7 +225,6 @@ export function VisibilityApprovalsPanel({
         ...tableColumnPresets.action,
         title: '操作',
         key: 'actions',
-        width: 230,
         render: (_, record) => {
           if (record.status !== 'pending') {
             return <Text type="secondary">已处理</Text>
@@ -223,41 +232,29 @@ export function VisibilityApprovalsPanel({
 
           const isSelfRequest = Boolean(currentUserId) && record.requesterUserId === currentUserId
           const disabled = !canManage || isSelfRequest || operationBlocked
-          const selfGuardMessage = '申请人本人需回避审批，请由其他管理员处理'
 
           return (
-            <Space orientation="vertical" size={2}>
-              <Space size={4}>
-                <Tooltip title={isSelfRequest ? selfGuardMessage : undefined}>
-                  <Button
-                    disabled={disabled}
-                    icon={<CheckOutlined />}
-                    size="small"
-                    type="link"
-                    onClick={() => setApproveTarget(record)}
-                  >
-                    批准
-                  </Button>
-                </Tooltip>
-                <Tooltip title={isSelfRequest ? selfGuardMessage : undefined}>
-                  <Button
-                    danger
-                    disabled={disabled}
-                    icon={<CloseOutlined />}
-                    size="small"
-                    type="link"
-                    onClick={() => setRejectTarget(record)}
-                  >
-                    拒绝
-                  </Button>
-                </Tooltip>
-              </Space>
-              {isSelfRequest ? (
-                <Text type="warning" className="soha-identity-app-hosting-self-guard">
-                  {selfGuardMessage}
-                </Text>
-              ) : null}
-            </Space>
+            <TableRowActionMenu
+              targetLabel={record.appName}
+              items={[
+                {
+                  key: 'approve',
+                  icon: <CheckOutlined />,
+                  label: '批准',
+                  disabled,
+                  onClick: () => setApproveTarget(record),
+                },
+                { type: 'divider' },
+                {
+                  key: 'reject',
+                  icon: <CloseOutlined />,
+                  label: '拒绝',
+                  danger: true,
+                  disabled,
+                  onClick: () => setRejectTarget(record),
+                },
+              ]}
+            />
           )
         },
       },

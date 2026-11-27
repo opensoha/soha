@@ -20,7 +20,7 @@ export async function expectWorkloadDetailFrame(page: Page) {
           const b = navigation.getBoundingClientRect()
           const c = holder.getBoundingClientRect()
           return {
-            connected: Math.abs(a.bottom - b.top) <= 1,
+            connected: Math.abs(b.top - a.bottom - 12) <= 1,
             leftAligned: Math.abs(a.left - c.left) <= 1,
             rightAligned: Math.abs(a.right - c.right) <= 1,
             inlinePadding: getComputedStyle(holder).paddingInlineStart,

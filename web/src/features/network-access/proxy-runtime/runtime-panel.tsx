@@ -83,7 +83,7 @@ export function RuntimePanel({
     workspaceQueries.command(
       submitted?.instanceId ?? id,
       requestId,
-      Boolean(submitted && !queue.isPending),
+      Boolean(submitted && !queue.isPending && (!queue.error || writeOutcomeUnknown(queue.error))),
     ),
   )
   const candidate = readableQueryData(receipt)

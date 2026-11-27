@@ -2,6 +2,13 @@
   min-width: 0;
 }
 
+.soha-dashboard-detail-page .soha-management-table-card {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .soha-dashboard-import-fields,
 .soha-dashboard-import-field,
 .soha-dashboard-import-control {
@@ -16,10 +23,12 @@
   min-width: 0;
 }
 
-.soha-dashboard-panel {
+.soha-dashboard-panel,
+.soha-dashboard-panel.ant-card {
   min-width: 0;
   min-height: 160px;
   overflow: hidden;
+  border-radius: var(--soha-radius-panel, var(--soha-radius-lg, 12px));
 }
 
 .soha-dashboard-panel .ant-card-body {

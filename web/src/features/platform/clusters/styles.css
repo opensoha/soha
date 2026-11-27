@@ -86,11 +86,15 @@
 }
 
 .soha-cluster-detail-page.soha-workload-detail-page {
-  gap: 0;
   min-width: 0;
 }
-.soha-cluster-detail-page .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
+.soha-cluster-detail-page .soha-workload-overview-facts {
+  margin-bottom: 14px;
+}
+.soha-cluster-detail-page .soha-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .soha-cluster-detail-page .soha-workload-overview-config dt,
 .soha-cluster-detail-page .soha-workload-overview-config dd {

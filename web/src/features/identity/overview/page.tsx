@@ -1,8 +1,7 @@
 import { ManagementState } from '@/components/management-list'
 import {
   OverviewChip,
-  OverviewMetricCard,
-  OverviewSectionBar,
+  OverviewHeroCard,
   type OverviewChipItem,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
@@ -18,7 +17,6 @@ import {
   CloudServerOutlined,
   DatabaseOutlined,
   FileOutlined,
-  KeyOutlined,
   LinkOutlined,
   SafetyCertificateOutlined,
   UserSwitchOutlined,
@@ -82,12 +80,6 @@ export function IdentityOverviewPage() {
   )
   const enabledApplications = applications.filter((application) => application.status === 'enabled')
   const onlineOutposts = outposts.filter((outpost) => outpost.status === 'online')
-  const oidcEnabled = oidcProviders.some(
-    (provider) => provider.enabled && provider.status === 'enabled',
-  )
-  const proxyEnabled = proxyProviders.some(
-    (provider) => provider.enabled && provider.status === 'enabled',
-  )
   const enabledStorageIntegrations = storageIntegrations.filter((item) => item.enabled)
   const healthyStorageIntegrations = storageIntegrations.filter(
     (item) => item.enabled && item.healthStatus === 'healthy',
@@ -146,36 +138,6 @@ export function IdentityOverviewPage() {
       loading?: boolean
     }
   >
-  const protocolStatus = [
-    {
-      key: 'oidc',
-      label: 'OIDC Provider',
-      value: oidcProviders.length,
-      helper: oidcEnabled ? '已启用' : '未启用',
-      icon: <KeyOutlined />,
-      tone: oidcEnabled ? 'success' : 'default',
-    },
-    {
-      key: 'saml',
-      label: 'SAML Provider',
-      value: samlProviders.length,
-      helper: runtime?.samlApplicationProvider.available
-        ? samlProviders.some((provider) => provider.enabled && provider.status === 'enabled')
-          ? '已启用'
-          : '运行时可用，未启用'
-        : runtime?.samlApplicationProvider.reason || '运行时不可用',
-      icon: <SafetyCertificateOutlined />,
-      tone: runtime?.samlApplicationProvider.available ? 'success' : 'default',
-    },
-    {
-      key: 'proxy',
-      label: 'Proxy Provider',
-      value: proxyProviders.length,
-      helper: proxyEnabled ? '已启用' : '未启用',
-      icon: <ApiOutlined />,
-      tone: proxyEnabled ? 'success' : 'default',
-    },
-  ] satisfies OverviewChipItem[]
   const softwareStatus = [
     {
       key: 'storage-sources',
@@ -232,77 +194,218 @@ export function IdentityOverviewPage() {
           }
         />
       ))}
-      <div className="soha-overview-metric-grid">
-        {overviewStats.map((item) => (
-          <OverviewMetricCard
-            key={item.key}
-            label={item.label}
-            value={available(reads[item.key]) ? item.value : '—'}
-            helper={available(reads[item.key]) ? item.helper : '当前数据不可用'}
-            icon={item.icon}
-            tone={item.tone}
-            loading={item.loading}
-          />
-        ))}
+      <div className="soha-overview-bento-top">
+        <OverviewHeroCard
+          variant="identity"
+          eyebrowIcon={<SafetyCertificateOutlined />}
+          eyebrowLabel={overviewStats[0].label}
+          value={available(reads.applications) ? applications.length : '—'}
+          valueSuffix="个受管 SSO 应用"
+          caption={available(reads.applications) ? overviewStats[0].helper : '当前数据不可用'}
+          loading={overviewStats[0].loading}
+          kpis={[
+            {
+              key: 'outposts',
+              label: '在线 Outpost',
+              value: available(reads.outposts) ? `${onlineOutposts.length}/${outposts.length}` : '—',
+            },
+            {
+              key: 'sessions',
+              label: '活跃会话',
+              value: available(reads.sessions) ? sessions.length : '—',
+            },
+          ]}
+          telemetryNodes={[
+            {
+              id: 'trust-core',
+              label: `SSO-APPS · ${applications.length}`,
+              title: '企业统一门户应用目录',
+              metric: `${enabledApplications.length} 个应用已启用`,
+              status: 'primary',
+              path: '/identity/applications',
+            },
+            {
+              id: 'oidc-idp',
+              label: `PROVIDERS · ${providers.length}`,
+              title: 'OIDC / SAML / Proxy 身份源',
+              metric: `${enabledProviders.length} 个认证协议运行中`,
+              status: 'healthy',
+              path: '/identity/providers',
+            },
+            {
+              id: 'ztna-outpost',
+              label: `OUTPOST · ${onlineOutposts.length}/${outposts.length}`,
+              title: '边缘零信任代理节点',
+              metric:
+                onlineOutposts.length < outposts.length ? '存在离线 Outpost' : '全部接入端在线',
+              status: onlineOutposts.length < outposts.length ? 'warning' : 'healthy',
+              path: '/identity/outposts',
+            },
+            {
+              id: 'sessions-live',
+              label: `SESSIONS · ${sessions.length}`,
+              title: '当前活跃身份会话',
+              metric: `${sessions.length} 条已签发在线会话`,
+              status: 'healthy',
+              path: '/system/audit',
+            },
+          ]}
+          embeddedPods={overviewStats.slice(1).map((item) => ({
+            key: item.key,
+            label: item.label,
+            value: available(reads[item.key]) ? item.value : '—',
+            helper: available(reads[item.key]) ? item.helper : '当前数据不可用',
+            icon: item.icon,
+            tone: item.tone,
+            loading: item.loading,
+          }))}
+          segments={[
+            {
+              key: 'enabled',
+              label: '已启用应用',
+              value: enabledApplications.length,
+              tone: 'success',
+            },
+            {
+              key: 'oidc',
+              label: 'OIDC',
+              value: oidcProviders.length,
+              tone: 'primary',
+            },
+            {
+              key: 'saml',
+              label: 'SAML',
+              value: samlProviders.length,
+              tone: 'neutral',
+            },
+            {
+              key: 'proxy',
+              label: 'Proxy',
+              value: proxyProviders.length,
+              tone: 'neutral',
+            },
+          ]}
+          ctaLabel="管理应用目录"
+          ctaTo="/identity/applications"
+          detailDrawerTitle="身份审计与软件存储明细"
+          graphicDeck={[
+            {
+              key: 'identity-ztna-rings',
+              kind: 'rings',
+              title: '零信任门户与代理在线环',
+              subtitle: 'SSO 应用 · 认证源 · 边缘 Outpost',
+              actionLabel: '身份源',
+              actionTo: '/identity/providers',
+              centerValue:
+                applications.length > 0
+                  ? `${Math.round((enabledApplications.length / applications.length) * 100)}%`
+                  : '100%',
+              centerLabel: '应用启用',
+              rings: [
+                {
+                  key: 'apps-enabled',
+                  label: '已启用门户应用',
+                  value: `${enabledApplications.length}/${applications.length}`,
+                  ratio:
+                    applications.length > 0 ? enabledApplications.length / applications.length : 1,
+                  tone: 'success',
+                  to: '/identity/applications',
+                },
+                {
+                  key: 'providers-enabled',
+                  label: '活跃认证协议',
+                  value: `${enabledProviders.length}/${providers.length}`,
+                  ratio: providers.length > 0 ? enabledProviders.length / providers.length : 1,
+                  tone: 'primary',
+                  to: '/identity/providers',
+                },
+                {
+                  key: 'outposts-online',
+                  label: '在线 Outpost',
+                  value: `${onlineOutposts.length}/${outposts.length}`,
+                  ratio: outposts.length > 0 ? onlineOutposts.length / outposts.length : 1,
+                  tone: onlineOutposts.length < outposts.length ? 'warning' : 'success',
+                  to: '/identity/outposts',
+                },
+                {
+                  key: 'storage-healthy',
+                  label: '健康对象存储源',
+                  value: `${healthyStorageIntegrations.length}/${storageIntegrations.length}`,
+                  ratio:
+                    storageIntegrations.length > 0
+                      ? healthyStorageIntegrations.length / storageIntegrations.length
+                      : 1,
+                  tone: 'primary',
+                  to: '/internal-workbench/software',
+                },
+              ],
+            },
+            {
+              key: 'identity-protocol-spectrum',
+              kind: 'spectrum',
+              title: '多协议认证与分发资产频谱',
+              subtitle: 'OIDC · SAML · Proxy · 软件包仓',
+              actionLabel: '软件库',
+              actionTo: '/internal-workbench/software',
+              bars: [
+                {
+                  key: 'oidc',
+                  label: 'OIDC',
+                  value: oidcProviders.length,
+                  tone: 'primary',
+                  to: '/identity/providers',
+                },
+                {
+                  key: 'saml',
+                  label: 'SAML',
+                  value: samlProviders.length,
+                  tone: 'primary',
+                },
+                {
+                  key: 'proxy',
+                  label: 'Proxy',
+                  value: proxyProviders.length,
+                  tone: 'success',
+                },
+                {
+                  key: 'sessions',
+                  label: '在线会话',
+                  value: sessions.length,
+                  tone: 'success',
+                },
+                {
+                  key: 'pkg-files',
+                  label: '软件包',
+                  value: softwareStorage?.objectCount ?? 0,
+                  tone: 'primary',
+                  to: '/internal-workbench/software',
+                },
+              ],
+            },
+            {
+              key: 'identity-audit-radar',
+              kind: 'radar',
+              title: '安全审计与访问轨迹雷达',
+              subtitle: `最近采集 ${audits.length} 条审计`,
+              actionLabel: '审计中心',
+              actionTo: '/system/audit',
+              emptyLabel: '零异常越权审计事件',
+              blips: audits.slice(0, 3).map((item) => ({
+                key: `audit-${item.id}`,
+                label: item.action || item.summary || item.id,
+                badge: (item.result || 'OK').toUpperCase(),
+                tone:
+                  item.result === 'denied' || item.result === 'failed'
+                    ? ('danger' as const)
+                    : ('primary' as const),
+                to: '/system/audit',
+              })),
+            },
+          ]}
+        />
       </div>
 
       <div className="soha-overview-summary-grid">
-        <Card
-          className="soha-overview-panel-card"
-          title="Provider 运行"
-          extra={
-            <Button
-              size="small"
-              icon={<KeyOutlined />}
-              onClick={() => navigate('/identity/providers')}
-            >
-              Provider
-            </Button>
-          }
-        >
-          {permissions.providers ? (
-            <div className="soha-overview-alert-stack">
-              <OverviewSectionBar
-                title="协议层"
-                description="按后端 runtime capability 查看协议支持与启用状态。"
-                extra={
-                  <Button
-                    type="text"
-                    icon={<ApiOutlined />}
-                    onClick={() => navigate('/identity/providers')}
-                  >
-                    管理 Provider
-                  </Button>
-                }
-              />
-              <div className="soha-overview-chip-grid">
-                {protocolStatus.map((item) => (
-                  <OverviewChip
-                    key={item.key}
-                    label={item.label}
-                    value={readableQueryData(reads.providers) === undefined ? '—' : item.value}
-                    helper={
-                      readableQueryData(reads.providers) === undefined ||
-                      readableQueryData(reads.runtime) === undefined
-                        ? '当前数据不可用'
-                        : item.helper
-                    }
-                    icon={item.icon}
-                    tone={item.tone}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <ManagementState
-              compact
-              bordered={false}
-              kind="no-permission"
-              title="无 Provider 权限"
-            />
-          )}
-        </Card>
-
         <Card
           className="soha-overview-panel-card soha-identity-overview-audit-card"
           title="最近审计"
@@ -345,52 +448,52 @@ export function IdentityOverviewPage() {
             </div>
           )}
         </Card>
-      </div>
 
-      <Card
-        className="soha-overview-panel-card"
-        title="软件库"
-        extra={
-          <Button
-            size="small"
-            icon={<AppstoreOutlined />}
-            onClick={() => navigate('/internal-workbench/software')}
-          >
-            软件库
-          </Button>
-        }
-      >
-        {!permissions.software ? (
-          <ManagementState compact bordered={false} kind="no-permission" title="无软件库权限" />
-        ) : softwareError && !softwareStorage ? (
-          <ManagementState
-            compact
-            bordered={false}
-            kind="error"
-            title="软件库摘要加载失败"
-            actions={
-              <Button size="small" onClick={refreshAll}>
-                重试
-              </Button>
-            }
-          />
-        ) : loading.software ? (
-          <ManagementState compact bordered={false} kind="loading" />
-        ) : (
-          <div className="soha-overview-chip-grid">
-            {softwareStatus.map((item) => (
-              <OverviewChip
-                key={item.key}
-                label={item.label}
-                value={item.value}
-                helper={item.helper}
-                icon={item.icon}
-                tone={item.tone}
-              />
-            ))}
-          </div>
-        )}
-      </Card>
+        <Card
+          className="soha-overview-panel-card soha-identity-overview-software-card"
+          title="软件库"
+          extra={
+            <Button
+              size="small"
+              icon={<AppstoreOutlined />}
+              onClick={() => navigate('/internal-workbench/software')}
+            >
+              软件库
+            </Button>
+          }
+        >
+          {!permissions.software ? (
+            <ManagementState compact bordered={false} kind="no-permission" title="无软件库权限" />
+          ) : softwareError && !softwareStorage ? (
+            <ManagementState
+              compact
+              bordered={false}
+              kind="error"
+              title="软件库摘要加载失败"
+              actions={
+                <Button size="small" onClick={refreshAll}>
+                  重试
+                </Button>
+              }
+            />
+          ) : loading.software ? (
+            <ManagementState compact bordered={false} kind="loading" />
+          ) : (
+            <div className="soha-overview-chip-grid">
+              {softwareStatus.map((item) => (
+                <OverviewChip
+                  key={item.key}
+                  label={item.label}
+                  value={item.value}
+                  helper={item.helper}
+                  icon={item.icon}
+                  tone={item.tone}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   )
 }

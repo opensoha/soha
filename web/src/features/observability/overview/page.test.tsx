@@ -109,6 +109,26 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('@/services/api-client', () => ({ api: apiMocks }))
 vi.mock('@/components/overview-visuals', () => ({
+  OverviewHeroCard: ({
+    eyebrowLabel,
+    value,
+    embeddedPods,
+  }: {
+    eyebrowLabel: ReactNode
+    value: ReactNode
+    embeddedPods?: Array<{ key: string; label: ReactNode; value: ReactNode }>
+  }) => (
+    <div>
+      <div>
+        {eyebrowLabel}: {value}
+      </div>
+      {embeddedPods?.map((pod) => (
+        <div key={pod.key}>
+          {pod.label}: {pod.value}
+        </div>
+      ))}
+    </div>
+  ),
   OverviewMetricCard: ({ label, value }: { label: string; value: ReactNode }) => (
     <div>
       {label}: {value}

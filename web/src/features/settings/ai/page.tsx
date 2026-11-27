@@ -6,6 +6,7 @@ import {
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
@@ -95,7 +96,7 @@ import { AssistantMeshSettings } from './assistant-mesh-settings'
 const { Paragraph, Text } = Typography
 
 export function AISettingsPage({ embedded = false, section = 'model' }: AISettingsPageProps = {}) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const companionOwner = useAuthStore((state) => state.user?.userId ?? '')
   const companionOwnerRef = useRef(companionOwner)
@@ -415,7 +416,30 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
   )
 
   const dataSourceColumns: TableColumnsType<DataSource> = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (_value: string, record: DataSource) =>
+        canUpdateDataSources &&
+        !blocked &&
+        !isRetiredAIDataSource(record) &&
+        AI_DATA_SOURCE_BACKENDS.get(record.sourceKind) === record.backendType ? (
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => {
+              setEditingDataSource(record)
+              setDataSourceSourceKind(record.sourceKind)
+              dataSourceMutation.reset()
+              setDataSourceModalVisible(true)
+            }}
+          >
+            {record.name}
+          </Button>
+        ) : (
+          <Text strong>{record.name}</Text>
+        ),
+    },
     { title: '能力层', dataIndex: 'mcpAdapter' },
     {
       title: '源类型',
@@ -463,73 +487,103 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       dataIndex: 'id',
       render: (_: unknown, record: DataSource) => {
         if (isRetiredAIDataSource(record)) {
-          if (!canUpdateDataSources || !record.enabled) return '-'
           return (
-            <Popconfirm
-              title={`停用 AI 数据源 ${record.name}？`}
-              okText="停用"
-              cancelText="取消"
-              disabled={blocked}
-              onConfirm={() => {
-                const { name, sourceKind, backendType } = record
-                dataSourceMutation.mutate({
-                  id: record.id,
-                  values: { name, sourceKind, backendType, enabled: false },
-                })
-              }}
-            >
-              <ManagementIconButton
-                aria-label="停用旧 AI 数据源"
-                disabled={blocked}
-                icon={<PoweroffOutlined />}
-                size="small"
-                tooltip="停用"
-              />
-            </Popconfirm>
+            <TableRowActionMenu
+              ariaLabel={`更多操作 ${record.name}`}
+              items={
+                canUpdateDataSources && record.enabled
+                  ? [
+                      {
+                        key: 'disable',
+                        label: '停用',
+                        icon: <PoweroffOutlined />,
+                        danger: true,
+                        disabled: blocked,
+                        onClick: () =>
+                          modal.confirm({
+                            title: `停用 AI 数据源 ${record.name}？`,
+                            okText: '停用',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => {
+                              const { name, sourceKind, backendType } = record
+                              return dataSourceMutation.mutateAsync({
+                                id: record.id,
+                                values: { name, sourceKind, backendType, enabled: false },
+                              })
+                            },
+                          }),
+                      },
+                    ]
+                  : []
+              }
+            />
           )
         }
-        if (AI_DATA_SOURCE_BACKENDS.get(record.sourceKind) !== record.backendType) return '-'
-        return canValidateDataSources || canUpdateDataSources ? (
-          <Space className="soha-row-action-icons">
-            {canValidateDataSources ? (
-              <ManagementIconButton
-                disabled={blocked}
-                aria-label="校验数据源连接"
-                tooltip="校验连接"
-                icon={<CheckCircleOutlined />}
-                loading={
-                  validateDataSourceMutation.isPending &&
-                  validateDataSourceMutation.variables === record.id
-                }
-                size="small"
-                onClick={() => validateDataSource(record.id)}
-              />
-            ) : null}
-            {canUpdateDataSources ? (
-              <ManagementIconButton
-                disabled={blocked}
-                aria-label="编辑数据源"
-                tooltip="编辑"
-                icon={<EditOutlined />}
-                size="small"
-                onClick={() => {
-                  setEditingDataSource(record)
-                  setDataSourceSourceKind(record.sourceKind)
-                  dataSourceMutation.reset()
-                  setDataSourceModalVisible(true)
-                }}
-              />
-            ) : null}
-          </Space>
-        ) : (
-          '-'
+        const backendMatched = AI_DATA_SOURCE_BACKENDS.get(record.sourceKind) === record.backendType
+        return (
+          <TableRowActionMenu
+            ariaLabel={`更多操作 ${record.name}`}
+            items={
+              backendMatched
+                ? [
+                    ...(canValidateDataSources
+                      ? [
+                          {
+                            key: 'validate',
+                            label: '校验连接',
+                            icon: <CheckCircleOutlined />,
+                            disabled: blocked,
+                            onClick: () => validateDataSource(record.id),
+                          },
+                        ]
+                      : []),
+                    ...(canUpdateDataSources
+                      ? [
+                          {
+                            key: 'edit',
+                            label: '编辑',
+                            icon: <EditOutlined />,
+                            disabled: blocked,
+                            onClick: () => {
+                              setEditingDataSource(record)
+                              setDataSourceSourceKind(record.sourceKind)
+                              dataSourceMutation.reset()
+                              setDataSourceModalVisible(true)
+                            },
+                          },
+                        ]
+                      : []),
+                  ]
+                : []
+            }
+          />
         )
       },
     },
   ]
 
   const profileColumns: TableColumnsType<AnalysisProfile> = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (_value: string, record: AnalysisProfile) =>
+        canManageAISettings && !blocked ? (
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => {
+              setEditingProfile(record)
+              profileMutation.reset()
+              setProfileModalVisible(true)
+            }}
+          >
+            {record.name}
+          </Button>
+        ) : (
+          <Text strong>{record.name}</Text>
+        ),
+    },
     { title: '模式', dataIndex: 'mode' },
     {
       title: '数据源',
@@ -558,23 +612,28 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: unknown, record: AnalysisProfile) =>
-        canManageAISettings ? (
-          <ManagementIconButton
-            disabled={blocked}
-            aria-label="编辑分析模板"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            size="small"
-            onClick={() => {
-              setEditingProfile(record)
-              profileMutation.reset()
-              setProfileModalVisible(true)
-            }}
-          />
-        ) : (
-          '-'
-        ),
+      render: (_: unknown, record: AnalysisProfile) => (
+        <TableRowActionMenu
+          ariaLabel={`更多操作 ${record.name}`}
+          items={
+            canManageAISettings
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    disabled: blocked,
+                    onClick: () => {
+                      setEditingProfile(record)
+                      profileMutation.reset()
+                      setProfileModalVisible(true)
+                    },
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
 

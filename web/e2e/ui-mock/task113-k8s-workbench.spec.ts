@@ -1477,55 +1477,28 @@ for (const width of [320, 1238, 1275]) {
       expect(
         await longNameText.evaluate((element) => element.scrollWidth - element.clientWidth),
       ).toBeGreaterThan(1)
-      const assertExpandAlignment = async () => {
-        const deltas = await content.locator('.ant-table-row-expand-icon').evaluateAll((buttons) =>
-          buttons.map((button) => {
-            const icon = button.getBoundingClientRect()
-            const cell = button.closest('.ant-table-cell')!.getBoundingClientRect()
-            return {
-              x: Math.abs(icon.x + icon.width / 2 - cell.x - cell.width / 2),
-              y: Math.abs(icon.y + icon.height / 2 - cell.y - cell.height / 2),
-              width: cell.width,
-            }
-          }),
-        )
-        for (const delta of deltas) {
-          expect(delta.width).toBe(48)
-          expect(delta.x).toBeLessThanOrEqual(1)
-          expect(delta.y).toBeLessThanOrEqual(1)
-        }
-      }
-      await assertExpandAlignment()
+      await expect(content.locator('.ant-table-row-expand-icon')).toHaveCount(0)
       const tooltip = page.getByRole('tooltip', {
         name: 'task113-production-healthy-worker-with-a-long-resource-name-09',
         exact: true,
       })
       await page.mouse.move(0, 0)
       await expect(tooltip).toBeHidden()
-      const healthy = content
-        .locator('.ant-table-row[data-row-key]')
-        .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' })
-      const expand = healthy.getByRole('button', { name: '展开行', exact: true })
-      await expand.press('Tab')
+      await longName.focus()
       await expect(longName).toBeFocused()
       await expect(tooltip).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(tooltip).toBeHidden()
       await expect(longName).toBeFocused()
-      await expand.press('Tab')
+      await cordonedNode.focus()
+      await expect(tooltip).toBeHidden()
+      await longName.focus()
       await expect(tooltip).toBeVisible()
-      await expand.focus()
+      await cordonedNode.focus()
       await expect(tooltip).toBeHidden()
       await longNameText.hover()
       await expect(tooltip).toBeVisible()
-      await expand.press('Enter')
-      await expect(healthy.getByRole('button', { name: '关闭行', exact: true })).toHaveAttribute(
-        'aria-expanded',
-        'true',
-      )
-      await healthy.getByRole('button', { name: '关闭行', exact: true }).press('Enter')
       await content.getByRole('button', { name: '切换表格密度', exact: true }).click()
-      await assertExpandAlignment()
       await content.getByRole('button', { name: '切换表格密度', exact: true }).click()
       await expect(
         content.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }),
@@ -1566,9 +1539,15 @@ test('flat network menus and topology editing keep resource scope', async ({
 }, info) => {
   const evidence = await setup(context, page, { resourceEdit: true, flatNetwork: true })
   await page.goto('/network/topology?view=table')
-  await page.getByRole('button', { name: '展开侧栏', exact: true }).click()
-  await page.getByRole('menuitem', { name: '网络', exact: true }).click()
-  const leaves = page.getByRole('complementary').locator('.ant-menu-sub .ant-menu-item')
+  const networkGroup = page
+    .getByRole('complementary')
+    .locator('.soha-rail-group')
+    .filter({ has: page.locator('.soha-rail-group__title', { hasText: /^网络$/ }) })
+  await expect(networkGroup.locator('.soha-rail-group__header')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  const leaves = networkGroup.locator('.soha-rail-group__list > .soha-rail-nav-item')
   await expect(leaves).toHaveCount(2)
   await expect(leaves.filter({ hasText: 'Services' })).toBeVisible()
   await expect(page.getByRole('complementary')).not.toContainText('服务与后端')

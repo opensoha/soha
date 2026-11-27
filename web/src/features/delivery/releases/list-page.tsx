@@ -1,8 +1,9 @@
 import { ArrowRightOutlined } from '@ant-design/icons'
+import { Button } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ManagementIconButton } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { StatusTag } from '@/components/status-tag'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
@@ -18,7 +19,19 @@ export function ReleasesPage() {
   const releasesQuery = useQuery(deliveryQueries.releases.list())
 
   const columns: ColumnProps<ReleaseRecord>[] = [
-    { title: '应用', dataIndex: 'applicationId' },
+    {
+      title: '应用',
+      dataIndex: 'applicationId',
+      render: (value: string, record: ReleaseRecord) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => navigate(`/releases/${record.id}`)}
+        >
+          {value}
+        </Button>
+      ),
+    },
     { title: '集群', dataIndex: 'clusterId' },
     { title: '命名空间', dataIndex: 'namespace' },
     { title: '部署目标', dataIndex: 'deploymentName' },
@@ -39,12 +52,16 @@ export function ReleasesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: ReleaseRecord) => (
-        <ManagementIconButton
-          aria-label="查看发布详情"
-          icon={<ArrowRightOutlined />}
-          size="small"
-          tooltip="查看详情"
-          onClick={() => navigate(`/releases/${record.id}`)}
+        <TableRowActionMenu
+          targetLabel={record.deploymentName || record.id}
+          items={[
+            {
+              key: 'detail',
+              label: '查看发布详情',
+              icon: <ArrowRightOutlined />,
+              onClick: () => navigate(`/releases/${record.id}`),
+            },
+          ]}
         />
       ),
     },

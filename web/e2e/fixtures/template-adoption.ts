@@ -193,7 +193,12 @@ export async function adoptionMocks(context: BrowserContext, page: Page, writabl
 
 export async function openAdoption(page: Page) {
   await page.goto('/deployment-templates')
-  await page.getByRole('button', { name: '检查模板更新', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作：标准应用配置', exact: true }).click()
+  await page
+    .locator('.ant-dropdown:not(.ant-dropdown-hidden)')
+    .last()
+    .getByRole('menuitem', { name: '检查模板更新', exact: true })
+    .click()
   const drawer = page.getByRole('dialog', { name: '模板采用 · http', exact: true })
   await expect(drawer.getByText('独立副本不参与模板传播', { exact: true })).toBeVisible()
   return drawer

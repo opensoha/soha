@@ -5,12 +5,14 @@ import {
   ManagementQueryActions,
   ManagementQueryField,
 } from '@/components/management-list'
-import { ReloadOutlined } from '@ant-design/icons'
+import { EyeOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import { formatDateTime } from '@/utils/time'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { ReadFeedback } from '@/components/request-feedback'
 import { buildCompactChartSpec, compactMetricColors } from '@/components/resource-metrics-panel'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
@@ -253,19 +255,31 @@ export default function VPNDashboardPage() {
         },
         { title: text('最后握手', 'Last handshake'), dataIndex: 'lastHandshakeAt' },
         {
+          ...tableColumnPresets.action,
           title: text('操作', 'Action'),
-          key: 'detail',
+          key: 'actions',
           render: (_: unknown, s: NetworkVPNConnectionView) => (
-            <Space>
-              <Button onClick={() => setDecisionID(s.decisionId)}>
-                {text('连接详情', 'Connection details')}
-              </Button>
-              {can('network_access.vpn_sessions.view') && (
-                <Button onClick={() => setRevocationSessionId(s.sessionId)}>
-                  {text('撤销与限制', 'Revocation and restrictions')}
-                </Button>
-              )}
-            </Space>
+            <TableRowActionMenu
+              targetLabel={s.sessionId}
+              items={[
+                {
+                  key: 'detail',
+                  icon: <EyeOutlined />,
+                  label: text('连接详情', 'Connection details'),
+                  onClick: () => setDecisionID(s.decisionId),
+                },
+                ...(can('network_access.vpn_sessions.view')
+                  ? [
+                      {
+                        key: 'revocation',
+                        icon: <StopOutlined />,
+                        label: text('撤销与限制', 'Revocation and restrictions'),
+                        onClick: () => setRevocationSessionId(s.sessionId),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           ),
         },
       ]}
@@ -285,12 +299,21 @@ export default function VPNDashboardPage() {
           render: (value: string) => <StatusTag value={value} />,
         },
         {
+          ...tableColumnPresets.action,
           title: text('操作', 'Action'),
-          key: 'detail',
+          key: 'actions',
           render: (_: unknown, d: NetworkVPNDecision) => (
-            <Button onClick={() => setDecisionID(d.id)}>
-              {text('候选与决策', 'Candidates and decision')}
-            </Button>
+            <TableRowActionMenu
+              targetLabel={d.id}
+              items={[
+                {
+                  key: 'detail',
+                  icon: <EyeOutlined />,
+                  label: text('候选与决策', 'Candidates and decision'),
+                  onClick: () => setDecisionID(d.id),
+                },
+              ]}
+            />
           ),
         },
       ]}
@@ -405,6 +428,7 @@ export default function VPNDashboardPage() {
       }
       tableNode={
         <Tabs
+          className="soha-resource-tabs"
           items={[
             { key: 'gateways', label: text('接入点', 'Entrances'), children: gatewayTable },
             {

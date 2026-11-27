@@ -3,16 +3,18 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { ReadFeedback, requestErrorMessage } from '@/components/request-feedback'
 import { BooleanTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type {
   NetworkAccessNetwork,
   NetworkAccessNetworkInput,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Popconfirm, Space, Typography, type TableColumnsType } from 'antd'
+import { App, Button, Typography, type TableColumnsType } from 'antd'
 import { useState } from 'react'
 import { AccessNetworkEditor, networkKindLabels } from './access-network-editor'
 import { AccessNetworkPreview } from './access-network-preview'
@@ -31,6 +33,7 @@ export function AccessNetworkCatalog({
   canViewDevices: boolean
 }) {
   const { localeCode } = useI18n()
+  const { modal } = App.useApp()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const queryClient = useQueryClient()
   const catalog = useQuery(networkAccessQueries.accessNetworks(siteId))
@@ -74,7 +77,19 @@ export function AccessNetworkCatalog({
       title: text('名称', 'Name'),
       dataIndex: ['configuration', 'name'],
       width: 180,
-      render: nameCell,
+      render: (value: string, item) =>
+        canManage && !blocked ? (
+          <Button
+            className="soha-table-primary-link"
+            size="small"
+            type="link"
+            onClick={() => openEditor(item)}
+          >
+            {value}
+          </Button>
+        ) : (
+          nameCell(value)
+        ),
     },
     {
       title: text('SSID / 端口', 'SSID / Ports'),
@@ -162,36 +177,43 @@ export function AccessNetworkCatalog({
     ...(canManage
       ? [
           {
+            ...tableColumnPresets.action,
+            title: text('操作', 'Actions'),
             key: 'actions',
-            width: 92,
             render: (_: unknown, item: NetworkAccessNetwork) => (
-              <Space className="soha-row-action-icons">
-                <ManagementIconButton
-                  aria-label={editLabel}
-                  icon={<EditOutlined />}
-                  tooltip={editLabel}
-                  disabled={blocked}
-                  onClick={() => openEditor(item)}
-                />
-                <Popconfirm
-                  title={text('删除此接入网络？', 'Delete this access network?')}
-                  description={item.configuration.name}
-                  disabled={blocked}
-                  onConfirm={() =>
-                    remove
-                      .mutateAsync({ id: item.id, siteId, name: item.configuration.name })
-                      .catch(() => undefined)
-                  }
-                >
-                  <ManagementIconButton
-                    aria-label={deleteLabel}
-                    danger
-                    icon={<DeleteOutlined />}
-                    tooltip={deleteLabel}
-                    disabled={blocked}
-                  />
-                </Popconfirm>
-              </Space>
+              <TableRowActionMenu
+                targetLabel={item.configuration.name}
+                items={[
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: editLabel,
+                    disabled: blocked,
+                    onClick: () => openEditor(item),
+                  },
+                  { type: 'divider' },
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    label: deleteLabel,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: text('删除此接入网络？', 'Delete this access network?'),
+                        content: item.configuration.name,
+                        okText: text('删除', 'Delete'),
+                        cancelText: text('取消', 'Cancel'),
+                        okButtonProps: { danger: true, disabled: blocked },
+                        onOk: () =>
+                          remove
+                            .mutateAsync({ id: item.id, siteId, name: item.configuration.name })
+                            .catch(() => undefined),
+                      })
+                    },
+                  },
+                ]}
+              />
             ),
           },
         ]
