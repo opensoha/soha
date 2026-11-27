@@ -8,10 +8,7 @@ const run = runContext()
 function resolveMockWorkers(): number {
   const configured = Number.parseInt(process.env.SOHA_E2E_WORKERS ?? '', 10)
   if (Number.isFinite(configured) && configured >= 1) return configured
-  const cpus = availableParallelism()
-  const cpuBudget = process.env.CI
-    ? Math.max(1, Math.floor(cpus / 2))
-    : Math.max(1, Math.floor(cpus / 3))
+  const cpuBudget = Math.max(1, Math.floor(availableParallelism() / 3))
   const memBudget = Math.max(1, Math.floor(totalmem() / 1024 ** 3 / 4))
   const cap = process.env.CI ? 2 : 4
   return Math.min(cpuBudget, memBudget, cap)
