@@ -440,22 +440,33 @@ test('failed proxy polling uses bounded read retries before manual recovery', as
   await expect(page.getByText(proxy.name, { exact: true })).toBeVisible()
   state.failedPath = '/network-access/proxy-instances'
   state.status = 503
+  const notice = page.locator('.soha-read-feedback-notification')
   await page.getByRole('button', { name: /刷新/ }).click()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toBeVisible()
+  await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
   const failedReads = state.proxyReads
   for (const [index, delay] of [15000, 30000, 60000].entries()) {
+    const retryResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `${base}/network-access/proxy-instances` &&
+        response.status() === 503,
+    )
     await page.clock.fastForward(delay)
+    await (await retryResponse).finished()
     await expect.poll(() => state.proxyReads).toBe(failedReads + index + 1)
+    await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
   }
-  await expect(
-    page
-      .locator('.soha-read-feedback-notification')
-      .getByText('自动重试已暂停，可手动重试。', { exact: true }),
-  ).toBeVisible()
+  await expect(notice.getByText('自动重试已暂停，可手动重试。', { exact: true })).toBeVisible()
   await page.clock.fastForward(31000)
   expect(state.proxyReads).toBe(failedReads + 3)
   state.status = 200
+  const recoveryResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `${base}/network-access/proxy-instances` &&
+      response.status() === 200,
+  )
   await page.getByRole('button', { name: /重试读取/ }).click()
+  await (await recoveryResponse).finished()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toHaveCount(0)
   await page.clock.fastForward(16000)
   await expect.poll(() => state.proxyReads).toBeGreaterThan(failedReads + 4)
