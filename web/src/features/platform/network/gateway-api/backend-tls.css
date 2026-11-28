@@ -1,7 +1,3 @@
-.soha-backend-tls-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-
 .soha-backend-tls-reference-summary,
 .soha-backend-tls-reference-summary details {
   display: grid;

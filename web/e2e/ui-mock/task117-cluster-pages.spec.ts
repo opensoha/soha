@@ -457,7 +457,7 @@ test('Cluster header, tabs and content align in dark and narrow views', async ({
             )!
             .getBoundingClientRect()
           return (
-            Math.abs(h.bottom - nav.top) <= 1 &&
+            Math.abs(nav.top - h.bottom - 12) <= 1 &&
             Math.abs(h.left - content.left) <= 1 &&
             Math.abs(h.right - content.right) <= 1 &&
             document.documentElement.scrollWidth <= innerWidth

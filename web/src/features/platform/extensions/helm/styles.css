@@ -1,13 +1,6 @@
 .soha-helm-release-detail {
   min-width: 0;
 }
-.soha-helm-release-detail.soha-workload-detail-page,
-.soha-helm-release-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-helm-release-detail .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-helm-release-detail .soha-workload-overview-config dt,
 .soha-helm-release-detail .soha-workload-overview-config dd {
   min-width: 0;

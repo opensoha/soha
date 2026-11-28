@@ -1,12 +1,14 @@
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { localeText, useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Flex, Popconfirm, Space, Typography, type TableColumnsType } from 'antd'
+import { App, Button, Flex, Typography, type TableColumnsType } from 'antd'
 import { useState } from 'react'
 import { systemIntegrationMutations } from './mutations'
 import {
@@ -42,6 +44,7 @@ export function PluginStorageConnections({
   canTest: boolean
 }) {
   const { localeCode } = useI18n()
+  const { modal } = App.useApp()
   const label = (zh: string, en: string) => localeText(localeCode, zh, en)
   const client = useQueryClient()
   const driversQuery = useQuery(systemIntegrationQueries.storageDrivers(canView))
@@ -133,7 +136,27 @@ export function PluginStorageConnections({
   }
 
   const columns: TableColumnsType<SystemIntegration> = [
-    { title: label('连接名称', 'Connection name'), dataIndex: 'name', key: 'name' },
+    {
+      title: label('连接名称', 'Connection name'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, row) => {
+        const driverAvailable = drivers.some(({ id }) => id === row.providerType)
+        if (canUpdate && driverAvailable && !blocked) {
+          return (
+            <Button
+              className="soha-table-primary-link"
+              size="small"
+              type="link"
+              onClick={() => setEditor(row)}
+            >
+              {name}
+            </Button>
+          )
+        }
+        return name
+      },
+    },
     {
       title: label('存储驱动', 'Storage driver'),
       key: 'driver',
@@ -154,52 +177,55 @@ export function PluginStorageConnections({
       },
     },
     {
+      ...tableColumnPresets.action,
       title: label('操作', 'Actions'),
       key: 'actions',
       render: (_, row) => {
         const driverAvailable = drivers.some(({ id }) => id === row.providerType)
         return (
-          <Space size={0}>
-            {canTest && (
-              <Button
-                aria-label={label(`测试 ${row.name} 连接`, `Test ${row.name} connection`)}
-                disabled={blocked || !row.enabled || !driverAvailable}
-                icon={<ThunderboltOutlined />}
-                loading={testMutation.isPending && testMutation.variables === row.id}
-                size="small"
-                type="text"
-                onClick={() => testMutation.mutate(row.id)}
-              />
-            )}
-            {canUpdate && (
-              <Button
-                aria-label={label(`编辑 ${row.name}`, `Edit ${row.name}`)}
-                disabled={blocked || !driverAvailable}
-                icon={<EditOutlined />}
-                size="small"
-                type="text"
-                onClick={() => setEditor(row)}
-              />
-            )}
-            {canDelete && (
-              <Popconfirm
-                title={label(`删除连接 ${row.name}？`, `Delete connection ${row.name}?`)}
-                okText={label('删除', 'Delete')}
-                cancelText={label('取消', 'Cancel')}
-                okButtonProps={{ danger: true, disabled: blocked }}
-                onConfirm={() => deleteMutation.mutate(row.id)}
-              >
-                <Button
-                  aria-label={label(`删除 ${row.name}`, `Delete ${row.name}`)}
-                  danger
-                  disabled={blocked}
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  type="text"
-                />
-              </Popconfirm>
-            )}
-          </Space>
+          <TableRowActionMenu
+            targetLabel={row.name}
+            loading={testMutation.isPending && testMutation.variables === row.id}
+            items={[
+              canTest
+                ? {
+                    key: 'test',
+                    icon: <ThunderboltOutlined />,
+                    label: label('测试连接', 'Test connection'),
+                    disabled: blocked || !row.enabled || !driverAvailable,
+                    onClick: () => testMutation.mutate(row.id),
+                  }
+                : null,
+              canUpdate
+                ? {
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: label('编辑', 'Edit'),
+                    disabled: blocked || !driverAvailable,
+                    onClick: () => setEditor(row),
+                  }
+                : null,
+              canDelete ? { type: 'divider' } : null,
+              canDelete
+                ? {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    label: label('删除', 'Delete'),
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: label(`删除连接 ${row.name}？`, `Delete connection ${row.name}?`),
+                        okText: label('删除', 'Delete'),
+                        cancelText: label('取消', 'Cancel'),
+                        okButtonProps: { danger: true, disabled: blocked },
+                        onOk: () => deleteMutation.mutateAsync(row.id).catch(() => undefined),
+                      })
+                    },
+                  }
+                : null,
+            ]}
+          />
         )
       },
     },

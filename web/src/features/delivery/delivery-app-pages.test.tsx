@@ -1903,7 +1903,14 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.querySelector('[aria-label="编辑绑定"]')).toBeNull()
     expect(container.querySelector('[aria-label="删除绑定"]')).toBeNull()
 
-    await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="进入应用环境"]')!)
+    await clickButton(
+      container.querySelector<HTMLButtonElement>('button[aria-label^="更多操作"]')!,
+    )
+    await clickButton(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+        el.textContent?.includes('进入应用环境'),
+      ) as HTMLButtonElement,
+    )
     expect(container.querySelector('[data-testid="location-probe"]')?.textContent).toBe(
       '/applications/app-1?tab=services&applicationEnvironmentId=binding-1',
     )
@@ -2148,6 +2155,7 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).toContain('Harbor Prod')
     expect(container.querySelector('.soha-metadata-tag')?.textContent).toBe('harbor')
     expect(hasButtonText(container, '添加仓库')).toBe(false)
+    expect(container.querySelector('button[aria-label^="更多操作"]')).toBeNull()
     expect(container.querySelector('[aria-label="编辑仓库"]')).toBeNull()
     expect(container.querySelector('[aria-label="删除仓库"]')).toBeNull()
   })
@@ -2155,7 +2163,12 @@ describe('ApplicationsPage workspace layout', () => {
   it('submits canonical registry fields without exposing the stored secret', async () => {
     const container = await renderWithProviders(<RegistriesPage />, '/registries')
 
-    await clickButton(container.querySelector('[aria-label="编辑仓库"]') as HTMLButtonElement)
+    await clickButton(container.querySelector('button[aria-label^="更多操作"]') as HTMLButtonElement)
+    await clickButton(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+        el.textContent?.includes('编辑仓库'),
+      ) as HTMLButtonElement,
+    )
     const modal = document.querySelector('.ant-modal') as HTMLElement
     expect(modal.querySelector<HTMLInputElement>('#name')?.value).toBe('Harbor Prod')
     expect(modal.querySelector<HTMLInputElement>('#secret')?.value).toBe('')
@@ -2203,7 +2216,12 @@ describe('ApplicationsPage workspace layout', () => {
     expect(testState.apiGet).toHaveBeenCalledWith('/releases')
     expect(container.textContent).toContain('app-1')
     expect(container.querySelector('[aria-label="部署"]')).toBeNull()
-    await clickButton(container.querySelector('[aria-label="查看发布详情"]') as HTMLButtonElement)
+    await clickButton(container.querySelector('button[aria-label^="更多操作"]') as HTMLButtonElement)
+    await clickButton(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+        el.textContent?.includes('查看发布详情'),
+      ) as HTMLButtonElement,
+    )
     expect(container.querySelector('[data-testid="location-probe"]')?.textContent).toBe(
       '/releases/release-1',
     )
@@ -2559,7 +2577,7 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).toContain('1 · erp-front')
     expect(container.textContent).toContain('task-failed')
     expect(container.querySelector('[aria-label="查看执行日志"]')).toBeNull()
-    expect(container.querySelector('[aria-label="查看执行详情"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="更多操作：task-running"]')).not.toBeNull()
     expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(4)
     expect(container.querySelector('.soha-application-signal-card')).toBeNull()
   })
@@ -2576,15 +2594,26 @@ describe('ApplicationsPage workspace layout', () => {
         <ExecutionTasksPage />,
         '/delivery/execution-tasks',
       )
-      await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="重试执行任务"]')!)
+      await clickButton(
+        container.querySelector<HTMLButtonElement>('[aria-label="更多操作：task-failed"]')!,
+      )
+      await clickButton(
+        Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+          el.textContent?.includes('重试执行任务'),
+        ) as HTMLButtonElement,
+      )
       await waitForText(document.body, error.message)
       const feedback = document.querySelector('.soha-operation-feedback')
       expect(feedback?.textContent).toContain('task-failed')
       expect(feedback?.textContent).not.toContain('task-running')
       expect(feedback?.textContent).toContain(unknown ? '请求结果不明' : '操作请求失败')
-      expect(
-        container.querySelector<HTMLButtonElement>('[aria-label="重试执行任务"]')?.disabled,
-      ).toBe(unknown)
+      await clickButton(
+        container.querySelector<HTMLButtonElement>('[aria-label="更多操作：task-failed"]')!,
+      )
+      const retryMenuItem = Array.from(
+        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ).find((el) => el.textContent?.includes('重试执行任务'))
+      expect(retryMenuItem?.getAttribute('aria-disabled') === 'true').toBe(unknown)
       expect(testState.apiPost).toHaveBeenCalledWith(
         '/delivery/execution-tasks/task-failed/retry',
         expect.objectContaining({ reason: 'Retried from execution tasks console' }),
@@ -2617,12 +2646,17 @@ describe('ApplicationsPage workspace layout', () => {
       const reads = testState.apiGet.mock.calls.filter(
         ([path]) => path === '/delivery/execution-tasks',
       ).length
-      await clickButton(container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!)
+      await clickButton(
+        container.querySelector<HTMLButtonElement>(`[aria-label="更多操作：${target}"]`)!,
+      )
+      await clickButton(
+        Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+          el.textContent?.includes(label),
+        ) as HTMLButtonElement,
+      )
       if (action === 'cancel') {
         expect(testState.apiPost).not.toHaveBeenCalled()
-        await clickButton(
-          document.querySelector<HTMLButtonElement>('.ant-popconfirm-buttons .ant-btn-primary')!,
-        )
+        await clickButton(findButton(document.body, '确认取消'))
       }
       await waitForText(document.body, receipt)
       await act(async () => {
@@ -2662,7 +2696,14 @@ describe('ApplicationsPage workspace layout', () => {
       '/delivery/execution-tasks',
     )
 
-    await clickButton(container.querySelector('[aria-label="查看执行详情"]') as HTMLButtonElement)
+    await clickButton(
+      container.querySelector('[aria-label="更多操作：task-running"]') as HTMLButtonElement,
+    )
+    await clickButton(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+        el.textContent?.includes('查看执行详情'),
+      ) as HTMLButtonElement,
+    )
     expect(container.querySelector('[data-testid="location-probe"]')?.textContent).toBe(
       '/delivery/execution-tasks/task-running',
     )
@@ -2688,7 +2729,14 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).toContain('2.0.0-rc1')
     expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(4)
     expect(container.querySelector('.soha-application-signal-card')).toBeNull()
-    await clickButton(container.querySelector('[aria-label="查看版本包详情"]') as HTMLButtonElement)
+    await clickButton(
+      container.querySelector('[aria-label="更多操作：1.2.3"]') as HTMLButtonElement,
+    )
+    await clickButton(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) =>
+        el.textContent?.includes('查看版本包详情'),
+      ) as HTMLButtonElement,
+    )
     expect(container.querySelector('[data-testid="location-probe"]')?.textContent).toBe(
       '/delivery/release-bundles/bundle-1',
     )

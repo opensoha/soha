@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { ArrowRightOutlined } from '@ant-design/icons'
+import { Button } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ManagementIconButton } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { DeliveryTable } from '../delivery-table'
@@ -27,12 +28,24 @@ export function ApplicationEnvironmentsPage() {
     () => Object.fromEntries((appsQuery.data ?? []).map((item) => [item.id, item.name])),
     [appsQuery.data],
   )
+  const enterEnvironment = (record: ApplicationEnvironment) =>
+    navigate(
+      `/applications/${encodeURIComponent(record.applicationId)}?tab=services&applicationEnvironmentId=${encodeURIComponent(record.id)}`,
+    )
 
   const columns: ColumnProps<ApplicationEnvironment>[] = [
     {
       title: '应用',
       dataIndex: 'applicationId',
-      render: (value: string) => appNameMap[value] || value,
+      render: (value: string, record: ApplicationEnvironment) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => enterEnvironment(record)}
+        >
+          {appNameMap[value] || value}
+        </Button>
+      ),
     },
     {
       title: '环境',
@@ -76,16 +89,16 @@ export function ApplicationEnvironmentsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: ApplicationEnvironment) => (
-        <ManagementIconButton
-          aria-label="进入应用环境"
-          icon={<ArrowRightOutlined />}
-          size="small"
-          tooltip="进入应用环境"
-          onClick={() =>
-            navigate(
-              `/applications/${encodeURIComponent(record.applicationId)}?tab=services&applicationEnvironmentId=${encodeURIComponent(record.id)}`,
-            )
-          }
+        <TableRowActionMenu
+          targetLabel={`${appNameMap[record.applicationId] || record.applicationId} / ${applicationEnvironmentLabel(record)}`}
+          items={[
+            {
+              key: 'enter',
+              label: '进入应用环境',
+              icon: <ArrowRightOutlined />,
+              onClick: () => enterEnvironment(record),
+            },
+          ]}
         />
       ),
     },

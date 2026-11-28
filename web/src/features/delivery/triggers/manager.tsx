@@ -3,11 +3,14 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useState } from 'react'
 import { Button, Modal, Space, Switch, Typography } from 'antd'
+import { HistoryOutlined, SettingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { StatusTag } from '@/components/status-tag'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 import { deliveryQueries } from '../queries'
@@ -90,7 +93,21 @@ export function DeliveryTriggerManager(target: TriggerTarget & { readOnly?: bool
             </Space>
           }
           columns={[
-            { title: '名称', dataIndex: 'name', key: 'name', width: 180 },
+            {
+              title: '名称',
+              dataIndex: 'name',
+              key: 'name',
+              width: 180,
+              render: (name: string, item: DeliveryTrigger) => (
+                <Button
+                  type="link"
+                  style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                  onClick={() => setHistory(item)}
+                >
+                  {name}
+                </Button>
+              ),
+            },
             {
               title: '方式',
               key: 'type',
@@ -120,22 +137,28 @@ export function DeliveryTriggerManager(target: TriggerTarget & { readOnly?: bool
               ),
             },
             {
+              ...tableColumnPresets.action,
               title: '操作',
               key: 'actions',
-              width: 145,
               render: (_: unknown, item: DeliveryTrigger) => (
-                <Space>
-                  <Button
-                    type="link"
-                    disabled={!allowed('update') || triggers.isError}
-                    onClick={() => setEditing({ item })}
-                  >
-                    配置
-                  </Button>
-                  <Button type="link" onClick={() => setHistory(item)}>
-                    记录
-                  </Button>
-                </Space>
+                <TableRowActionMenu
+                  targetLabel={item.name}
+                  items={[
+                    {
+                      key: 'history',
+                      label: '记录',
+                      icon: <HistoryOutlined />,
+                      onClick: () => setHistory(item),
+                    },
+                    {
+                      key: 'edit',
+                      label: '配置',
+                      icon: <SettingOutlined />,
+                      disabled: !allowed('update') || triggers.isError,
+                      onClick: () => setEditing({ item }),
+                    },
+                  ]}
+                />
               ),
             },
           ]}

@@ -50,7 +50,12 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
   const reset = useCallback(() => {
     if (!fence.current && !uncertain.current) resetMutation()
   }, [resetMutation])
-  const resultError = mutation.isSuccess ? feedback.resultError?.(mutation.data) : undefined
+  const currentResultError = useRef(feedback.resultError)
+  currentResultError.current = feedback.resultError
+  const resultError = useMemo(
+    () => (mutation.isSuccess ? currentResultError.current?.(mutation.data) : undefined),
+    [mutation.isSuccess, mutation.data],
+  )
   const outcomeUnknown = !feedback.readOnly && writeOutcomeUnknown(mutation.error ?? resultError)
   const currentTarget = useRef(feedback.target)
   currentTarget.current = feedback.target

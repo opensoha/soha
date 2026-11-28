@@ -34,11 +34,8 @@ import { computeQueries, latestTaskForResource, ResourceTaskActions } from '@/fe
 import { localeText, useI18n } from '@/i18n'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
-import {
-  ManagementIconButton,
-  ManagementQueryField,
-  ManagementQueryPanel,
-} from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { ManagementQueryField, ManagementQueryPanel } from '@/components/management-list'
 import {
   virtualizationMutations,
   withVirtualizationMutationSuccess,
@@ -329,7 +326,7 @@ export function VirtualizationClustersPage() {
       dataIndex: 'name',
       render: tableTooltipText,
       ellipsis: tableEllipsis,
-      width: 180,
+      width: 160,
     },
     {
       title: localeText(localeCode, '提供方', 'Provider'),
@@ -337,7 +334,7 @@ export function VirtualizationClustersPage() {
       render: (value: string) => (
         <MetadataTag label={providerLabel(value)} tone={value === 'pve' ? 'gold' : 'blue'} />
       ),
-      width: 120,
+      width: 108,
     },
     {
       title: localeText(localeCode, '接入目标', 'Target'),
@@ -348,13 +345,13 @@ export function VirtualizationClustersPage() {
             : record.endpoint || '-',
         ),
       ellipsis: tableEllipsis,
-      width: 280,
+      width: 196,
     },
     {
       title: localeText(localeCode, '健康', 'Health'),
       dataIndex: 'health',
       render: (value, record) => statusTag(value || record.status),
-      width: 120,
+      width: 96,
     },
     {
       title: localeText(localeCode, '风险', 'Risk'),
@@ -371,14 +368,14 @@ export function VirtualizationClustersPage() {
           </Tooltip>
         )
       },
-      width: 110,
+      width: 92,
     },
     {
       ...tableColumnPresets.datetime,
       title: localeText(localeCode, '最近同步', 'Last sync'),
       dataIndex: 'lastSyncedAt',
       render: formatDateTime,
-      width: 180,
+      width: 152,
     },
     {
       ...tableColumnPresets.task,
@@ -397,76 +394,82 @@ export function VirtualizationClustersPage() {
     },
     {
       ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      width: 168,
       render: (_value, record) => (
-        <Space className="soha-row-action-icons">
-          {record.provider === 'pve' ? (
-            <ManagementIconButton
-              size="small"
-              aria-label="容量与超分"
-              tooltip="容量与超分"
-              icon={<ClusterOutlined />}
-              onClick={() => setCapacityConnection(record)}
-            />
-          ) : null}
-          {canViewWorkerPools && record.provider === 'pve' ? (
-            <ManagementIconButton
-              size="small"
-              aria-label={localeText(localeCode, '节点池', 'Worker pools')}
-              tooltip={localeText(localeCode, '节点池', 'Worker pools')}
-              icon={<ClusterOutlined />}
-              onClick={() => setWorkerPoolConnection(record)}
-            />
-          ) : null}
-          {canTestClusters ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '测试连接', 'Test connection')}
-              size="small"
-              tooltip={localeText(localeCode, '测试', 'Test')}
-              icon={<ThunderboltOutlined />}
-              loading={testMutation.isPending && testMutation.variables === record.id}
-              disabled={
-                batchTestMutation.isPending ||
-                (testMutation.isPending && testMutation.variables !== record.id)
-              }
-              onClick={() => testMutation.mutate(record.id)}
-            />
-          ) : null}
-          {canSyncClusters ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '同步连接', 'Sync connection')}
-              size="small"
-              tooltip={localeText(localeCode, '同步', 'Sync')}
-              icon={<CloudSyncOutlined />}
-              onClick={() => syncMutation.mutate(record.id)}
-            />
-          ) : null}
-          {canUpdateClusters ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '编辑连接', 'Edit connection')}
-              size="small"
-              tooltip={localeText(localeCode, '编辑', 'Edit')}
-              icon={<EditOutlined />}
-              onClick={() => openEditor(record)}
-            />
-          ) : null}
-          {canDeleteClusters ? (
-            <ManagementIconButton
-              aria-label={localeText(localeCode, '删除连接', 'Delete connection')}
-              size="small"
-              tooltip={localeText(localeCode, '删除', 'Delete')}
-              danger
-              icon={<DeleteOutlined />}
-              loading={deletePreviewMutation.isPending || deleteMutation.isPending}
-              onClick={() =>
-                deletePreviewMutation.mutate(record.id, {
-                  onSuccess: (dependencies) => setDeletePreview({ cluster: record, dependencies }),
-                })
-              }
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(record.provider === 'pve'
+              ? [
+                  {
+                    key: 'capacity',
+                    icon: <ClusterOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '容量与超分', 'Capacity & overcommit'),
+                    onClick: () => setCapacityConnection(record),
+                  },
+                ]
+              : []),
+            ...(canViewWorkerPools && record.provider === 'pve'
+              ? [
+                  {
+                    key: 'worker-pools',
+                    icon: <ClusterOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '节点池', 'Worker pools'),
+                    onClick: () => setWorkerPoolConnection(record),
+                  },
+                ]
+              : []),
+            ...(canTestClusters
+              ? [
+                  {
+                    key: 'test',
+                    icon: <ThunderboltOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '测试连接', 'Test connection'),
+                    disabled: batchTestMutation.isPending || testMutation.isPending,
+                    onClick: () => testMutation.mutate(record.id),
+                  },
+                ]
+              : []),
+            ...(canSyncClusters
+              ? [
+                  {
+                    key: 'sync',
+                    icon: <CloudSyncOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '同步连接', 'Sync connection'),
+                    onClick: () => syncMutation.mutate(record.id),
+                  },
+                ]
+              : []),
+            ...(canUpdateClusters
+              ? [
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '编辑连接', 'Edit connection'),
+                    onClick: () => openEditor(record),
+                  },
+                ]
+              : []),
+            { type: 'divider' as const },
+            ...(canDeleteClusters
+              ? [
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '删除连接', 'Delete connection'),
+                    danger: true,
+                    disabled: deletePreviewMutation.isPending || deleteMutation.isPending,
+                    onClick: () =>
+                      deletePreviewMutation.mutate(record.id, {
+                        onSuccess: (dependencies) =>
+                          setDeletePreview({ cluster: record, dependencies }),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

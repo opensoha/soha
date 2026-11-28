@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
+import { chooseRowAction, expectRowActionDisabled } from '../fixtures/row-actions'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
@@ -397,12 +398,12 @@ test('B4 MFA reset keeps confirmation and locks an unknown original target', asy
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/users')
-  await page.getByRole('button', { name: '重置 MFA', exact: true }).click()
+  await chooseRowAction(page, 'operations', '重置 MFA')
   await expect(page.getByText('确认重置 operations 的 MFA？')).toBeVisible()
   expect(state.writes).toBe(0)
   await page.getByRole('button', { name: '确认重置 MFA', exact: true }).click()
   await expect(page.getByText('重置 MFA：请求结果不明')).toBeVisible()
-  await expect(page.getByRole('button', { name: '重置 MFA', exact: true })).toBeDisabled()
+  await expectRowActionDisabled(page, 'operations', '重置 MFA')
   await page.getByRole('button', { name: '刷新用户', exact: true }).click()
   expect(state.writes).toBe(1)
   await expect(page.getByText('user-ops', { exact: true })).toBeVisible()
@@ -415,8 +416,8 @@ test('B4 scope editor retains the draft and uses only reads to check an unknown 
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/users')
-  await page.getByRole('button', { name: '授权范围', exact: true }).click()
-  await page.getByRole('button', { name: '编辑授权项', exact: true }).click()
+  await chooseRowAction(page, 'operations', '授权范围')
+  await chooseRowAction(page, 'grant-platform', '编辑')
   const editor = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
@@ -452,7 +453,7 @@ test('B4 directory preview retries reads, then exposes the returned running evid
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/directory-sync')
   state.previewStatus = 503
-  await page.getByRole('button', { name: '预览变更', exact: true }).click()
+  await chooseRowAction(page, '企业通讯录 · 组织与人员', '预览变更')
   const preview = page.getByRole('dialog')
   await expect(
     page.locator('.soha-operation-feedback').getByText('读取同步预览：操作请求失败'),
@@ -507,10 +508,10 @@ test('B4 unknown directory submission stays bound to its target and refresh neve
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/directory-sync')
-  await page.getByRole('button', { name: '立即同步', exact: true }).click()
+  await chooseRowAction(page, '企业通讯录 · 组织与人员', '立即同步')
   await expect(page.getByText('目录同步：请求结果不明')).toBeVisible()
-  await expect(page.getByRole('button', { name: '立即同步', exact: true })).toBeDisabled()
-  await page.getByRole('button', { name: '查看同步记录', exact: true }).click()
+  await expectRowActionDisabled(page, '企业通讯录 · 组织与人员', '立即同步')
+  await chooseRowAction(page, '企业通讯录 · 组织与人员', '同步记录')
   const runtime = page.getByRole('dialog', {
     name: '企业通讯录 · 组织与人员 · 运行与事件',
     exact: true,
@@ -591,15 +592,17 @@ test('B4 global grant read failure locks the editor until recovery without losin
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/users')
-  await page.getByRole('button', { name: '授权范围', exact: true }).click()
-  await expect(page.getByRole('button', { name: '编辑授权项', exact: true })).toBeVisible()
+  await chooseRowAction(page, 'operations', '授权范围')
+  await expect(
+    page.getByRole('button', { name: '更多操作：grant-platform', exact: true }),
+  ).toBeVisible()
   state.failedPath = '/scope-grants'
   state.readStatus = 503
   await page.getByRole('button', { name: '刷新授权记录', exact: true }).click()
   await expect(
     page.locator('.soha-read-feedback-notification').getByText('列表未更新，正在展示上次读取结果'),
   ).toBeVisible()
-  await page.getByRole('button', { name: '编辑授权项', exact: true }).click()
+  await chooseRowAction(page, 'grant-platform', '编辑')
   const editor = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
@@ -626,8 +629,8 @@ test('B4 a known grant rejection preserves the edited switch and permits correct
   const { state, evidence } = await governanceMocks(context, page)
   state.writeStatus = 409
   await page.goto('/access/users')
-  await page.getByRole('button', { name: '授权范围', exact: true }).click()
-  await page.getByRole('button', { name: '编辑授权项', exact: true }).click()
+  await chooseRowAction(page, 'operations', '授权范围')
+  await chooseRowAction(page, 'grant-platform', '编辑')
   const editor = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
@@ -686,14 +689,16 @@ test('B4 global directory read failure locks the editor until recovery without l
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/directory-sync')
-  await expect(page.getByRole('button', { name: '编辑目录连接', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '更多操作：企业通讯录 · 组织与人员', exact: true }),
+  ).toBeVisible()
   state.readStatus = 503
   state.failedPath = '/directory-connections'
   await page.getByRole('button', { name: '刷新目录同步', exact: true }).click()
   await expect(
     page.locator('.soha-read-feedback-notification').getByText('列表未更新，正在展示上次读取结果'),
   ).toBeVisible()
-  await page.getByRole('button', { name: '编辑目录连接', exact: true }).click()
+  await chooseRowAction(page, '企业通讯录 · 组织与人员', '编辑')
   const editor = page.getByRole('dialog')
   await expect(
     page.locator('.soha-read-feedback-notification').getByText(/未更新，正在展示上次读取结果/),
@@ -722,15 +727,15 @@ test('B4 revoked directory permissions hide cached options across the same clien
 }) => {
   const { state, evidence } = await governanceMocks(context, page)
   await page.goto('/access/teams')
-  await page.getByRole('button', { name: '编辑组织', exact: true }).click()
+  await chooseRowAction(page, '平台工程团队', '编辑')
   let editor = page.getByRole('dialog')
   await editor.getByLabel('映射来源', { exact: true }).click()
   await expect(page.getByText(/企业飞书/).filter({ visible: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await editor.getByRole('button', { name: '取消', exact: true }).click()
-  await page.getByRole('menuitem', { name: /用户$/ }).click()
+  await page.locator('aside').getByRole('button', { name: /用户$/ }).click()
   await expect(page.getByText('生产只读与故障诊断', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '编辑用户', exact: true }).click()
+  await chooseRowAction(page, 'operations', '编辑')
   editor = page.getByRole('dialog')
   state.writeStatus = 200
   state.revokedPermissions = [
@@ -742,8 +747,8 @@ test('B4 revoked directory permissions hide cached options across the same clien
   await editor.getByRole('button', { name: '更新', exact: true }).click()
   await expect(editor).toBeHidden()
   await expect(page.getByText('生产只读与故障诊断', { exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: '授权范围', exact: true }).click()
-  await page.getByRole('button', { name: '编辑授权项', exact: true }).click()
+  await chooseRowAction(page, 'operations', '授权范围')
+  await chooseRowAction(page, 'grant-platform', '编辑')
   editor = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '更新', exact: true }) })
@@ -753,8 +758,8 @@ test('B4 revoked directory permissions hide cached options across the same clien
   await expect(editor).toBeHidden()
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByRole('menuitem', { name: /组织$/ }).click()
-  await page.getByRole('button', { name: '编辑组织', exact: true }).click()
+  await page.locator('aside').getByRole('button', { name: /组织$/ }).click()
+  await chooseRowAction(page, '平台工程团队', '编辑')
   editor = page.getByRole('dialog')
   await editor.getByLabel('映射来源', { exact: true }).click()
   await expect(page.getByText(/企业飞书/)).toHaveCount(0)

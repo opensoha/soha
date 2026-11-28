@@ -1,8 +1,13 @@
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
-import { PlusOutlined } from '@ant-design/icons'
+import {
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  RollbackOutlined,
+} from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, InputNumber, Modal, Popconfirm, Space } from 'antd'
+import { App, Button, Form, Input, InputNumber, Modal } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -18,6 +23,7 @@ export function ProviderFleetPage() {
 }
 
 function ProviderFleetPageContent() {
+  const { modal } = App.useApp()
   const c = useQueryClient()
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm<CreateRolloutInput>()
@@ -91,33 +97,38 @@ function ProviderFleetPageContent() {
           error: rollouts.error,
           hasReadData: rollouts.data !== undefined,
           emptyDescription: '选择目标环境和期望修订后启动 canary。',
-          actions: (row) => (
-            <Space>
-              <Button
-                disabled={blocked}
-                type="link"
-                onClick={() => action.mutate({ id: row.id, action: 'pause' })}
-              >
-                暂停
-              </Button>
-              <Button
-                disabled={blocked}
-                type="link"
-                onClick={() => action.mutate({ id: row.id, action: 'resume' })}
-              >
-                继续
-              </Button>
-              <Popconfirm
-                disabled={blocked}
-                title="确认回滚 Provider rollout？"
-                onConfirm={() => action.mutate({ id: row.id, action: 'rollback' })}
-              >
-                <Button disabled={blocked} danger type="link">
-                  回滚
-                </Button>
-              </Popconfirm>
-            </Space>
-          ),
+          actionItems: (row) => [
+            {
+              key: 'pause',
+              label: '暂停',
+              icon: <PauseCircleOutlined />,
+              disabled: blocked,
+              onClick: () => action.mutate({ id: row.id, action: 'pause' }),
+            },
+            {
+              key: 'resume',
+              label: '继续',
+              icon: <PlayCircleOutlined />,
+              disabled: blocked,
+              onClick: () => action.mutate({ id: row.id, action: 'resume' }),
+            },
+            { type: 'divider' as const },
+            {
+              key: 'rollback',
+              label: '回滚',
+              icon: <RollbackOutlined />,
+              danger: true,
+              disabled: blocked,
+              onClick: () =>
+                modal.confirm({
+                  title: '确认回滚 Provider rollout？',
+                  okText: '回滚',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => action.mutateAsync({ id: row.id, action: 'rollback' }),
+                }),
+            },
+          ],
         },
         {
           key: 'conformance',

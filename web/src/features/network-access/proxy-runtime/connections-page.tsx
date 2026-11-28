@@ -9,20 +9,22 @@ import {
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { formatBytes } from '@/components/resource-metrics-format'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission } from '@/features/auth'
 import { useI18n } from '@/i18n'
 import { ApiError } from '@/services/api-error'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
-import { ReloadOutlined } from '@ant-design/icons'
+import { DisconnectOutlined, ReloadOutlined } from '@ant-design/icons'
 import type {
   NetworkProxyCloseCommandEnvelope,
   NetworkProxyConnection,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Card, Popconfirm, Typography } from 'antd'
+import { App, Button, Card, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { closeConnection } from './api'
 import { ProxyInstanceHeader, useProxyContext } from './context'
@@ -37,6 +39,7 @@ function matchesClose(target: CloseTarget, receipt?: NetworkProxyCloseCommandEnv
   )
 }
 export default function ProxyConnectionsPage() {
+  const { modal } = App.useApp()
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
 
@@ -59,7 +62,6 @@ export default function ProxyConnectionsPage() {
   const [draft, setDraft] = useState('')
   const [keyword, setKeyword] = useState('')
   const [lastCommand, setLastCommand] = useState<CloseTarget>()
-  const [confirmation, setConfirmation] = useState<CloseTarget>()
   const close = useOperationMutation(
     {
       mutationFn: async (target: CloseTarget) => {
@@ -121,7 +123,6 @@ export default function ProxyConnectionsPage() {
     if (!canView || !context.allowed) {
       void queryClient.cancelQueries({ queryKey: proxyKeys.all })
       queryClient.removeQueries({ queryKey: proxyKeys.all })
-      setConfirmation(undefined)
     }
   }, [canView, context.allowed, queryClient])
   const operationBlocked = close.blocked || Boolean(currentCommand && !terminal) || snapshot.isError
@@ -165,60 +166,54 @@ export default function ProxyConnectionsPage() {
     selected?.capabilities.includes('close_connection')
       ? [
           {
+            ...tableColumnPresets.action,
             title: t('common.actions', '操作'),
             key: 'actions',
-            className: 'soha-table-actions-column',
-            width: 110,
             render: (_: unknown, record: NetworkProxyConnection) => (
-              <Popconfirm
-                title={t('networkAccess.proxyRuntime.confirmClose', '确认断开此连接？')}
-                description={record.destination}
-                okText={t('networkAccess.proxyRuntime.disconnect', '断开')}
-                okButtonProps={{ ...{ danger: true }, disabled: operationBlocked }}
-                onOpenChange={(open) => {
-                  if (open && selected?.processEpoch) {
-                    setConfirmation({
-                      instanceId: selected.id,
-                      connectionId: record.id,
-                      epoch: selected.processEpoch,
-                      requestId: crypto.randomUUID(),
-                    })
-                  }
-                }}
-                onConfirm={() => {
-                  const target = confirmation
-                  setConfirmation(undefined)
-                  if (
-                    !canView ||
-                    !canClose ||
-                    operationBlocked ||
-                    !target ||
-                    target.instanceId !== selected?.id ||
-                    target.epoch !== selected.processEpoch ||
-                    target.connectionId !== record.id ||
-                    visibleSnapshotData?.processEpoch !== target.epoch ||
-                    (record.processEpoch && record.processEpoch !== target.epoch)
-                  )
-                    return
-                  close.mutate(target)
-                }}
-                disabled={
-                  operationBlocked ||
-                  (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
-                }
-              >
-                <Button
-                  danger
-                  disabled={
-                    operationBlocked ||
-                    (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
-                  }
-                  size="small"
-                  loading={close.isPending && close.variables?.connectionId === record.id}
-                >
-                  {t('networkAccess.proxyRuntime.disconnect', '断开')}
-                </Button>
-              </Popconfirm>
+              <TableRowActionMenu
+                targetLabel={record.destination}
+                loading={close.isPending && close.variables?.connectionId === record.id}
+                items={[
+                  {
+                    key: 'disconnect',
+                    icon: <DisconnectOutlined />,
+                    label: t('networkAccess.proxyRuntime.disconnect', '断开'),
+                    danger: true,
+                    disabled:
+                      operationBlocked ||
+                      (!!record.processEpoch && record.processEpoch !== selected?.processEpoch),
+                    onClick: () => {
+                      if (!selected?.processEpoch) return
+                      const target: CloseTarget = {
+                        instanceId: selected.id,
+                        connectionId: record.id,
+                        epoch: selected.processEpoch,
+                        requestId: crypto.randomUUID(),
+                      }
+                      modal.confirm({
+                        title: t('networkAccess.proxyRuntime.confirmClose', '确认断开此连接？'),
+                        content: record.destination,
+                        okText: t('networkAccess.proxyRuntime.disconnect', '断开'),
+                        okButtonProps: { danger: true },
+                        onOk: () => {
+                          if (
+                            !canView ||
+                            !canClose ||
+                            operationBlocked ||
+                            target.instanceId !== selected?.id ||
+                            target.epoch !== selected.processEpoch ||
+                            target.connectionId !== record.id ||
+                            visibleSnapshotData?.processEpoch !== target.epoch ||
+                            (record.processEpoch && record.processEpoch !== target.epoch)
+                          )
+                            return
+                          return close.mutateAsync(target).catch(() => undefined)
+                        },
+                      })
+                    },
+                  },
+                ]}
+              />
             ),
           },
         ]

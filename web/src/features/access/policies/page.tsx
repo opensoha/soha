@@ -2,6 +2,7 @@ import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useMemo, useState } from 'react'
 import {
+  App,
   Button,
   Col,
   Collapse,
@@ -10,11 +11,11 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
   Tooltip,
+  Typography,
 } from 'antd'
 import {
   DeleteOutlined,
@@ -24,12 +25,9 @@ import {
 } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import {
-  ManagementIconButton,
-  ManagementState,
-  useManagementTextFilter,
-} from '@/components/management-list'
+import { ManagementState, useManagementTextFilter } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { AccessManagementTablePage } from '../shared/management-page'
@@ -44,6 +42,7 @@ import { joinCSV, parseCSV, toStringArray } from '../shared/utils'
 import { buildPolicySubjectsSummary, buildPolicyTargetsSummary } from './view-model'
 import '../shared/styles.css'
 
+const { Text } = Typography
 type ColumnProps<T> = TableColumnsType<T>[number]
 const POLICY_EFFECT_OPTIONS = [
   { value: 'allow', label: '允许' },
@@ -51,6 +50,7 @@ const POLICY_EFFECT_OPTIONS = [
 ]
 
 export function AccessPoliciesPage() {
+  const { modal } = App.useApp()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
   const canViewPolicies = hasPermission(snapshot, 'access.policies.view')
@@ -107,7 +107,23 @@ export function AccessPoliciesPage() {
     [canViewTeams, teamsQuery.data, teamsQuery.error],
   )
   const columns: ColumnProps<AccessPolicy>[] = [
-    { title: '策略名称', dataIndex: 'name' },
+    {
+      title: '策略名称',
+      dataIndex: 'name',
+      render: (value: string, record: AccessPolicy) =>
+        canUpdatePolicies ? (
+          <Button
+            type="link"
+            disabled={crud.saveBlocked && crud.editing?.id !== record.id}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => crud.openEdit(record)}
+          >
+            {value}
+          </Button>
+        ) : (
+          <Text strong>{value}</Text>
+        ),
+    },
     { title: '效果', dataIndex: 'effect', render: (value: string) => <StatusTag value={value} /> },
     { title: '优先级', dataIndex: 'priority' },
     {
@@ -133,42 +149,47 @@ export function AccessPoliciesPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      dataIndex: 'id',
-      width: 84,
+      key: 'actions',
       render: (_: unknown, record: AccessPolicy) => (
-        <Space className="soha-row-action-icons" size={4}>
-          {canUpdatePolicies || canDeletePolicies ? (
-            <>
-              {canUpdatePolicies ? (
-                <ManagementIconButton
-                  aria-label="编辑策略"
-                  disabled={crud.saveBlocked && crud.editing?.id !== record.id}
-                  icon={<EditOutlined />}
-                  size="small"
-                  tooltip="编辑"
-                  onClick={() => crud.openEdit(record)}
-                />
-              ) : null}
-              {canDeletePolicies ? (
-                <Popconfirm
-                  title={`确认删除 ${record.name}？`}
-                  onConfirm={() => crud.deleteRecord(record.id)}
-                >
-                  <ManagementIconButton
-                    aria-label="删除策略"
-                    disabled={crud.deleteBlocked}
-                    danger
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    tooltip="删除"
-                  />
-                </Popconfirm>
-              ) : null}
-            </>
-          ) : (
-            '-'
-          )}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canUpdatePolicies
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    disabled: crud.saveBlocked && crud.editing?.id !== record.id,
+                    onClick: () => crud.openEdit(record),
+                  },
+                ]
+              : []),
+            ...(canDeletePolicies
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: crud.deleteBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `确认删除 ${record.name}？`,
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, disabled: crud.deleteBlocked },
+                        onOk: () => {
+                          crud.deleteRecord(record.id)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

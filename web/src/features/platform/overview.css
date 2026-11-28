@@ -12,9 +12,19 @@
 
 .soha-platform-focus-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
-  align-items: start;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  align-items: stretch;
   gap: 16px;
+}
+
+.soha-platform-focus-grid > .ant-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.soha-platform-focus-grid > .ant-card > .ant-card-body {
+  flex: 1 1 auto;
 }
 
 .soha-platform-overview-page .soha-overview-runtime-layout {
@@ -587,10 +597,15 @@
   align-items: stretch;
   gap: 8px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--soha-border-color);
+  padding: 12px 14px;
+  border: 0;
   border-radius: var(--soha-radius-control);
   background: var(--soha-fill-weak);
+  transition: background-color 0.16s ease;
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-row:hover {
+  background: color-mix(in srgb, var(--soha-primary) 6%, var(--soha-fill-weak));
 }
 
 .soha-platform-namespace-distribution .soha-overview-namespace-main {

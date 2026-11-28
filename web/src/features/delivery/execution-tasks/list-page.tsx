@@ -1,10 +1,10 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { useMemo } from 'react'
-import { Button, Popconfirm, Space, Tag, Typography } from 'antd'
+import { App, Button, Space, Tag, Typography } from 'antd'
 import { ArrowRightOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ManagementIconButton } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { MutationFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { OverviewMetricCard, type OverviewMetricItem } from '@/components/overview-visuals'
@@ -27,6 +27,7 @@ import { summarizeDeliveryGovernance } from '../workbench/governance'
 const { Text } = Typography
 
 export function ExecutionTasksPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -148,7 +149,13 @@ export function ExecutionTasksPage() {
             render: (value: string, record: ExecutionTask) => (
               <Space orientation="vertical" size={0}>
                 <Space size={6} wrap>
-                  <Text strong>{value}</Text>
+                  <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                    onClick={() => navigate(`/delivery/execution-tasks/${record.id}`)}
+                  >
+                    {value}
+                  </Button>
                   {record.id === focusedExecutionTaskId ? <Tag color="blue">已定位</Tag> : null}
                 </Space>
                 <Text type="secondary">{record.id}</Text>
@@ -241,45 +248,45 @@ export function ExecutionTasksPage() {
             title: '操作',
             dataIndex: 'id',
             render: (_: unknown, record: ExecutionTask) => (
-              <Space className="soha-row-action-icons" size={2}>
-                <ManagementIconButton
-                  aria-label="查看执行详情"
-                  icon={<ArrowRightOutlined />}
-                  size="small"
-                  tooltip="查看详情"
-                  onClick={() => navigate(`/delivery/execution-tasks/${record.id}`)}
-                />
-                {canCancel && canCancelExecutionTask(record) ? (
-                  <Popconfirm
-                    title="确认取消该任务？"
-                    disabled={requestLocked}
-                    onConfirm={() => handleCancel(record)}
-                  >
-                    <ManagementIconButton
-                      aria-label="取消执行任务"
-                      disabled={requestLocked}
-                      loading={
-                        cancelMutation.isPending && cancelMutation.variables?.id === record.id
+              <TableRowActionMenu
+                targetLabel={record.id}
+                items={[
+                  {
+                    key: 'detail',
+                    label: '查看执行详情',
+                    icon: <ArrowRightOutlined />,
+                    onClick: () => navigate(`/delivery/execution-tasks/${record.id}`),
+                  },
+                  canRetry && canRetryExecutionTask(record)
+                    ? {
+                        key: 'retry',
+                        label: '重试执行任务',
+                        icon: <ReloadOutlined />,
+                        disabled: requestLocked,
+                        onClick: () => handleRetry(record),
                       }
-                      danger
-                      icon={<StopOutlined />}
-                      size="small"
-                      tooltip="取消"
-                    />
-                  </Popconfirm>
-                ) : null}
-                {canRetry && canRetryExecutionTask(record) ? (
-                  <ManagementIconButton
-                    aria-label="重试执行任务"
-                    disabled={requestLocked}
-                    loading={retryMutation.isPending && retryMutation.variables?.id === record.id}
-                    icon={<ReloadOutlined />}
-                    size="small"
-                    tooltip="重试"
-                    onClick={() => handleRetry(record)}
-                  />
-                ) : null}
-              </Space>
+                    : null,
+                  canCancel && canCancelExecutionTask(record) ? { type: 'divider' } : null,
+                  canCancel && canCancelExecutionTask(record)
+                    ? {
+                        key: 'cancel',
+                        label: '取消执行任务',
+                        icon: <StopOutlined />,
+                        danger: true,
+                        disabled: requestLocked,
+                        onClick: () => {
+                          modal.confirm({
+                            title: '确认取消该任务？',
+                            content: `任务：${record.id}`,
+                            okText: '确认取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => handleCancel(record),
+                          })
+                        },
+                      }
+                    : null,
+                ]}
+              />
             ),
           },
         ]}

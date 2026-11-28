@@ -29,17 +29,23 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 .soha-topology-workspace.has-inspector {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 348px);
 }
 .soha-topology-canvas {
-  height: clamp(440px, calc(100dvh - 390px), 900px);
-  border: 1px solid var(--soha-border-color);
-  border-radius: 8px;
+  height: clamp(460px, calc(100dvh - 348px), 900px);
+  border: 1px solid color-mix(in srgb, var(--soha-border-color) 76%, transparent);
+  border-radius: var(--soha-radius-panel);
   overflow: hidden;
-  background: var(--soha-workflow-canvas-bg);
+  background:
+    radial-gradient(
+      circle at 18% 12%,
+      color-mix(in srgb, var(--soha-primary) 5%, transparent),
+      transparent 48%
+    ),
+    var(--soha-fill-weak);
 }
 .soha-topology-node {
   width: 252px;
@@ -48,15 +54,25 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--soha-border-color);
   border-left: 3px solid var(--soha-graph-scope);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control);
   background: var(--soha-bg-surface);
   color: var(--soha-text-primary);
+  box-shadow: 0 8px 20px -14px rgba(15, 23, 42, 0.16);
   cursor: pointer;
   font: inherit;
   min-height: 112px;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.soha-topology-node-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--soha-primary) 42%, var(--soha-border-color));
+  box-shadow: 0 12px 26px -16px rgba(15, 23, 42, 0.24);
 }
 .soha-topology-node-card:focus-visible {
   outline: 2px solid var(--soha-primary);
@@ -208,8 +224,18 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+.soha-topology-filter-card.ant-card {
+  border-radius: var(--soha-radius-panel);
+  border-color: var(--soha-border-color);
+  box-shadow: 0 4px 14px -8px rgba(15, 23, 42, 0.06);
+}
 .soha-topology-filter-card > .ant-card-body {
-  padding: 16px;
+  padding: 12px 16px;
+}
+.soha-topology-main-card.ant-card,
+.soha-topology-inspector.ant-card {
+  border-radius: var(--soha-radius-panel);
+  border-color: var(--soha-border-color);
 }
 .soha-topology-main-card {
   min-width: 0;

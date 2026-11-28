@@ -454,13 +454,14 @@ describe('SoftwareLibraryPage', () => {
 
     const container = await renderPage()
     await openObjectStorageDrawer(container)
-    const configureButton =
-      container.querySelector<HTMLButtonElement>(
-        'button[aria-label="编辑 Software object storage"]',
-      ) ??
-      document.body.querySelector<HTMLButtonElement>(
-        'button[aria-label="编辑 Software object storage"]',
-      )
+    const rowTrigger = document.body.querySelector<HTMLButtonElement>(
+      '.ant-drawer button.soha-table-row-action-trigger',
+    )
+    await act(async () => rowTrigger?.click())
+    await flush()
+    const configureButton = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((item) => item.textContent?.includes('编辑 Software object storage'))
     await act(async () => configureButton?.click())
     await flush()
 
@@ -496,7 +497,7 @@ describe('SoftwareLibraryPage', () => {
     const container = await renderPage()
     await openObjectStorageDrawer(container)
     expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
-      '身份数据读取失败',
+      '对象存储读取失败',
     )
     expect(document.querySelector('.soha-read-feedback-notification')?.textContent).toContain(
       'unavailable',
@@ -530,7 +531,15 @@ describe('SoftwareLibraryPage', () => {
     await openObjectStorageDrawer(container)
     expect(document.body.textContent).toContain('存储实例2')
     expect(container.textContent).toContain('全部存储')
-    expect(document.body.querySelector('button[aria-label="编辑 Storage"]')).not.toBeNull()
+    const rowTrigger = document.body.querySelector<HTMLButtonElement>(
+      '.ant-drawer button.soha-table-row-action-trigger',
+    )
+    await act(async () => rowTrigger?.click())
+    await flush()
+    const editStorage = Array.from(
+      document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((item) => item.textContent?.includes('编辑 Storage'))
+    expect(editStorage).toBeDefined()
     expect(document.body.textContent).not.toContain('对象存储配置冲突')
   })
 })

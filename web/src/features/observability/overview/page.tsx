@@ -1,9 +1,6 @@
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import {
-  OverviewChip,
-  OverviewMetricCard,
-  OverviewSectionBar,
-  type OverviewChipItem,
+  OverviewHeroCard,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -13,7 +10,6 @@ import { formatDateTime } from '@/utils/time'
 import {
   AlertOutlined,
   CheckCircleOutlined,
-  DatabaseOutlined,
   EyeOutlined,
   FireOutlined,
   ReloadOutlined,
@@ -83,181 +79,283 @@ export function MonitoringPage() {
     },
   ] satisfies OverviewMetricItem[]
 
-  const alertChips = [
-    { key: 'total', label: '总数', value: summary?.totalCount ?? '不可用', tone: 'default' },
-    { key: 'firing', label: '活跃', value: summary?.firingCount ?? '不可用', tone: 'warning' },
-    {
-      key: 'resolved',
-      label: '已恢复',
-      value: summary?.resolvedCount ?? '不可用',
-      tone: 'success',
-    },
-    {
-      key: 'critical',
-      label: 'Critical',
-      value: summary?.criticalCount ?? '不可用',
-      tone: 'danger',
-    },
-    {
-      key: 'warning',
-      label: 'Warning',
-      value: summary?.warningCount ?? '不可用',
-      tone: 'warning',
-    },
-    { key: 'info', label: 'Info', value: summary?.infoCount ?? '不可用', tone: 'default' },
-  ] satisfies OverviewChipItem[]
-
-  const sourceStats = [
-    {
-      key: 'total',
-      label: '已发现',
-      value: providersData ? providers.length : '不可用',
-      helper: '当前 Provider 能力',
-      icon: <DatabaseOutlined />,
-      tone: 'default',
-    },
-    {
-      key: 'configured',
-      label: '已配置',
-      value: providersData ? configuredProviders.length : '不可用',
-      helper: '存在启用的数据源',
-      tone: 'success',
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: providersData ? healthyProviders.length : '不可用',
-      helper: '最近验证成功',
-      tone: 'success',
-    },
-    {
-      key: 'unconfigured',
-      label: '未配置',
-      value: providersData ? providers.filter((item) => !item.configured).length : '不可用',
-      helper: '仅声明适配能力',
-      tone: 'default',
-    },
-  ] satisfies OverviewChipItem[]
-
   return (
     <div className="soha-page soha-overview-page soha-monitoring-overview-page">
+      <ReadFeedback label="告警摘要" query={summaryQuery} />
+      <ReadFeedback label="Provider 状态" query={providersQuery} />
       <h1 className="soha-monitoring-overview-heading">可观测性总览</h1>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <ManagementIconButton
-          aria-label="刷新观测总览"
-          tooltip="刷新观测总览"
-          icon={
-            <ReloadOutlined
-              spin={
-                summaryQuery.isFetching ||
-                providersQuery.isFetching ||
-                alertsQuery.isFetching ||
-                eventsQuery.isFetching
+      {summaryQuery.isLoading ? (
+        <ManagementState bordered={false} compact kind="loading" title="正在加载告警摘要" />
+      ) : (
+        <div className="soha-overview-bento-top">
+          <OverviewHeroCard
+          variant="monitoring"
+          eyebrowIcon={<AlertOutlined />}
+          eyebrowLabel={overviewStats[0].label}
+          value={overviewStats[0].value}
+          valueSuffix="全局黄金信号与告警态势"
+          caption={
+            summary?.firingCount
+              ? '优先处置 Critical 与持续触发信号'
+              : '全链路观测信号平稳，暂无未收敛活跃告警'
+          }
+          extraTopRight={
+            <ManagementIconButton
+              aria-label="刷新观测总览"
+              tooltip="刷新观测总览"
+              icon={
+                <ReloadOutlined
+                  spin={
+                    summaryQuery.isFetching ||
+                    providersQuery.isFetching ||
+                    alertsQuery.isFetching ||
+                    eventsQuery.isFetching
+                  }
+                />
               }
+              onClick={() => {
+                void summaryQuery.refetch()
+                void providersQuery.refetch()
+                void alertsQuery.refetch()
+                void eventsQuery.refetch()
+              }}
             />
           }
-          onClick={() => {
-            void summaryQuery.refetch()
-            void providersQuery.refetch()
-            void alertsQuery.refetch()
-            void eventsQuery.refetch()
-          }}
+          kpis={[
+            {
+              key: 'providers',
+              label: '健康数据源',
+              value: providersData
+                ? `${healthyProviders.length}/${configuredProviders.length}`
+                : '—',
+            },
+            {
+              key: 'events',
+              label: '近期事件',
+              value: recentEvents.length,
+            },
+          ]}
+          telemetryNodes={[
+            {
+              id: 'signal-hub',
+              label: `FIRING · ${summary?.firingCount ?? 0}`,
+              title: '全局告警评估中枢',
+              metric: `活跃 ${summary?.firingCount ?? 0} · 已恢复 ${summary?.resolvedCount ?? 0}`,
+              status: (summary?.firingCount ?? 0) > 0 ? 'warning' : 'healthy',
+              path: '/monitoring-workbench/alerts',
+            },
+            {
+              id: 'critical-signal',
+              label: `CRITICAL · ${summary?.criticalCount ?? 0}`,
+              title: '高优 Critical 告警流',
+              metric:
+                (summary?.criticalCount ?? 0) > 0
+                  ? `${summary?.criticalCount} 条高危告警待响应`
+                  : '无高危告警触发',
+              status: (summary?.criticalCount ?? 0) > 0 ? 'critical' : 'healthy',
+              path: '/monitoring-workbench/alerts',
+            },
+            {
+              id: 'prom-metrics',
+              label: `PROVIDERS · ${healthyProviders.length}/${configuredProviders.length}`,
+              title: '可观测性 Provider 集群',
+              metric:
+                unhealthyProviders.length > 0
+                  ? `${unhealthyProviders.length} 个数据源异常`
+                  : '全部已启用数据源健康',
+              status: unhealthyProviders.length > 0 ? 'warning' : 'healthy',
+              path: '/monitoring-workbench/providers',
+            },
+            {
+              id: 'event-bus',
+              label: `EVENTS · ${recentEvents.length}`,
+              title: '实时事件时间线',
+              metric: `最近采集 ${recentEvents.length} 条平台事件`,
+              status: 'primary',
+              path: '/monitoring-workbench/events',
+            },
+          ]}
+          embeddedPods={overviewStats.slice(1).map((item) => ({
+            key: item.key,
+            label: item.label,
+            value: item.value,
+            helper: item.helper,
+            icon: item.icon,
+            tone: item.tone,
+            loading:
+              item.key.endsWith('-providers') ? providersQuery.isLoading : summaryQuery.isLoading,
+            to: item.key.endsWith('-providers')
+              ? '/monitoring-workbench/providers'
+              : '/monitoring-workbench/alerts',
+          }))}
+          segments={
+            summary
+              ? [
+                  {
+                    key: 'resolved',
+                    label: '已恢复',
+                    value: summary.resolvedCount,
+                    tone: 'success',
+                  },
+                  {
+                    key: 'warning',
+                    label: 'Warning',
+                    value: summary.warningCount,
+                    tone: 'warning',
+                  },
+                  {
+                    key: 'critical',
+                    label: 'Critical',
+                    value: summary.criticalCount,
+                    tone: 'danger',
+                  },
+                  {
+                    key: 'info',
+                    label: 'Info',
+                    value: summary.infoCount,
+                    tone: 'neutral',
+                  },
+                ]
+              : undefined
+          }
+          ctaLabel="进入告警处理"
+          ctaTo="/monitoring-workbench/alerts"
+          detailDrawerTitle="最近告警与事件明细"
+          graphicDeck={[
+            {
+              key: 'obs-resolution-rings',
+              kind: 'rings',
+              title: '告警收敛与数据源光谱环',
+              subtitle: '全栈指标 · 日志 · 链路',
+              actionLabel: '数据源',
+              actionTo: '/monitoring-workbench/providers',
+              centerValue:
+                summary && (summary.totalCount ?? 0) > 0
+                  ? `${Math.round(((summary.resolvedCount ?? 0) / Math.max(1, summary.totalCount ?? 1)) * 100)}%`
+                  : '100%',
+              centerLabel: '已收敛',
+              rings: [
+                {
+                  key: 'resolved',
+                  label: '已恢复告警',
+                  value: summary?.resolvedCount ?? 0,
+                  ratio:
+                    summary && (summary.totalCount ?? 0) > 0
+                      ? (summary.resolvedCount ?? 0) / Math.max(1, summary.totalCount ?? 1)
+                      : 1,
+                  tone: 'success',
+                  to: '/monitoring-workbench/alerts',
+                },
+                {
+                  key: 'providers',
+                  label: '健康数据源',
+                  value: `${healthyProviders.length}/${configuredProviders.length}`,
+                  ratio:
+                    configuredProviders.length > 0
+                      ? healthyProviders.length / configuredProviders.length
+                      : 1,
+                  tone: 'primary',
+                  to: '/monitoring-workbench/providers',
+                },
+                {
+                  key: 'warning',
+                  label: 'Warning 活跃',
+                  value: summary?.warningCount ?? 0,
+                  ratio:
+                    summary && (summary.totalCount ?? 0) > 0
+                      ? (summary.warningCount ?? 0) / Math.max(1, summary.totalCount ?? 1)
+                      : 0,
+                  tone: 'warning',
+                },
+                {
+                  key: 'critical',
+                  label: 'Critical 高危',
+                  value: summary?.criticalCount ?? 0,
+                  ratio:
+                    summary && (summary.totalCount ?? 0) > 0
+                      ? (summary.criticalCount ?? 0) / Math.max(1, summary.totalCount ?? 1)
+                      : 0,
+                  tone: 'danger',
+                },
+              ],
+            },
+            {
+              key: 'obs-signal-spectrum',
+              kind: 'spectrum',
+              title: '多级可观测信号脉冲波谱',
+              subtitle: '分级密度与事件吞吐',
+              actionLabel: '事件流',
+              actionTo: '/monitoring-workbench/events',
+              bars: [
+                {
+                  key: 'critical',
+                  label: 'Critical',
+                  value: summary?.criticalCount ?? 0,
+                  tone: 'danger',
+                  to: '/monitoring-workbench/alerts',
+                },
+                {
+                  key: 'warning',
+                  label: 'Warning',
+                  value: summary?.warningCount ?? 0,
+                  tone: 'warning',
+                  to: '/monitoring-workbench/alerts',
+                },
+                {
+                  key: 'info',
+                  label: 'Info',
+                  value: summary?.infoCount ?? 0,
+                  tone: 'primary',
+                },
+                {
+                  key: 'resolved',
+                  label: '已恢复',
+                  value: summary?.resolvedCount ?? 0,
+                  tone: 'success',
+                },
+                {
+                  key: 'events',
+                  label: '实时事件',
+                  value: recentEvents.length,
+                  tone: 'primary',
+                  to: '/monitoring-workbench/events',
+                },
+              ],
+            },
+            {
+              key: 'obs-firing-radar',
+              kind: 'radar',
+              title: '实时告警与事件扫描雷达',
+              subtitle: `活跃 ${summary?.firingCount ?? 0} 条`,
+              actionLabel: '告警中心',
+              actionTo: '/monitoring-workbench/alerts',
+              emptyLabel: '零活跃告警 · 全域静默平稳',
+              blips: [
+                ...recentAlerts.slice(0, 2).map((alert) => ({
+                  key: `alert-${alert.id}`,
+                  label: alert.title || alert.id,
+                  badge: alert.severity.toUpperCase(),
+                  tone:
+                    alert.severity.toLowerCase() === 'critical'
+                      ? ('danger' as const)
+                      : alert.status === 'resolved'
+                        ? ('success' as const)
+                        : ('warning' as const),
+                  to: `/monitoring-workbench/alerts/${alert.id}`,
+                })),
+                ...recentEvents.slice(0, 1).map((ev) => ({
+                  key: `ev-${ev.id}`,
+                  label: ev.summary || ev.id,
+                  badge: ev.category || 'EVENT',
+                  tone: 'primary' as const,
+                  to: '/monitoring-workbench/events',
+                })),
+              ],
+            },
+          ]}
         />
-      </div>
-      <div className="soha-overview-metric-grid">
-        {overviewStats.map((item) => (
-          <OverviewMetricCard
-            key={item.key}
-            label={item.label}
-            value={item.value}
-            helper={item.helper}
-            icon={item.icon}
-            tone={item.tone}
-            loading={
-              item.key.endsWith('-providers') ? providersQuery.isLoading : summaryQuery.isLoading
-            }
-          />
-        ))}
-      </div>
-
-      <div className="soha-overview-summary-grid">
-        <Card
-          className="soha-overview-panel-card"
-          title="告警态势"
-          extra={
-            summary?.lastReceivedAt ? (
-              <Text type="secondary">
-                最近接收: {formatDateTime(summary?.lastReceivedAt)}
-              </Text>
-            ) : null
-          }
-        >
-          <ReadFeedback label="告警摘要" query={summaryQuery} />
-          {summaryQuery.isLoading ? (
-            <ManagementState bordered={false} compact kind="loading" title="正在加载告警摘要" />
-          ) : summary ? (
-            <div className="soha-overview-alert-stack">
-              <OverviewSectionBar
-                title="告警分布"
-                description={
-                  summary.firingCount > 0
-                    ? '当前仍有活跃告警，优先处置 Critical 和 Warning。'
-                    : '当前没有活跃告警，继续关注规则、通知和值班链路。'
-                }
-                extra={
-                  <Button
-                    type="text"
-                    icon={<EyeOutlined />}
-                    onClick={() => navigate('/monitoring-workbench/alerts')}
-                  >
-                    查看活跃告警
-                  </Button>
-                }
-              />
-              <div className="soha-overview-chip-grid">
-                {alertChips.map((item) => (
-                  <OverviewChip
-                    key={item.key}
-                    label={item.label}
-                    value={item.value}
-                    tone={item.tone}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : summaryQuery.isError ? null : (
-            <ManagementState bordered={false} compact description="暂无告警摘要" />
-          )}
-        </Card>
-
-        <Card
-          className="soha-overview-panel-card"
-          title="Provider 运行态"
-          extra={
-            <Button type="text" onClick={() => navigate('/monitoring-workbench/providers')}>
-              查看 Provider
-            </Button>
-          }
-        >
-          <ReadFeedback label="Provider 状态" query={providersQuery} />
-          {providersQuery.isLoading ? (
-            <ManagementState bordered={false} compact kind="loading" title="正在加载 Provider" />
-          ) : providersData ? (
-            <div className="soha-monitoring-operation-grid">
-              {sourceStats.map((item) => (
-                <OverviewChip
-                  key={item.key}
-                  label={item.label}
-                  value={item.value}
-                  helper={item.helper}
-                  icon={item.icon}
-                  tone={item.tone}
-                />
-              ))}
-            </div>
-          ) : null}
-        </Card>
-      </div>
+        </div>
+      )}
 
       <div className="soha-monitoring-recent-grid">
         <Card

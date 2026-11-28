@@ -845,23 +845,22 @@ export function UserProfilePage() {
         key: 'userId',
         label: 'ID',
         children: <Text copyable>{valueOrUnset(profile?.userId)}</Text>,
-        span: 2,
       },
       { key: 'username', label: '用户名', children: valueOrUnset(profile?.username) },
       { key: 'displayName', label: '显示名', children: displayName },
-      { key: 'email', label: '邮箱', children: valueOrUnset(profile?.email) },
-      { key: 'phone', label: '电话', children: valueOrUnset(profile?.phone) },
       {
         key: 'status',
         label: '账号状态',
         children: profile?.status ? <StatusTag value={profile.status} /> : '未设置',
       },
-      { key: 'lastLoginAt', label: '最近登录', children: formatDateTime(profile?.lastLoginAt) },
+      { key: 'email', label: '邮箱', children: valueOrUnset(profile?.email) },
+      { key: 'phone', label: '电话', children: valueOrUnset(profile?.phone) },
       {
         key: 'provider',
         label: '主要登录方式',
         children: providerTag(primaryIdentity?.providerType),
       },
+      { key: 'lastLoginAt', label: '最近登录', children: formatDateTime(profile?.lastLoginAt) },
     ],
     [displayName, primaryIdentity?.providerType, profile],
   )
@@ -941,7 +940,14 @@ export function UserProfilePage() {
     {
       key: 'access',
       label: '权限归属',
-      children: <Descriptions bordered column={1} items={permissionItems} size="small" />,
+      children: (
+        <Descriptions
+          className="soha-profile-descriptions is-single-col"
+          column={1}
+          items={permissionItems}
+          size="small"
+        />
+      ),
     },
   ]
 
@@ -979,76 +985,112 @@ export function UserProfilePage() {
       <ReadFeedback label="个人中心" query={profileQuery} />
       {operationFeedback}
       <div className="soha-profile-layout">
-        <Card className="soha-profile-summary-card" size="small">
-          <div className="soha-profile-identity">
-            <button
-              className="soha-profile-avatar-button"
-              type="button"
-              aria-label="更换头像"
-              disabled={profileBlocked}
-              onClick={openAvatarEditor}
-            >
-              <Avatar
-                className="soha-profile-avatar"
-                size={64}
-                src={compact(profile.avatarUrl) || undefined}
-                style={avatarStyle(currentAvatarFit)}
-              >
-                {avatarText}
-              </Avatar>
-              <span className="soha-profile-avatar-edit">
-                <EditOutlined />
-              </span>
-            </button>
-            <div className="soha-profile-identity__main">
-              <Title level={4}>{displayName}</Title>
-              <Text type="secondary">{profile.email || profile.username}</Text>
+        <div className="soha-profile-summary-bezel">
+          <Card className="soha-profile-summary-card" size="small">
+            <div className="soha-profile-identity-hero">
+              <div className="soha-profile-identity">
+                <button
+                  className="soha-profile-avatar-button"
+                  type="button"
+                  aria-label="更换头像"
+                  disabled={profileBlocked}
+                  onClick={openAvatarEditor}
+                >
+                  <Avatar
+                    className="soha-profile-avatar"
+                    size={68}
+                    src={compact(profile.avatarUrl) || undefined}
+                    style={avatarStyle(currentAvatarFit)}
+                  >
+                    {avatarText}
+                  </Avatar>
+                  <span className="soha-profile-avatar-edit">
+                    <EditOutlined />
+                  </span>
+                </button>
+                <div className="soha-profile-identity__main">
+                  <div className="soha-profile-identity__title-row">
+                    <Title level={4}>{displayName}</Title>
+                    {profile.status ? <StatusTag value={profile.status} /> : null}
+                  </div>
+                  <Text type="secondary">@{valueOrUnset(profile.username)}</Text>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="soha-profile-summary-list">
-            <div className="soha-profile-summary-item">
-              <UserOutlined />
-              <span>{valueOrUnset(profile.username)}</span>
+            <div className="soha-profile-kpi-grid">
+              <div className="soha-profile-kpi-tile">
+                <Text type="secondary">活跃会话</Text>
+                <strong>{profile.sessions?.length ?? 0}</strong>
+              </div>
+              <div className="soha-profile-kpi-tile">
+                <Text type="secondary">Gateway keys</Text>
+                <strong>{gatewayKeysSummary}</strong>
+              </div>
             </div>
-            <div className="soha-profile-summary-item">
-              <MailOutlined />
-              <span>{valueOrUnset(profile.email)}</span>
+            <div className="soha-profile-summary-list">
+              <div className="soha-profile-summary-item">
+                <span className="soha-profile-summary-icon">
+                  <UserOutlined />
+                </span>
+                <span>{valueOrUnset(profile.username)}</span>
+              </div>
+              <div className="soha-profile-summary-item">
+                <span className="soha-profile-summary-icon">
+                  <MailOutlined />
+                </span>
+                <span>{valueOrUnset(profile.email)}</span>
+              </div>
+              <div className="soha-profile-summary-item">
+                <span className="soha-profile-summary-icon">
+                  <PhoneOutlined />
+                </span>
+                <span>{valueOrUnset(profile.phone)}</span>
+              </div>
+              <div className="soha-profile-summary-item">
+                <span className="soha-profile-summary-icon">
+                  <KeyOutlined />
+                </span>
+                <span>{loginProviderLabel(primaryIdentity?.providerType)}</span>
+              </div>
             </div>
-            <div className="soha-profile-summary-item">
-              <PhoneOutlined />
-              <span>{valueOrUnset(profile.phone)}</span>
+            <div className="soha-profile-tag-group">
+              <div className="soha-profile-tag-section">
+                <Text type="secondary">角色</Text>
+                {tagList(profile.roles)}
+              </div>
+              <div className="soha-profile-tag-section">
+                <Text type="secondary">组织</Text>
+                {tagList(profile.teams)}
+              </div>
+              {profile.projects?.length ? (
+                <div className="soha-profile-tag-section">
+                  <Text type="secondary">项目</Text>
+                  {tagList(profile.projects)}
+                </div>
+              ) : null}
+              {profile.tags?.length ? (
+                <div className="soha-profile-tag-section">
+                  <Text type="secondary">标签</Text>
+                  {tagList(profile.tags)}
+                </div>
+              ) : null}
             </div>
-            <div className="soha-profile-summary-item">
-              <KeyOutlined />
-              <span>{loginProviderLabel(primaryIdentity?.providerType)}</span>
+            <div className="soha-profile-summary-footer">
+              <Text type="secondary">最近登录</Text>
+              <span>{formatDateTime(profile.lastLoginAt)}</span>
             </div>
-          </div>
-          <div className="soha-profile-kpi-grid">
-            <div>
-              <Text type="secondary">活跃会话</Text>
-              <strong>{profile.sessions?.length ?? 0}</strong>
-            </div>
-            <div>
-              <Text type="secondary">Gateway keys</Text>
-              <strong>{gatewayKeysSummary}</strong>
-            </div>
-          </div>
-          <div className="soha-profile-tag-section">
-            <Text type="secondary">角色</Text>
-            {tagList(profile.roles)}
-          </div>
-          <div className="soha-profile-tag-section">
-            <Text type="secondary">组织</Text>
-            {tagList(profile.teams)}
-          </div>
-        </Card>
+          </Card>
+        </div>
 
         <div className="soha-profile-main">
           <Card
+            className="soha-profile-section-card"
             size="small"
             title={
-              <Space>
-                <IdcardOutlined />
+              <Space size={8}>
+                <span className="soha-profile-card-icon">
+                  <IdcardOutlined />
+                </span>
                 <span>账号资料</span>
               </Space>
             }
@@ -1077,7 +1119,7 @@ export function UserProfilePage() {
             }
           >
             <Descriptions
-              bordered
+              className="soha-profile-descriptions"
               column={{ xs: 1, md: 2 }}
               items={descriptionItems}
               size="small"
@@ -1085,11 +1127,13 @@ export function UserProfilePage() {
           </Card>
 
           <Card
-            className="soha-profile-gateway-card"
+            className="soha-profile-section-card soha-profile-gateway-card"
             size="small"
             title={
-              <Space>
-                <ApiOutlined />
+              <Space size={8}>
+                <span className="soha-profile-card-icon">
+                  <ApiOutlined />
+                </span>
                 <span>个人访问凭据（PAT）</span>
               </Space>
             }
@@ -1163,15 +1207,18 @@ export function UserProfilePage() {
           </Card>
 
           <Card
+            className="soha-profile-section-card"
             size="small"
             title={
-              <Space>
-                <SafetyCertificateOutlined />
+              <Space size={8}>
+                <span className="soha-profile-card-icon">
+                  <SafetyCertificateOutlined />
+                </span>
                 <span>安全与访问</span>
               </Space>
             }
           >
-            <Tabs items={tabItems} size="small" />
+            <Tabs className="soha-profile-tabs" items={tabItems} size="small" />
           </Card>
         </div>
       </div>

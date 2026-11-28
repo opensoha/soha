@@ -1,9 +1,9 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
-import { PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Checkbox, Form, Input, InputNumber, Modal, Popconfirm, Select } from 'antd'
+import { App, Button, Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd'
 import { useEffect, useState } from 'react'
 import { AIWorkbenchFeatureGate } from '../production/feature-gate'
 import { ProductionOperationsPage } from '../production/operations-page'
@@ -21,6 +21,7 @@ export function MemoryPoliciesPage() {
 }
 
 function MemoryPoliciesPageContent() {
+  const { modal } = App.useApp()
   const c = useQueryClient()
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm<CreateMemoryPolicyInput>()
@@ -137,18 +138,26 @@ function MemoryPoliciesPageContent() {
           error: records.error,
           hasReadData: records.data !== undefined,
           emptyDescription: '启用策略并产生可信事实后显示 Memory。',
-          actions: (row) =>
-            memoryDeleted(row as MemoryRecord) ? null : (
-              <Popconfirm
-                disabled={blocked}
-                title="确认删除并传播该 Memory？"
-                onConfirm={() => remove.mutate(row.id)}
-              >
-                <Button disabled={blocked} danger type="link">
-                  删除并传播
-                </Button>
-              </Popconfirm>
-            ),
+          actionItems: (row) =>
+            memoryDeleted(row as MemoryRecord)
+              ? []
+              : [
+                  {
+                    key: 'delete',
+                    label: '删除并传播',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked,
+                    onClick: () =>
+                      modal.confirm({
+                        title: '确认删除并传播该 Memory？',
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true },
+                        onOk: () => remove.mutateAsync(row.id),
+                      }),
+                  },
+                ],
         },
       ]}
     >

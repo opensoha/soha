@@ -1,9 +1,16 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRightOutlined } from '@ant-design/icons'
+import {
+  AppstoreOutlined,
+  ArrowRightOutlined,
+  ClusterOutlined,
+  DeploymentUnitOutlined,
+  RocketOutlined,
+} from '@ant-design/icons'
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { Button, Card } from 'antd'
 import { ManagementState } from '@/components/management-list'
+import { OverviewHeroCard } from '@/components/overview-visuals'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -147,10 +154,20 @@ function OverviewRecords({
               ) : null}
             </span>
             <StatusTag
-              value={waitingForRunner ? 'checking' : status}
+              value={
+                waitingForRunner
+                  ? 'checking'
+                  : APPROVAL_HISTORY_STATUSES.has(status)
+                    ? 'warning'
+                    : status
+              }
               label={
                 statusLabel ??
-                (waitingForRunner ? deliveryStatusLabels.waiting_execution : undefined)
+                (waitingForRunner
+                  ? deliveryStatusLabels.waiting_execution
+                  : APPROVAL_HISTORY_STATUSES.has(status)
+                    ? '待审批'
+                    : undefined)
               }
             />
           </>
@@ -357,106 +374,343 @@ export function DeliveryOverviewPage() {
           <ManagementState kind="no-permission" />
         ) : (
           <>
-            {showExecutions || showWaiting ? (
-              <div
-                className="soha-delivery-overview-panels"
-                data-paired={showExecutions && showWaiting}
-              >
-                {showExecutions ? (
-                  <Card
-                    size="small"
-                    className="soha-overview-panel-card"
-                    title={<h2 className="soha-delivery-overview-panel-heading">正在运行</h2>}
-                    extra={
-                      <SectionLink
-                        to={
-                          canViewHistory
-                            ? '/release-board?view=active'
-                            : '/delivery/execution-tasks'
-                        }
-                      >
-                        查看进行中
-                      </SectionLink>
-                    }
-                  >
-                    <QueryState queries={[activeQuery]} label="运行记录" />
-                    {activeRecords.length ? (
-                      <OverviewRecords records={activeRecords} active />
-                    ) : activeQuery.isSuccess ? (
-                      <ManagementState
-                        bordered={false}
-                        compact
-                        kind="empty"
-                        title="暂无正在运行的记录"
-                      />
-                    ) : null}
-                  </Card>
-                ) : null}
-                {showWaiting ? (
-                  <Card
-                    size="small"
-                    className="soha-overview-panel-card"
-                    title={<h2 className="soha-delivery-overview-panel-heading">待处理</h2>}
-                  >
-                    <QueryState queries={waitingQueries} label="待处理记录" />
-                    {waitingRecords.length ? (
-                      <OverviewRecords records={waitingRecords} />
-                    ) : waitingQueries.every((query) => query.isSuccess) ? (
-                      <ManagementState
-                        bordered={false}
-                        compact
-                        kind="empty"
-                        title="暂无审批或阻塞待处理"
-                      />
-                    ) : null}
-                  </Card>
-                ) : null}
-              </div>
+            {activeQuery.isError ? <QueryState queries={[activeQuery]} label="运行记录" /> : null}
+            {waitingQueries.some((q) => q.isError) ? (
+              <QueryState queries={waitingQueries} label="待处理记录" />
             ) : null}
-            {showExecutions ? (
-              <Card
-                size="small"
-                className="soha-overview-panel-card"
-                title={<h2 className="soha-delivery-overview-panel-heading">最近执行</h2>}
-                extra={
-                  <SectionLink
-                    to={canViewHistory ? '/release-board?view=recent' : '/delivery/execution-tasks'}
-                  >
-                    查看执行记录
-                  </SectionLink>
-                }
-              >
-                <QueryState queries={[recentQuery]} label="执行记录" />
-                {recentRecords.length ? (
-                  <OverviewRecords records={recentRecords} />
-                ) : recentQuery.isSuccess ? (
-                  <ManagementState
-                    bordered={false}
-                    compact
-                    kind="empty"
-                    title="近期记录中暂无已结束的执行"
-                  />
-                ) : null}
-              </Card>
-            ) : null}
-            {metrics.length ? (
-              <Card
-                size="small"
-                className="soha-overview-panel-card"
-                title={<h2 className="soha-delivery-overview-panel-heading">数据概览</h2>}
-                extra={<span className="soha-delivery-overview-scope">当前可见记录</span>}
-              >
+            <div className="soha-overview-bento-top">
+              <OverviewHeroCard
+                variant="delivery"
+                eyebrowIcon={<RocketOutlined />}
+                eyebrowLabel="持续交付流水线脉冲"
+                value={activeRecords.length + recentRecords.length}
+                valueSuffix="条近期流水线与批次活动"
+                kpis={metrics.slice(0, 2).map((m) => ({
+                  key: m.label,
+                  label: m.label,
+                  value: m.value ?? '—',
+                }))}
+                telemetryNodes={[
+                  {
+                    id: 'git-source',
+                    label: `APPS · ${visibleApps.length}`,
+                    title: '受管应用与仓库触发',
+                    metric: `${visibleApps.length} 个应用接入流水线`,
+                    status: 'primary',
+                    path: canViewApplications ? '/applications' : undefined,
+                  },
+                  {
+                    id: 'ci-build',
+                    label: `RUNNING · ${activeRecords.length}`,
+                    title: '正在执行的流水线与批次',
+                    metric: activeRecords[0]?.title || `${activeRecords.length} 条运行记录`,
+                    status: activeRecords.length > 0 ? 'primary' : 'healthy',
+                    path: canViewBoard ? '/release-board?view=active' : '/delivery/execution-tasks',
+                  },
+                  {
+                    id: 'canary-gate',
+                    label:
+                      waitingRecords.length > 0
+                        ? `APPROVAL · ${waitingRecords.length}`
+                        : 'CANARY · OK',
+                    title: '审批与灰度放量门禁',
+                    metric:
+                      waitingRecords.length > 0
+                        ? `${waitingRecords.length} 项待审批或受阻`
+                        : '暂无阻塞审批项',
+                    status: waitingRecords.length > 0 ? 'warning' : 'healthy',
+                    path: canViewBoard ? '/release-board' : undefined,
+                  },
+                  {
+                    id: 'prod-live',
+                    label: `RECENT · ${recentRecords.length}`,
+                    title: '近期已完成生产交付',
+                    metric: `${recentRecords.length} 条近期执行记录已收敛`,
+                    status: 'healthy',
+                    path: canViewBoard ? '/release-board?view=recent' : '/delivery/execution-tasks',
+                  },
+                ]}
+                embeddedPods={(metrics.length
+                  ? metrics
+                  : [
+                      { label: '正在运行', value: activeRecords.length },
+                      { label: '待处理', value: waitingRecords.length },
+                      { label: '最近执行', value: recentRecords.length },
+                    ]
+                )
+                  .slice(0, 3)
+                  .map(({ label, value }, idx) => ({
+                    key: label,
+                    label,
+                    value: value ?? '—',
+                    helper:
+                      idx === 0
+                        ? '当前可见交付范围'
+                        : idx === 1
+                          ? '关联受管服务拓扑'
+                          : '多环境目标覆盖',
+                    icon:
+                      idx === 0 ? (
+                        <AppstoreOutlined />
+                      ) : idx === 1 ? (
+                        <DeploymentUnitOutlined />
+                      ) : (
+                        <ClusterOutlined />
+                      ),
+                    to:
+                      idx === 0 && canViewApplications
+                        ? '/applications'
+                        : canViewBoard
+                          ? '/release-board'
+                          : undefined,
+                  }))}
+                segments={[
+                  {
+                    key: 'running',
+                    label: '正在运行',
+                    value: activeRecords.length,
+                    tone: 'primary',
+                  },
+                  {
+                    key: 'waiting',
+                    label: '待审批 / 阻塞',
+                    value: waitingRecords.length,
+                    tone: 'warning',
+                  },
+                  {
+                    key: 'recent',
+                    label: '近期已结束',
+                    value: recentRecords.length,
+                    tone: 'success',
+                  },
+                ]}
+                ctaLabel={canViewBoard ? '进入发布看板' : '查看执行任务'}
+                ctaTo={canViewBoard ? '/release-board' : '/delivery/execution-tasks'}
+                detailDrawerTitle="持续交付流水线与批次明细"
+                graphicDeck={[
+                  {
+                    key: 'delivery-pass-rings',
+                    kind: 'rings',
+                    title: '交付批次通行光谱环',
+                    subtitle: '构建 · 门禁 · 生产切流',
+                    actionLabel: '发布看板',
+                    actionTo: canViewBoard ? '/release-board' : '/delivery/execution-tasks',
+                    centerValue: `${activeRecords.length + recentRecords.length}`,
+                    centerLabel: '活跃与完成',
+                    rings: [
+                      {
+                        key: 'recent',
+                        label: '近期已收敛',
+                        value: recentRecords.length,
+                        ratio:
+                          recentRecords.length /
+                          Math.max(
+                            1,
+                            activeRecords.length + waitingRecords.length + recentRecords.length,
+                          ),
+                        tone: 'success',
+                        to: canViewBoard ? '/release-board?view=recent' : undefined,
+                      },
+                      {
+                        key: 'running',
+                        label: '执行中流水线',
+                        value: activeRecords.length,
+                        ratio:
+                          activeRecords.length /
+                          Math.max(
+                            1,
+                            activeRecords.length + waitingRecords.length + recentRecords.length,
+                          ),
+                        tone: 'primary',
+                        to: canViewBoard ? '/release-board?view=active' : undefined,
+                      },
+                      {
+                        key: 'waiting',
+                        label: '待审批与阻塞',
+                        value: waitingRecords.length,
+                        ratio:
+                          waitingRecords.length /
+                          Math.max(
+                            1,
+                            activeRecords.length + waitingRecords.length + recentRecords.length,
+                          ),
+                        tone: waitingRecords.length > 0 ? 'warning' : 'neutral',
+                        to: canViewBoard ? '/release-board' : undefined,
+                      },
+                    ],
+                  },
+                  {
+                    key: 'delivery-stage-spectrum',
+                    kind: 'spectrum',
+                    title: '应用拓扑与阶段吞吐频谱',
+                    subtitle: '全链路交付漏斗脉冲',
+                    actionLabel: '应用列表',
+                    actionTo: canViewApplications ? '/applications' : undefined,
+                    bars: [
+                      {
+                        key: 'apps',
+                        label: '受管应用',
+                        value: visibleApps.length,
+                        tone: 'primary',
+                        to: canViewApplications ? '/applications' : undefined,
+                      },
+                      {
+                        key: 'services',
+                        label: '微服务',
+                        value: metrics.find((m) => m.label === '服务')?.value ?? 0,
+                        tone: 'primary',
+                      },
+                      {
+                        key: 'active',
+                        label: '运行中',
+                        value: activeRecords.length,
+                        tone: 'primary',
+                      },
+                      {
+                        key: 'waiting',
+                        label: '灰度审批',
+                        value: waitingRecords.length,
+                        tone: waitingRecords.length > 0 ? 'warning' : 'neutral',
+                      },
+                      {
+                        key: 'done',
+                        label: '近期完成',
+                        value: recentRecords.length,
+                        tone: 'success',
+                      },
+                    ],
+                  },
+                  {
+                    key: 'delivery-gate-radar',
+                    kind: 'radar',
+                    title: '灰度审批与运行批次雷达',
+                    subtitle:
+                      waitingRecords.length > 0
+                        ? `${waitingRecords.length} 项待放行`
+                        : '流水线顺畅',
+                    actionLabel: '任务流',
+                    actionTo: canViewTasks ? '/delivery/execution-tasks' : undefined,
+                    emptyLabel: '暂无正在运行的记录',
+                    blips: [
+                      ...waitingRecords.slice(0, 2).map((rec) => ({
+                        key: `wait-${rec.key}`,
+                        label: rec.title,
+                        badge: rec.statusLabel || '待审批',
+                        tone:
+                          rec.status === 'failed'
+                            ? ('danger' as const)
+                            : ('warning' as const),
+                      })),
+                      ...activeRecords.slice(0, 2).map((rec) => ({
+                        key: `act-${rec.key}`,
+                        label: rec.title,
+                        badge:
+                          [
+                            rec.status === 'waiting_execution'
+                              ? deliveryStatusLabels.waiting_execution
+                              : rec.statusLabel,
+                            rec.stage ? `当前阶段 ${rec.stage}` : undefined,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '执行中',
+                        tone: 'primary' as const,
+                      })),
+                      ...recentRecords.slice(0, 1).map((rec) => ({
+                        key: `rec-${rec.key}`,
+                        label: rec.title,
+                        badge: '已收敛',
+                        tone: 'success' as const,
+                      })),
+                    ].slice(0, 5),
+                  },
+                ]}
+              />
+              {showExecutions || showWaiting ? (
+                <div
+                  className="soha-delivery-overview-panels"
+                  data-paired={showExecutions && showWaiting}
+                >
+                  {showExecutions ? (
+                    <Card
+                      size="small"
+                      className="soha-overview-panel-card"
+                      title={<h2 className="soha-delivery-overview-panel-heading">正在运行</h2>}
+                      extra={
+                        <SectionLink
+                          to={
+                            canViewHistory
+                              ? '/release-board?view=active'
+                              : '/delivery/execution-tasks'
+                          }
+                        >
+                          查看进行中
+                        </SectionLink>
+                      }
+                    >
+                      <QueryState queries={[activeQuery]} label="运行记录" />
+                      {activeRecords.length ? (
+                        <OverviewRecords records={activeRecords} active />
+                      ) : activeQuery.isSuccess ? (
+                        <ManagementState
+                          bordered={false}
+                          compact
+                          kind="empty"
+                          title="暂无正在运行的记录"
+                        />
+                      ) : null}
+                    </Card>
+                  ) : null}
+                  {showWaiting ? (
+                    <Card
+                      size="small"
+                      className="soha-overview-panel-card"
+                      title={<h2 className="soha-delivery-overview-panel-heading">待处理</h2>}
+                    >
+                      <QueryState queries={waitingQueries} label="待处理记录" />
+                      {waitingRecords.length ? (
+                        <OverviewRecords records={waitingRecords} />
+                      ) : waitingQueries.every((query) => query.isSuccess) ? (
+                        <ManagementState
+                          bordered={false}
+                          compact
+                          kind="empty"
+                          title="暂无审批或阻塞待处理"
+                        />
+                      ) : null}
+                    </Card>
+                  ) : null}
+                </div>
+              ) : null}
+              {showExecutions ? (
+                <Card
+                  size="small"
+                  className="soha-overview-panel-card"
+                  title={<h2 className="soha-delivery-overview-panel-heading">最近执行</h2>}
+                  extra={
+                    <SectionLink
+                      to={canViewHistory ? '/release-board?view=recent' : '/delivery/execution-tasks'}
+                    >
+                      查看执行记录
+                    </SectionLink>
+                  }
+                >
+                  <QueryState queries={[recentQuery]} label="执行记录" />
+                  {recentRecords.length ? (
+                    <OverviewRecords records={recentRecords} />
+                  ) : recentQuery.isSuccess ? (
+                    <ManagementState
+                      bordered={false}
+                      compact
+                      kind="empty"
+                      title="近期记录中暂无已结束的执行"
+                    />
+                  ) : null}
+                </Card>
+              ) : null}
+              {metricQueries.some((query) => query.isError) ? (
                 <QueryState queries={metricQueries} label="部分统计" />
-                <dl className="soha-delivery-overview-metrics">
-                  {metrics.map(({ label, value }) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <dd>{value ?? '—'}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Card>
-            ) : null}
+              ) : null}
+            </div>
           </>
         ))}
     </div>

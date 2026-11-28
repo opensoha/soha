@@ -8,17 +8,19 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Tabs,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import {
+  CloudUploadOutlined,
+  DeleteOutlined,
   EditOutlined,
   EyeOutlined,
   HistoryOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RollbackOutlined,
 } from '@ant-design/icons'
 import type {
   NetworkEndpointResponsePolicy,
@@ -28,11 +30,13 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
 import { OperationFeedback, useInlineApiError } from '@/components/request-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EndpointResponsePolicyFields, responsePolicyDefaults } from './policy-fields'
 import { endpointResponseMutations } from './mutations'
@@ -49,7 +53,7 @@ export function EndpointResponsePolicies({
 }) {
   const { localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const client = useQueryClient()
   const policies = useQuery(
     endpointResponseQueries.policies(
@@ -154,72 +158,93 @@ export function EndpointResponsePolicies({
     },
     { title: text('更新时间', 'Updated'), dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: text('操作', 'Actions'),
       key: 'actions',
-      width: 240,
       render: (_, row) => (
-        <Space>
-          {can('network_access.endpoint_response_policies.update') && (
-            <ManagementIconButton
-              icon={<EditOutlined />}
-              aria-label={text('编辑策略', 'Edit policy')}
-              tooltip={text('编辑', 'Edit')}
-              disabled={pending}
-              onClick={() => edit(row)}
-            />
-          )}
-          <ManagementIconButton
-            icon={<EyeOutlined />}
-            aria-label={text('查看与预览', 'Details and preview')}
-            tooltip={text('查看与预览', 'Details and preview')}
-            onClick={() => {
-              preview.reset()
-              previewForm.resetFields()
-              setSelected(row)
-            }}
-          />
-          {can('network_access.endpoint_response_policies.publish') && (
-            <Popconfirm
-              title={text('发布此版本？', 'Publish this revision?')}
-              okText={text('确认发布', 'Confirm publication')}
-              cancelText={text('取消', 'Cancel')}
-              description={text(
-                '启用的规则将参与准入和在线会话处置；停用不会解除现有限制。',
-                'Enabled policies affect admission and active sessions. Disabling does not clear existing restrictions.',
-              )}
-              onConfirm={() => {
-                if (pending) return
-                publish.mutate(
-                  { policyId: row.id, expectedRevision: row.revision },
+        <TableRowActionMenu
+          targetLabel={row.configuration.name}
+          items={[
+            ...(can('network_access.endpoint_response_policies.update')
+              ? [
                   {
-                    onSuccess: () => {
-                      void message.success(text('已发布', 'Published'))
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: text('编辑策略', 'Edit policy'),
+                    disabled: pending,
+                    onClick: () => edit(row),
+                  },
+                ]
+              : []),
+            {
+              key: 'preview',
+              icon: <EyeOutlined />,
+              label: text('查看与预览', 'Details and preview'),
+              onClick: () => {
+                preview.reset()
+                previewForm.resetFields()
+                setSelected(row)
+              },
+            },
+            ...(can('network_access.endpoint_response_policies.publish')
+              ? [
+                  {
+                    key: 'publish',
+                    icon: <CloudUploadOutlined />,
+                    label: text('发布', 'Publish'),
+                    disabled: pending || row.revision === row.publishedRevision,
+                    onClick: () => {
+                      modal.confirm({
+                        title: text('发布此版本？', 'Publish this revision?'),
+                        content: text(
+                          '启用的规则将参与准入和在线会话处置；停用不会解除现有限制。',
+                          'Enabled policies affect admission and active sessions. Disabling does not clear existing restrictions.',
+                        ),
+                        okText: text('确认发布', 'Confirm publication'),
+                        cancelText: text('取消', 'Cancel'),
+                        onOk: () =>
+                          publish
+                            .mutateAsync(
+                              { policyId: row.id, expectedRevision: row.revision },
+                              {
+                                onSuccess: () => {
+                                  void message.success(text('已发布', 'Published'))
+                                },
+                              },
+                            )
+                            .catch(() => undefined),
+                      })
                     },
                   },
-                )
-              }}
-            >
-              <Button size="small" disabled={pending || row.revision === row.publishedRevision}>
-                {text('发布', 'Publish')}
-              </Button>
-            </Popconfirm>
-          )}
-          {can('network_access.endpoint_response_policies.delete') && (
-            <Popconfirm
-              title={text(
-                '删除此策略？已有限制仍保留。',
-                'Delete this policy? Existing restrictions remain.',
-              )}
-              onConfirm={() => {
-                if (!pending) remove.mutate({ policyId: row.id, expectedRevision: row.revision })
-              }}
-            >
-              <Button size="small" danger disabled={pending}>
-                {text('删除', 'Delete')}
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
+                ]
+              : []),
+            { type: 'divider' },
+            ...(can('network_access.endpoint_response_policies.delete')
+              ? [
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    label: text('删除', 'Delete'),
+                    danger: true,
+                    disabled: pending,
+                    onClick: () => {
+                      modal.confirm({
+                        title: text(
+                          '删除此策略？已有限制仍保留。',
+                          'Delete this policy? Existing restrictions remain.',
+                        ),
+                        okButtonProps: { danger: true },
+                        onOk: () =>
+                          remove
+                            .mutateAsync({ policyId: row.id, expectedRevision: row.revision })
+                            .catch(() => undefined),
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
@@ -457,32 +482,45 @@ export function EndpointResponsePolicies({
                         },
                         { title: text('发布者', 'Actor'), dataIndex: 'actorId' },
                         {
+                          ...tableColumnPresets.action,
                           title: text('操作', 'Action'),
-                          key: 'rollback',
-                          render: (_: unknown, row: NetworkEndpointResponsePolicyRevision) =>
-                            can('network_access.endpoint_response_policies.publish') && (
-                              <Popconfirm
-                                title={text(
-                                  '以此配置发布一个新版本？',
-                                  'Publish a new revision with this configuration?',
-                                )}
-                                onConfirm={() => {
-                                  if (pending) return
-                                  rollback.mutate(
-                                    {
-                                      policyId: selected.id,
-                                      expectedRevision: selected.revision,
-                                      revision: row.revision,
-                                    },
-                                    { onSuccess: setSelected },
-                                  )
-                                }}
-                              >
-                                <Button size="small" disabled={pending}>
-                                  {text('回滚发布', 'Roll back')}
-                                </Button>
-                              </Popconfirm>
-                            ),
+                          key: 'actions',
+                          render: (_: unknown, row: NetworkEndpointResponsePolicyRevision) => (
+                            <TableRowActionMenu
+                              targetLabel={`v${row.revision}`}
+                              items={
+                                can('network_access.endpoint_response_policies.publish')
+                                  ? [
+                                      {
+                                        key: 'rollback',
+                                        icon: <RollbackOutlined />,
+                                        label: text('回滚发布', 'Roll back'),
+                                        disabled: pending,
+                                        onClick: () => {
+                                          modal.confirm({
+                                            title: text(
+                                              '以此配置发布一个新版本？',
+                                              'Publish a new revision with this configuration?',
+                                            ),
+                                            onOk: () =>
+                                              rollback
+                                                .mutateAsync(
+                                                  {
+                                                    policyId: selected.id,
+                                                    expectedRevision: selected.revision,
+                                                    revision: row.revision,
+                                                  },
+                                                  { onSuccess: setSelected },
+                                                )
+                                                .catch(() => undefined),
+                                          })
+                                        },
+                                      },
+                                    ]
+                                  : []
+                              }
+                            />
+                          ),
                         },
                       ]}
                       dataSource={revisions.data ?? []}

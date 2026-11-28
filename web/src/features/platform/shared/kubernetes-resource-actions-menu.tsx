@@ -104,7 +104,17 @@ export function KubernetesResourceActionsMenu({
           placement="bottomRight"
           trigger={['click']}
           open={open}
-          onOpenChange={setOpen}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen)
+            if (!nextOpen) {
+              triggerRef.current?.focus()
+              requestAnimationFrame(() => {
+                if (document.activeElement === document.body) {
+                  triggerRef.current?.focus()
+                }
+              })
+            }
+          }}
           menu={{
             id: menuId,
             onKeyDownCapture: (event) => {

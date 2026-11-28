@@ -4,12 +4,20 @@
 .soha-node-resource-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
+  gap: 12px;
 }
 .soha-node-resource-grid > div {
   display: grid;
   gap: 8px;
   min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+}
+.soha-node-resource-grid > div > div:first-child {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
 }
 .soha-node-usage {
   display: inline-grid;
@@ -41,12 +49,16 @@
 .soha-node-conditions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
+  gap: 8px 10px;
 }
 .soha-node-conditions > span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  font-size: 12.5px;
 }
 .soha-node-taints {
   display: flex;

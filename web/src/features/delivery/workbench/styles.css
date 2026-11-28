@@ -55,7 +55,7 @@
 .soha-delivery-evidence-grid {
   display: grid;
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .soha-delivery-evidence-grid.is-testing {
@@ -67,6 +67,9 @@
 }
 
 .soha-delivery-evidence-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
   color: var(--soha-text-primary);
   background: var(--soha-bg-surface);

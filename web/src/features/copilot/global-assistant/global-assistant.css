@@ -76,7 +76,7 @@ body:has(.soha-ai-panel) .soha-companion-shell {
 .soha-companion__model:focus-visible {
   outline: 2px solid var(--soha-primary);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--soha-radius-sm, 6px);
 }
 
 .soha-companion__model:disabled {
@@ -225,7 +225,7 @@ body:has(.soha-ai-panel) .soha-companion-shell {
   padding: 9px 11px;
   overflow: hidden;
   border: 1px solid var(--soha-border-color);
-  border-radius: 6px;
+  border-radius: var(--soha-radius-md, 8px);
   color: var(--soha-text-primary);
   background: var(--soha-bg-surface-elevated);
   box-shadow: var(--soha-shadow-strong);
@@ -275,7 +275,7 @@ body:has(.soha-ai-panel) .soha-companion-shell {
 .soha-companion__growth-track {
   height: 4px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--soha-fill-medium);
 }
 
@@ -473,7 +473,7 @@ body:has(.soha-ai-panel) .soha-companion-shell {
   word-break: break-word;
   color: var(--soha-code-fg);
   background: var(--soha-code-bg);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-control, 8px);
   padding: 8px;
 }
 
@@ -488,7 +488,7 @@ body:has(.soha-ai-panel) .soha-companion-shell {
   position: fixed;
   z-index: 953;
   border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-md, 10px);
   background: var(--soha-bg-surface);
   box-shadow: var(--soha-shadow-strong);
 }

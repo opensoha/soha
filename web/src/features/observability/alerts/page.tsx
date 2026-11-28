@@ -1,7 +1,7 @@
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableProps } from 'antd'
-import { Modal, Select, Space } from 'antd'
+import { Button, Modal, Select, Space } from 'antd'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../observability-pages.css'
@@ -105,7 +105,22 @@ export function AlertsPage() {
   }, [denied])
 
   const columns: TableProps<AlertEvent>['columns'] = [
-    { title: '名称', dataIndex: 'title' },
+    {
+      title: '名称',
+      dataIndex: 'title',
+      render: (value: string, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => {
+            setDetailEventId(record.id)
+            setDetailOpen(true)
+          }}
+        >
+          {value || record.id}
+        </Button>
+      ),
+    },
     {
       ...tableColumnPresets.status,
       title: '严重程度',
@@ -147,68 +162,72 @@ export function AlertsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record) => (
-        <Space className="soha-row-action-icons" size={2}>
-          <ManagementIconButton
-            aria-label="发起 AI 调查"
-            icon={<AlertOutlined />}
-            size="small"
-            tooltip="AI调查"
-            onClick={() => {
-              const search = new URLSearchParams()
-              search.set('alertId', record.id)
-              search.set('timeRangeMinutes', '60')
-              if (record.clusterId) search.set('clusterId', record.clusterId)
-              if (record.namespace) search.set('namespace', record.namespace)
-              navigate(getAIWorkbenchPathForMode('root_cause', search))
-            }}
-          />
-          <ManagementIconButton
-            aria-label="查看告警详情"
-            icon={<EyeOutlined />}
-            size="small"
-            tooltip="详情"
-            onClick={() => {
-              setDetailEventId(record.id)
-              setDetailOpen(true)
-            }}
-          />
-          {canHeal ? (
-            <ManagementIconButton
-              aria-label="触发自愈"
-              disabled={blocked}
-              icon={<FireOutlined />}
-              size="small"
-              tooltip="自愈"
-              onClick={() => {
-                if (blocked) return
-                healMutation.reset()
-                setSelectedAlertId(record.id)
-                setHealingPolicyId('')
-                setHealOpen(true)
-              }}
-            />
-          ) : null}
-          {canAcknowledge && alertDisplayStatus(record) !== 'acknowledged' ? (
-            <ManagementIconButton
-              aria-label="确认告警"
-              disabled={blocked}
-              icon={<BellOutlined />}
-              size="small"
-              tooltip="确认"
-              onClick={() => acknowledgeMutation.mutate(record.id)}
-            />
-          ) : null}
-          {canResolve && alertDisplayStatus(record) !== 'resolved' ? (
-            <ManagementIconButton
-              aria-label="恢复告警"
-              disabled={blocked}
-              icon={<ReloadOutlined />}
-              size="small"
-              tooltip="恢复"
-              onClick={() => resolveMutation.mutate(record.id)}
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.title || record.id}
+          items={[
+            {
+              key: 'detail',
+              label: '查看告警详情',
+              icon: <EyeOutlined />,
+              onClick: () => {
+                setDetailEventId(record.id)
+                setDetailOpen(true)
+              },
+            },
+            {
+              key: 'ai',
+              label: '发起 AI 调查',
+              icon: <AlertOutlined />,
+              onClick: () => {
+                const search = new URLSearchParams()
+                search.set('alertId', record.id)
+                search.set('timeRangeMinutes', '60')
+                if (record.clusterId) search.set('clusterId', record.clusterId)
+                if (record.namespace) search.set('namespace', record.namespace)
+                navigate(getAIWorkbenchPathForMode('root_cause', search))
+              },
+            },
+            ...(canHeal
+              ? [
+                  {
+                    key: 'heal',
+                    label: '触发自愈',
+                    icon: <FireOutlined />,
+                    disabled: blocked,
+                    onClick: () => {
+                      if (blocked) return
+                      healMutation.reset()
+                      setSelectedAlertId(record.id)
+                      setHealingPolicyId('')
+                      setHealOpen(true)
+                    },
+                  },
+                ]
+              : []),
+            ...(canAcknowledge && alertDisplayStatus(record) !== 'acknowledged'
+              ? [
+                  {
+                    key: 'ack',
+                    label: '确认告警',
+                    icon: <BellOutlined />,
+                    disabled: blocked,
+                    onClick: () => acknowledgeMutation.mutate(record.id),
+                  },
+                ]
+              : []),
+            ...(canResolve && alertDisplayStatus(record) !== 'resolved'
+              ? [
+                  {
+                    key: 'resolve',
+                    label: '恢复告警',
+                    icon: <ReloadOutlined />,
+                    disabled: blocked,
+                    onClick: () => resolveMutation.mutate(record.id),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

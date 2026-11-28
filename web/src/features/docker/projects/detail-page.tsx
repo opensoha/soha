@@ -3,9 +3,10 @@ import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeRelationsPanel } from '@/features/compute'
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Card, Descriptions, Input, Space, Tabs, Tag } from 'antd'
+import { Card, Descriptions, Input, Space, Tabs } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, useParams } from 'react-router-dom'
+import { MetadataTag } from '@/components/status-tag'
 import { useAIPageContext } from '@/features/copilot'
 import { localeText, useI18n } from '@/i18n'
 import { formatStatusLabel } from '@/i18n/status'
@@ -235,44 +236,64 @@ function ProjectDetailWorkspace() {
       label: localeText(localeCode, '概览', 'Overview'),
       children: (
         <div className="soha-detail-stack">
-          <Card className="soha-detail-card" loading={projectQuery.isLoading}>
-            <Descriptions
+          <div className="soha-docker-overview-grid">
+            <Card
               size="small"
-              column={{ xs: 1, sm: 2, lg: 3 }}
-              items={[
-                {
-                  key: 'host',
-                  label: localeText(localeCode, 'Docker 主机', 'Docker host'),
-                  children: project?.hostId || '-',
-                },
-                {
-                  key: 'environment',
-                  label: localeText(localeCode, '环境', 'Environment'),
-                  children: project?.environment || '-',
-                },
-                {
-                  key: 'owner',
-                  label: localeText(localeCode, '负责人', 'Owner'),
-                  children: project?.owner || project?.team || '-',
-                },
-                {
-                  key: 'desiredState',
-                  label: localeText(localeCode, '目标态', 'Desired state'),
-                  children: formatStatusLabel(project?.desiredState, localeCode),
-                },
-                {
-                  key: 'lastDeployedAt',
-                  label: localeText(localeCode, '部署时间', 'Deployed at'),
-                  children: formatDateTime(project?.lastDeployedAt),
-                },
-                {
-                  key: 'expiresAt',
-                  label: localeText(localeCode, '到期', 'Expires at'),
-                  children: formatDateTime(project?.expiresAt),
-                },
-              ]}
-            />
-          </Card>
+              className="soha-detail-card"
+              loading={projectQuery.isLoading}
+              title={localeText(localeCode, '部署与归属', 'Deployment & ownership')}
+            >
+              <Descriptions
+                size="small"
+                column={1}
+                items={[
+                  {
+                    key: 'host',
+                    label: localeText(localeCode, 'Docker 主机', 'Docker host'),
+                    children: project?.hostId || '-',
+                  },
+                  {
+                    key: 'environment',
+                    label: localeText(localeCode, '环境', 'Environment'),
+                    children: project?.environment || '-',
+                  },
+                  {
+                    key: 'owner',
+                    label: localeText(localeCode, '负责人', 'Owner'),
+                    children: project?.owner || project?.team || '-',
+                  },
+                ]}
+              />
+            </Card>
+            <Card
+              size="small"
+              className="soha-detail-card"
+              loading={projectQuery.isLoading}
+              title={localeText(localeCode, '目标态与时间记录', 'Desired state & timestamps')}
+            >
+              <Descriptions
+                size="small"
+                column={1}
+                items={[
+                  {
+                    key: 'desiredState',
+                    label: localeText(localeCode, '目标态', 'Desired state'),
+                    children: formatStatusLabel(project?.desiredState, localeCode),
+                  },
+                  {
+                    key: 'lastDeployedAt',
+                    label: localeText(localeCode, '部署时间', 'Deployed at'),
+                    children: formatDateTime(project?.lastDeployedAt),
+                  },
+                  {
+                    key: 'expiresAt',
+                    label: localeText(localeCode, '到期', 'Expires at'),
+                    children: formatDateTime(project?.expiresAt),
+                  },
+                ]}
+              />
+            </Card>
+          </div>
           {canViewServices ? (
             <Card
               className="soha-detail-card"
@@ -281,27 +302,30 @@ function ProjectDetailWorkspace() {
               extra={
                 readableQueryData(detailServicesQuery) ? (
                   <Space size={6} wrap>
-                    <Tag color="blue">
-                      {localeText(
+                    <MetadataTag
+                      tone="blue"
+                      label={localeText(
                         localeCode,
                         `容器 ${runtimeServicePage.total}`,
                         `Containers ${runtimeServicePage.total}`,
                       )}
-                    </Tag>
-                    <Tag color="green">
-                      {localeText(
+                    />
+                    <MetadataTag
+                      tone="cyan"
+                      label={localeText(
                         localeCode,
                         `运行 ${runningServiceCount}`,
                         `Running ${runningServiceCount}`,
                       )}
-                    </Tag>
-                    <Tag color="orange">
-                      {localeText(
+                    />
+                    <MetadataTag
+                      tone="orange"
+                      label={localeText(
                         localeCode,
                         `重启 ${serviceRestartCount}`,
                         `Restarts ${serviceRestartCount}`,
                       )}
-                    </Tag>
+                    />
                   </Space>
                 ) : undefined
               }
@@ -395,7 +419,7 @@ function ProjectDetailWorkspace() {
       key: 'relations',
       label: localeText(localeCode, '资源关系', 'Relations'),
       children: (
-        <Card size="small">
+        <Card size="small" className="soha-detail-card">
           <ComputeRelationsPanel
             domain="container_runtime"
             kind="project"

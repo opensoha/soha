@@ -49,12 +49,20 @@ vi.mock('@/components/management-list', async (importOriginal) => ({
     disabled,
     onClick,
     tooltip,
+    ...rest
   }: {
+    'aria-label'?: string
+    className?: string
     disabled?: boolean
-    onClick?: () => void
+    onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
     tooltip: string
   }) => (
-    <button aria-label={tooltip} disabled={disabled} onClick={onClick}>
+    <button
+      {...rest}
+      aria-label={rest['aria-label'] ?? tooltip}
+      disabled={disabled}
+      onClick={onClick}
+    >
       {tooltip}
     </button>
   ),
@@ -279,8 +287,17 @@ describe('identity outposts page behavior', () => {
     expect(container.textContent).toContain('不可用')
     expect(container.querySelector('.soha-metadata-tag')?.textContent).toBe('embedded')
     expect(container.textContent).not.toContain('诊断')
+    const rowTrigger = container.querySelector<HTMLButtonElement>(
+      'button.soha-table-row-action-trigger',
+    )
+    expect(rowTrigger).not.toBeNull()
+    await act(async () => rowTrigger?.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    const menuText = Array.from(document.body.querySelectorAll('.ant-dropdown-menu-item'))
+      .map((item) => item.textContent?.trim())
+      .join(' | ')
     for (const label of ['编辑 Outpost', '轮换 token', '删除 Outpost']) {
-      expect(container.querySelector(`button[aria-label="${label}"]`)).not.toBeNull()
+      expect(menuText).toContain(label)
     }
 
     const search = container.querySelector(
@@ -313,9 +330,16 @@ describe('identity outposts page behavior', () => {
     testState.permissionKeys = ['identity.outposts.view']
     const { container } = await renderPage()
 
-    expect(
-      (container.querySelector('button[aria-label="编辑 Outpost"]') as HTMLButtonElement).disabled,
-    ).toBe(true)
+    const rowTrigger = container.querySelector<HTMLButtonElement>(
+      'button.soha-table-row-action-trigger',
+    )
+    expect(rowTrigger).not.toBeNull()
+    await act(async () => rowTrigger?.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    const editItem = Array.from(document.body.querySelectorAll('.ant-dropdown-menu-item')).find(
+      (item) => item.textContent?.includes('编辑 Outpost'),
+    )
+    expect(editItem?.getAttribute('aria-disabled')).toBe('true')
     expect(
       Array.from(container.querySelectorAll('button')).find((button) =>
         button.textContent?.includes('新建 Outpost'),

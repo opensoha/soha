@@ -117,65 +117,121 @@ export function DockerHostDetailPage() {
               key: 'overview',
               label: localeText(localeCode, '概览', 'Overview'),
               children: (
-                <Card size="small" loading={hostQuery.isLoading}>
-                  <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
-                    <Descriptions.Item label={localeText(localeCode, '状态', 'Status')}>
-                      {statusTag(host?.status)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '架构', 'Architecture')}>
-                      {architectureTag(host?.architecture)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Endpoint">
-                      {host?.endpoint || host?.ipAddress || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="CPU">
-                      {host?.cpuCoreCount
-                        ? localeText(
-                            localeCode,
-                            `${host.cpuCoreCount} 核`,
-                            `${host.cpuCoreCount} cores`,
-                          )
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '内存', 'Memory')}>
-                      {formatBytes(host?.memoryBytes)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '磁盘', 'Disk')}>
-                      {formatBytes(host?.diskBytes)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Docker">
-                      {host?.dockerVersion || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Compose">
-                      {host?.composeVersion || '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Agent">{host?.agentVersion || '-'}</Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '虚拟机', 'Virtual machine')}>
-                      {host?.vmId ? (
-                        <Link to={`/compute/virtualization/vms/${encodeURIComponent(host.vmId)}`}>
-                          {host.vmName || host.vmId}
-                        </Link>
-                      ) : (
-                        '-'
+                <div className="soha-detail-stack">
+                  <Card size="small" className="soha-detail-card" loading={hostQuery.isLoading}>
+                    <dl className="soha-docker-spec-tiles">
+                      <div>
+                        <dt>CPU</dt>
+                        <dd>
+                          {host?.cpuCoreCount
+                            ? localeText(
+                                localeCode,
+                                `${host.cpuCoreCount} 核`,
+                                `${host.cpuCoreCount} cores`,
+                              )
+                            : '-'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{localeText(localeCode, '内存', 'Memory')}</dt>
+                        <dd>{formatBytes(host?.memoryBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>{localeText(localeCode, '磁盘', 'Disk')}</dt>
+                        <dd>{formatBytes(host?.diskBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>{localeText(localeCode, '端口池', 'Port pool')}</dt>
+                        <dd>
+                          {host?.availablePortStart && host?.availablePortEnd
+                            ? `${host.availablePortStart}-${host.availablePortEnd}`
+                            : '-'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </Card>
+                  <div className="soha-docker-overview-grid">
+                    <Card
+                      size="small"
+                      className="soha-detail-card"
+                      loading={hostQuery.isLoading}
+                      title={localeText(localeCode, '主机与节点归属', 'Host & node ownership')}
+                    >
+                      <Descriptions size="small" column={1}>
+                        <Descriptions.Item label={localeText(localeCode, '状态', 'Status')}>
+                          {statusTag(host?.status)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeText(localeCode, '架构', 'Architecture')}>
+                          {architectureTag(host?.architecture)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Endpoint">
+                          {host?.endpoint || host?.ipAddress || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={localeText(localeCode, '虚拟机', 'Virtual machine')}
+                        >
+                          {host?.vmId ? (
+                            <Link
+                              to={`/compute/virtualization/vms/${encodeURIComponent(host.vmId)}`}
+                            >
+                              {host.vmName || host.vmId}
+                            </Link>
+                          ) : (
+                            '-'
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeText(localeCode, '环境', 'Environment')}>
+                          {host?.environment || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeText(localeCode, '归属', 'Owner')}>
+                          {host?.owner || host?.team || '-'}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+                    <Card
+                      size="small"
+                      className="soha-detail-card"
+                      loading={hostQuery.isLoading}
+                      title={localeText(
+                        localeCode,
+                        '引擎版本与连接心跳',
+                        'Runtime engine & heartbeat',
                       )}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '端口池', 'Port pool')}>
-                      {host?.availablePortStart && host?.availablePortEnd
-                        ? `${host.availablePortStart}-${host.availablePortEnd}`
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={localeText(localeCode, '最近心跳', 'Last heartbeat')}>
-                      {formatDateTime(host?.lastHeartbeatAt)}
-                    </Descriptions.Item>
-                  </Descriptions>
-                </Card>
+                    >
+                      <Descriptions size="small" column={1}>
+                        <Descriptions.Item label="Docker">
+                          {host?.dockerVersion || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Compose">
+                          {host?.composeVersion || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Agent">
+                          {host?.agentVersion || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={localeText(localeCode, '虚拟化连接', 'Virtualization connection')}
+                        >
+                          {host?.virtualizationConnectionId || '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                          label={localeText(localeCode, '最近心跳', 'Last heartbeat')}
+                        >
+                          {formatDateTime(host?.lastHeartbeatAt)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeText(localeCode, '主机 ID', 'Host ID')}>
+                          {host?.id || id}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+                  </div>
+                </div>
               ),
             },
             {
               key: 'relations',
               label: localeText(localeCode, '资源关系', 'Relations'),
               children: (
-                <Card size="small">
+                <Card size="small" className="soha-detail-card">
                   <ComputeRelationsPanel
                     domain="container_runtime"
                     kind="runtime_host"
@@ -192,6 +248,7 @@ export function DockerHostDetailPage() {
                     children: (
                       <Card
                         size="small"
+                        className="soha-detail-card"
                         extra={
                           <Link
                             to={`/compute/tasks/operations?domain=container_runtime&resourceKind=runtime_host&resourceId=${encodeURIComponent(id)}`}

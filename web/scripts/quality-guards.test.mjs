@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { Linter } from 'eslint'
+import tseslint from 'typescript-eslint'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import YAML from 'yaml'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { tableRowActionMenuRule } from './eslint-rules/table-row-action-menu.mjs'
 import {
   aiPreflight,
   redact,
@@ -219,5 +222,92 @@ describe('M01/M02 opt-in and model budget', () => {
       { SOHA_AI_MAX_CALLS: '13' },
     ])
       expect(() => aiPreflight({ ...env, ...change })).toThrow(/BLOCKED/)
+  })
+})
+
+describe('soha-ui/table-row-action-menu lint gate', () => {
+  function lintTsx(code, filename = 'src/features/compute/sample.tsx') {
+    const linter = new Linter({ configType: 'flat' })
+    return linter.verify(
+      code,
+      [
+        {
+          files: ['**/*.{ts,tsx}'],
+          languageOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+            parser: tseslint.parser,
+            parserOptions: { ecmaFeatures: { jsx: true } },
+          },
+          plugins: {
+            'soha-ui': { rules: { 'table-row-action-menu': tableRowActionMenuRule } },
+          },
+          rules: {
+            'soha-ui/table-row-action-menu': 'error',
+          },
+        },
+      ],
+      { filename },
+    )
+  }
+
+  it('accepts 64px TableRowActionMenu columns and scrollable task presets', () => {
+    const messages = lintTsx(`
+      export const tableColumnPresets = {
+        task: { width: 176 },
+        action: { width: 64, fixed: 'right' as const, className: 'soha-table-actions-column' },
+      }
+      export const columns = [
+        {
+          ...tableColumnPresets.task,
+          title: '最近任务',
+          render: () => <span>ok</span>,
+        },
+        {
+          ...tableColumnPresets.action,
+          key: 'actions',
+          render: (_v: unknown, row: { name: string }) => (
+            <TableRowActionMenu targetLabel={row.name} items={[{ key: 'edit', label: '编辑' }]} />
+          ),
+        },
+      ]
+    `)
+    expect(messages).toEqual([])
+  })
+
+  it('rejects inline row action buttons, wide action columns, and fixed-right task columns', () => {
+    const inlineButtons = lintTsx(`
+      export const columns = [
+        {
+          ...tableColumnPresets.action,
+          width: 140,
+          render: () => (
+            <Space className="soha-row-action-icons">
+              <ManagementIconButton tooltip="编辑" />
+            </Space>
+          ),
+        },
+      ]
+    `)
+    expect(inlineButtons.map((item) => item.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/width: 64/),
+        expect.stringMatching(/soha-row-action-icons/),
+        expect.stringMatching(/inline <Space>/),
+        expect.stringMatching(/TableRowActionMenu/),
+      ]),
+    )
+
+    const fixedTask = lintTsx(
+      `
+      export const tableColumnPresets = {
+        task: { width: 160, fixed: 'right' as const },
+        action: { width: 64, fixed: 'right' as const },
+      }
+      `,
+      'src/utils/table-columns.ts',
+    )
+    expect(fixedTask).toHaveLength(1)
+    expect(fixedTask[0].message).toMatch(/fixed: 'right' on Latest Task/)
   })
 })

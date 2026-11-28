@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
-import { App, Button, Form, Input, Modal, Popconfirm, Select, Space, Switch } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Space, Switch } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ManagementIconButton } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { ReadFeedback, MutationFeedback } from '@/components/request-feedback'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { BooleanTag, MetadataTag } from '@/components/status-tag'
@@ -17,7 +17,7 @@ import type { RegistryInput, RegistryRecord } from '../types'
 type ColumnProps<T> = TableColumnsType<T>[number]
 
 export function RegistriesPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [form] = Form.useForm<RegistryInput>()
@@ -58,7 +58,25 @@ export function RegistriesPage() {
   }
 
   const columns: ColumnProps<RegistryRecord>[] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (name: string, record: RegistryRecord) =>
+        canUpdateRegistry ? (
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => {
+              setEditing(record)
+              setModalVisible(true)
+            }}
+          >
+            {name}
+          </Button>
+        ) : (
+          <strong>{name}</strong>
+        ),
+    },
     {
       title: '类型',
       dataIndex: 'registryType',
@@ -91,50 +109,52 @@ export function RegistriesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: RegistryRecord) => (
-        <Space className="soha-row-action-icons" size={2}>
-          {canUpdateRegistry ? (
-            <ManagementIconButton
-              aria-label="编辑仓库"
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => {
-                setEditing(record)
-                setModalVisible(true)
-              }}
-            />
-          ) : null}
-          {canDeleteRegistry ? (
-            <Popconfirm
-              title="确认删除？"
-              disabled={locked}
-              onConfirm={async () => {
-                if (submitting.current || locked || !canDeleteRegistry) return
-                submitting.current = true
-                try {
-                  await deleteMutation.mutateAsync(record.id)
-                  message.success('仓库已删除')
-                } catch {
-                  /* The list retains the deletion feedback. */
-                } finally {
-                  submitting.current = false
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            canUpdateRegistry
+              ? {
+                  key: 'edit',
+                  label: '编辑仓库',
+                  icon: <EditOutlined />,
+                  onClick: () => {
+                    setEditing(record)
+                    setModalVisible(true)
+                  },
                 }
-              }}
-              placement="topRight"
-            >
-              <ManagementIconButton
-                aria-label="删除仓库"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={locked}
-                loading={deleteMutation.isPending}
-                size="small"
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-          {!canUpdateRegistry && !canDeleteRegistry ? '-' : null}
-        </Space>
+              : null,
+            canDeleteRegistry ? { type: 'divider' } : null,
+            canDeleteRegistry
+              ? {
+                  key: 'delete',
+                  label: '删除仓库',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  disabled: locked,
+                  onClick: () => {
+                    modal.confirm({
+                      title: '确认删除？',
+                      content: `镜像仓库：${record.name}`,
+                      okText: '删除仓库',
+                      okButtonProps: { danger: true },
+                      onOk: async () => {
+                        if (submitting.current || locked || !canDeleteRegistry) return
+                        submitting.current = true
+                        try {
+                          await deleteMutation.mutateAsync(record.id)
+                          message.success('仓库已删除')
+                        } catch {
+                          /* The list retains the deletion feedback. */
+                        } finally {
+                          submitting.current = false
+                        }
+                      },
+                    })
+                  },
+                }
+              : null,
+          ]}
+        />
       ),
     },
   ]

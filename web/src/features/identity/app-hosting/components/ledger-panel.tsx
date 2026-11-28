@@ -13,6 +13,7 @@ import {
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import {
   HostedAppRevisionLogs,
@@ -798,55 +799,50 @@ export function GlobalAppLedgerPanel({
         ...tableColumnPresets.action,
         title: '操作',
         key: 'actions',
-        width: 240,
         render: (_, record) => (
-          <Space size={4} wrap>
-            <Button
-              icon={<EyeOutlined />}
-              size="small"
-              type="link"
-              onClick={() => setDetailApp(record)}
-            >
-              详情
-            </Button>
-            {record.status === 'suspended_by_admin' ? (
-              <Button
-                disabled={!canManage || operationBlocked}
-                size="small"
-                type="link"
-                onClick={() => setUnsuspendTarget(record)}
-              >
-                解除封停
-              </Button>
-            ) : (
-              <Button
-                danger
-                disabled={!canManage || operationBlocked}
-                size="small"
-                type="link"
-                onClick={() => setSuspendTarget(record)}
-              >
-                强制封停
-              </Button>
-            )}
-            <Button
-              disabled={!canManage || operationBlocked}
-              size="small"
-              type="link"
-              onClick={() => setTransferTarget(record)}
-            >
-              转交
-            </Button>
-            <Button
-              danger
-              disabled={!canManage || operationBlocked}
-              size="small"
-              type="link"
-              onClick={() => setDeleteTarget(record)}
-            >
-              删除
-            </Button>
-          </Space>
+          <TableRowActionMenu
+            targetLabel={record.name}
+            items={[
+              {
+                key: 'detail',
+                icon: <EyeOutlined />,
+                label: '详情',
+                onClick: () => setDetailApp(record),
+              },
+              record.status === 'suspended_by_admin'
+                ? {
+                    key: 'unsuspend',
+                    icon: <CheckCircleOutlined />,
+                    label: '解除封停',
+                    disabled: !canManage || operationBlocked,
+                    onClick: () => setUnsuspendTarget(record),
+                  }
+                : {
+                    key: 'suspend',
+                    icon: <StopOutlined />,
+                    label: '强制封停',
+                    danger: true,
+                    disabled: !canManage || operationBlocked,
+                    onClick: () => setSuspendTarget(record),
+                  },
+              {
+                key: 'transfer',
+                icon: <SwapOutlined />,
+                label: '转交',
+                disabled: !canManage || operationBlocked,
+                onClick: () => setTransferTarget(record),
+              },
+              { type: 'divider' },
+              {
+                key: 'delete',
+                icon: <DeleteOutlined />,
+                label: '删除',
+                danger: true,
+                disabled: !canManage || operationBlocked,
+                onClick: () => setDeleteTarget(record),
+              },
+            ]}
+          />
         ),
       },
     ],

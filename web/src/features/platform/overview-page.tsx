@@ -1,8 +1,6 @@
 import { ManagementState } from '@/components/management-list'
 import {
-  OverviewChip,
-  OverviewMetricCard,
-  OverviewSectionBar,
+  OverviewHeroCard,
   type OverviewChipItem,
   type OverviewMetricItem,
 } from '@/components/overview-visuals'
@@ -39,7 +37,6 @@ import {
   formatPlatformOverviewAlertScope,
   formatPlatformOverviewText,
   selectActiveAlerts,
-  summarizeFleetReadiness,
 } from './overview/model'
 import { PlatformOperationsPanel } from './overview/operations-panel'
 import { platformOverviewQueries } from './overview/queries'
@@ -167,7 +164,6 @@ export function OverviewPage() {
   const summary = canViewMonitoring ? visibleSummaryQueryData?.data : undefined
   const healthyClusters = clusters.filter((cluster) => cluster.health?.status === 'healthy').length
   const currentCluster = clusters.find((cluster) => cluster.id === clusterId) ?? null
-  const fleetReadiness = summarizeFleetReadiness(clusters)
   const scopedAlertEvents = useMemo(
     () => filterAlertsForCluster(visibleAlertEventsQueryData ?? [], clusterId),
     [visibleAlertEventsQueryData, clusterId],
@@ -176,7 +172,7 @@ export function OverviewPage() {
     () => selectActiveAlerts(scopedAlertEvents, 50),
     [scopedAlertEvents],
   )
-  const activeAlerts = activeAlertEvents.slice(0, 2)
+  const activeAlerts = activeAlertEvents.slice(0, 4)
   const alertEventSeverityCounts = useMemo(
     () =>
       activeAlertEvents.reduce(
@@ -420,39 +416,6 @@ export function OverviewPage() {
     },
   ] satisfies OverviewChipItem[]
 
-  const podStats = [
-    {
-      key: 'running',
-      label: formatPlatformOverviewText('running', localeCode),
-      value: workloadOverview?.runningPods ?? '—',
-      tone: 'success',
-    },
-    {
-      key: 'pending',
-      label: formatPlatformOverviewText('pending', localeCode),
-      value: workloadOverview?.pendingPods ?? '—',
-      tone: 'warning',
-    },
-    {
-      key: 'completed',
-      label: localeCode === 'zh_CN' ? '已完成' : 'Completed',
-      value: workloadOverview?.succeededPods ?? '—',
-      tone: 'default',
-    },
-    {
-      key: 'failed',
-      label: localeCode === 'zh_CN' ? '失败' : 'Failed',
-      value: workloadOverview?.failedPods ?? '—',
-      tone: 'danger',
-    },
-    {
-      key: 'unknown',
-      label: localeCode === 'zh_CN' ? '未知' : 'Unknown',
-      value: workloadOverview?.unknownPods ?? '—',
-      tone: 'default',
-    },
-  ] satisfies OverviewChipItem[]
-
   return (
     <div className="soha-page soha-overview-page soha-platform-overview-page">
       <ReadFeedback canRead={clustersQuery.isEnabled} query={clustersQuery} label="集群目录" />
@@ -461,6 +424,318 @@ export function OverviewPage() {
       <h1 className="soha-platform-overview-heading">
         {localeCode === 'zh_CN' ? 'Kubernetes 总览' : 'Kubernetes overview'}
       </h1>
+      <div className="soha-overview-bento-top">
+        <OverviewHeroCard
+          variant="platform"
+          eyebrowIcon={<AppstoreOutlined />}
+          eyebrowLabel={
+            <Space size={4}>
+              {localeCode === 'zh_CN' ? 'Pod 总数' : 'Pods'}
+              <OverviewHint
+                title={
+                  localeCode === 'zh_CN'
+                    ? '当前集群 · 全部命名空间'
+                    : 'Current cluster · All namespaces'
+                }
+                label={localeCode === 'zh_CN' ? 'Pod 总数统计说明' : 'Pods information'}
+              />
+            </Space>
+          }
+          value={workloadValue(workloadOverview?.totalPods)}
+          valueSuffix={
+            currentCluster?.name
+              ? `${currentCluster.name} · ${localeCode === 'zh_CN' ? '全命名空间' : 'All namespaces'}`
+              : undefined
+          }
+          kpis={[
+            {
+              key: 'clusters',
+              label: localeCode === 'zh_CN' ? '健康集群' : 'Healthy clusters',
+              value: `${healthyClusters}/${clusters.length}`,
+            },
+            {
+              key: 'nodes',
+              label: localeCode === 'zh_CN' ? '就绪节点' : 'Ready nodes',
+              value: nodes
+                ? `${nodes.filter((node) => node.status.toLowerCase() === 'ready').length}/${nodes.length}`
+                : '—',
+            },
+          ]}
+          telemetryNodes={[
+            {
+              id: 'api-core',
+              label: currentCluster?.name || 'API-SERVER',
+              title: currentCluster?.name || 'Kubernetes 控制面核心',
+              metric: `Pods: ${workloadOverview?.totalPods ?? '—'} · ${currentCluster?.version || 'K8s'}`,
+              status: 'primary',
+              path: canViewClusters ? '/clusters' : undefined,
+            },
+            {
+              id: 'nodes-pool',
+              label: nodes
+                ? `NODES · ${nodes.filter((n) => n.status.toLowerCase() === 'ready').length}/${nodes.length}`
+                : 'NODES',
+              title: '集群节点计算池',
+              metric: nodes
+                ? `${nodes.filter((n) => n.status.toLowerCase() === 'ready').length} 台 Ready / 共 ${nodes.length} 台`
+                : '节点状态读取中',
+              status: nodes?.some((n) => n.status.toLowerCase() !== 'ready')
+                ? 'warning'
+                : 'healthy',
+              path: canViewClusters ? '/clusters' : undefined,
+            },
+            {
+              id: 'deployments',
+              label: 'DEPLOYMENTS',
+              title: '工作负载编排实例',
+              metric: `Running Pods: ${workloadOverview?.runningPods ?? '—'}`,
+              status: 'healthy',
+              path: canViewWorkloads ? '/workloads/deployments' : undefined,
+            },
+            {
+              id: 'risk-pods',
+              label:
+                (workloadOverview?.atRiskPods ?? 0) > 0
+                  ? `ALERT-PODS · ${workloadOverview?.atRiskPods}`
+                  : 'POD-HEALTH',
+              title: '异常与重启 Pod 巡检',
+              metric: `需关注 ${workloadOverview?.atRiskPods ?? 0} · 重启 ${workloadOverview?.restartingPods ?? 0}`,
+              status: (workloadOverview?.atRiskPods ?? 0) > 0 ? 'critical' : 'healthy',
+              path: canViewWorkloads ? '/workloads/pods' : undefined,
+            },
+            {
+              id: 'cluster-alerts',
+              label: effectiveFiringCount > 0 ? `FIRING · ${effectiveFiringCount}` : 'ALERTS · 0',
+              title: '当前集群活跃告警',
+              metric: `Critical ${alertEventSeverityCounts.critical} · Warning ${alertEventSeverityCounts.warning}`,
+              status:
+                alertEventSeverityCounts.critical > 0
+                  ? 'critical'
+                  : effectiveFiringCount > 0
+                    ? 'warning'
+                    : 'healthy',
+              path: canViewAlerts ? '/monitoring-workbench/alerts' : undefined,
+            },
+          ]}
+          embeddedPods={overviewStats
+            .filter((item) => item.key !== 'pods')
+            .map((item) => ({
+              key: item.key,
+              label: (
+                <Space size={2}>
+                  {item.label}
+                  <OverviewHint
+                    title={item.helper}
+                    label={
+                      localeCode === 'zh_CN' ? `${item.label}统计说明` : `${item.label} information`
+                    }
+                  />
+                </Space>
+              ),
+              value: item.value,
+              helper: item.helper,
+              icon: item.icon,
+              tone: item.tone,
+              to:
+                item.key === 'risk' && canViewWorkloads && clusterId
+                  ? '/workloads/pods'
+                  : item.key === 'alerts' && canViewAlerts
+                    ? '/monitoring-workbench/alerts'
+                    : item.key === 'nodes' && canViewClusters
+                      ? '/clusters'
+                      : undefined,
+            }))}
+          segments={
+            workloadOverview
+              ? [
+                  {
+                    key: 'running',
+                    label: formatPlatformOverviewText('running', localeCode),
+                    value: workloadOverview.runningPods,
+                    tone: 'success',
+                  },
+                  {
+                    key: 'pending',
+                    label: formatPlatformOverviewText('pending', localeCode),
+                    value: workloadOverview.pendingPods,
+                    tone: 'warning',
+                  },
+                  {
+                    key: 'completed',
+                    label: localeCode === 'zh_CN' ? '已完成' : 'Completed',
+                    value: workloadOverview.succeededPods,
+                    tone: 'neutral',
+                  },
+                  {
+                    key: 'failed',
+                    label: localeCode === 'zh_CN' ? '失败' : 'Failed',
+                    value: workloadOverview.failedPods,
+                    tone: 'danger',
+                  },
+                ]
+              : undefined
+          }
+          ctaLabel={
+            canViewWorkloads && clusterId
+              ? localeCode === 'zh_CN'
+                ? '查看 Pod 列表'
+                : 'Open Pods'
+              : undefined
+          }
+          ctaTo={canViewWorkloads && clusterId ? '/workloads/pods' : undefined}
+          graphicDeck={[
+            {
+              key: 'pod-lifecycle-rings',
+              kind: 'rings',
+              title: localeCode === 'zh_CN' ? '工作负载生命周期光谱' : 'Pod Lifecycle Orbit',
+              subtitle: currentCluster?.name || clusterId || undefined,
+              actionLabel: localeCode === 'zh_CN' ? 'Pod 列表' : 'Pods',
+              actionTo: canViewWorkloads && clusterId ? '/workloads/pods' : undefined,
+              centerValue:
+                workloadOverview && workloadOverview.totalPods > 0
+                  ? `${Math.round((workloadOverview.runningPods / workloadOverview.totalPods) * 100)}%`
+                  : '—',
+              centerLabel: localeCode === 'zh_CN' ? '运行就绪' : 'Ready',
+              rings: [
+                {
+                  key: 'running',
+                  label: localeCode === 'zh_CN' ? '运行中 Pod' : 'Running',
+                  value: workloadOverview?.runningPods ?? '—',
+                  ratio:
+                    workloadOverview && workloadOverview.totalPods > 0
+                      ? workloadOverview.runningPods / workloadOverview.totalPods
+                      : 0,
+                  tone: 'success',
+                  to: canViewWorkloads && clusterId ? '/workloads/pods' : undefined,
+                },
+                {
+                  key: 'nodes',
+                  label: localeCode === 'zh_CN' ? '就绪节点' : 'Ready Nodes',
+                  value: nodes
+                    ? `${nodes.filter((n) => n.status.toLowerCase() === 'ready').length}/${nodes.length}`
+                    : '—',
+                  ratio:
+                    nodes && nodes.length > 0
+                      ? nodes.filter((n) => n.status.toLowerCase() === 'ready').length /
+                        nodes.length
+                      : 0.8,
+                  tone: 'primary',
+                  to: canViewClusters ? '/clusters' : undefined,
+                },
+                {
+                  key: 'pending',
+                  label: localeCode === 'zh_CN' ? '等待调度' : 'Pending',
+                  value: workloadOverview?.pendingPods ?? '—',
+                  ratio:
+                    workloadOverview && workloadOverview.totalPods > 0
+                      ? workloadOverview.pendingPods / workloadOverview.totalPods
+                      : 0,
+                  tone: 'warning',
+                },
+                {
+                  key: 'failed',
+                  label: localeCode === 'zh_CN' ? '异常/失败' : 'Failed',
+                  value: workloadOverview?.failedPods ?? '—',
+                  ratio:
+                    workloadOverview && workloadOverview.totalPods > 0
+                      ? workloadOverview.failedPods / workloadOverview.totalPods
+                      : 0,
+                  tone: 'danger',
+                },
+              ],
+            },
+            {
+              key: 'namespace-density-spectrum',
+              kind: 'spectrum',
+              title: localeCode === 'zh_CN' ? '命名空间负载密度频谱' : 'Namespace Density Spectrum',
+              subtitle: localeCode === 'zh_CN' ? '实例分布与波动曲线' : 'Pod distribution spline',
+              actionLabel: localeCode === 'zh_CN' ? '工作负载' : 'Workloads',
+              actionTo: canViewWorkloads ? '/workloads/deployments' : undefined,
+              bars:
+                workloadOverview?.namespaceBreakdown &&
+                workloadOverview.namespaceBreakdown.length > 0
+                  ? workloadOverview.namespaceBreakdown.slice(0, 5).map((ns) => ({
+                      key: ns.namespace,
+                      label: ns.namespace,
+                      value: ns.totalPods,
+                      displayValue: ns.totalPods,
+                      tone:
+                        ns.atRiskPods > 0
+                          ? ('danger' as const)
+                          : ns.restartingPods > 0
+                            ? ('warning' as const)
+                            : ('primary' as const),
+                      to: canViewWorkloads ? '/workloads/pods' : undefined,
+                    }))
+                  : [
+                      {
+                        key: 'clusters',
+                        label: localeCode === 'zh_CN' ? '集群' : 'Clusters',
+                        value: clusters.length,
+                        tone: 'primary',
+                      },
+                      {
+                        key: 'healthy',
+                        label: localeCode === 'zh_CN' ? '健康' : 'Healthy',
+                        value: healthyClusters,
+                        tone: 'success',
+                      },
+                      {
+                        key: 'alerts',
+                        label: localeCode === 'zh_CN' ? '活跃告警' : 'Firing',
+                        value: effectiveFiringCount,
+                        tone: effectiveFiringCount > 0 ? 'warning' : 'neutral',
+                      },
+                    ],
+            },
+            {
+              key: 'anomaly-radar-scope',
+              kind: 'radar',
+              title: localeCode === 'zh_CN' ? '异常实例与告警扫描雷达' : 'Anomaly & Alert Radar',
+              subtitle:
+                localeCode === 'zh_CN'
+                  ? `活跃告警 ${effectiveFiringCount}`
+                  : `${effectiveFiringCount} firing`,
+              actionLabel: localeCode === 'zh_CN' ? '告警台' : 'Alerts',
+              actionTo: canViewAlerts ? '/monitoring-workbench/alerts' : undefined,
+              emptyLabel:
+                localeCode === 'zh_CN' ? '集群无异常 Pod 与活跃告警' : 'Cluster all clear',
+              blips: [
+                ...(workloadOverview?.problematicPods ?? []).slice(0, 2).map((pod) => ({
+                  key: `pod-${pod.namespace}-${pod.name}`,
+                  label: pod.name,
+                  badge: pod.phase,
+                  tone:
+                    pod.phase.toLowerCase() === 'failed' || pod.restarts >= 3
+                      ? ('danger' as const)
+                      : ('warning' as const),
+                  to:
+                    canViewWorkloads && clusterId
+                      ? buildWorkloadDetailPath(
+                          'pods',
+                          pod.name,
+                          null,
+                          pod.namespace,
+                          pod.clusterId,
+                        )
+                      : undefined,
+                })),
+                ...activeAlerts.slice(0, 2).map((alert) => ({
+                  key: `alert-${alert.id}`,
+                  label: alert.title || alert.summary || alert.id,
+                  badge: alert.severity.toUpperCase(),
+                  tone:
+                    alert.severity.toLowerCase() === 'critical'
+                      ? ('danger' as const)
+                      : ('warning' as const),
+                  to: canViewAlerts ? '/monitoring-workbench/alerts' : undefined,
+                })),
+              ],
+            },
+          ]}
+        />
+      </div>
+
       <div className="soha-platform-overview-toolbar">
         <Space size={8} wrap>
           <Text strong>
@@ -499,35 +774,20 @@ export function OverviewPage() {
           }
         />
       </div>
-      <div className="soha-overview-metric-grid">
-        {overviewStats.map((item) => (
-          <OverviewMetricCard
-            key={item.key}
-            label={
-              <Space size={2}>
-                {item.label}
-                <OverviewHint
-                  title={item.helper}
-                  label={
-                    localeCode === 'zh_CN' ? `${item.label}统计说明` : `${item.label} information`
-                  }
-                />
-              </Space>
-            }
-            value={item.value}
-            icon={item.icon}
-            tone={item.tone}
-          />
-        ))}
-      </div>
 
       <div className="soha-platform-focus-grid">
         <Card
           className="soha-overview-runtime-card"
-          title={localeCode === 'zh_CN' ? 'Pod 运行状态' : 'Pod runtime'}
+          title={localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}
           extra={
             canViewWorkloads && clusterId ? (
               <div className="soha-overview-runtime-card-extra">
+                {workloadOverview ? (
+                  <OverviewHint
+                    label={localeCode === 'zh_CN' ? '运行状态数据来源' : 'Runtime data source'}
+                    title={`${localeCode === 'zh_CN' ? '来源' : 'Source'}: ${formatWorkloadSource(workloadOverview.source, localeCode)} · ${localeCode === 'zh_CN' ? '更新于' : 'Updated'} ${updatedAt}`}
+                  />
+                ) : null}
                 <Button
                   type="text"
                   icon={<ArrowRightOutlined />}
@@ -579,88 +839,56 @@ export function OverviewPage() {
           ) : (
             <div className="soha-overview-runtime-layout">
               <div className="soha-overview-runtime-main">
-                <div className="soha-platform-runtime-source">
-                  <Text type="secondary">
-                    {localeCode === 'zh_CN'
-                      ? '当前集群 · 全部命名空间'
-                      : 'Current cluster · All namespaces'}
-                  </Text>
-                  <OverviewHint
-                    label={localeCode === 'zh_CN' ? '运行状态数据来源' : 'Runtime data source'}
-                    title={`${localeCode === 'zh_CN' ? '来源' : 'Source'}: ${formatWorkloadSource(workloadOverview.source, localeCode)} · ${localeCode === 'zh_CN' ? '更新于' : 'Updated'} ${updatedAt}`}
+                {problematicPods.length === 0 ? (
+                  <ManagementState
+                    bordered={false}
+                    compact
+                    title={
+                      localeCode === 'zh_CN'
+                        ? '当前集群没有需要关注的 Pod'
+                        : 'No pods require attention in this cluster'
+                    }
                   />
-                </div>
-
-                <div className="soha-platform-pod-phases">
-                  {podStats.map((item) => (
-                    <OverviewChip
-                      key={item.key}
-                      label={item.label}
-                      value={item.value}
-                      tone={item.tone}
-                    />
-                  ))}
-                </div>
-
-                <div className="soha-overview-subpanel">
-                  <div className="soha-overview-subpanel-head">
-                    <div>
-                      <Text strong>
-                        {localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}
-                      </Text>
-                    </div>
-                  </div>
-                  {problematicPods.length === 0 ? (
-                    <ManagementState
-                      bordered={false}
-                      compact
-                      title={
-                        localeCode === 'zh_CN'
-                          ? '当前集群没有需要关注的 Pod'
-                          : 'No pods require attention in this cluster'
-                      }
-                    />
-                  ) : (
-                    <div
-                      className="soha-overview-attention-list"
-                      role="region"
-                      aria-label={
-                        localeCode === 'zh_CN' ? '需关注 Pod 列表' : 'Pods requiring attention list'
-                      }
-                      tabIndex={problematicPods.length > 3 ? 0 : undefined}
-                    >
-                      {problematicPods.map((item) => (
-                        <div
-                          key={`${item.namespace}/${item.name}`}
-                          className="soha-overview-attention-row"
-                        >
-                          <div className="soha-overview-attention-main">
-                            <Link
-                              title={item.name}
-                              to={buildWorkloadDetailPath(
-                                'pods',
-                                item.name,
-                                null,
-                                item.namespace,
-                                item.clusterId,
-                              )}
-                            >
-                              {item.name}
-                            </Link>
-                            <StatusTag value={item.phase} />
-                          </div>
-                          <div className="soha-overview-attention-meta">
-                            <span>{`${t('common.namespace', '命名空间')}: ${item.namespace}`}</span>
-                            <span>{`${t('common.node', '节点')}: ${item.nodeName || '-'}`}</span>
-                            <span>{`${t('common.ready', '就绪')}: ${item.readyContainers}`}</span>
-                            <span>{`${t('common.restarts', '重启次数')}: ${item.restarts}`}</span>
-                            <span>{`${t('common.age', '时长')}: ${formatAgeSeconds(item.ageSeconds)}`}</span>
-                          </div>
+                ) : (
+                  <div
+                    className="soha-overview-attention-list"
+                    role="region"
+                    aria-label={
+                      localeCode === 'zh_CN' ? '需关注 Pod 列表' : 'Pods requiring attention list'
+                    }
+                    tabIndex={problematicPods.length > 3 ? 0 : undefined}
+                  >
+                    {problematicPods.map((item) => (
+                      <div
+                        key={`${item.namespace}/${item.name}`}
+                        className="soha-overview-attention-row"
+                      >
+                        <div className="soha-overview-attention-main">
+                          <Link
+                            title={item.name}
+                            to={buildWorkloadDetailPath(
+                              'pods',
+                              item.name,
+                              null,
+                              item.namespace,
+                              item.clusterId,
+                            )}
+                          >
+                            {item.name}
+                          </Link>
+                          <StatusTag value={item.phase} />
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        <div className="soha-overview-attention-meta">
+                          <span>{`${t('common.namespace', '命名空间')}: ${item.namespace}`}</span>
+                          <span>{`${t('common.node', '节点')}: ${item.nodeName || '-'}`}</span>
+                          <span>{`${t('common.ready', '就绪')}: ${item.readyContainers}`}</span>
+                          <span>{`${t('common.restarts', '重启次数')}: ${item.restarts}`}</span>
+                          <span>{`${t('common.age', '时长')}: ${formatAgeSeconds(item.ageSeconds)}`}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -728,39 +956,34 @@ export function OverviewPage() {
             </div>
           ) : (
             <div className="soha-overview-alert-stack">
-              <OverviewSectionBar
-                title={
-                  <Space size={2}>
-                    {localeCode === 'zh_CN' ? '告警分布' : 'Alert distribution'}
-                    <OverviewHint
-                      label={localeCode === 'zh_CN' ? '告警统计说明' : 'Alert count information'}
-                      title={
-                        localeCode === 'zh_CN'
-                          ? '仅统计当前集群最近 50 条告警记录中的活跃项；不是全量活跃告警总数。'
-                          : 'Active alerts among the latest 50 records in this cluster; not the total active alert count.'
-                      }
-                    />
-                  </Space>
-                }
-                extra={
-                  <Button
-                    type="text"
-                    icon={<ArrowRightOutlined />}
-                    onClick={() => navigate('/monitoring-workbench/alerts')}
-                  >
-                    {localeCode === 'zh_CN' ? '查看全部告警' : 'Open All Alerts'}
-                  </Button>
-                }
-              />
-              <div className="soha-overview-chip-grid">
-                {alertChips.map((item) => (
-                  <OverviewChip
-                    key={item.key}
-                    label={item.label}
-                    value={item.value}
-                    tone={item.tone}
+              <div className="soha-overview-inline-pill-bar">
+                <div className="soha-overview-inline-pills">
+                  {alertChips.map((item) => (
+                    <span
+                      key={item.key}
+                      className={`soha-overview-inline-pill ${item.tone ? `is-${item.tone}` : ''}`}
+                    >
+                      <span>{`${item.label}: `}</span>
+                      <strong>{item.value}</strong>
+                    </span>
+                  ))}
+                  <OverviewHint
+                    label={localeCode === 'zh_CN' ? '告警统计说明' : 'Alert count information'}
+                    title={
+                      localeCode === 'zh_CN'
+                        ? '仅统计当前集群最近 50 条告警记录中的活跃项；不是全量活跃告警总数。'
+                        : 'Active alerts among the latest 50 records in this cluster; not the total active alert count.'
+                    }
                   />
-                ))}
+                </div>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ArrowRightOutlined />}
+                  onClick={() => navigate('/monitoring-workbench/alerts')}
+                >
+                  {localeCode === 'zh_CN' ? '查看全部告警' : 'Open All Alerts'}
+                </Button>
               </div>
               {activeAlerts.length > 0 ? (
                 <div className="soha-platform-active-alert-list">
@@ -795,7 +1018,17 @@ export function OverviewPage() {
                     </button>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <ManagementState
+                  bordered={false}
+                  compact
+                  title={
+                    localeCode === 'zh_CN'
+                      ? '当前集群暂无近期活跃告警'
+                      : 'No recent active alerts in this cluster'
+                  }
+                />
+              )}
             </div>
           )}
         </Card>
@@ -968,24 +1201,6 @@ export function OverviewPage() {
                   {summaryQuery.isError ? '-' : (summary?.channelCount ?? '-')}
                 </Text>
               ) : null}
-              <div className="soha-platform-fleet-summary">
-                <span>
-                  {localeCode === 'zh_CN' ? '健康' : 'Healthy'}{' '}
-                  <strong>{fleetReadiness.healthy}</strong>
-                </span>
-                <span>
-                  {localeCode === 'zh_CN' ? '异常' : 'Unhealthy'}{' '}
-                  <strong>{fleetReadiness.unhealthy}</strong>
-                </span>
-                <span>
-                  {localeCode === 'zh_CN' ? '超时' : 'Stale'}{' '}
-                  <strong>{fleetReadiness.stale}</strong>
-                </span>
-                <span>
-                  {localeCode === 'zh_CN' ? '版本轨道' : 'Versions'}{' '}
-                  <strong>{fleetReadiness.versions}</strong>
-                </span>
-              </div>
               <div
                 className="soha-overview-cluster-list"
                 role="region"

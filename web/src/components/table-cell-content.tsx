@@ -89,7 +89,7 @@ export const TableCellText = memo(function TableCellText({
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
-        verticalAlign: 'bottom',
+        verticalAlign: 'middle',
         color: 'inherit',
         fontWeight: 'inherit',
         lineHeight: 'inherit',
@@ -122,6 +122,7 @@ export function TableCellLink({
   return (
     <Button
       type="text"
+      className="soha-table-cell-link"
       style={{ maxWidth: '100%' }}
       styles={{ content: { minWidth: 0 } }}
       onClick={onClick}

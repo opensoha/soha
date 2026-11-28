@@ -1,12 +1,9 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import {
-  ManagementIconButton,
-  ManagementQueryField,
-  ManagementQueryPanel,
-} from '@/components/management-list'
+import { ManagementQueryField, ManagementQueryPanel } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { isApiError } from '@/services/api-error'
@@ -444,7 +441,20 @@ export function RuntimeConfigurationPage() {
   }
 
   const historyColumns: TableColumnsType<RuntimeConfigRevision> = [
-    { title: '版本', dataIndex: 'version', width: 90, render: (value: number) => `v${value}` },
+    {
+      title: '版本',
+      dataIndex: 'version',
+      width: 90,
+      render: (value: number, revision) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => setActiveRevision(revision)}
+        >
+          {`v${value}`}
+        </Button>
+      ),
+    },
     {
       title: '状态',
       dataIndex: 'status',
@@ -469,11 +479,16 @@ export function RuntimeConfigurationPage() {
       ...tableColumnPresets.action,
       key: 'actions',
       render: (_, revision) => (
-        <ManagementIconButton
-          aria-label={`查看版本 v${revision.version}`}
-          icon={<EyeOutlined />}
-          tooltip="查看变更"
-          onClick={() => setActiveRevision(revision)}
+        <TableRowActionMenu
+          targetLabel={`v${revision.version}`}
+          items={[
+            {
+              key: 'view',
+              label: '查看变更',
+              icon: <EyeOutlined />,
+              onClick: () => setActiveRevision(revision),
+            },
+          ]}
         />
       ),
     },

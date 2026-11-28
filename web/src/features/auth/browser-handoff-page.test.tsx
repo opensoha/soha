@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { act } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from 'antd'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'

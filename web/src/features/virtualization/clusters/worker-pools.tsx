@@ -12,23 +12,25 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
   Typography,
 } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type {
   VirtualizationWorkerPool,
   VirtualizationWorkerPoolSpec,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { localeText, useI18n } from '@/i18n'
 import { virtualizationQueries } from '../queries'
 import { virtualizationMutations, withVirtualizationMutationSuccess } from '../mutations'
 import { useVirtualizationPermissions } from '../shared/use-virtualization-permissions'
 import type { VirtualizationCluster } from '../virtualization-types'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { createUUID } from '@/utils/uuid'
 import { useAuthStore } from '@/stores/auth-store'
@@ -149,7 +151,7 @@ function WorkerPoolsContent({
   const text = (zh: string, en: string) => localeText(localeCode, zh, en)
   const permissions = useVirtualizationPermissions()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const pools = useQuery(
     virtualizationQueries.workerPools(connection.id, permissions.canViewWorkerPools),
   )
@@ -350,50 +352,72 @@ function WorkerPoolsContent({
               ),
             },
             {
+              ...tableColumnPresets.action,
               title: text('操作', 'Actions'),
               key: 'actions',
               render: (_: unknown, pool: VirtualizationWorkerPool) => (
-                <Space wrap>
-                  {permissions.canCreateWorkers && (
-                    <Button
-                      size="small"
-                      disabled={
-                        !pool.spec.enabled || Boolean(creation) || Boolean(storageError) || !userId
-                      }
-                      onClick={() => {
-                        created.reset()
-                        keepCreation({ pool, key: createUUID() })
-                      }}
-                    >
-                      {text('创建节点', 'Create worker')}
-                    </Button>
-                  )}
-                  {permissions.canUpdateWorkerPools && (
-                    <Button size="small" onClick={() => edit(pool)}>
-                      {text('编辑', 'Edit')}
-                    </Button>
-                  )}
-                  {permissions.canDeleteWorkerPools && (
-                    <Popconfirm
-                      title={text('删除未使用的节点池配置？', 'Delete unused pool configuration?')}
-                      description={text(
-                        '有操作历史的池应停用并保留。',
-                        'Keep pools with operation history disabled.',
-                      )}
-                      onConfirm={() =>
-                        removed.mutateAsync({
-                          id: pool.id,
-                          revision: pool.revision,
-                          connectionId: connection.id,
-                        })
-                      }
-                    >
-                      <Button size="small" danger>
-                        {text('删除', 'Delete')}
-                      </Button>
-                    </Popconfirm>
-                  )}
-                </Space>
+                <TableRowActionMenu
+                  targetLabel={pool.spec.name}
+                  items={[
+                    ...(permissions.canCreateWorkers
+                      ? [
+                          {
+                            key: 'create-worker',
+                            icon: <PlusOutlined aria-hidden="true" />,
+                            label: text('创建节点', 'Create worker'),
+                            disabled:
+                              !pool.spec.enabled ||
+                              Boolean(creation) ||
+                              Boolean(storageError) ||
+                              !userId,
+                            onClick: () => {
+                              created.reset()
+                              keepCreation({ pool, key: createUUID() })
+                            },
+                          },
+                        ]
+                      : []),
+                    ...(permissions.canUpdateWorkerPools
+                      ? [
+                          {
+                            key: 'edit',
+                            icon: <EditOutlined aria-hidden="true" />,
+                            label: text('编辑', 'Edit'),
+                            onClick: () => edit(pool),
+                          },
+                        ]
+                      : []),
+                    { type: 'divider' as const },
+                    ...(permissions.canDeleteWorkerPools
+                      ? [
+                          {
+                            key: 'delete',
+                            icon: <DeleteOutlined aria-hidden="true" />,
+                            label: text('删除', 'Delete'),
+                            danger: true,
+                            onClick: () =>
+                              modal.confirm({
+                                title: text(
+                                  '删除未使用的节点池配置？',
+                                  'Delete unused pool configuration?',
+                                ),
+                                content: text(
+                                  '有操作历史的池应停用并保留。',
+                                  'Keep pools with operation history disabled.',
+                                ),
+                                okButtonProps: { danger: true },
+                                onOk: () =>
+                                  removed.mutateAsync({
+                                    id: pool.id,
+                                    revision: pool.revision,
+                                    connectionId: connection.id,
+                                  }),
+                              }),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               ),
             },
           ]}

@@ -18,7 +18,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./catalog/page')
       return { default: module.SohaProviderPortalPage }
@@ -42,7 +42,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./colleague-works/list-page')
       return { default: module.PortalColleagueWorksPage }
@@ -66,7 +66,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./colleague-works/author-page')
       return { default: module.PortalColleagueAuthorPage }
@@ -90,7 +90,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./my-apps/page')
       return { default: module.PortalMyHostedAppsPage }
@@ -114,7 +114,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./application-detail/page')
       return { default: module.PortalApplicationDetailPage }
@@ -138,7 +138,7 @@ export const providerPortalRoutes = defineRoutes([
       scopeMode: 'passive',
       workspace: 'system',
     },
-    shell: 'portal',
+    shell: 'app',
     load: async () => {
       const module = await import('./security/page')
       return { default: module.PortalSecurityPage }

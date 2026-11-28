@@ -13,7 +13,7 @@
   height: 10px;
   display: inline-block;
   border: 0;
-  border-radius: 1px;
+  border-radius: 3px;
   padding: 0;
   background: var(--soha-text-tertiary);
   flex-shrink: 0;
@@ -53,10 +53,30 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
+  padding: 13px 18px;
   background: var(--soha-bg-surface);
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-panel);
+}
+.soha-pod-detail-health.is-healthy {
+  border-color: color-mix(in srgb, var(--soha-success) 26%, var(--soha-border-color));
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--soha-success) 6%, transparent),
+      transparent 55%
+    ),
+    var(--soha-bg-surface);
+}
+.soha-pod-detail-health.is-attention {
+  border-color: color-mix(in srgb, var(--soha-warning) 30%, var(--soha-border-color));
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--soha-warning) 7%, transparent),
+      transparent 55%
+    ),
+    var(--soha-bg-surface);
 }
 .soha-pod-detail-health > .anticon {
   font-size: 19px;
@@ -130,13 +150,25 @@
 .soha-pod-detail-usage {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 12px;
 }
 .soha-pod-detail-usage > div {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
   min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+}
+.soha-pod-container-collapse > .ant-collapse-item {
+  margin-bottom: 8px;
+  border: 0 !important;
+  border-radius: var(--soha-radius-control) !important;
+  background: var(--soha-fill-weak);
+}
+.soha-pod-container-collapse > .ant-collapse-item:last-child {
+  margin-bottom: 0;
 }
 .soha-pod-detail-usage .soha-pod-resource-inline {
   width: 100%;

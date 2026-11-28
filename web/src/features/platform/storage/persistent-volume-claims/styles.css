@@ -1,12 +1,6 @@
 .soha-pvc-detail {
   min-width: 0;
 }
-.soha-pvc-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-pvc-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-pvc-detail .soha-pvc-section-title,
 .soha-pvc-detail .soha-pvc-binding {
   display: flex;
@@ -18,8 +12,13 @@
 .soha-pvc-detail .soha-pvc-capacity {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  margin: 20px 0;
+  gap: 12px;
+  margin: 14px 0;
+}
+.soha-pvc-detail .soha-pvc-capacity > div {
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 .soha-pvc-detail .soha-pvc-capacity dt,
 .soha-pvc-detail .soha-pvc-muted {

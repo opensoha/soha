@@ -3,14 +3,14 @@ import { ReadFeedback } from '@/components/request-feedback'
 import { ComputeMutationFeedback } from '@/features/compute'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { App, Button, Descriptions, Form, Input, Popconfirm, Select, Space } from 'antd'
+import { App, Button, Descriptions, Form, Input, Select, Space } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { MetadataTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -68,7 +68,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
   const { dockerModuleEnabled, canCreateHosts, canUpdateHosts, canDeleteHosts, canViewOperations } =
     useDockerPermissions()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { localeCode } = useI18n()
   const hostsQuery = useQuery(dockerQueries.hosts(filters, dockerModuleEnabled))
   const tasksQuery = useQuery({
@@ -108,24 +108,24 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: localeText(localeCode, '架构', 'Architecture'),
       dataIndex: 'architecture',
-      width: 120,
+      width: 92,
       render: architectureTag,
     },
     {
       title: 'Endpoint',
       dataIndex: 'endpoint',
-      width: 220,
+      width: 168,
       render: (value, record) => value || record.ipAddress || '-',
     },
     {
       title: 'VM',
-      width: 180,
+      width: 140,
       render: (_value, record) =>
         record.vmName || record.vmId || record.virtualizationConnectionId || '-',
     },
     {
       title: localeText(localeCode, '规格', 'Resources'),
-      width: 180,
+      width: 172,
       render: (_value, record) => {
         const values = [
           record.cpuCoreCount ? (
@@ -144,7 +144,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: localeText(localeCode, '心跳', 'Heartbeat'),
       dataIndex: 'lastHeartbeatAt',
-      width: 155,
+      width: 146,
       render: formatDateTime,
     },
     {
@@ -163,42 +163,51 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
       ),
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 96,
-      render: (_value, record) =>
-        canUpdateHosts || canDeleteHosts ? (
-          <Space className="soha-row-action-icons">
-            {canUpdateHosts ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '编辑主机', 'Edit host')}
-                size="small"
-                tooltip={localeText(localeCode, '编辑', 'Edit')}
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setEditing(record)
-                  setEditorOpen(true)
-                }}
-              />
-            ) : null}
-            {canDeleteHosts ? (
-              <Popconfirm
-                title={localeText(localeCode, '确认删除 Docker 主机？', 'Delete this Docker host?')}
-                onConfirm={() => deleteMutation.mutate(record.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '删除主机', 'Delete host')}
-                  size="small"
-                  tooltip={localeText(localeCode, '删除', 'Delete')}
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        ) : null,
+      render: (_value, record) => (
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canUpdateHosts
+              ? [
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '编辑主机', 'Edit host'),
+                    onClick: () => {
+                      setEditing(record)
+                      setEditorOpen(true)
+                    },
+                  },
+                ]
+              : []),
+            { type: 'divider' as const },
+            ...(canDeleteHosts
+              ? [
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '删除主机', 'Delete host'),
+                    danger: true,
+                    onClick: () =>
+                      modal.confirm({
+                        title: localeText(
+                          localeCode,
+                          '确认删除 Docker 主机？',
+                          'Delete this Docker host?',
+                        ),
+                        content: record.name,
+                        okButtonProps: { danger: true },
+                        onOk: () => deleteMutation.mutateAsync(record.id),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ),
     },
   ]
   return (
@@ -292,32 +301,35 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
         pagination={pageTablePagination(page, embedded, setFilters)}
         expandable={{
           expandedRowRender: (record: DockerHost) => (
-            <Descriptions
-              size="small"
-              bordered
-              column={{ xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2 }}
-            >
-              <Descriptions.Item label={localeText(localeCode, '环境', 'Environment')}>
-                {record.environment || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '归属', 'Owner')}>
-                {record.owner || record.team || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="VM ID">{record.vmId || '-'}</Descriptions.Item>
-              <Descriptions.Item
-                label={localeText(localeCode, '虚拟化连接', 'Virtualization connection')}
+            <div className="soha-docker-host-expanded">
+              <Descriptions
+                size="small"
+                column={{ xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2 }}
               >
-                {record.virtualizationConnectionId || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label={localeText(localeCode, '端口池', 'Port pool')}>
-                {record.availablePortStart && record.availablePortEnd
-                  ? `${record.availablePortStart}-${record.availablePortEnd}`
-                  : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Agent">{record.agentVersion || '-'}</Descriptions.Item>
-              <Descriptions.Item label="Docker">{record.dockerVersion || '-'}</Descriptions.Item>
-              <Descriptions.Item label="Compose">{record.composeVersion || '-'}</Descriptions.Item>
-            </Descriptions>
+                <Descriptions.Item label={localeText(localeCode, '环境', 'Environment')}>
+                  {record.environment || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '归属', 'Owner')}>
+                  {record.owner || record.team || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="VM ID">{record.vmId || '-'}</Descriptions.Item>
+                <Descriptions.Item
+                  label={localeText(localeCode, '虚拟化连接', 'Virtualization connection')}
+                >
+                  {record.virtualizationConnectionId || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label={localeText(localeCode, '端口池', 'Port pool')}>
+                  {record.availablePortStart && record.availablePortEnd
+                    ? `${record.availablePortStart}-${record.availablePortEnd}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Agent">{record.agentVersion || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Docker">{record.dockerVersion || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Compose">
+                  {record.composeVersion || '-'}
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
           ),
         }}
         actions={

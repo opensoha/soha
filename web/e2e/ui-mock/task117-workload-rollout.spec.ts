@@ -263,7 +263,9 @@ for (const [kind, label] of kinds)
     await expect(notice.getByText(/Synthetic workload unavailable/)).toBeVisible()
     before = state.reads
     await page.clock.fastForward(15_100)
-    await expect.poll(() => state.reads).toBeGreaterThan(before)
+    // The global Query client retries once; wait for both responses and the shared retry to settle.
+    await expect.poll(() => state.reads).toBe(before + 2)
+    await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
     await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
     await notice.getByRole('button', { name: '关闭', exact: true }).click()
     await expect(notice).toHaveCount(0)

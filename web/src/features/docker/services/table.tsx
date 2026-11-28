@@ -12,12 +12,13 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
 } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { localeText, useI18n } from '@/i18n'
 import { formatStatusLabel } from '@/i18n/status'
@@ -150,36 +151,33 @@ export function ServicesTable({
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 130,
-      render: (_value, record) =>
-        serviceActions.length > 0 || canViewServiceLogs ? (
-          <Space className="soha-row-action-icons">
-            {serviceActions.map(({ action, icon }) => (
-              <ManagementIconButton
-                key={action}
-                aria-label={operationActionLabel(action, localeCode)}
-                size="small"
-                tooltip={operationActionLabel(action, localeCode)}
-                icon={icon}
-                loading={actionMutation.isPending}
-                onClick={() => actionMutation.mutate({ id: record.id, action })}
-              />
-            ))}
-            {canViewServiceLogs ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '查看日志', 'View logs')}
-                size="small"
-                tooltip={localeText(localeCode, '日志', 'Logs')}
-                icon={<FileTextOutlined />}
-                onClick={() => setLogService(record)}
-              />
-            ) : null}
-          </Space>
-        ) : null,
+      render: (_value, record) => (
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canViewServiceLogs
+              ? [
+                  {
+                    key: 'logs',
+                    icon: <FileTextOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '查看日志', 'View logs'),
+                    onClick: () => setLogService(record),
+                  },
+                ]
+              : []),
+            ...serviceActions.map(({ action, icon }) => ({
+              key: action,
+              icon,
+              label: operationActionLabel(action, localeCode),
+              disabled: actionMutation.isPending,
+              onClick: () => actionMutation.mutate({ id: record.id, action }),
+            })),
+          ]}
+        />
+      ),
     },
   ]
   return (

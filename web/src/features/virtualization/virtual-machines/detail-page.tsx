@@ -39,8 +39,9 @@ import { getAIWorkbenchPathForMode, useAIPageContext } from '@/features/copilot'
 import { localeText, useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import { ManagementIconButton, ManagementState } from '@/components/management-list'
+import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { virtualizationQueries } from '@/features/virtualization/queries'
 import {
   virtualizationMutations,
@@ -375,7 +376,8 @@ export function VirtualizationVmDetailPage() {
       data-motion-disabled={!token.motion}
       data-motion-paused={motionPaused}
     >
-      <Card className="soha-vm-identity" classNames={{ body: 'soha-vm-identity-body' }}>
+      <div className="soha-vm-identity-bezel">
+        <Card className="soha-vm-identity" classNames={{ body: 'soha-vm-identity-body' }}>
         <div className="soha-vm-identity-main">
           <div className="soha-vrt-vm-detail-identity">
             <div className="soha-vm-identity-heading">
@@ -563,12 +565,13 @@ export function VirtualizationVmDetailPage() {
           </div>
           <div>
             <dt>{localeText(localeCode, '运行地址', 'Runtime address')}</dt>
-            <dd className="soha-vm-address">
-              {vm.ipAddresses?.join(' · ') || localeText(localeCode, '暂未上报', 'Not reported')}
-            </dd>
-          </div>
-        </dl>
-      </Card>
+              <dd className="soha-vm-address">
+                {vm.ipAddresses?.join(' · ') || localeText(localeCode, '暂未上报', 'Not reported')}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+      </div>
       {isStaleVirtualMachine(vm) ? (
         <ContextFeedback
           type="warning"
@@ -961,8 +964,15 @@ export function VirtualizationVmDetailPage() {
                   columns={[
                     {
                       title: localeText(localeCode, '类型', 'Type'),
-                      render: (_value: unknown, record: VirtualizationOperation) =>
-                        tableTooltipText(operationKindLabel(record, localeCode)),
+                      render: (_value: unknown, record: VirtualizationOperation) => (
+                        <Button
+                          className="soha-table-cell-link"
+                          type="link"
+                          onClick={() => setTrackedOperation({ ...record, vmId })}
+                        >
+                          {operationKindLabel(record, localeCode)}
+                        </Button>
+                      ),
                       ellipsis: tableEllipsis,
                       width: 150,
                     },
@@ -988,44 +998,36 @@ export function VirtualizationVmDetailPage() {
                     },
                     {
                       ...tableColumnPresets.action,
+                      key: 'actions',
                       title: localeText(localeCode, '操作', 'Actions'),
                       render: (_value: unknown, record: VirtualizationOperation) => (
-                        <Space>
-                          <ManagementIconButton
-                            aria-label={localeText(
-                              localeCode,
-                              '查看任务证据',
-                              'View task evidence',
-                            )}
-                            tooltip={localeText(localeCode, '任务证据', 'Task evidence')}
-                            icon={<FileSearchOutlined />}
-                            size="small"
-                            onClick={() => setTrackedOperation({ ...record, vmId })}
-                          />
-                          <ManagementIconButton
-                            aria-label={localeText(
-                              localeCode,
-                              '发起 AI 调查',
-                              'Start AI investigation',
-                            )}
-                            tooltip={localeText(localeCode, 'AI调查', 'AI investigation')}
-                            icon={<PlayCircleOutlined />}
-                            size="small"
-                            onClick={() =>
-                              navigate(
-                                buildInvestigationPath({
-                                  connectionId: vm?.connectionId,
-                                  vmId: vm?.id,
-                                  namespace: vm?.namespace,
-                                  workload: vm?.name,
-                                  timeRangeMinutes: 60,
-                                }),
-                              )
-                            }
-                          />
-                        </Space>
+                        <TableRowActionMenu
+                          targetLabel={operationKindLabel(record, localeCode)}
+                          items={[
+                            {
+                              key: 'evidence',
+                              icon: <FileSearchOutlined aria-hidden="true" />,
+                              label: localeText(localeCode, '查看任务证据', 'View task evidence'),
+                              onClick: () => setTrackedOperation({ ...record, vmId }),
+                            },
+                            {
+                              key: 'investigate',
+                              icon: <PlayCircleOutlined aria-hidden="true" />,
+                              label: localeText(localeCode, '发起 AI 调查', 'Start AI investigation'),
+                              onClick: () =>
+                                navigate(
+                                  buildInvestigationPath({
+                                    connectionId: vm?.connectionId,
+                                    vmId: vm?.id,
+                                    namespace: vm?.namespace,
+                                    workload: vm?.name,
+                                    timeRangeMinutes: 60,
+                                  }),
+                                ),
+                            },
+                          ]}
+                        />
                       ),
-                      width: 100,
                     },
                   ]}
                   scroll={{ x: 870 }}

@@ -1,18 +1,18 @@
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useMemo, useRef, useState } from 'react'
-import { App, Button, Modal, Popconfirm, Space, Tag, Tooltip } from 'antd'
+import { App, Button, Modal, Space, Tag, Tooltip } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import {
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { accessMutations, invalidateAccessScopeGrants } from './mutations'
@@ -50,7 +50,7 @@ function ScopeGrantSession({
   title,
   onClose,
 }: ScopeGrantManagerProps) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
   const canViewScopeGrants = hasPermission(snapshot, 'access.scope-grants.view')
@@ -269,48 +269,54 @@ function ScopeGrantSession({
   const actionColumn: ColumnProps<AccessScopeGrant> = {
     ...tableColumnPresets.action,
     title: '操作',
-    dataIndex: 'id',
+    key: 'actions',
     render: (_: unknown, record: AccessScopeGrant) => {
       const targetSubject = listsApplicationGrants
         ? { subjectId: record.subjectId, subjectType: record.subjectType }
         : subject
       return (
-        <Space className="soha-row-action-icons">
-          {canUpdateScopeGrants || canDeleteScopeGrants ? (
-            <>
-              {canUpdateScopeGrants ? (
-                <ManagementIconButton
-                  aria-label="编辑授权项"
-                  icon={<EditOutlined />}
-                  size="small"
-                  tooltip="编辑"
-                  onClick={() => openEditor(record)}
-                />
-              ) : null}
-              {canDeleteScopeGrants ? (
-                <Popconfirm
-                  title={`确认删除授权项 ${record.id}？`}
-                  onConfirm={() => {
-                    if (writing.current || blocked || grantsQuery.isError) return
-                    writing.current = true
-                    deleteMutation.mutate({ ...targetSubject, id: record.id })
-                  }}
-                >
-                  <ManagementIconButton
-                    aria-label="删除授权项"
-                    disabled={blocked || grantsQuery.isError}
-                    danger
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    tooltip="删除"
-                  />
-                </Popconfirm>
-              ) : null}
-            </>
-          ) : (
-            '-'
-          )}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.id}
+          items={[
+            ...(canUpdateScopeGrants
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    onClick: () => openEditor(record),
+                  },
+                ]
+              : []),
+            ...(canDeleteScopeGrants
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: blocked || grantsQuery.isError,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `确认删除授权项 ${record.id}？`,
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true },
+                        onOk: () => {
+                          if (writing.current || blocked || grantsQuery.isError) return
+                          writing.current = true
+                          return deleteMutation
+                            .mutateAsync({ ...targetSubject, id: record.id })
+                            .catch(() => undefined)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       )
     },
   }

@@ -1251,6 +1251,8 @@ describe('access route authorization', () => {
 
     expect(getRouteWorkbenchId(getRoute('plugins-marketplace'))).toBe('settings')
     expect(getRouteWorkspace(getRoute('plugins-marketplace'))).toBe('system')
+    expect(canAccessRoute(getRoute('plugins'), snapshot)).toBe(true)
+    expect(canAccessRoute(getRoute('extension-center'), snapshot)).toBe(true)
     expect(canAccessRoute(getRoute('plugins-marketplace'), snapshot)).toBe(true)
     expect(findFirstAccessiblePathForWorkbench('settings', snapshot)).toBe('/plugins/marketplace')
     expect(getAccessibleWorkbenchIds(snapshot)).toContain('settings')

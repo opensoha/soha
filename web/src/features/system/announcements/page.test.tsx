@@ -177,8 +177,16 @@ describe('AnnouncementsPage receipt drawer', () => {
   })
 
   it('opens the read-status drawer from the card action', async () => {
-    const button = await find('button[aria-label="查看阅读情况"]')
-    await act(async () => button.click())
+    const moreButton = await find('button[aria-label="更多操作：Maintenance"]')
+    await act(async () => moreButton.click())
+    await settle()
+    const receiptsItem = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+      ),
+    ).find((item) => item.textContent?.trim() === '阅读情况')
+    expect(receiptsItem).toBeDefined()
+    await act(async () => receiptsItem?.click())
     await settle()
 
     expect(document.body.textContent).toContain('阅读情况')

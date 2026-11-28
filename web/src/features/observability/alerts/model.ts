@@ -11,9 +11,9 @@ export function stringifyAlertPayload(payload: unknown) {
 }
 
 export function alertDiagnosticPaths(event: AlertEvent, snapshot?: ObservabilityQuerySnapshot) {
-  const scope = snapshot?.context.scope
-  const filter = snapshot?.context.filter
-  const range = snapshot?.context.timeRange
+  const scope = snapshot?.context?.scope
+  const filter = snapshot?.context?.filter
+  const range = snapshot?.context?.timeRange
   const workload =
     scope?.workload || event.labels?.workload || event.labels?.deployment || event.labels?.app
   const service = scope?.service || event.labels?.service

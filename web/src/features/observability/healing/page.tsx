@@ -1,12 +1,13 @@
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import type { ReleaseDagDefinition } from '@/components/release-flow-dag-definition'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
 import { StepForm } from '@/components/step-form'
 import { StepFormModal } from '@/components/step-form-modal'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import {
   CheckOutlined,
@@ -17,7 +18,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableProps } from 'antd'
-import { App, Button, Card, Form, Input, InputNumber, Select, Space, Switch, Tabs } from 'antd'
+import { App, Button, Card, Form, Input, InputNumber, Select, Switch, Tabs } from 'antd'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import '../observability-pages.css'
 import { buildHealingPolicyPayload } from './model'
@@ -190,46 +191,51 @@ export function HealingPage() {
       },
       { title: '创建时间', dataIndex: 'createdAt', render: formatDateTime },
       {
+        ...tableColumnPresets.action,
         title: '操作',
-        key: 'actions',
         dataIndex: 'id',
         render: (value: string, record) => (
-          <Space>
-            {canApproveHealing ? (
-              <Button
-                size="small"
-                icon={<CheckOutlined />}
-                disabled={runBlocked || ['completed', 'rejected'].includes(record.status)}
-                onClick={() =>
-                  approveMutation.mutate({ id: value, comment: 'approved from console' })
-                }
-              >
-                通过
-              </Button>
-            ) : null}
-            {canRejectHealing ? (
-              <Button
-                size="small"
-                icon={<CloseOutlined />}
-                disabled={runBlocked || ['completed', 'rejected'].includes(record.status)}
-                onClick={() =>
-                  rejectMutation.mutate({ id: value, comment: 'rejected from console' })
-                }
-              >
-                拒绝
-              </Button>
-            ) : null}
-            {canRetryHealing ? (
-              <Button
-                size="small"
-                disabled={runBlocked}
-                icon={<ReloadOutlined />}
-                onClick={() => retryMutation.mutate(value)}
-              >
-                重试
-              </Button>
-            ) : null}
-          </Space>
+          <TableRowActionMenu
+            targetLabel={record.id}
+            items={[
+              ...(canApproveHealing
+                ? [
+                    {
+                      key: 'approve',
+                      label: '通过',
+                      icon: <CheckOutlined />,
+                      disabled: runBlocked || ['completed', 'rejected'].includes(record.status),
+                      onClick: () =>
+                        approveMutation.mutate({ id: value, comment: 'approved from console' }),
+                    },
+                  ]
+                : []),
+              ...(canRejectHealing
+                ? [
+                    {
+                      key: 'reject',
+                      label: '拒绝',
+                      icon: <CloseOutlined />,
+                      danger: true,
+                      disabled: runBlocked || ['completed', 'rejected'].includes(record.status),
+                      onClick: () =>
+                        rejectMutation.mutate({ id: value, comment: 'rejected from console' }),
+                    },
+                  ]
+                : []),
+              ...(canRetryHealing
+                ? [
+                    {
+                      key: 'retry',
+                      label: '重试',
+                      icon: <ReloadOutlined />,
+                      disabled: runBlocked,
+                      onClick: () => retryMutation.mutate(value),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         ),
       },
     ],
@@ -245,7 +251,23 @@ export function HealingPage() {
   )
 
   const policyColumns: TableProps<HealingPolicy>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateHealing ? (
+          <Button
+            type="link"
+            disabled={writeBlocked || denied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '触发模式',
       dataIndex: 'triggerMode',
@@ -265,18 +287,22 @@ export function HealingPage() {
       render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" />,
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateHealing ? (
-          <ManagementIconButton
-            aria-label="编辑自愈策略"
-            disabled={writeBlocked || denied}
-            size="small"
-            tooltip="编辑"
-            icon={<EditOutlined />}
-            onClick={() => openEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑自愈策略',
+                icon: <EditOutlined />,
+                disabled: writeBlocked || denied,
+                onClick: () => openEditor(record),
+              },
+            ]}
           />
         ) : null,
     },

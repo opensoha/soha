@@ -4,12 +4,13 @@ import type { TableColumnsType } from 'antd'
 import { Descriptions, Input, Select, Space } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import {
-  ManagementIconButton,
   ManagementQueryField,
   ManagementQueryPanel,
   ManagementRefreshButton,
   ManagementState,
 } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { GatewayToolInvokeDrawer } from '../tool-invoke-drawer'
 import type { AIClient, GatewayManifest, GatewayTool } from '../types'
 import { compactList } from '../presentation'
@@ -46,16 +47,19 @@ export function GatewayManifestSection({
     ? [
         ...toolColumns,
         {
-          title: '',
-          key: 'invoke',
-          fixed: 'right',
-          width: 64,
+          ...tableColumnPresets.action,
+          title: '操作',
           render: (_, tool) => (
-            <ManagementIconButton
-              aria-label={`调用 ${tool.name}`}
-              tooltip="调用"
-              icon={<PlayCircleOutlined />}
-              onClick={() => setSelectedTool(tool)}
+            <TableRowActionMenu
+              ariaLabel={`更多操作 ${tool.name}`}
+              items={[
+                {
+                  key: 'invoke',
+                  label: '调用工具',
+                  icon: <PlayCircleOutlined />,
+                  onClick: () => setSelectedTool(tool),
+                },
+              ]}
             />
           ),
         },

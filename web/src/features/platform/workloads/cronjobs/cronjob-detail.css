@@ -3,7 +3,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 20px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 .soha-cronjob-schedule code {
   font-size: 18px;

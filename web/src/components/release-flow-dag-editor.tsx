@@ -17,7 +17,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import dagre from 'dagre'
-import { Button, Card, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Button, Card, Input, InputNumber, Select, Switch, Tag, Typography } from 'antd'
 import { CloseOutlined } from '@ant-design/icons'
 import '@xyflow/react/dist/style.css'
 import { ManagementState } from '@/components/management-list'
@@ -977,6 +977,25 @@ function ReleaseFlowDagEditorInner({
       </div>
     </div>
   ) : null
+  const floatingToolbar = (
+    <div className="soha-dag-floating-toolbar" role="toolbar" aria-label={localeCode === 'zh_CN' ? '画布操作' : 'Canvas actions'}>
+      <Button size="small" type="primary" onClick={applyAutoLayout}>
+        {localeCode === 'zh_CN' ? '自动布局' : 'Auto Layout'}
+      </Button>
+      <Button size="small" onClick={() => fitView({ padding: 0.2 })}>
+        {localeCode === 'zh_CN' ? '适配视图' : 'Fit View'}
+      </Button>
+      <Button
+        size="small"
+        type="text"
+        danger
+        disabled={!selectedNodeId && !selectedEdgeId}
+        onClick={removeSelected}
+      >
+        {localeCode === 'zh_CN' ? '删除选中' : 'Delete Selected'}
+      </Button>
+    </div>
+  )
   const palettePanel = panel(localeCode === 'zh_CN' ? '节点面板' : 'Node Palette', (
     <>
     <div className="soha-dag-palette">
@@ -986,13 +1005,6 @@ function ReleaseFlowDagEditorInner({
         </Button>
       ))}
     </div>
-    <Space wrap>
-      <Button type="primary" onClick={applyAutoLayout}>{localeCode === 'zh_CN' ? '自动布局' : 'Auto Layout'}</Button>
-      <Button onClick={() => fitView({ padding: 0.2 })}>{localeCode === 'zh_CN' ? '适配视图' : 'Fit View'}</Button>
-      <Button type="text" danger disabled={!selectedNodeId && !selectedEdgeId} onClick={removeSelected}>
-        {localeCode === 'zh_CN' ? '删除选中' : 'Delete Selected'}
-      </Button>
-    </Space>
     <Text type="secondary">
       {useFloatingInspector
         ? (localeCode === 'zh_CN'
@@ -1006,6 +1018,7 @@ function ReleaseFlowDagEditorInner({
   ))
   const canvasPanel = panel(localeCode === 'zh_CN' ? 'DAG 画布' : 'DAG Canvas', (
     <WorkflowCanvasSurface className="soha-dag-canvas" height={height}>
+      {floatingToolbar}
       <ReactFlow<FlowNode, FlowEdge>
         nodes={nodes}
         edges={edges}

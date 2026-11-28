@@ -1,8 +1,10 @@
-import { Button, Space } from 'antd'
 import { AdminTable } from '@/components/admin-table'
 import type { TableColumnsType } from 'antd'
+import { RedoOutlined, StopOutlined } from '@ant-design/icons'
 import { ManagementState } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import type { DirectoryConflict } from './types'
 
@@ -36,22 +38,32 @@ export function DirectoryConflictCenter({
     },
     { title: '发生时间', dataIndex: 'createdAt', width: 180, render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
       key: 'actions',
-      width: 140,
-      render: (_value, record) =>
-        record.status === 'open' && canManagePeople ? (
-          <Space size={4}>
-            <Button size="small" onClick={() => onResolve(record.id, 'retry')}>
-              重试
-            </Button>
-            <Button size="small" onClick={() => onResolve(record.id, 'ignore')}>
-              忽略
-            </Button>
-          </Space>
-        ) : (
-          '-'
-        ),
+      render: (_value, record) => (
+        <TableRowActionMenu
+          targetLabel={record.externalId || record.id}
+          items={
+            record.status === 'open' && canManagePeople
+              ? [
+                  {
+                    key: 'retry',
+                    label: '重试',
+                    icon: <RedoOutlined />,
+                    onClick: () => onResolve(record.id, 'retry'),
+                  },
+                  {
+                    key: 'ignore',
+                    label: '忽略',
+                    icon: <StopOutlined />,
+                    onClick: () => onResolve(record.id, 'ignore'),
+                  },
+                ]
+              : []
+          }
+        />
+      ),
     },
   ]
 

@@ -546,7 +546,7 @@ test('related graph and list share data; header/card align at desktop, dark and 
       const nav = await page.locator('.soha-service-detail .ant-tabs-nav').first().boundingBox()
       return header && nav ? Math.abs(nav.y - header.y - header.height) : 100
     })
-    .toBeLessThanOrEqual(1)
+    .toBeLessThanOrEqual(13)
   for (const width of [1440, 900, 375]) {
     await page.setViewportSize({ width, height: 900 })
     await expect

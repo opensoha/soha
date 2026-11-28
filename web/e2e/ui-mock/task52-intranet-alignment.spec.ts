@@ -576,23 +576,34 @@ for (const [width, theme] of [
     await page.goto('/network-access/access-grants')
     if (theme === 'dark')
       await page.getByRole('button', { name: '切换到深色模式', exact: true }).click()
-    const vpnGroup = page
-      .locator('.ant-menu-item-group')
-      .filter({ has: page.locator('.soha-nav-section-title', { hasText: '零信任网络与 VPN' }) })
-    await expect(vpnGroup.locator(':scope > .ant-menu-item-group-list > li')).toHaveCount(6)
-    await expect(vpnGroup.locator('.ant-menu-item-selected')).toHaveText('访问授权')
-    await expect(
-      vpnGroup.locator('.ant-menu-submenu-title').filter({ hasText: '访问控制' }),
-    ).toHaveAttribute('aria-expanded', 'true')
+    const sidebar = page.getByRole('complementary')
+    for (const title of ['站点与网络', '访问控制', 'VPN 配置', '连接监控', '零信任网络与 VPN']) {
+      await expect(
+        sidebar.locator('.soha-rail-group__title').filter({ hasText: new RegExp(`^${title}$`) }),
+      ).toBeVisible()
+    }
+    const controlsGroup = sidebar
+      .locator('.soha-rail-group')
+      .filter({ has: page.locator('.soha-rail-group__title', { hasText: /^访问控制$/ }) })
+    await expect(controlsGroup.locator('.soha-rail-group__header')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    await expect(controlsGroup.locator('.soha-rail-nav-item.is-active')).toHaveText('访问授权')
     await expect(page.locator('.ant-breadcrumb')).toContainText('访问控制')
     await expect(page.locator('.ant-breadcrumb a').filter({ hasText: '访问控制' })).toHaveCount(0)
-    const vpn = vpnGroup.locator('.ant-menu-submenu-title').filter({ hasText: 'VPN 配置' })
-    await vpn.focus()
-    await page.keyboard.press('Enter')
-    await expect(vpn).toHaveAttribute('aria-expanded', 'true')
-    await vpnGroup.getByRole('menuitem', { name: /VPN 连接方案$/ }).click()
+    const vpnGroup = sidebar
+      .locator('.soha-rail-group')
+      .filter({ has: page.locator('.soha-rail-group__title', { hasText: /^VPN 配置$/ }) })
+    const vpnHeader = vpnGroup.locator('.soha-rail-group__header')
+    if ((await vpnHeader.getAttribute('aria-expanded')) !== 'true') {
+      await vpnHeader.focus()
+      await page.keyboard.press('Enter')
+    }
+    await expect(vpnHeader).toHaveAttribute('aria-expanded', 'true')
+    await vpnGroup.getByRole('button', { name: /VPN 连接方案$/ }).click()
     await expect(page).toHaveURL(/\/network-access\/vpn\/profiles$/)
-    await expect(vpnGroup.locator('.ant-menu-item-selected')).toHaveText('VPN 连接方案')
+    await expect(vpnGroup.locator('.soha-rail-nav-item.is-active')).toHaveText('VPN 连接方案')
     verifyBrowserEvidence(evidence)
   })
 }
@@ -650,8 +661,8 @@ test('intranet containers prune denied children and retain custom navigation', a
     },
   )
   await page.goto('/network-access/spaces')
-  await expect(page.getByRole('menuitem', { name: /站点与网络/ })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: /运营入口/ })).toBeVisible()
+  await expect(page.locator('aside').getByRole('button', { name: /站点与网络/ })).toBeVisible()
+  await expect(page.locator('aside').getByRole('button', { name: /运营入口/ })).toBeVisible()
   await expect(page.locator('aside').getByText('访问控制', { exact: true })).toHaveCount(0)
   await expect(page.locator('aside').getByText('VPN 配置', { exact: true })).toHaveCount(0)
   await expect(page.locator('aside').getByText('网关', { exact: true })).toHaveCount(0)

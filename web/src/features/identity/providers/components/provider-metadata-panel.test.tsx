@@ -2,10 +2,10 @@
 
 import { I18nProvider } from '@/i18n'
 import { ApiError } from '@/services/api-error'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { App as AntdApp } from 'antd'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { identityProviderQueries } from '../queries'
 import type { IdentityProvider } from '../types'

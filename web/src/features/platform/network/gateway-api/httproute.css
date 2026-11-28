@@ -1,6 +1,3 @@
-.soha-httproute-detail > .soha-workload-detail-page {
-  gap: 0;
-}
 .soha-httproute-rule-picker {
   width: 240px;
   max-width: 100%;
@@ -54,9 +51,9 @@
   display: grid;
   gap: 8px;
   width: 100%;
-  padding: 12px;
-  border: 1px solid var(--soha-border-color);
+  padding: 12px 14px;
   border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 .soha-httproute-match > div {
   display: flex;

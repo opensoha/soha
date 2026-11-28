@@ -12,9 +12,7 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
-  Space,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -24,10 +22,10 @@ import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { scrollableModalBodyStyle } from '@/components/modal-styles'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { localeText, useI18n } from '@/i18n'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -151,7 +149,7 @@ export function VirtualizationImagesPage({
   const { virtualizationModuleEnabled, canCreateImages, canUpdateImages, canDeleteImages } =
     useVirtualizationPermissions()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const imageProvider = Form.useWatch('provider', form) ?? 'kubevirt'
   const imagesQuery = useQuery(
     virtualizationQueries.images(
@@ -266,37 +264,49 @@ export function VirtualizationImagesPage({
     },
     {
       ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
       render: (_value, record) => {
         const canUpdate = canUpdateImages && hasAllowedAction(record.allowedActions, 'update')
         const canDelete = canDeleteImages && hasAllowedAction(record.allowedActions, 'delete')
-        if (!canUpdate && !canDelete) return null
         return (
-          <Space className="soha-row-action-icons">
-            {canUpdate ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '编辑镜像', 'Edit image')}
-                size="small"
-                tooltip={localeText(localeCode, '编辑', 'Edit')}
-                icon={<EditOutlined />}
-                onClick={() => openImageEditor(record)}
-              />
-            ) : null}
-            {canDelete ? (
-              <Popconfirm
-                title={localeText(localeCode, '确认删除镜像入口？', 'Delete this image entry?')}
-                onConfirm={() => deleteMutation.mutate(record.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '删除镜像', 'Delete image')}
-                  size="small"
-                  tooltip={localeText(localeCode, '删除', 'Delete')}
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
+          <TableRowActionMenu
+            targetLabel={record.name}
+            items={[
+              ...(canUpdate
+                ? [
+                    {
+                      key: 'edit',
+                      icon: <EditOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '编辑镜像', 'Edit image'),
+                      onClick: () => openImageEditor(record),
+                    },
+                  ]
+                : []),
+              { type: 'divider' as const },
+              ...(canDelete
+                ? [
+                    {
+                      key: 'delete',
+                      icon: <DeleteOutlined aria-hidden="true" />,
+                      label: localeText(localeCode, '删除镜像', 'Delete image'),
+                      danger: true,
+                      onClick: () =>
+                        modal.confirm({
+                          title: localeText(
+                            localeCode,
+                            '确认删除镜像入口？',
+                            'Delete this image entry?',
+                          ),
+                          content: record.name,
+                          okButtonProps: { danger: true },
+                          onOk: () => deleteMutation.mutateAsync(record.id),
+                        }),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         )
       },
     },

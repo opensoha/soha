@@ -35,7 +35,6 @@ import {
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import '../provider-portal-pages.css'
-import { PortalAccountMenu } from '../shared/account-menu'
 import { formatPortalDateTime } from '../shared/formatters'
 import { PortalViewNav } from '../shared/portal-view-nav'
 
@@ -216,14 +215,9 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
   }
 
   return (
-    <div className="soha-provider-portal soha-provider-portal-home soha-portal-colleague-works">
-      <main className="soha-portal-main">
-        <PortalViewNav
-          active="colleague-works"
-          myAppsCount={catalog?.myAppsCount}
-          extra={<PortalAccountMenu />}
-        />
-        <ReadFeedback query={catalogQuery} label="同事作品" />
+    <div className="soha-page soha-provider-portal soha-provider-portal-home is-app-shell soha-portal-colleague-works">
+      <PortalViewNav active="colleague-works" myAppsCount={catalog?.myAppsCount} />
+      <ReadFeedback query={catalogQuery} label="同事作品" />
 
         {!denied ? (
           <section className="soha-portal-hosted-surface">
@@ -437,7 +431,6 @@ export function ColleagueWorksView({ authorId = '' }: { authorId?: string }) {
             )}
           </section>
         ) : null}
-      </main>
     </div>
   )
 }

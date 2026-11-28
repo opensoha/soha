@@ -183,71 +183,108 @@ function AlertEventDetailBody({
         ) : null}
       </>
     )
+  const summaryCard = (
+    <Card title="事件摘要" extra={inDrawer ? actions : undefined} loading={detail.eventQuery.isLoading}>
+      <Descriptions bordered size="small" column={inDrawer ? 1 : 2}>
+        <Descriptions.Item label="事件ID">{event?.id || '-'}</Descriptions.Item>
+        <Descriptions.Item label="状态">
+          {event ? <StatusTag value={event.status} /> : '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="来源">
+          {event?.sourceSystem || event?.sourceType || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="严重度">
+          {event ? <StatusTag value={event.severity} /> : '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="范围">
+          {[event?.clusterId, event?.namespace].filter(Boolean).join(' / ') || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="最近命中">
+          {formatDateTime(event?.lastSeenAt)}
+        </Descriptions.Item>
+        <Descriptions.Item label="规则ID">{event?.ruleId || '-'}</Descriptions.Item>
+        <Descriptions.Item label="当前态">{event?.currentState || '-'}</Descriptions.Item>
+        <Descriptions.Item label="接收器">{event?.receiver || '-'}</Descriptions.Item>
+        <Descriptions.Item label="最近通知">
+          {formatDateTime(event?.lastNotificationAt)}
+        </Descriptions.Item>
+        <Descriptions.Item label="触发时间">{formatDateTime(event?.startsAt)}</Descriptions.Item>
+        <Descriptions.Item label="恢复时间">{formatDateTime(event?.endsAt)}</Descriptions.Item>
+        <Descriptions.Item label="标题" span={inDrawer ? 1 : 2}>
+          {event?.title || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="摘要" span={inDrawer ? 1 : 2}>
+          {event?.summary || '-'}
+        </Descriptions.Item>
+      </Descriptions>
+    </Card>
+  )
+  const ruleContextCard = (
+    <Card title="规则与通知上下文" style={inDrawer ? { marginTop: 12 } : undefined}>
+      <ReadFeedback label="告警规则上下文" query={detail.ruleQuery} />
+      <Descriptions bordered size="small" column={inDrawer ? 1 : 2}>
+        <Descriptions.Item label="规则名称">{rule?.name || '-'}</Descriptions.Item>
+        <Descriptions.Item label="规则类型">{rule?.ruleType || '-'}</Descriptions.Item>
+        <Descriptions.Item label="通知策略">
+          {rule?.notificationPolicyId || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="自愈策略">
+          {rule?.healingPolicyIds?.join(', ') || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="聚合维度" span={inDrawer ? 1 : 2}>
+          {rule?.groupBy?.join(', ') || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="生成链接" span={inDrawer ? 1 : 2}>
+          {event?.generatorUrl ? (
+            <a href={event.generatorUrl} target="_blank" rel="noreferrer">
+              {event.generatorUrl}
+            </a>
+          ) : (
+            '-'
+          )}
+        </Descriptions.Item>
+      </Descriptions>
+    </Card>
+  )
   return (
     <div data-testid={inDrawer ? 'alert-event-drawer-content' : 'alert-event-page-content'}>
       <ReadFeedback label="告警事件" query={detail.eventQuery} />
       {operationFeedback}
-      <Card title="事件摘要" extra={actions} loading={detail.eventQuery.isLoading}>
-        <Descriptions bordered size="small" column={inDrawer ? 1 : 2}>
-          <Descriptions.Item label="事件ID">{event?.id || '-'}</Descriptions.Item>
-          <Descriptions.Item label="状态">
-            {event ? <StatusTag value={event.status} /> : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="来源">
-            {event?.sourceSystem || event?.sourceType || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="严重度">
-            {event ? <StatusTag value={event.severity} /> : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="范围">
-            {[event?.clusterId, event?.namespace].filter(Boolean).join(' / ') || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="最近命中">
-            {formatDateTime(event?.lastSeenAt)}
-          </Descriptions.Item>
-          <Descriptions.Item label="规则ID">{event?.ruleId || '-'}</Descriptions.Item>
-          <Descriptions.Item label="当前态">{event?.currentState || '-'}</Descriptions.Item>
-          <Descriptions.Item label="接收器">{event?.receiver || '-'}</Descriptions.Item>
-          <Descriptions.Item label="最近通知">
-            {formatDateTime(event?.lastNotificationAt)}
-          </Descriptions.Item>
-          <Descriptions.Item label="触发时间">{formatDateTime(event?.startsAt)}</Descriptions.Item>
-          <Descriptions.Item label="恢复时间">{formatDateTime(event?.endsAt)}</Descriptions.Item>
-          <Descriptions.Item label="标题" span={inDrawer ? 1 : 2}>
-            {event?.title || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="摘要" span={inDrawer ? 1 : 2}>
-            {event?.summary || '-'}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-      <Card title="规则与通知上下文" style={{ marginTop: 16 }}>
-        <ReadFeedback label="告警规则上下文" query={detail.ruleQuery} />
-        <Descriptions bordered size="small" column={inDrawer ? 1 : 2}>
-          <Descriptions.Item label="规则名称">{rule?.name || '-'}</Descriptions.Item>
-          <Descriptions.Item label="规则类型">{rule?.ruleType || '-'}</Descriptions.Item>
-          <Descriptions.Item label="通知策略">
-            {rule?.notificationPolicyId || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="自愈策略">
-            {rule?.healingPolicyIds?.join(', ') || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="聚合维度" span={inDrawer ? 1 : 2}>
-            {rule?.groupBy?.join(', ') || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="生成链接" span={inDrawer ? 1 : 2}>
-            {event?.generatorUrl ? (
-              <a href={event.generatorUrl} target="_blank" rel="noreferrer">
-                {event.generatorUrl}
-              </a>
-            ) : (
-              '-'
-            )}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      {!inDrawer ? (
+        <>
+          <div className="soha-alert-detail-header">
+            <div className="soha-alert-detail-header-inner">
+              <div className="soha-alert-detail-identity">
+                <div className="soha-alert-detail-title-row">
+                  <span className="soha-alert-detail-title">{event.title || event.id}</span>
+                  <StatusTag value={event.severity} />
+                  <StatusTag value={alertDisplayStatus(event)} />
+                </div>
+                <div className="soha-alert-detail-meta">
+                  <span>{event.sourceSystem || event.sourceType || '-'}</span>
+                  <span>
+                    {[event.clusterId, event.namespace].filter(Boolean).join(' / ') || '-'}
+                  </span>
+                  <span>触发 {formatDateTime(event.startsAt)}</span>
+                </div>
+              </div>
+              {actions}
+            </div>
+          </div>
+          <div className="soha-alert-detail-grid">
+            {summaryCard}
+            {ruleContextCard}
+          </div>
+        </>
+      ) : (
+        <>
+          {summaryCard}
+          {ruleContextCard}
+        </>
+      )}
       <Tabs
-        style={{ marginTop: 16 }}
+        className="soha-resource-tabs"
+        style={inDrawer ? { marginTop: 12 } : undefined}
         items={[
           {
             key: 'runs',

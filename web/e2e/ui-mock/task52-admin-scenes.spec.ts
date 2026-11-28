@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
+import { chooseRowAction } from '../fixtures/row-actions'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
@@ -842,7 +843,7 @@ for (const status of [403, 503]) {
     const { state, evidence } = await mocks(context, page)
     state.writeStatus = status
     await page.goto('/settings/login')
-    await page.getByRole('button', { name: '编辑登录源', exact: true }).click()
+    await chooseRowAction(page, '研发统一登录', '编辑')
     const dialog = page.getByRole('dialog')
     const secret = dialog.getByLabel('Client Secret', { exact: true })
     await secret.fill('synthetic-login-private-draft')
@@ -870,7 +871,7 @@ for (const status of [403, 503]) {
 test('plugin configuration keeps its draft after an unknown result', async ({ context, page }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/plugins/installed/qa-plugin')
-  await page.getByRole('button', { name: /配\s*置$/ }).click()
+  await page.getByRole('main').getByRole('button', { name: /配\s*置$/ }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('服务地址', { exact: true }).fill('https://draft.example.test')
   await dialog.getByRole('button', { name: /保\s*存/ }).click()
@@ -941,7 +942,7 @@ test('rollback failure keeps its reviewed version and the returned application r
   state.applicationStatus = 'failed'
   await page.goto('/settings/runtime-configuration')
   await page.getByRole('tab', { name: '变更历史', exact: true }).click()
-  await page.getByRole('button', { name: '查看版本 v3', exact: true }).click()
+  await chooseRowAction(page, 'v3', '查看变更')
   await page.getByRole('button', { name: /回滚到此版本/ }).click()
   const dialog = page.getByRole('dialog', { name: '回滚到版本 v3？', exact: true })
   await dialog.getByRole('button', { name: '确认回滚', exact: true }).click()
@@ -1049,7 +1050,7 @@ test('announcement unknown save preserves editor and locks close and repeat acti
 }, info) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/system/announcements')
-  await page.getByRole('button', { name: '编辑公告', exact: true }).click()
+  await chooseRowAction(page, '维护窗口通知', '编辑')
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('标题', { exact: true }).fill('维护通知草稿')
   await dialog.getByRole('button', { name: /更\s*新/ }).click()

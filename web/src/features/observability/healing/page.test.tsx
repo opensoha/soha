@@ -132,7 +132,12 @@ describe('HealingPage task tabs', () => {
     mocks.api.get.mockClear()
     await settle(() => button('刷新列表')!.click())
     expect(mocks.api.get).toHaveBeenCalledWith('/healing-runs')
-    await settle(() => button('通过')!.click())
+    await settle(() => button('更多操作：run-1')!.click())
+    const approveItem = Array.from(
+      document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((item) => item.textContent?.replace(/\s/g, '') === '通过')
+    expect(approveItem).toBeTruthy()
+    await settle(() => approveItem!.click())
     expect(mocks.api.post).toHaveBeenCalledWith('/healing-runs/run-1/approve', {
       comment: 'approved from console',
     })
@@ -165,9 +170,9 @@ describe('HealingPage task tabs', () => {
     mocks.allowActions = false
     await render()
     expect(button('新建自愈策略')).toBeUndefined()
-    expect(button('编辑自愈策略')).toBeUndefined()
+    expect(panel().querySelector('.soha-table-row-action-trigger')).toBeNull()
     await selectTab('执行记录')
-    for (const action of ['通过', '拒绝', '重试']) expect(button(action)).toBeUndefined()
+    expect(panel().querySelector('.soha-table-row-action-trigger')).toBeNull()
     mocks.api.get.mockResolvedValue({ data: [] })
     await settle(() => button('刷新列表')!.click())
     expect(panel().textContent).toContain('暂无数据')

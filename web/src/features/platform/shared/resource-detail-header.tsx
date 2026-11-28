@@ -54,45 +54,55 @@ export function ResourceDetailHeader({
     location.search,
     namespace && namespace !== '-' && namespace !== '—' ? listNamespace : null,
   )
+  const hasNamespace = Boolean(namespace && namespace !== '-' && namespace !== '—')
+  const hasMeta = Boolean(status || hasNamespace || facts || createdAt || ageSeconds != null)
   return (
     <header className="soha-k8s-detail-header">
-      <div className="soha-k8s-detail-title-row">
-        <div className="soha-k8s-detail-title">
-          {!hideBack && (
-            <Link to={href} aria-label={zh ? `返回${kind}列表` : `Back to ${kind} list`}>
-              <ArrowLeftOutlined />
-            </Link>
-          )}
-          <h1>{name}</h1>
-          <Typography.Text copyable={{ text: name }} />
+      <div className="soha-k8s-detail-header-surface">
+        <div className="soha-k8s-detail-title-row">
+          <div className="soha-k8s-detail-title">
+            {!hideBack && (
+              <Link
+                className="soha-k8s-detail-back"
+                to={href}
+                aria-label={zh ? `返回${kind}列表` : `Back to ${kind} list`}
+              >
+                <ArrowLeftOutlined />
+              </Link>
+            )}
+            <span className="soha-k8s-detail-kind-pill">{kind}</span>
+            <h1>{name}</h1>
+            <Typography.Text copyable={{ text: name }} />
+          </div>
+          <div className="soha-k8s-detail-actions">
+            {actions}
+            {(queryKey || onRefresh) && (
+              <Button
+                icon={<ReloadOutlined />}
+                aria-label={zh ? `刷新 ${kind}` : `Refresh ${kind}`}
+                loading={refreshing ?? Boolean(queryKey && fetching)}
+                onClick={() => {
+                  if (onRefresh) void onRefresh()
+                  else if (queryKey) void client.invalidateQueries({ queryKey })
+                }}
+              >
+                {zh ? '刷新' : 'Refresh'}
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="soha-k8s-detail-actions">
-          {actions}
-          {(queryKey || onRefresh) && (
-            <Button
-              icon={<ReloadOutlined />}
-              aria-label={zh ? `刷新 ${kind}` : `Refresh ${kind}`}
-              loading={refreshing ?? Boolean(queryKey && fetching)}
-              onClick={() => {
-                if (onRefresh) void onRefresh()
-                else if (queryKey) void client.invalidateQueries({ queryKey })
-              }}
-            >
-              {zh ? '刷新' : 'Refresh'}
-            </Button>
-          )}
-        </div>
-      </div>
-      <div className="soha-k8s-detail-meta">
-        {status && <StatusTag value={status} />}
-        <span>{kind}</span>
-        {namespace && namespace !== '-' && <MetadataTag tone="blue" label={namespace} />}
-        {facts}
-        {(createdAt || ageSeconds != null) && (
-          <Typography.Text type="secondary">
-            {createdAt ? formatRelativeTime(createdAt) : formatAgeSeconds(ageSeconds)}
-          </Typography.Text>
-        )}
+        {hasMeta ? (
+          <div className="soha-k8s-detail-meta">
+            {status && <StatusTag value={status} />}
+            {hasNamespace && <MetadataTag tone="blue" label={namespace!} />}
+            {facts}
+            {(createdAt || ageSeconds != null) && (
+              <Typography.Text type="secondary">
+                {createdAt ? formatRelativeTime(createdAt) : formatAgeSeconds(ageSeconds)}
+              </Typography.Text>
+            )}
+          </div>
+        ) : null}
       </div>
     </header>
   )

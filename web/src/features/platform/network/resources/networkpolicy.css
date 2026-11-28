@@ -1,6 +1,3 @@
-.soha-networkpolicy-detail > .soha-workload-detail-page {
-  gap: 0;
-}
 .soha-policy-types {
   display: flex;
   flex-wrap: wrap;

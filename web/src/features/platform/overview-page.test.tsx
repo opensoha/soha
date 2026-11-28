@@ -123,6 +123,32 @@ vi.mock('@/components/overview-visuals', () => ({
       {label}: {value}
     </div>
   ),
+  OverviewHeroCard: ({
+    eyebrowLabel,
+    value,
+    embeddedPods,
+    extraTopRight,
+    children,
+  }: {
+    eyebrowLabel: ReactNode
+    value: ReactNode
+    embeddedPods?: Array<{ key: string; label: ReactNode; value: ReactNode }>
+    extraTopRight?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div>
+      {extraTopRight}
+      <div data-testid="overview-metric">
+        {eyebrowLabel}: {value}
+      </div>
+      {embeddedPods?.map((pod) => (
+        <div key={pod.key} data-testid="overview-metric">
+          {pod.label}: {pod.value}
+        </div>
+      ))}
+      {children}
+    </div>
+  ),
   OverviewMetricCard: ({ label, value }: { label: ReactNode; value: ReactNode }) => (
     <div data-testid="overview-metric">
       {label}: {value}
@@ -611,7 +637,7 @@ describe('OverviewPage error states', () => {
       [...container.querySelectorAll('[data-testid="overview-metric"]')].map(
         (metric) => metric.textContent,
       ),
-    ).toEqual(['就绪节点: 1 / 2', 'Pod 总数: 20', '需关注 Pod: 3', '近期活跃告警: 1'])
+    ).toEqual(['Pod 总数: 20', '就绪节点: 1 / 2', '需关注 Pod: 3', '近期活跃告警: 1'])
     expect(testState.queryOptions.alerts.queryKey).toEqual([
       'observability',
       'alerts',

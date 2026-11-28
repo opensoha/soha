@@ -44,18 +44,18 @@ export default function SummaryChart({
   const chartSize = isHero ? 76 : OVERVIEW_COMPACT_CHART_SIZE
   const colors = isHero
     ? {
-        success: '#8be0b9',
-        danger: '#f59f7f',
-        neutral: 'rgba(247, 244, 238, 0.24)',
-        active: '#a7ebcb',
-        violet: '#d8efe3',
+        success: '#34d399',
+        danger: '#fb7185',
+        neutral: 'rgba(226, 232, 240, 0.28)',
+        active: '#60a5fa',
+        violet: '#a78bfa',
       }
     : {
-        success: resolvedMode === 'dark' ? '#5ec29e' : '#2b7a56',
+        success: resolvedMode === 'dark' ? '#34d399' : '#10b981',
         danger: token.colorError,
         neutral: token.colorFillSecondary,
-        active: resolvedMode === 'dark' ? '#5ec29e' : '#1f4735',
-        violet: resolvedMode === 'dark' ? '#b8b3a8' : '#4c5951',
+        active: token.colorPrimary,
+        violet: resolvedMode === 'dark' ? '#a78bfa' : '#6366f1',
       }
   const complete =
     items.length > 0 &&
@@ -110,8 +110,8 @@ export default function SummaryChart({
           animate={animate}
           theme={isHero ? 'dark' : resolveThemeMode(themeMode)}
           style={{
-            stroke: isHero ? 'rgba(23, 53, 40, 0.85)' : token.colorBgContainer,
-            lineWidth: isHero ? 1.5 : 1,
+            stroke: isHero ? 'rgba(15, 23, 42, 0.24)' : token.colorBgContainer,
+            lineWidth: isHero ? 1.5 : 1.5,
           }}
           interaction={{ elementHighlight: true }}
           tooltip={{

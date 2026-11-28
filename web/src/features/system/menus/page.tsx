@@ -3,7 +3,6 @@ import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryScope,
@@ -13,6 +12,7 @@ import {
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
@@ -21,12 +21,12 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -145,6 +145,7 @@ function formatSyntheticChildCount(record: MenuItem) {
 }
 
 export function MenusPage() {
+  const { modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [form] = Form.useForm()
@@ -302,7 +303,20 @@ export function MenusPage() {
         ) : (
           <Space orientation="vertical" size={2}>
             <Space size={8} wrap>
-              <Text strong>{value}</Text>
+              {canUpdateMenu && !blocked ? (
+                <Button
+                  type="link"
+                  style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                  onClick={() => {
+                    setEditing(findMenuItemByID(menuTree, record.id) ?? record)
+                    setModalVisible(true)
+                  }}
+                >
+                  {value}
+                </Button>
+              ) : (
+                <Text strong>{value}</Text>
+              )}
               <Tag>{record.parentId ? '子菜单' : '顶级'}</Tag>
               {countDirectMenuChildren(record) > 0 ? (
                 <Tag color="blue">{`${countDirectMenuChildren(record)} 个子项`}</Tag>
@@ -373,41 +387,54 @@ export function MenusPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      dataIndex: 'id',
+      key: 'actions',
       render: (_: unknown, record: MenuItem) => (
-        <Space className="soha-row-action-icons">
-          {canUpdateMenu && !record.syntheticKind ? (
-            <ManagementIconButton
-              aria-label="编辑菜单"
-              disabled={blocked}
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => {
-                setEditing(findMenuItemByID(menuTree, record.id) ?? record)
-                setModalVisible(true)
-              }}
-            />
-          ) : null}
-          {canDeleteMenu && !record.syntheticKind ? (
-            <Popconfirm
-              title="确认删除？"
-              disabled={blocked}
-              okButtonProps={{ disabled: blocked }}
-              onConfirm={() => deleteMutation.mutate(record.id)}
-            >
-              <ManagementIconButton
-                aria-label="删除菜单"
-                disabled={blocked}
-                danger
-                icon={<DeleteOutlined />}
-                size="small"
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-          {(!canUpdateMenu && !canDeleteMenu) || record.syntheticKind ? '-' : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.labelZh}
+          loading={deleteMutation.isPending && deleteMutation.variables === record.id}
+          items={
+            record.syntheticKind
+              ? []
+              : [
+                  ...(canUpdateMenu
+                    ? [
+                        {
+                          key: 'edit',
+                          label: '编辑',
+                          icon: <EditOutlined />,
+                          disabled: blocked,
+                          onClick: () => {
+                            setEditing(findMenuItemByID(menuTree, record.id) ?? record)
+                            setModalVisible(true)
+                          },
+                        },
+                      ]
+                    : []),
+                  ...(canDeleteMenu
+                    ? [
+                        { type: 'divider' as const },
+                        {
+                          key: 'delete',
+                          label: '删除',
+                          icon: <DeleteOutlined />,
+                          danger: true,
+                          disabled: blocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: `确认删除菜单「${record.labelZh}」？`,
+                              okText: '删除',
+                              cancelText: '取消',
+                              okButtonProps: { danger: true, disabled: blocked },
+                              onOk: () =>
+                                deleteMutation.mutateAsync(record.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]
+          }
+        />
       ),
     },
   ]

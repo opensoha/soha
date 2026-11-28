@@ -45,7 +45,13 @@ export function createSessionDockStore(
   scopeKey?: string,
 ) {
   return createStore<DockState>()(
-    persist((): DockState => ({ sessions: [], activeSessionKeys: {}, selectedClusterId: null }), {
+    persist(
+      (): DockState => ({
+        sessions: [],
+        activeSessionKeys: {},
+        selectedClusterId: null,
+      }),
+      {
       // Legacy mixed sessions have no workbench attribution, so cannot be restored safely.
       name:
         workbench === 'delivery'
@@ -86,7 +92,7 @@ export function createSessionDockStore(
       merge: (saved, current) => {
         const result = savedState.safeParse(saved)
         if (!result.success) return current
-        const sessions = result.data.sessions
+        const parsedSessions = result.data.sessions
           .flatMap((value) => {
             const parsed = descriptor.safeParse(value)
             const session = parsed.success ? normalizeRealtimeSession(parsed.data) : null
@@ -97,6 +103,7 @@ export function createSessionDockStore(
           .filter(
             (session, index, list) => list.findIndex((item) => item.id === session.id) === index,
           )
+        const sessions = parsedSessions
         const activeSessionKeys = Object.fromEntries(
           Object.entries(result.data.activeSessionKeys ?? {}).filter(([cluster, id]) =>
             sessions.some((item) => item.clusterId === cluster && item.id === id),

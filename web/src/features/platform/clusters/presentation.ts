@@ -67,6 +67,7 @@ export function formatClusterHealth(value: string | undefined, localeCode: strin
   if (['error', 'failed', 'disconnected', 'critical', 'notready', 'lost'].includes(normalized)) {
     return '异常'
   }
+  if (['degraded', 'partial'].includes(normalized)) return '已降级'
   if (['pending', 'warning', 'queued', 'waiting'].includes(normalized)) return '等待'
   if (['syncing', 'checking', 'initializing'].includes(normalized)) return '同步中'
   return value || '未知'

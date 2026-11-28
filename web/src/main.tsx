@@ -40,6 +40,10 @@ function AppProviders() {
   const lightCanvasColor = usePreferencesStore((state) => state.lightCanvasColor)
   const darkCanvasColor = usePreferencesStore((state) => state.darkCanvasColor)
   const paperGrain = usePreferencesStore((state) => state.paperGrain)
+  const overviewHeroStyle = usePreferencesStore((state) => state.overviewHeroStyle)
+  const overviewGradientPreset = usePreferencesStore((state) => state.overviewGradientPreset)
+  const overviewGradientStops = usePreferencesStore((state) => state.overviewGradientStops)
+  const cornerRadius = usePreferencesStore((state) => state.cornerRadius)
   const brandingQuery = useBrandingSettings()
   const [systemThemeVersion, setSystemThemeVersion] = React.useState(0)
 
@@ -68,17 +72,30 @@ function AppProviders() {
       watchSystemMotion(() => {
         applyAppTheme(DEFAULT_APP_THEME_ID, themeMode, accentColor, activeCanvasColor, {
           paperGrain,
+          overviewHeroStyle,
+          overviewGradientPreset,
+          overviewGradientStops,
+          cornerRadius,
         })
         setSystemThemeVersion((current) => current + 1)
       }),
-    [accentColor, activeCanvasColor, paperGrain, themeMode],
+    [
+      accentColor,
+      activeCanvasColor,
+      cornerRadius,
+      overviewGradientPreset,
+      overviewGradientStops,
+      overviewHeroStyle,
+      paperGrain,
+      themeMode,
+    ],
   )
 
   const antdTheme = React.useMemo(() => {
-    const theme = getAntdTheme(resolvedThemeMode, accentColor, activeCanvasColor)
+    const theme = getAntdTheme(resolvedThemeMode, accentColor, activeCanvasColor, cornerRadius)
     // Keep Antd's motion provider present from the first render to preserve page state.
     return systemThemeVersion === 0 ? { ...theme, token: { ...theme.token, motion: false } } : theme
-  }, [accentColor, activeCanvasColor, resolvedThemeMode, systemThemeVersion])
+  }, [accentColor, activeCanvasColor, cornerRadius, resolvedThemeMode, systemThemeVersion])
 
   return (
     <ConfigProvider

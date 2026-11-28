@@ -1,10 +1,10 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { useMemo } from 'react'
-import { Space, Tag, Typography } from 'antd'
+import { Button, Space, Tag, Typography } from 'antd'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ManagementIconButton } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { OverviewMetricCard, type OverviewMetricItem } from '@/components/overview-visuals'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { DeliveryTable } from '@/features/delivery/delivery-table'
@@ -95,7 +95,13 @@ export function ReleaseBundlesPage() {
             render: (value: string, record: ReleaseBundle) => (
               <Space orientation="vertical" size={0}>
                 <Space size={6} wrap>
-                  <Text strong>{value}</Text>
+                  <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                    onClick={() => navigate(`/delivery/release-bundles/${record.id}`)}
+                  >
+                    {value}
+                  </Button>
                   {record.id === focusedReleaseBundleId ? <Tag color="blue">已定位</Tag> : null}
                 </Space>
                 <Text type="secondary">{record.id}</Text>
@@ -149,12 +155,16 @@ export function ReleaseBundlesPage() {
             title: '操作',
             dataIndex: 'id',
             render: (_: string, record: ReleaseBundle) => (
-              <ManagementIconButton
-                aria-label="查看版本包详情"
-                icon={<ArrowRightOutlined />}
-                size="small"
-                tooltip="查看详情"
-                onClick={() => navigate(`/delivery/release-bundles/${record.id}`)}
+              <TableRowActionMenu
+                targetLabel={record.version || record.id}
+                items={[
+                  {
+                    key: 'detail',
+                    label: '查看版本包详情',
+                    icon: <ArrowRightOutlined />,
+                    onClick: () => navigate(`/delivery/release-bundles/${record.id}`),
+                  },
+                ]}
               />
             ),
           },

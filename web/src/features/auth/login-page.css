@@ -260,7 +260,7 @@
   height: auto;
   padding: 7px !important;
   border: 1px solid var(--soha-hairline-strong) !important;
-  border-radius: 30px !important;
+  border-radius: calc(var(--soha-radius-lg, 16px) + 10px) !important;
   background: var(--soha-bezel-bg) !important;
   box-shadow:
     0 32px 72px -20px rgba(23, 33, 28, 0.14),
@@ -289,7 +289,7 @@
   gap: 16px;
   min-height: 0;
   padding: 30px 28px;
-  border-radius: 23px;
+  border-radius: calc(var(--soha-radius-lg, 16px) + 3px);
   background: var(--soha-bg-surface);
   box-shadow:
     var(--soha-inner-highlight),

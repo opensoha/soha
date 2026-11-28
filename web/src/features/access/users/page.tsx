@@ -12,7 +12,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
@@ -33,7 +32,6 @@ import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import {
-  ManagementIconButton,
   ManagementDensityButton,
   ManagementKeywordField,
   ManagementQueryField,
@@ -43,6 +41,7 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { renderCompactMappedTags } from '../shared/compact-mapped-tags'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
@@ -80,7 +79,7 @@ function avatarFit(value?: string) {
 }
 
 export function AccessUsersPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
@@ -240,7 +239,7 @@ export function AccessUsersPage() {
     {
       title: '头像',
       key: 'avatar',
-      width: 76,
+      width: 56,
       render: (_: unknown, record: AccessUser) => (
         <Avatar
           alt={getUserLabel(record)}
@@ -256,22 +255,34 @@ export function AccessUsersPage() {
     {
       title: '用户名',
       dataIndex: 'username',
-      width: 180,
-      render: (value: string) => <Text strong>{value || '-'}</Text>,
+      width: 132,
+      render: (value: string, record: AccessUser) =>
+        canUpdateUsers ? (
+          <Button
+            type="link"
+            disabled={crud.saveBlocked && editing?.id !== record.id}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => crud.openEdit(record)}
+          >
+            {value || '-'}
+          </Button>
+        ) : (
+          <Text strong>{value || '-'}</Text>
+        ),
     },
     {
       title: '显示名',
       dataIndex: 'displayName',
-      width: 180,
+      width: 156,
       render: (value: string, record: AccessUser) => (
         <Text type={value ? undefined : 'secondary'}>{value || record.email || '-'}</Text>
       ),
     },
-    { title: '邮箱', dataIndex: 'email', width: 240 },
+    { title: '邮箱', dataIndex: 'email', width: 196 },
     {
       title: '登录源',
       dataIndex: 'loginSources',
-      width: 140,
+      width: 116,
       render: (sources: AccessUser['loginSources']) =>
         sources?.length ? (
           <Space size={[4, 4]} wrap>
@@ -316,90 +327,112 @@ export function AccessUsersPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      width: 204,
-      dataIndex: 'id',
+      key: 'actions',
       render: (_: unknown, record: AccessUser) => (
-        <Space className="soha-row-action-icons">
-          {canUpdateUsers || canDeleteUsers || canViewScopeGrants || canDisposeHeya ? (
-            <>
-              {canViewScopeGrants ? (
-                <ManagementIconButton
-                  aria-label="授权范围"
-                  icon={<FolderOpenOutlined />}
-                  size="small"
-                  tooltip="授权范围"
-                  onClick={() => setGrantUser(record)}
-                />
-              ) : null}
-              {canUpdateUsers ? (
-                <ManagementIconButton
-                  aria-label="编辑用户"
-                  disabled={crud.saveBlocked && editing?.id !== record.id}
-                  icon={<EditOutlined />}
-                  size="small"
-                  tooltip="编辑"
-                  onClick={() => crud.openEdit(record)}
-                />
-              ) : null}
-              {canUpdateUsers ? (
-                <Popconfirm
-                  title={`确认重置 ${record.username} 的 MFA？`}
-                  description="所有 MFA 凭据和恢复码将失效，并撤销现有会话。"
-                  okButtonProps={{ 'aria-label': '确认重置 MFA' }}
-                  onConfirm={() => {
-                    if (resettingMFA.current || writeOutcomeUnknown(resetMFAMutation.error)) return
-                    resettingMFA.current = true
-                    resetMFAMutation.mutate({
-                      id: record.id,
-                      input: {
-                        reason: 'Reset by administrator from user management',
-                        revokeSessions: true,
-                      },
-                    })
-                  }}
-                >
-                  <ManagementIconButton
-                    aria-label="重置 MFA"
-                    disabled={
-                      resetMFAMutation.isPending || writeOutcomeUnknown(resetMFAMutation.error)
-                    }
-                    danger
-                    icon={<SafetyCertificateOutlined />}
-                    loading={resetMFAMutation.isPending}
-                    size="small"
-                    tooltip="重置 MFA"
-                  />
-                </Popconfirm>
-              ) : null}
-              {canDisposeHeya && record.status === 'disabled' ? (
-                <ManagementIconButton
-                  aria-label="处置 Heya 资产"
-                  icon={<SwapOutlined />}
-                  size="small"
-                  tooltip="处置 Heya 资产"
-                  onClick={() => setInheritance({ ownerId: record.id, session: sessionGeneration })}
-                />
-              ) : null}
-              {canDeleteUsers ? (
-                <Popconfirm
-                  title={`确认删除用户 ${record.username}？`}
-                  onConfirm={() => crud.deleteRecord(record.id)}
-                >
-                  <ManagementIconButton
-                    aria-label="删除用户"
-                    disabled={crud.deleteBlocked}
-                    danger
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    tooltip="删除"
-                  />
-                </Popconfirm>
-              ) : null}
-            </>
-          ) : (
-            '-'
-          )}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.username}
+          loading={resetMFAMutation.isPending && resetMFAMutation.variables?.id === record.id}
+          items={[
+            ...(canViewScopeGrants
+              ? [
+                  {
+                    key: 'grants',
+                    label: '授权范围',
+                    icon: <FolderOpenOutlined />,
+                    onClick: () => setGrantUser(record),
+                  },
+                ]
+              : []),
+            ...(canUpdateUsers
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    disabled: crud.saveBlocked && editing?.id !== record.id,
+                    onClick: () => crud.openEdit(record),
+                  },
+                ]
+              : []),
+            ...(canDisposeHeya && record.status === 'disabled'
+              ? [
+                  {
+                    key: 'dispose-heya',
+                    label: '处置 Heya 资产',
+                    icon: <SwapOutlined />,
+                    onClick: () =>
+                      setInheritance({ ownerId: record.id, session: sessionGeneration }),
+                  },
+                ]
+              : []),
+            ...(canUpdateUsers || canDeleteUsers ? [{ type: 'divider' as const }] : []),
+            ...(canUpdateUsers
+              ? [
+                  {
+                    key: 'reset-mfa',
+                    label: '重置 MFA',
+                    icon: <SafetyCertificateOutlined />,
+                    danger: true,
+                    disabled:
+                      resetMFAMutation.isPending || writeOutcomeUnknown(resetMFAMutation.error),
+                    onClick: () => {
+                      modal.confirm({
+                        title: '重置 MFA',
+                        content: (
+                          <div>
+                            <div>{`确认重置 ${record.username} 的 MFA？`}</div>
+                            <div style={{ marginTop: 4 }}>
+                              所有 MFA 凭据和恢复码将失效，并撤销现有会话。
+                            </div>
+                          </div>
+                        ),
+                        okText: '确认重置',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, 'aria-label': '确认重置 MFA' },
+                        onOk: () => {
+                          if (resettingMFA.current || writeOutcomeUnknown(resetMFAMutation.error)) {
+                            return
+                          }
+                          resettingMFA.current = true
+                          return resetMFAMutation
+                            .mutateAsync({
+                              id: record.id,
+                              input: {
+                                reason: 'Reset by administrator from user management',
+                                revokeSessions: true,
+                              },
+                            })
+                            .catch(() => undefined)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+            ...(canDeleteUsers
+              ? [
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: crud.deleteBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `确认删除用户 ${record.username}？`,
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true },
+                        onOk: () => {
+                          crud.deleteRecord(record.id)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

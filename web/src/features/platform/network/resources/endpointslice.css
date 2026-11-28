@@ -1,6 +1,3 @@
-.soha-endpointslice-detail > .soha-workload-detail-page {
-  gap: 0;
-}
 .soha-slice-ports {
   display: flex;
   flex-wrap: wrap;

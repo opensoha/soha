@@ -54,11 +54,14 @@
 .soha-workflow-center__workbench {
   display: grid;
   grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.4fr);
-  align-items: start;
+  align-items: stretch;
   gap: 16px;
 }
 
 .soha-workflow-center__panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-panel);

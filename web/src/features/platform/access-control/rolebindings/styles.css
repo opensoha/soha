@@ -1,11 +1,3 @@
-.soha-rolebinding-detail .soha-workload-detail-page {
-  gap: 0;
-}
-
-.soha-rolebinding-detail .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
-
 .soha-rolebinding-detail .soha-rb-section-title {
   display: inline-flex;
   align-items: center;

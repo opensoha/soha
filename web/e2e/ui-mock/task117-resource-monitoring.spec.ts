@@ -222,6 +222,7 @@ test('legacy detail URL stays on a full tab, preserves scope/time, and exposes s
   await expect(page).toHaveURL(
     /clusterId=cluster-a&node=worker-024&rangeMinutes=360#monitoring-memory$/,
   )
+  await expect(active(page)).toContainText('host.memory.used')
   await active(page).getByRole('button', { name: '采样数据', exact: true }).first().click()
   await expect(page.getByRole('dialog')).toContainText('worker-024')
   await page.keyboard.press('Escape')

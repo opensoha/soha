@@ -33,14 +33,16 @@ const testState = vi.hoisted(() => ({
   },
   prefs: {
     currentWorkspace: 'resource' as string | null,
+    dualRailStage: 'expanded' as 'expanded' | 'rail-only',
     localeCode: 'zh_CN',
     setCurrentWorkspace: vi.fn((workspace: string | null) => {
       testState.prefs.currentWorkspace = workspace
     }),
+    setDualRailStage: vi.fn((stage: 'expanded' | 'rail-only') => {
+      testState.prefs.dualRailStage = stage
+    }),
     setLocaleCode: vi.fn(),
-    setSidebarCollapsed: vi.fn(),
     setThemeMode: vi.fn(),
-    sidebarCollapsed: false,
     themeMode: 'light',
   },
   snapshot: {
@@ -176,12 +178,12 @@ vi.mock('@/stores/preferences-store', () => ({
   usePreferencesStore: (selector: (state: any) => unknown) =>
     selector({
       currentWorkspace: testState.prefs.currentWorkspace,
+      dualRailStage: testState.prefs.dualRailStage,
       localeCode: testState.prefs.localeCode,
       setCurrentWorkspace: testState.prefs.setCurrentWorkspace,
+      setDualRailStage: testState.prefs.setDualRailStage,
       setLocaleCode: testState.prefs.setLocaleCode,
-      setSidebarCollapsed: testState.prefs.setSidebarCollapsed,
       setThemeMode: testState.prefs.setThemeMode,
-      sidebarCollapsed: testState.prefs.sidebarCollapsed,
       themeMode: testState.prefs.themeMode,
     }),
 }))
@@ -307,10 +309,10 @@ describe('app layout workspace navigation', () => {
     testState.auth.clearAuth.mockClear()
     testState.auth.user = { userName: 'Admin', email: 'admin@example.com', roles: ['ops'] }
     testState.prefs.currentWorkspace = 'resource'
+    testState.prefs.dualRailStage = 'expanded'
     testState.prefs.localeCode = 'zh_CN'
-    testState.prefs.sidebarCollapsed = false
     testState.prefs.themeMode = 'light'
-    testState.prefs.setSidebarCollapsed.mockClear()
+    testState.prefs.setDualRailStage.mockClear()
     testState.prefs.setCurrentWorkspace.mockClear()
     testState.snapshot = {
       permissionKeys: [
@@ -420,7 +422,7 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe(
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe(
       'k8s工作台',
     )
     expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain(
@@ -600,13 +602,13 @@ describe('app layout workspace navigation', () => {
   it('filters the business menu by the current application workspace', async () => {
     const container = await renderWithProviders('/applications')
 
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe(
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe(
       '持续交付工作台',
     )
     expect(container.querySelector('[data-testid="platform-scope-trigger"]')).toBeNull()
     expect(container.textContent).toContain('应用中心')
     expect(container.textContent).not.toContain('概览')
-    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__subnav')).not.toBeNull()
     expect(testState.prefs.setCurrentWorkspace).toHaveBeenCalledWith('application')
   })
 
@@ -744,11 +746,11 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe(
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe(
       '可观测性工作台',
     )
     expect(
-      Array.from(container.querySelectorAll('.ant-menu-item-group-title')).map((item) =>
+      Array.from(container.querySelectorAll('.soha-rail-group__title')).map((item) =>
         item.textContent?.trim(),
       ),
     ).toEqual(['探索', '数据与集成', '仪表盘', '告警与响应'])
@@ -761,7 +763,7 @@ describe('app layout workspace navigation', () => {
     expect(container.textContent).toContain('告警规则')
     expect(container.textContent).toContain('值班协同')
     expect(container.textContent).toContain('值班设置')
-    expect(container.querySelector('.ant-menu-item-selected')?.textContent).toContain('日志')
+    expect(container.querySelector('.soha-rail-nav-item.is-active')?.textContent).toContain('日志')
     expect(container.querySelector('[data-testid="platform-scope-trigger"]')).toBeNull()
   })
 
@@ -901,11 +903,11 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(
-      Array.from(container.querySelectorAll('.ant-menu-item-group-title')).map((item) =>
+      Array.from(container.querySelectorAll('.soha-rail-group__title')).map((item) =>
         item.textContent?.trim(),
       ),
     ).toEqual(['终端', '网络准入', '零信任网络与 VPN', '代理'])
-    expect(container.querySelector('.ant-menu-item-selected')?.textContent).toContain('网关')
+    expect(container.querySelector('.soha-rail-nav-item.is-active')?.textContent).toContain('网关')
     expect(container.textContent).toContain('终端资产')
     expect(container.textContent).toContain('用户入网')
     expect(container.querySelector('.ant-menu-submenu-title')).toBeNull()
@@ -921,16 +923,12 @@ describe('app layout workspace navigation', () => {
   it('switches the left nav into system workspace mode while visiting system pages', async () => {
     const container = await renderWithProviders('/system/menus')
 
-    expect(container.querySelector('.soha-workbench-switcher-shell')).not.toBeNull()
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('设置中心')
+    expect(container.querySelector('.soha-dual-rail__subhead')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe('设置中心')
     expect(container.textContent).toContain('菜单管理')
     expect(container.textContent).not.toContain('概览')
-    expect(container.querySelector('.soha-nav-business')?.className).toBe('soha-nav-business')
-    const menuModifierClasses = Array.from(
-      container.querySelector('.soha-nav-menu')?.classList ?? [],
-    ).filter((className) => className.startsWith('soha-nav-menu--'))
-    expect(menuModifierClasses).toEqual([])
-    expect(container.querySelector('.soha-sider-topbar > button.soha-sider-brand')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__subnav')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__top > button.soha-dual-rail__brand')).not.toBeNull()
     expect(container.querySelector('button[aria-label="系统设置"]')).toBeNull()
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
@@ -975,7 +973,7 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-shell')?.classList.contains('ant-layout-has-sider')).toBe(
       true,
     )
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('个人设置')
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe('个人设置')
     expect(container.textContent).toContain('个人中心')
     expect(container.textContent).toContain('关于')
     expect(container.querySelector('.soha-header-sider-toggle')).not.toBeNull()
@@ -1282,7 +1280,7 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    const menu = container.querySelector('.soha-nav-menu')
+    const menu = container.querySelector('.soha-dual-rail__subnav')
     const menuText = menu?.textContent ?? ''
     expect(menuText).not.toContain('provider')
     expect(menuText).toContain('用户管理')
@@ -1368,25 +1366,38 @@ describe('app layout workspace navigation', () => {
 
   it.each([false, true])('uses the dark brand with collapsed=%s', async (collapsed) => {
     testState.prefs.themeMode = 'dark'
-    testState.prefs.sidebarCollapsed = collapsed
+    testState.prefs.dualRailStage = collapsed ? 'rail-only' : 'expanded'
     const container = await renderWithProviders('/')
-    expect(container.querySelector('.soha-brand-logo')?.getAttribute('src')).toBe(
+    expect(container.querySelector('.soha-dual-rail__logo')?.getAttribute('src')).toBe(
+      '/dark-compact.svg',
+    )
+    const appContainer = await renderWithProviders(
+      '/applications/app-1?tab=services&applicationEnvironmentId=env-1',
+    )
+    expect(appContainer.querySelector('.soha-brand-logo')?.getAttribute('src')).toBe(
       collapsed ? '/dark-compact.svg' : '/dark-expanded.svg',
     )
   })
 
-  it('renders the workbench switcher below the brand bar and above the business menu', async () => {
+  it('renders the dual-rail master dock beside the grouped business sub-menu', async () => {
     const container = await renderWithProviders('/')
-    const brandBar = container.querySelector('.soha-sider-topbar')
-    const workbenchShell = container.querySelector('.soha-workbench-switcher-shell')
-    const businessNav = container.querySelector('.soha-nav-business')
+    const leftCol = container.querySelector('.soha-dual-rail__left-col')
+    const dock = container.querySelector('.soha-dual-rail__dock')
+    const brandBar = container.querySelector('.soha-dual-rail__top')
+    const workbenchCenter = container.querySelector('.soha-dual-rail__center')
+    const userPod = container.querySelector('.soha-dual-rail__user-pod')
+    const subnav = container.querySelector('.soha-dual-rail__subnav')
 
+    expect(leftCol).not.toBeNull()
+    expect(dock).not.toBeNull()
     expect(brandBar).not.toBeNull()
-    expect(workbenchShell).not.toBeNull()
-    expect(businessNav).not.toBeNull()
+    expect(workbenchCenter).not.toBeNull()
+    expect(userPod).not.toBeNull()
+    expect(subnav).not.toBeNull()
     expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
-    expect(brandBar?.nextElementSibling).toBe(workbenchShell)
-    expect(workbenchShell?.nextElementSibling).toBe(businessNav)
+    expect(brandBar?.nextElementSibling).toBe(workbenchCenter)
+    expect(dock?.nextElementSibling).toBe(userPod)
+    expect(leftCol?.nextElementSibling).toBe(subnav)
   })
 
   it.each([true, false])(
@@ -1400,17 +1411,14 @@ describe('app layout workspace navigation', () => {
       )
       if (chat) testState.snapshot.permissionKeys.push('observe.ai.chat')
       const container = await renderWithProviders('/')
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>('.soha-workbench-switcher')?.click(),
-      )
-      const labels = Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).map(
-        (item) => item.textContent,
-      )
-      expect(labels.some((label) => label?.includes('Heya'))).toBe(chat)
-      expect(labels.some((label) => label?.includes('AI工作台'))).toBe(true)
+      const labels = Array.from(
+        container.querySelectorAll('.soha-dual-rail__wb-list button'),
+      ).map((item) => item.getAttribute('aria-label') ?? '')
+      expect(labels.some((label) => label.includes('Heya'))).toBe(chat)
+      expect(labels.some((label) => label.includes('AI工作台'))).toBe(true)
       if (chat)
-        expect(labels.findIndex((label) => label?.includes('Heya'))).toBe(
-          labels.findIndex((label) => label?.includes('门户')) + 1,
+        expect(labels.findIndex((label) => label.includes('Heya'))).toBe(
+          labels.findIndex((label) => label.includes('门户')) + 1,
         )
     },
   )
@@ -1424,25 +1432,22 @@ describe('app layout workspace navigation', () => {
     'keeps navigation named in %s with collapsed=%s',
     async (locale, collapsed, name, toggleLabel) => {
       testState.prefs.localeCode = locale
-      testState.prefs.sidebarCollapsed = collapsed
+      testState.prefs.dualRailStage = collapsed ? 'rail-only' : 'expanded'
       const container = await renderWithProviders('/')
-      const switcher = container.querySelector<HTMLButtonElement>('.soha-workbench-switcher')!
+      const activeWb = container.querySelector<HTMLButtonElement>(
+        '.soha-dual-rail__wb-btn.is-active',
+      )!
       const toggle = container.querySelector<HTMLButtonElement>('.soha-header-sider-toggle')!
 
-      expect(switcher.getAttribute('aria-label')).toBe(name)
-      expect(switcher.hasAttribute('title')).toBe(false)
+      expect(activeWb.getAttribute('aria-label')).toBe(name)
       expect(toggle.getAttribute('aria-label')).toBe(toggleLabel)
       expect(toggle.getAttribute('aria-expanded')).toBe(String(!collapsed))
-      expect(testState.prefs.setSidebarCollapsed).not.toHaveBeenCalled()
+      expect(testState.prefs.setDualRailStage).not.toHaveBeenCalled()
       await act(async () => {
         toggle.click()
       })
-      expect(testState.prefs.setSidebarCollapsed).toHaveBeenCalledWith(!collapsed)
-      await act(async () => {
-        switcher.click()
-      })
-      expect(document.querySelector('.ant-dropdown-menu-item-selected')?.textContent).toContain(
-        name,
+      expect(testState.prefs.setDualRailStage).toHaveBeenCalledWith(
+        collapsed ? 'expanded' : 'rail-only',
       )
     },
   )
@@ -1450,7 +1455,7 @@ describe('app layout workspace navigation', () => {
   it.each([false, true])(
     'preserves desktop collapsed=%s while opening and closing narrow-screen navigation',
     async (preferredCollapsed) => {
-      testState.prefs.sidebarCollapsed = preferredCollapsed
+      testState.prefs.dualRailStage = preferredCollapsed ? 'rail-only' : 'expanded'
       const originalMatchMedia = window.matchMedia
       let changeBreakpoint!: (event: MediaQueryListEvent) => void
       window.matchMedia = (query) => {
@@ -1478,7 +1483,7 @@ describe('app layout workspace navigation', () => {
           changeBreakpoint({ matches: false } as MediaQueryListEvent)
         })
         expect(toggle.getAttribute('aria-expanded')).toBe(String(!preferredCollapsed))
-        expect(testState.prefs.setSidebarCollapsed).not.toHaveBeenCalled()
+        expect(testState.prefs.setDualRailStage).not.toHaveBeenCalled()
       } finally {
         window.matchMedia = originalMatchMedia
       }
@@ -1498,14 +1503,9 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    await act(async () => {
-      ;(container.querySelector('.soha-workbench-switcher') as HTMLButtonElement).click()
-      await Promise.resolve()
-    })
-
     expect(
-      Array.from(document.querySelectorAll('.soha-workspace-option__label')).map(
-        (item) => item.textContent,
+      Array.from(container.querySelectorAll('.soha-dual-rail__wb-list button')).map((item) =>
+        item.getAttribute('aria-label'),
       ),
     ).toEqual([
       '门户',
@@ -1605,7 +1605,7 @@ describe('app layout workspace navigation', () => {
     expect(container.textContent).toContain('概览')
     expect(container.textContent).toContain('工作负载')
     expect(container.textContent).not.toContain('platform')
-    expect(container.querySelector('.ant-menu-item-group-title')).toBeNull()
+    expect(container.querySelector('.soha-rail-group__title')).toBeNull()
   })
 
   it('shows AI workbench menus in the standard business sidebar when the AI workbench is active', async () => {
@@ -1728,8 +1728,8 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('AI工作台')
-    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe('AI工作台')
+    expect(container.querySelector('.soha-dual-rail__subnav')).not.toBeNull()
     expect(container.textContent).toContain('通用聊天')
     expect(container.textContent).toContain('巡检')
     expect(container.textContent).not.toContain('监控工作台')
@@ -1922,9 +1922,9 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('AI工作台')
-    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
-    const businessMenu = container.querySelector('.soha-nav-menu')
+    expect(container.querySelector('.soha-dual-rail__subhead strong')?.textContent).toBe('AI工作台')
+    const businessMenu = container.querySelector('.soha-dual-rail__subnav')
+    expect(businessMenu).not.toBeNull()
     expect(businessMenu?.querySelector('.ant-menu-submenu')).toBeNull()
     expect(businessMenu?.textContent).not.toContain('AI Gateway')
     expect(businessMenu?.textContent).toContain('能力清单')
@@ -2263,12 +2263,14 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('button[aria-label="系统设置"]')).toBeNull()
-    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-dual-rail__subnav')).not.toBeNull()
   })
 
   it('opens personal settings from the avatar dropdown', async () => {
     const container = await renderWithProviders('/')
-    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
+    const userButton = container.querySelector(
+      '.soha-dual-rail__user-btn',
+    ) as HTMLButtonElement | null
     expect(userButton).not.toBeNull()
 
     await act(async () => {
@@ -2294,7 +2296,9 @@ describe('app layout workspace navigation', () => {
 
   it('does not expose profile and about as separate avatar actions', async () => {
     const container = await renderWithProviders('/')
-    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
+    const userButton = container.querySelector(
+      '.soha-dual-rail__user-btn',
+    ) as HTMLButtonElement | null
 
     await act(async () => {
       userButton?.click()
@@ -2314,33 +2318,7 @@ describe('app layout workspace navigation', () => {
     expect(testState.auth.clearAuth).not.toHaveBeenCalled()
   })
 
-  it('opens password change from the avatar dropdown', async () => {
-    const container = await renderWithProviders('/')
-    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
-    expect(userButton).not.toBeNull()
-
-    await act(async () => {
-      userButton?.click()
-      await Promise.resolve()
-    })
-
-    const passwordItem = Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).find(
-      (item) => item.textContent?.includes('修改密码'),
-    ) as HTMLElement | undefined
-    expect(passwordItem).not.toBeUndefined()
-
-    await act(async () => {
-      passwordItem?.click()
-      await Promise.resolve()
-    })
-
-    const page = container.querySelector('[data-testid="page"]')
-    expect(page?.getAttribute('data-pathname')).toBe('/account/profile')
-    expect(page?.getAttribute('data-search')).toBe('?changePassword=1')
-    expect(testState.auth.clearAuth).not.toHaveBeenCalled()
-  })
-
-  it('shows portal and personal settings in the avatar dropdown', async () => {
+  it('omits portal and password shortcuts from the avatar dropdown while keeping personal settings', async () => {
     const container = await renderWithProviders('/', {
       permissionKeys: [...testState.snapshot.permissionKeys, 'identity.portal.view'],
       visibleMenuIds: [...testState.snapshot.visibleMenuIds, 'home-workbench'],
@@ -2358,7 +2336,9 @@ describe('app layout workspace navigation', () => {
         },
       ],
     })
-    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
+    const userButton = container.querySelector(
+      '.soha-dual-rail__user-btn',
+    ) as HTMLButtonElement | null
     expect(userButton).not.toBeNull()
 
     await act(async () => {
@@ -2366,30 +2346,20 @@ describe('app layout workspace navigation', () => {
       await Promise.resolve()
     })
 
-    const portalItem = Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).find(
-      (item) => item.textContent?.includes('门户首页'),
-    ) as HTMLElement | undefined
-    expect(portalItem).not.toBeUndefined()
-    expect(
-      Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).some((item) =>
-        item.textContent?.includes('个人设置'),
-      ),
-    ).toBe(true)
-
-    await act(async () => {
-      portalItem?.click()
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('[data-testid="page"]')?.getAttribute('data-pathname')).toBe(
-      '/portal',
+    const itemTexts = Array.from(document.querySelectorAll('.ant-dropdown-menu-item')).map(
+      (item) => item.textContent ?? '',
     )
+    expect(itemTexts.some((text) => text.includes('个人设置'))).toBe(true)
+    expect(itemTexts.some((text) => text.includes('门户首页'))).toBe(false)
+    expect(itemTexts.some((text) => text.includes('修改密码'))).toBe(false)
     expect(testState.auth.clearAuth).not.toHaveBeenCalled()
   })
 
   it('hides the portal shortcut when the home workbench menu is disabled', async () => {
     const container = await renderWithProviders('/')
-    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
+    const userButton = container.querySelector(
+      '.soha-dual-rail__user-btn',
+    ) as HTMLButtonElement | null
 
     await act(async () => {
       userButton?.click()
@@ -2401,5 +2371,47 @@ describe('app layout workspace navigation', () => {
         item.textContent?.includes('门户首页'),
       ),
     ).toBe(false)
+  })
+
+  it('unifies portal inside dual-rail sidebar with global Heya shortcut, group sub-menu, and header breadcrumb', async () => {
+    const container = await renderWithProviders('/portal?tag=AI%20%E4%B8%8E%E5%A4%A7%E6%A8%A1%E5%9E%8B', {
+      permissionKeys: [
+        ...testState.snapshot.permissionKeys,
+        'identity.portal.view',
+        'observe.ai.view',
+        'observe.ai.chat',
+      ],
+      visibleMenuIds: [...testState.snapshot.visibleMenuIds, 'home-workbench'],
+      visibleMenus: [
+        ...testState.snapshot.visibleMenus,
+        {
+          id: 'home-workbench',
+          path: '/portal',
+          labelZh: '门户',
+          labelEn: 'Portal',
+          iconKey: 'home',
+          section: '',
+          sortOrder: 1,
+          enabled: true,
+        },
+      ],
+    })
+
+    const masterLabels = Array.from(
+      container.querySelectorAll('.soha-dual-rail__wb-list button'),
+    ).map((btn) => btn.getAttribute('aria-label') ?? '')
+    expect(masterLabels[0]).toBe('门户')
+    expect(masterLabels[1]).toBe('打开 Heya')
+
+    const subnavText = container.querySelector('.soha-dual-rail__subnav')?.textContent ?? ''
+    expect(subnavText).toContain('全部')
+    expect(subnavText).toContain('收藏')
+    expect(subnavText).toContain('账户安全')
+
+    const breadcrumbText =
+      container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent ?? ''
+    expect(breadcrumbText).toContain('门户')
+    expect(breadcrumbText).toContain('AI 与大模型')
+    expect(container.querySelector('[data-testid="announcement-bell"]')).not.toBeNull()
   })
 })

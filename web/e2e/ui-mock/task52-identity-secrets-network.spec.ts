@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
+import { chooseRowAction } from '../fixtures/row-actions'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
@@ -313,7 +314,7 @@ test('Secret rotation keeps the draft and pauses duplicate writes after an unkno
 }, info) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/settings/secrets')
-  await page.getByRole('button', { name: '轮换 Secret', exact: true }).click()
+  await chooseRowAction(page, '部署工具凭据', '轮换')
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[type="password"]').fill('synthetic-canary-value')
   await dialog.getByRole('button', { name: /确.*定/ }).click()
@@ -341,10 +342,10 @@ test('VPN publishes a reviewed revision without claiming terminal application', 
   const { state, evidence } = await mocks(context, page)
   await page.goto('/network-access/vpn/profiles')
   await expect(page.locator('body')).toContainText('已发布 r2')
-  await page.getByRole('button', { name: /^发\s*布$/ }).click()
-  await expect(page.getByRole('tooltip')).toContainText('会话')
+  await chooseRowAction(page, '研发网络接入', '发布')
+  await expect(page.getByRole('dialog')).toContainText('会话')
   await page
-    .getByRole('tooltip')
+    .getByRole('dialog')
     .getByRole('button', { name: /确.*定/ })
     .click()
   await expect(page.locator('body')).toContainText('已发布 r3')
@@ -367,7 +368,7 @@ test('Secret relations, narrow layout, keyboard and reduced motion remain usable
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/settings/secrets')
-  await page.getByRole('button', { name: '使用 Secret', exact: true }).click()
+  await chooseRowAction(page, '部署工具凭据', '使用')
   await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue(
     'soha://secrets/secret-deploy',
   )
@@ -398,7 +399,10 @@ test('dark network revision view remains usable at 125 percent zoom', async ({
   await page.getByRole('button', { name: '切换到深色模式' }).click()
   await expect(page.locator('body')).toContainText(profile.configuration.name)
   await page.addStyleTag({ content: 'html {zoom: 1.25}' })
-  await verifyGeometry(page, page.getByRole('button', { name: /^发\s*布$/ }))
+  await verifyGeometry(
+    page,
+    page.getByRole('button', { name: `更多操作：${profile.configuration.name}`, exact: true }),
+  )
   await page.screenshot({
     path: info.outputPath('task52-vpn-dark.png'),
     fullPage: true,
@@ -414,7 +418,7 @@ test('write permission refusal clears sensitive draft while preserving separatel
   const { state, evidence } = await mocks(context, page)
   state.writeStatus = 403
   await page.goto('/settings/secrets')
-  await page.getByRole('button', { name: '轮换 Secret', exact: true }).click()
+  await chooseRowAction(page, '部署工具凭据', '轮换')
   const dialog = page.getByRole('dialog')
   await dialog.locator('input[type="password"]').fill('synthetic-denied-draft')
   await dialog.getByRole('button', { name: /确.*定/ }).click()
@@ -436,22 +440,33 @@ test('failed proxy polling uses bounded read retries before manual recovery', as
   await expect(page.getByText(proxy.name, { exact: true })).toBeVisible()
   state.failedPath = '/network-access/proxy-instances'
   state.status = 503
+  const notice = page.locator('.soha-read-feedback-notification')
   await page.getByRole('button', { name: /刷新/ }).click()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toBeVisible()
+  await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
   const failedReads = state.proxyReads
   for (const [index, delay] of [15000, 30000, 60000].entries()) {
+    const retryResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `${base}/network-access/proxy-instances` &&
+        response.status() === 503,
+    )
     await page.clock.fastForward(delay)
+    await (await retryResponse).finished()
     await expect.poll(() => state.proxyReads).toBe(failedReads + index + 1)
+    await expect(notice.getByRole('button', { name: /^重试读取/ })).toBeEnabled()
   }
-  await expect(
-    page
-      .locator('.soha-read-feedback-notification')
-      .getByText('自动重试已暂停，可手动重试。', { exact: true }),
-  ).toBeVisible()
+  await expect(notice.getByText('自动重试已暂停，可手动重试。', { exact: true })).toBeVisible()
   await page.clock.fastForward(31000)
   expect(state.proxyReads).toBe(failedReads + 3)
   state.status = 200
+  const recoveryResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `${base}/network-access/proxy-instances` &&
+      response.status() === 200,
+  )
   await page.getByRole('button', { name: /重试读取/ }).click()
+  await (await recoveryResponse).finished()
   await expect(page.getByText(/未更新，正在展示上次读取结果/)).toHaveCount(0)
   await page.clock.fastForward(16000)
   await expect.poll(() => state.proxyReads).toBeGreaterThan(failedReads + 4)
@@ -512,7 +527,7 @@ test('Secret version history preserves cached rows with a warning and hides refu
   const { state, evidence } = await mocks(context, page)
   await page.clock.install()
   await page.goto('/settings/secrets')
-  await page.getByRole('button', { name: '查看 Secret 版本', exact: true }).click()
+  await chooseRowAction(page, '部署工具凭据', '版本')
   const drawer = page.locator('.ant-drawer-open')
   await expect(drawer.getByText('v3', { exact: true })).toBeVisible()
   await drawer.locator('.ant-drawer-close').click()
@@ -520,7 +535,7 @@ test('Secret version history preserves cached rows with a warning and hides refu
   state.failedPath = '/secrets/secret-deploy/versions'
   state.status = 503
   await page.clock.fastForward(31000)
-  await page.getByRole('button', { name: '查看 Secret 版本', exact: true }).click()
+  await chooseRowAction(page, '部署工具凭据', '版本')
   await expect(
     page.locator('.soha-read-feedback-notification').getByText(/版本记录未更新/),
   ).toBeVisible()

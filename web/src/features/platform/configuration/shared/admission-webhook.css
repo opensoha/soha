@@ -1,12 +1,6 @@
 .soha-admission-webhook-detail {
   min-width: 0;
 }
-.soha-admission-webhook-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-admission-webhook-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-admission-webhooks .soha-workload-overview-config > div {
   grid-template-columns: minmax(100px, 150px) minmax(0, 1fr);
 }

@@ -7,7 +7,7 @@
 
 .soha-log-query-card.ant-card,
 .soha-log-results-card.ant-card {
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel, var(--soha-radius-lg, 12px));
 }
 
 .soha-log-explorer.is-embedded {
@@ -214,7 +214,7 @@
   min-height: 440px;
   overflow: hidden;
   border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius);
+  border-radius: var(--soha-radius-panel, var(--soha-radius-lg, 12px));
   background: var(--soha-bg-surface);
 }
 

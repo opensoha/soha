@@ -7,20 +7,22 @@ import {
   Button,
   Dropdown,
   Layout,
-  Menu,
   Modal,
   Popover,
   Segmented,
+  Slider,
   Spin,
   Switch,
+  Tooltip,
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type { MenuProps } from 'antd'
 import {
   BgColorsOutlined,
   CheckOutlined,
-  DownOutlined,
   FileAddOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
@@ -33,14 +35,13 @@ import {
 } from '@ant-design/icons'
 import { HeaderActionButton } from '@/components/header-action-button'
 import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
+import { SplitCardDrawerHost } from '@/components/split-card-drawer'
 import { AnnouncementBell } from '@/features/announcements/announcement-center'
+import { DualRailSidebar, type UnifiedNavLeaf } from './dual-rail-sidebar'
 import { logoutAuthSession } from '@/features/auth/auth-api'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { deliveryQueries } from '@/features/delivery/queries'
-import {
-  isComputeWorkbenchMenuGroup,
-  normalizeComputeWorkbenchNav,
-} from '@/features/compute/navigation'
+import { normalizeComputeWorkbenchNav } from '@/features/compute/navigation'
 import { GlobalAIAssistantProvider } from '@/features/copilot/global-assistant'
 import {
   filterMenuByModuleFeatures,
@@ -71,7 +72,6 @@ import {
   getRouteWorkbenchId,
   getRouteWorkspace,
   resolveRouteMenuId,
-  canAccessRoute,
   type WorkbenchId,
 } from '@/routes/meta'
 import { getNormalizedBranding, useBrandingSettings } from '@/features/settings'
@@ -79,21 +79,25 @@ import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import {
   ACCENT_PRESETS,
+  CORNER_RADIUS_PRESETS,
   DARK_CANVAS_PRESETS,
   DEFAULT_ACCENT_COLOR,
+  DEFAULT_CORNER_RADIUS,
   DEFAULT_DARK_CANVAS_COLOR,
   DEFAULT_LIGHT_CANVAS_COLOR,
+  DEFAULT_OVERVIEW_GRADIENT_STOPS,
+  DEFAULT_OVERVIEW_HERO_STYLE,
   LIGHT_CANVAS_PRESETS,
+  OVERVIEW_GRADIENT_PRESETS,
   resolveThemeMode,
   watchSystemThemeMode,
+  type OverviewHeroStyle,
   type ThemeMode,
 } from '@/theme/app-theme'
 import { resolveBrandingLogos } from '@/utils/branding'
 import type { BusinessWorkspaceType, RuntimeMenuNode } from '@/types'
 
 const { Sider, Header, Content } = Layout
-const SIDEBAR_WIDTH = 212
-const SIDEBAR_COLLAPSED_WIDTH = 55
 const ApplicationNavigation = lazy(async () => {
   const module = await import('@/features/delivery/navigation')
   return { default: module.ApplicationNavigation }
@@ -216,86 +220,6 @@ function resolveRuntimeMenuLabel(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'e
   return localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
 }
 
-function buildMenuNodeItem(
-  node: RuntimeMenuNode,
-  localeCode: 'zh_CN' | 'en_US',
-): NonNullable<MenuProps['items']>[number] {
-  const label = resolveRuntimeMenuLabel(node, localeCode)
-  const icon = resolveMenuIcon(node.iconKey)
-  if (node.children?.length) {
-    return {
-      key: node.id,
-      icon,
-      label,
-      children: node.children.map((child) => buildMenuNodeItem(child, localeCode)),
-    }
-  }
-  return {
-    key: node.id,
-    icon,
-    label,
-  }
-}
-
-function buildMenuItems(
-  sidebarNav: RuntimeMenuNode[],
-  localeCode: 'zh_CN' | 'en_US',
-): MenuProps['items'] {
-  const directItems: NonNullable<MenuProps['items']>[number][] = []
-  const groups = new Map<string, NonNullable<MenuProps['items']>[number][]>()
-
-  for (const item of sidebarNav) {
-    const menuItem = buildMenuNodeItem(item, localeCode)
-    const groupKey = String(item.section || '').trim()
-    if (!groupKey) {
-      directItems.push(menuItem)
-      continue
-    }
-    const current = groups.get(groupKey) ?? []
-    current.push(menuItem)
-    groups.set(groupKey, current)
-  }
-
-  const groupedItems = Array.from(groups.entries()).map(([groupKey, items]) => ({
-    key: `group-${groupKey}`,
-    type: 'group' as const,
-    label: (
-      <span className="soha-nav-section-title">
-        {resolveMenuSectionLabel(groupKey, localeCode)}
-      </span>
-    ),
-    children: items,
-  }))
-
-  return [...directItems, ...groupedItems]
-}
-
-function buildComputeMenuItems(
-  sidebarNav: RuntimeMenuNode[],
-  localeCode: 'zh_CN' | 'en_US',
-): MenuProps['items'] {
-  return sidebarNav.flatMap((node) => {
-    if (!isComputeWorkbenchMenuGroup(node.id)) {
-      return [buildMenuNodeItem(node, localeCode)]
-    }
-    if (!node.children?.length) {
-      return []
-    }
-    return [
-      {
-        key: `group-${node.id}`,
-        type: 'group' as const,
-        label: (
-          <span className="soha-nav-section-title">
-            {resolveRuntimeMenuLabel(node, localeCode)}
-          </span>
-        ),
-        children: node.children.map((child) => buildMenuNodeItem(child, localeCode)),
-      },
-    ]
-  })
-}
-
 function buildItemKeyToPath(sidebarNav: RuntimeMenuNode[]): Record<string, string> {
   const map: Record<string, string> = {}
   const visit = (node: RuntimeMenuNode) => {
@@ -356,28 +280,6 @@ function collectNodeIDs(sidebarNav: RuntimeMenuNode[]) {
   }
   sidebarNav.forEach(visit)
   return ids
-}
-
-function collectExpandableNodeIDs(sidebarNav: RuntimeMenuNode[]) {
-  const ids = new Set<string>()
-  const visit = (node: RuntimeMenuNode) => {
-    if (node.children?.length) {
-      ids.add(node.id)
-      node.children.forEach(visit)
-    }
-  }
-  sidebarNav.forEach(visit)
-  return ids
-}
-
-function mergeOpenKeys(current: string[], desired: string[]) {
-  if (desired.length === 0) {
-    return current
-  }
-  const merged = Array.from(new Set([...current, ...desired]))
-  return merged.length === current.length && merged.every((key, index) => key === current[index])
-    ? current
-    : merged
 }
 
 function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
@@ -484,91 +386,6 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
       icon: resolveWorkbenchIcon('settings'),
     },
   ]
-}
-
-function WorkbenchSwitcher({
-  collapsed,
-  current,
-  onSelect,
-  options,
-  onAssistant,
-  assistantLabel,
-}: {
-  collapsed: boolean
-  current: WorkbenchOption
-  onSelect: (workbench: WorkbenchOption['key']) => void
-  options: WorkbenchOption[]
-  onAssistant?: () => void
-  assistantLabel?: string
-}) {
-  const dropdownItems: MenuProps['items'] = options.map((option) => ({
-    key: option.key,
-    className: 'soha-icon-trigger',
-    label: (
-      <div className="soha-workspace-option">
-        <span className="soha-workspace-option__icon">{option.icon}</span>
-        <span className="soha-workspace-option__copy">
-          <span className="soha-workspace-option__label">{option.label}</span>
-        </span>
-      </div>
-    ),
-  }))
-  if (onAssistant)
-    dropdownItems.splice(Math.max(0, options.findIndex((option) => option.key === 'home') + 1), 0, {
-      key: 'ai-assistant',
-      className: 'soha-icon-trigger',
-      label: (
-        <div className="soha-workspace-option">
-          <span className="soha-workspace-option__icon">
-            <img src="/heya-avatar.svg" width={24} height={24} alt="" />
-          </span>
-          <span className="soha-workspace-option__copy">
-            <span className="soha-workspace-option__label">{assistantLabel}</span>
-          </span>
-        </div>
-      ),
-    })
-
-  const trigger = (
-    <Button
-      aria-label={current.label}
-      className="soha-workbench-switcher soha-icon-trigger"
-      type="text"
-    >
-      <span className="soha-workbench-switcher__icon">{current.icon}</span>
-      {!collapsed ? (
-        <span className="soha-workbench-switcher__copy">
-          <span className="soha-workbench-switcher__label">{current.label}</span>
-          <span className="soha-workbench-switcher__desc">{current.description}</span>
-        </span>
-      ) : null}
-      {!collapsed && (options.length > 1 || onAssistant) ? (
-        <DownOutlined className="soha-workbench-switcher__arrow" />
-      ) : null}
-    </Button>
-  )
-
-  if (options.length <= 1 && !onAssistant) {
-    return trigger
-  }
-
-  return (
-    <Dropdown
-      menu={{
-        items: dropdownItems,
-        selectable: true,
-        selectedKeys: [current.key],
-        onClick: ({ key }) =>
-          key === 'ai-assistant'
-            ? onAssistant?.()
-            : onSelect(String(key) as WorkbenchOption['key']),
-      }}
-      placement="bottomLeft"
-      trigger={['click']}
-    >
-      {trigger}
-    </Dropdown>
-  )
 }
 
 function ApplicationHeaderFrame({ brand, children }: { brand?: ReactNode; children: ReactNode }) {
@@ -764,12 +581,34 @@ export function AppLayout() {
   const setDarkCanvasColor = usePreferencesStore((state) => state.setDarkCanvasColor)
   const paperGrain = usePreferencesStore((state) => state.paperGrain ?? true)
   const setPaperGrain = usePreferencesStore((state) => state.setPaperGrain)
+  const overviewHeroStyle = usePreferencesStore(
+    (state) => state.overviewHeroStyle ?? DEFAULT_OVERVIEW_HERO_STYLE,
+  )
+  const setOverviewHeroStyle = usePreferencesStore((state) => state.setOverviewHeroStyle)
+  const overviewGradientPreset = usePreferencesStore(
+    (state) => state.overviewGradientPreset ?? 'workbench',
+  )
+  const setOverviewGradientPreset = usePreferencesStore(
+    (state) => state.setOverviewGradientPreset,
+  )
+  const overviewGradientStops = usePreferencesStore(
+    (state) => state.overviewGradientStops ?? DEFAULT_OVERVIEW_GRADIENT_STOPS,
+  )
+  const setOverviewGradientStop = usePreferencesStore((state) => state.setOverviewGradientStop)
   const resetAppearanceDefaults = usePreferencesStore((state) => state.resetAppearanceDefaults)
-  const preferredSidebarCollapsed = usePreferencesStore((state) => state.sidebarCollapsed)
-  const setSidebarCollapsed = usePreferencesStore((state) => state.setSidebarCollapsed)
+  const dualRailStage = usePreferencesStore((state) => state.dualRailStage ?? 'expanded')
+  const setDualRailStage = usePreferencesStore((state) => state.setDualRailStage)
+  const cornerRadius = usePreferencesStore((state) => state.cornerRadius ?? DEFAULT_CORNER_RADIUS)
+  const setCornerRadius = usePreferencesStore((state) => state.setCornerRadius)
   // Narrow-screen navigation is temporary; keep the user's desktop preference.
   const [narrowSidebarCollapsed, setNarrowSidebarCollapsed] = useState<boolean>()
-  const sidebarCollapsed = narrowSidebarCollapsed ?? preferredSidebarCollapsed
+  const effectiveDualRailStage =
+    narrowSidebarCollapsed === undefined
+      ? dualRailStage
+      : narrowSidebarCollapsed
+        ? 'rail-only'
+        : 'expanded'
+  const sidebarCollapsed = effectiveDualRailStage !== 'expanded'
   const currentWorkspace = usePreferencesStore((state) => state.currentWorkspace)
   const [resourceCreateOpenedByAction, setResourceCreateOpenedByAction] = useState(false)
   const resourceCreateRequested = useMemo(
@@ -779,8 +618,6 @@ export function AppLayout() {
   const resourceCreateOpen = resourceCreateOpenedByAction || resourceCreateRequested
   const setCurrentWorkspace = usePreferencesStore((state) => state.setCurrentWorkspace)
   const { t } = useI18n()
-  const [businessOpenKeys, setBusinessOpenKeys] = useState<string[]>([])
-  const [systemOpenKeys, setSystemOpenKeys] = useState<string[]>([])
   const [systemThemeVersion, setSystemThemeVersion] = useState(0)
 
   const snapshot = permissionSnapshotQuery.data?.data
@@ -810,14 +647,20 @@ export function AppLayout() {
     }),
     [t],
   )
-  const accountSidebarItems = useMemo<NonNullable<MenuProps['items']>>(
+  const accountLeaves = useMemo<UnifiedNavLeaf[]>(
     () => [
       {
-        key: '/account/profile',
-        icon: resolveMenuIcon('user'),
+        id: '/account/profile',
         label: t('layout.profile', '个人中心'),
+        icon: resolveMenuIcon('user'),
+        path: '/account/profile',
       },
-      { key: '/about', icon: resolveMenuIcon('info'), label: t('layout.about', '关于') },
+      {
+        id: '/about',
+        label: t('layout.about', '关于'),
+        icon: resolveMenuIcon('info'),
+        path: '/about',
+      },
     ],
     [t],
   )
@@ -861,7 +704,9 @@ export function AppLayout() {
           applicationMatch.params.applicationId,
           sessionEnvironment.applicationEnvironmentId,
         ])
-      : undefined
+      : import.meta.env.VITE_UI_PILOT_MOCK === '1'
+        ? JSON.stringify(['pilot-delivery-app', 'prod-shanghai'])
+        : undefined
   const isAccountUtilityRoute = currentMeta.group === 'account'
   const currentWorkbenchId = getRouteWorkbenchId(currentMeta)
   const currentScopeMode = getRouteScopeMode(currentMeta)
@@ -919,13 +764,6 @@ export function AppLayout() {
     }
     return businessNav
   }, [businessNav, isSystemWorkspaceRoute, systemNav, systemWorkbenchNav])
-  const primaryMenuItems = useMemo(
-    () =>
-      activeWorkbenchId === 'compute'
-        ? buildComputeMenuItems(primaryNav, localeCode)
-        : buildMenuItems(primaryNav, localeCode),
-    [activeWorkbenchId, localeCode, primaryNav],
-  )
   const primaryParentByID = useMemo(() => buildParentMap(primaryNav), [primaryNav])
   const primaryNodeByID = useMemo(() => buildNodeByID(primaryNav), [primaryNav])
   const primaryItemKeyToPath = useMemo(() => {
@@ -939,15 +777,9 @@ export function AppLayout() {
     () => ({ ...buildItemKeyToPath(businessNav), ...buildItemKeyToPath(systemNav) }),
     [businessNav, systemNav],
   )
-  const parentByID = useMemo(() => buildParentMap(combinedNav), [combinedNav])
   const nodeByID = useMemo(() => buildNodeByID(combinedNav), [combinedNav])
   const businessNodeIDs = useMemo(() => collectNodeIDs(businessNav), [businessNav])
-  const businessExpandableNodeIDs = useMemo(
-    () => collectExpandableNodeIDs(businessNav),
-    [businessNav],
-  )
   const systemNodeIDs = useMemo(() => collectNodeIDs(systemNav), [systemNav])
-  const systemExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(systemNav), [systemNav])
   const resolvedThemeMode = useMemo(
     () => resolveThemeMode(themeMode),
     [themeMode, systemThemeVersion],
@@ -982,36 +814,6 @@ export function AppLayout() {
     parentMeta,
     primaryItemKeyToPath,
   ])
-
-  const routeOpenKeys = useMemo(() => {
-    const keys: string[] = []
-    let pointer = currentMenuID
-    while (pointer && parentByID.has(pointer)) {
-      const parentID = parentByID.get(pointer)
-      if (!parentID) break
-      keys.unshift(parentID)
-      pointer = parentID
-    }
-    if (
-      currentMenuID &&
-      (businessExpandableNodeIDs.has(currentMenuID) || systemExpandableNodeIDs.has(currentMenuID))
-    ) {
-      keys.push(currentMenuID)
-    }
-    return keys
-  }, [businessExpandableNodeIDs, currentMenuID, parentByID, systemExpandableNodeIDs])
-
-  useEffect(() => {
-    if (sidebarCollapsed) {
-      setBusinessOpenKeys([])
-      setSystemOpenKeys([])
-      return
-    }
-    const desiredBusiness = routeOpenKeys.filter((key) => businessNodeIDs.has(key))
-    const desiredSystem = routeOpenKeys.filter((key) => systemNodeIDs.has(key))
-    setBusinessOpenKeys((current) => mergeOpenKeys(current, desiredBusiness))
-    setSystemOpenKeys((current) => mergeOpenKeys(current, desiredSystem))
-  }, [businessNodeIDs, routeOpenKeys, sidebarCollapsed, systemNodeIDs])
 
   useEffect(() => {
     if (themeMode !== 'system') return undefined
@@ -1078,6 +880,41 @@ export function AppLayout() {
     if (isAccountUtilityRoute) {
       routes.push({ name: accountWorkbenchOption.label, path: '/account/profile' })
       routes.push({ name: resolveBreadcrumbTitle(currentMeta) })
+      return routes
+    }
+
+    if (currentMeta.id === 'provider-portal') {
+      const portalParams = new URLSearchParams(location.search)
+      const portalGroup = portalParams.get('group')
+      const portalTag = portalParams.get('tag')?.trim()
+      const portalLeaf =
+        portalGroup === 'favorites'
+          ? t('providerPortal.home.favorites', localeCode === 'zh_CN' ? '收藏' : 'Favorites')
+          : portalTag || t('providerPortal.home.allTags', localeCode === 'zh_CN' ? '全部' : 'All')
+      routes.push({
+        name: currentWorkbenchOption?.label ?? t('route.provider-portal.title', '门户首页'),
+        path: portalGroup || portalTag ? '/portal' : undefined,
+      })
+      routes.push({ name: portalLeaf })
+      return routes
+    }
+
+    if (
+      currentMeta.id === 'provider-portal-security' ||
+      currentMeta.id === 'provider-portal-application-detail'
+    ) {
+      routes.push({
+        name: currentWorkbenchOption?.label ?? t('route.provider-portal.title', '门户首页'),
+        path: '/portal',
+      })
+      routes.push({
+        name:
+          currentMeta.id === 'provider-portal-security'
+            ? localeCode === 'en_US'
+              ? 'Account Security'
+              : '账户安全'
+            : resolveBreadcrumbTitle(currentMeta),
+      })
       return routes
     }
 
@@ -1170,6 +1007,7 @@ export function AppLayout() {
     currentWorkbenchOption,
     isAccountUtilityRoute,
     location.pathname,
+    location.search,
     localeCode,
     nodeByID,
     primaryNodeByID,
@@ -1206,7 +1044,6 @@ export function AppLayout() {
       : isSystemWorkspaceRoute
         ? systemSelectedKeys
         : businessSelectedKeys
-  const primaryOpenKeys = isSystemWorkspaceRoute ? systemOpenKeys : businessOpenKeys
   const resourceHeaderScopeMode =
     (activeWorkbenchId === 'platform' || activeWorkbenchId === 'monitoring') &&
     (currentScopeMode === 'cluster' || currentScopeMode === 'namespace')
@@ -1336,6 +1173,68 @@ export function AppLayout() {
     </button>
   )
 
+  const [immersiveFullscreen, setImmersiveFullscreen] = useState(false)
+
+  useEffect(() => {
+    if (!immersiveFullscreen) return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !commandOpen && !resourceCreateOpen) {
+        setImmersiveFullscreen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [commandOpen, immersiveFullscreen, resourceCreateOpen])
+
+  const userDropdownMenu: MenuProps = {
+    items: [
+      { key: 'user', label: userDisplayName, disabled: true },
+      { type: 'divider' },
+      {
+        key: 'accountSettings',
+        icon: resolveMenuIcon('settings'),
+        label: t('layout.accountSettings', '个人设置'),
+      },
+      { type: 'divider' },
+      {
+        key: 'logout',
+        icon: <LogoutOutlined />,
+        label: t('layout.logout', 'Sign out'),
+      },
+    ],
+    onClick: ({ key }) => {
+      if (key === 'accountSettings') {
+        navigate('/account/settings')
+        return
+      }
+      if (key === 'logout') {
+        void logoutAuthSession().finally(() => navigate('/login'))
+      }
+    },
+  }
+
+  const dualRailUserPod = (
+    <Dropdown menu={userDropdownMenu} placement="topLeft" trigger={['click']}>
+      <Tooltip placement="right" title={userDisplayName}>
+        <button
+          type="button"
+          aria-label={userDisplayName}
+          className="soha-dual-rail__user-btn"
+        >
+          <Avatar
+            className="soha-user-avatar soha-dual-rail__avatar"
+            size={28}
+            src={user?.avatarUrl || undefined}
+            style={userAvatarStyle}
+          >
+            {userDisplayName.charAt(0).toUpperCase()}
+          </Avatar>
+          <span className="soha-dual-rail__user-dot" aria-hidden="true" />
+        </button>
+      </Tooltip>
+    </Dropdown>
+  )
+
   function closeResourceCreate() {
     setResourceCreateOpenedByAction(false)
     if (!resourceCreateRequested) return
@@ -1372,145 +1271,54 @@ export function AppLayout() {
         validateReference={validateSessionReference}
         visible={currentWorkbenchId === 'platform' || currentWorkbenchId === 'delivery'}
       >
-        <Layout className="soha-shell" hasSider={!isApplicationWorkspace}>
+        <Layout
+          className={`soha-shell${immersiveFullscreen ? ' is-immersive-fullscreen' : ''}`}
+          hasSider={!isApplicationWorkspace}
+        >
           {!isApplicationWorkspace && (
             <Sider
               breakpoint="md"
               className="soha-sider"
               collapsible
-              collapsed={sidebarCollapsed}
-              collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
+              collapsed={effectiveDualRailStage !== 'expanded'}
+              collapsedWidth={115}
               onBreakpoint={(narrow) => setNarrowSidebarCollapsed(narrow ? true : undefined)}
               style={{ backgroundColor: 'transparent' }}
               trigger={null}
-              width={SIDEBAR_WIDTH}
+              width={244}
             >
-              <div className="soha-nav" style={{ height: '100%' }}>
-                <div className="soha-sider-topbar">
-                  <button
-                    type="button"
-                    className="soha-sider-brand"
-                    aria-label={localeCode === 'zh_CN' ? '返回首页' : 'Go to overview'}
-                    onClick={() => navigate(homePath ?? '/')}
-                  >
-                    {activeLogo ? (
-                      <img
-                        className="soha-brand-logo"
-                        src={activeLogo}
-                        alt={branding.sidebarTitle}
-                      />
-                    ) : (
-                      <div className="soha-brand-lockup">
-                        <div className="soha-brand-mark">S</div>
-                        {!sidebarCollapsed && (
-                          <div className="soha-brand-wordmark">
-                            <span className="soha-brand-wordmark__title">
-                              {branding.sidebarTitle || 'Soha'}
-                            </span>
-                            <span className="soha-brand-wordmark__edition">Atelier</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                </div>
-
-                {isAccountUtilityRoute ? (
-                  <>
-                    <div className="soha-workbench-switcher-shell">
-                      <WorkbenchSwitcher
-                        collapsed={sidebarCollapsed}
-                        current={accountWorkbenchOption}
-                        assistantLabel="Heya"
-                        onAssistant={
-                          canAccessRoute(getRouteMeta('/heya'), snapshot)
-                            ? () => navigate('/heya')
-                            : undefined
-                        }
-                        options={[...workbenchOptions, accountWorkbenchOption]}
-                        onSelect={(workbench) => {
-                          if (workbench === 'account') {
-                            navigate('/account/profile')
-                            return
-                          }
-                          const targetPath = findFirstAccessiblePathForWorkbench(
-                            workbench,
-                            snapshot,
-                          )
-                          if (targetPath) navigate(targetPath)
-                        }}
-                      />
-                      {quickJumpTrigger}
-                    </div>
-                    <div className="soha-nav-business">
-                      <Menu
-                        className="soha-nav-menu"
-                        mode="inline"
-                        items={accountSidebarItems}
-                        selectedKeys={[location.pathname]}
-                        onClick={({ key }) => navigate(String(key))}
-                        inlineIndent={8}
-                        inlineCollapsed={sidebarCollapsed}
-                        theme={resolvedThemeMode}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {workbenchOptions.length > 0 && currentWorkbenchOption ? (
-                      <div className="soha-workbench-switcher-shell">
-                        <WorkbenchSwitcher
-                          collapsed={sidebarCollapsed}
-                          current={currentWorkbenchOption}
-                          assistantLabel="Heya"
-                          onAssistant={
-                            canAccessRoute(getRouteMeta('/heya'), snapshot)
-                              ? () => navigate('/heya')
-                              : undefined
-                          }
-                          options={workbenchOptions}
-                          onSelect={(workbench) => {
-                            if (workbench === 'account') return
-                            const targetPath = findFirstAccessiblePathForWorkbench(
-                              workbench,
-                              snapshot,
-                            )
-                            if (!targetPath) {
-                              return
-                            }
-                            navigate(targetPath)
-                          }}
-                        />
-                        {quickJumpTrigger}
-                      </div>
-                    ) : null}
-                    <div className="soha-nav-business">
-                      <Menu
-                        className="soha-nav-menu"
-                        mode="inline"
-                        items={primaryMenuItems}
-                        selectedKeys={primarySelectedKeys}
-                        openKeys={sidebarCollapsed ? undefined : primaryOpenKeys}
-                        onOpenChange={(keys) => {
-                          if (sidebarCollapsed) return
-                          if (isSystemWorkspaceRoute) {
-                            setSystemOpenKeys(keys as string[])
-                            return
-                          }
-                          setBusinessOpenKeys(keys as string[])
-                        }}
-                        onClick={({ key }) => {
-                          const path = primaryItemKeyToPath[String(key)]
-                          if (path) navigate(path)
-                        }}
-                        inlineIndent={8}
-                        inlineCollapsed={sidebarCollapsed}
-                        theme={resolvedThemeMode}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
+              <DualRailSidebar
+                stage={effectiveDualRailStage}
+                workbenches={
+                  isAccountUtilityRoute
+                    ? [...workbenchOptions, accountWorkbenchOption]
+                    : workbenchOptions
+                }
+                userPod={dualRailUserPod}
+                activeWorkbenchKey={
+                  isAccountUtilityRoute ? 'account' : (currentWorkbenchOption?.key ?? null)
+                }
+                activeWorkbenchLabel={
+                  isAccountUtilityRoute
+                    ? accountWorkbenchOption.label
+                    : (currentWorkbenchOption?.label ?? 'Soha')
+                }
+                fullSidebarNav={fullSidebarNav}
+                accountLeaves={accountLeaves}
+                selectedKeys={isAccountUtilityRoute ? [location.pathname] : primarySelectedKeys}
+                currentPathname={location.pathname}
+                currentSearch={location.search}
+                aiSearchSuffix={buildAIWorkbenchSearch(location.search)}
+                localeCode={localeCode}
+                snapshot={snapshot}
+                logoUrl={collapsedLogo || activeLogo}
+                brandTitle={branding.sidebarTitle || 'Soha'}
+                homePath={homePath ?? '/'}
+                quickJumpTrigger={quickJumpTrigger}
+                onOpenCommand={() => setCommandOpen(true)}
+                onNavigate={(path) => navigate(path)}
+                resolveNodeLabel={(node) => resolveRuntimeMenuLabel(node, localeCode)}
+              />
             </Sider>
           )}
 
@@ -1555,24 +1363,45 @@ export function AppLayout() {
                   <div className="soha-header-main">
                     <div className="soha-header-breadcrumb-row">
                       {!isApplicationWorkspace && (
-                        <Button
-                          aria-label={
-                            sidebarCollapsed
-                              ? t('layout.expand', 'Expand sidebar')
-                              : t('layout.collapse', 'Collapse sidebar')
+                        <Tooltip
+                          placement="bottom"
+                          title={
+                            effectiveDualRailStage === 'expanded'
+                              ? localeCode === 'zh_CN'
+                                ? '收窄右侧子菜单栏'
+                                : 'Narrow sub-menu'
+                              : localeCode === 'zh_CN'
+                                ? '展开右侧子菜单栏'
+                                : 'Expand sub-menu'
                           }
-                          aria-expanded={!sidebarCollapsed}
-                          className="soha-header-action soha-header-sider-toggle"
-                          type="text"
-                          icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                          onClick={() => {
-                            if (narrowSidebarCollapsed !== undefined) {
-                              setNarrowSidebarCollapsed(!sidebarCollapsed)
-                            } else {
-                              setSidebarCollapsed(!sidebarCollapsed)
+                        >
+                          <Button
+                            aria-label={
+                              effectiveDualRailStage !== 'expanded'
+                                ? t('layout.expand', 'Expand sidebar')
+                                : t('layout.collapse', 'Collapse sidebar')
                             }
-                          }}
-                        />
+                            aria-expanded={effectiveDualRailStage === 'expanded'}
+                            className="soha-header-action soha-header-sider-toggle"
+                            type="text"
+                            icon={
+                              effectiveDualRailStage !== 'expanded' ? (
+                                <MenuUnfoldOutlined />
+                              ) : (
+                                <MenuFoldOutlined />
+                              )
+                            }
+                            onClick={() => {
+                              if (narrowSidebarCollapsed !== undefined) {
+                                setNarrowSidebarCollapsed(!narrowSidebarCollapsed)
+                                return
+                              }
+                              setDualRailStage(
+                                dualRailStage === 'expanded' ? 'rail-only' : 'expanded',
+                              )
+                            }}
+                          />
+                        </Tooltip>
                       )}
                       {isApplicationWorkspace ? (
                         <Suspense fallback={null}>
@@ -1850,7 +1679,168 @@ export function AppLayout() {
                             </div>
 
                             <div className="soha-palette-section is-divider">
-                              <div className="soha-palette-toggle-row">
+                              <div className="soha-palette-section__head">
+                                <span className="soha-palette-section__title">
+                                  {localeCode === 'zh_CN'
+                                    ? '总览 3D 空间渐变调色盘'
+                                    : 'Overview 3D Gradient Palette'}
+                                </span>
+                                <span className="soha-palette-section__hex">
+                                  {overviewGradientPreset === 'workbench'
+                                    ? localeCode === 'zh_CN'
+                                      ? '自适应三色'
+                                      : 'Adaptive'
+                                    : localeCode === 'zh_CN'
+                                      ? '三位混色'
+                                      : '3-Stop'}
+                                </span>
+                              </div>
+                              <Segmented<OverviewHeroStyle>
+                                block
+                                size="small"
+                                className="soha-palette-segmented"
+                                value={overviewHeroStyle}
+                                onChange={(val) => setOverviewHeroStyle(val)}
+                                options={[
+                                  {
+                                    label: localeCode === 'zh_CN' ? '冰晶浅舱' : 'Prism',
+                                    value: 'prism',
+                                  },
+                                  {
+                                    label: localeCode === 'zh_CN' ? '极光暗舱' : 'Spotlight',
+                                    value: 'spotlight',
+                                  },
+                                ]}
+                              />
+
+                              <div className="soha-palette-grad-presets">
+                                {OVERVIEW_GRADIENT_PRESETS.map((preset) => {
+                                  const selected = overviewGradientPreset === preset.id
+                                  return (
+                                    <button
+                                      key={preset.id}
+                                      type="button"
+                                      className={`soha-palette-grad-pill ${
+                                        selected ? 'is-selected' : ''
+                                      }`}
+                                      onClick={() => setOverviewGradientPreset(preset.id)}
+                                      title={preset.descZh}
+                                    >
+                                      <span
+                                        className="soha-palette-grad-pill__bar"
+                                        style={{
+                                          background: `linear-gradient(125deg, ${preset.stops[0]} 0%, ${preset.stops[1]} 50%, ${preset.stops[2]} 100%)`,
+                                        }}
+                                      />
+                                      <span className="soha-palette-grad-pill__label">
+                                        {localeCode === 'zh_CN' ? preset.labelZh : preset.labelEn}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+
+                              <div className="soha-palette-tri-mixer">
+                                <div className="soha-palette-tri-mixer__head">
+                                  <span>
+                                    {localeCode === 'zh_CN'
+                                      ? '三位颜色渐变混合（联动全屏 3D 舞台）'
+                                      : '3-Color Gradient Blend (3D Stage)'}
+                                  </span>
+                                </div>
+                                <div className="soha-palette-tri-mixer__stops">
+                                  {(
+                                    [
+                                      {
+                                        idx: 0 as const,
+                                        labelZh: '起点 1',
+                                        labelEn: 'Stop 1',
+                                      },
+                                      {
+                                        idx: 1 as const,
+                                        labelZh: '中调 2',
+                                        labelEn: 'Stop 2',
+                                      },
+                                      {
+                                        idx: 2 as const,
+                                        labelZh: '尾韵 3',
+                                        labelEn: 'Stop 3',
+                                      },
+                                    ]
+                                  ).map((slot) => (
+                                    <label key={slot.idx} className="soha-palette-tri-stop">
+                                      <input
+                                        type="color"
+                                        aria-label={
+                                          localeCode === 'zh_CN'
+                                            ? `总览渐变${slot.labelZh}`
+                                            : `Overview gradient ${slot.labelEn}`
+                                        }
+                                        className="soha-palette-color-input"
+                                        value={overviewGradientStops[slot.idx]}
+                                        onChange={(e) =>
+                                          setOverviewGradientStop(slot.idx, e.target.value)
+                                        }
+                                      />
+                                      <span className="soha-palette-tri-stop__copy">
+                                        <strong>
+                                          {localeCode === 'zh_CN' ? slot.labelZh : slot.labelEn}
+                                        </strong>
+                                        <code>{overviewGradientStops[slot.idx]}</code>
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="soha-palette-section is-divider" style={{ marginTop: 10 }}>
+                                <div className="soha-palette-section__head">
+                                  <span className="soha-palette-section__title">
+                                    {localeCode === 'zh_CN'
+                                      ? '全局圆角 R 角'
+                                      : 'Corner Radius (R)'}
+                                  </span>
+                                  <span className="soha-palette-section__hex">
+                                    R = {cornerRadius}px
+                                  </span>
+                                </div>
+                                <div className="soha-palette-radius-presets">
+                                  {CORNER_RADIUS_PRESETS.map((preset) => {
+                                    const selected = cornerRadius === preset.value
+                                    return (
+                                      <button
+                                        key={preset.id}
+                                        type="button"
+                                        className={`soha-palette-radius-pill ${
+                                          selected ? 'is-selected' : ''
+                                        }`}
+                                        onClick={() => setCornerRadius(preset.value)}
+                                      >
+                                        <span
+                                          className="soha-palette-radius-pill__glyph"
+                                          style={{
+                                            borderTopLeftRadius: Math.max(2, Math.round(preset.value * 0.55)),
+                                          }}
+                                        />
+                                        <span>
+                                          {localeCode === 'zh_CN' ? preset.labelZh : preset.labelEn}
+                                        </span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <Slider
+                                  min={4}
+                                  max={20}
+                                  step={1}
+                                  value={cornerRadius}
+                                  onChange={(val) => setCornerRadius(val)}
+                                  tooltip={{ formatter: (val) => `${val}px` }}
+                                  style={{ margin: '4px 4px 2px' }}
+                                />
+                              </div>
+
+                              <div className="soha-palette-toggle-row" style={{ marginTop: 10 }}>
                                 <span className="soha-palette-toggle-row__label">
                                   {localeCode === 'zh_CN'
                                     ? '纸张微噪点肌理'
@@ -1874,6 +1864,16 @@ export function AppLayout() {
                         />
                       </Popover>
                       <HeaderActionButton
+                        ariaLabel={localeCode === 'zh_CN' ? '沉浸式全屏' : 'Immersive fullscreen'}
+                        title={
+                          localeCode === 'zh_CN'
+                            ? '沉浸式全屏（同时收起左侧双轨与顶栏，按 Esc 退出）'
+                            : 'Immersive fullscreen (hide sidebar & top bar, Esc to exit)'
+                        }
+                        icon={<FullscreenOutlined />}
+                        onClick={() => setImmersiveFullscreen(true)}
+                      />
+                      <HeaderActionButton
                         ariaLabel={themeSwitchTitle}
                         title={themeSwitchTitle}
                         icon={resolvedThemeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
@@ -1884,84 +1884,54 @@ export function AppLayout() {
                       />
                     </div>
                     <AnnouncementBell />
-                    <Dropdown
-                      menu={{
-                        items: [
-                          { key: 'user', label: userDisplayName, disabled: true },
-                          { type: 'divider' },
-                          ...(homePath
-                            ? [
-                                {
-                                  key: 'portal',
-                                  icon: resolveWorkbenchIcon('home'),
-                                  label: t('layout.portal', '门户首页'),
-                                },
-                              ]
-                            : []),
-                          {
-                            key: 'accountSettings',
-                            icon: resolveMenuIcon('settings'),
-                            label: t('layout.accountSettings', '个人设置'),
-                          },
-                          {
-                            key: 'changePassword',
-                            icon: resolveMenuIcon('shield'),
-                            label: t('layout.changePassword', '修改密码'),
-                          },
-                          { type: 'divider' },
-                          {
-                            key: 'logout',
-                            icon: <LogoutOutlined />,
-                            label: t('layout.logout', 'Sign out'),
-                          },
-                        ],
-                        onClick: ({ key }) => {
-                          if (key === 'portal') {
-                            navigate(homePath ?? '/')
-                            return
+                    {isApplicationWorkspace ? (
+                      <Dropdown
+                        menu={userDropdownMenu}
+                        placement="bottomRight"
+                        trigger={['click']}
+                      >
+                        <HeaderActionButton
+                          ariaLabel={userDisplayName}
+                          className="soha-user-trigger"
+                          iconClassName="soha-user-trigger__avatar"
+                          icon={
+                            <Avatar
+                              className="soha-user-avatar"
+                              size="small"
+                              src={user?.avatarUrl || undefined}
+                              style={userAvatarStyle}
+                            >
+                              {userDisplayName.charAt(0).toUpperCase()}
+                            </Avatar>
                           }
-                          if (key === 'accountSettings') {
-                            navigate('/account/settings')
-                            return
-                          }
-                          if (key === 'changePassword') {
-                            navigate('/account/profile?changePassword=1')
-                            return
-                          }
-                          if (key === 'logout') {
-                            void logoutAuthSession().finally(() => navigate('/login'))
-                          }
-                        },
-                      }}
-                      placement="bottomRight"
-                      trigger={['click']}
-                    >
-                      <HeaderActionButton
-                        ariaLabel={userDisplayName}
-                        className="soha-user-trigger"
-                        iconClassName="soha-user-trigger__avatar"
-                        icon={
-                          <Avatar
-                            className="soha-user-avatar"
-                            size="small"
-                            src={user?.avatarUrl || undefined}
-                            style={userAvatarStyle}
-                          >
-                            {userDisplayName.charAt(0).toUpperCase()}
-                          </Avatar>
-                        }
-                        label={userDisplayName}
-                      />
-                    </Dropdown>
+                          label={userDisplayName}
+                        />
+                      </Dropdown>
+                    ) : null}
                   </div>
                 </div>
               </Header>
             </ApplicationHeaderFrame>
-            <Content className="soha-content" data-workbench={currentWorkbenchId}>
-              <div className="soha-content-inner soha-pro-content-host">
-                <Outlet />
-              </div>
-            </Content>
+            <div className="soha-workspace-body">
+              <Content className="soha-content" data-workbench={currentWorkbenchId}>
+                <div className="soha-content-inner soha-pro-content-host">
+                  <Outlet />
+                </div>
+              </Content>
+              <SplitCardDrawerHost />
+            </div>
+            {immersiveFullscreen ? (
+              <button
+                type="button"
+                aria-label={localeCode === 'zh_CN' ? '退出沉浸式全屏' : 'Exit immersive fullscreen'}
+                className="soha-immersive-exit-pill"
+                onClick={() => setImmersiveFullscreen(false)}
+                title={localeCode === 'zh_CN' ? '退出全屏 (Esc)' : 'Exit fullscreen (Esc)'}
+              >
+                <FullscreenExitOutlined />
+                <span>{localeCode === 'zh_CN' ? '退出全屏' : 'Exit'}</span>
+              </button>
+            ) : null}
           </Layout>
         </Layout>
         {resourceCreateOpen ? (

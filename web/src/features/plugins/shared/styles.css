@@ -45,7 +45,14 @@
   min-width: 0;
   height: 100%;
   flex-direction: column;
-  border-radius: 6px;
+  border-radius: var(--soha-radius-panel);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.soha-plugin-market-card:hover {
+  border-color: color-mix(in srgb, var(--soha-primary) 38%, var(--soha-border-color));
 }
 
 .soha-plugin-market-card-body {
@@ -66,7 +73,7 @@
 }
 
 .soha-plugin-market-card-link:focus-visible {
-  border-radius: 4px;
+  border-radius: var(--soha-radius-sm, 4px);
   outline: 2px solid var(--ant-color-primary);
   outline-offset: 2px;
 }
@@ -237,7 +244,13 @@
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.soha-plugin-detail-grid > .ant-card {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
 }
 
 .soha-plugin-page .ant-card,
@@ -315,7 +328,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   border: 1px solid var(--soha-border-color);
-  border-radius: 6px;
+  border-radius: var(--soha-radius-control);
   background: var(--soha-fill-weak);
   padding: 10px;
   font-size: 12px;

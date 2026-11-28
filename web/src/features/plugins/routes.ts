@@ -13,7 +13,7 @@ export const pluginRoutes = defineRoutes([
       requiresAuth: true,
       tabbar: false,
       navVisible: false,
-      permissionStrategy: 'any-child',
+      permissionKey: 'plugin.view',
       scopeMode: 'passive',
       workspace: 'system',
     },

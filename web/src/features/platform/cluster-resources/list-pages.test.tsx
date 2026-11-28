@@ -240,6 +240,7 @@ describe('cluster resource list pages', () => {
       const before = tablePropsMock.mock.calls.at(-1)![0]
       expect(before.dataSource).toHaveLength(1)
       if (kind === 'nodes') {
+        expect(before.expandable).toBeUndefined()
         const link = container.querySelector('a.soha-node-name')!
         expect(link.getAttribute('href')).toContain('clusterId=cluster-a')
         expect(link.querySelector('.soha-table-cell-text')?.textContent).toBe('resource-a')

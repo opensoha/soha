@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import { verifyGeometry } from '../fixtures/geometry'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { chooseRowAction, expectRowActionDisabled } from '../fixtures/row-actions'
 
 const time = '2026-10-16T04:00:00Z'
 const event = {
@@ -401,7 +402,7 @@ test('alert detail reads independently and unknown acknowledgement blocks replay
 }, info) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/alerts/alert-qa')
-  await expect(page.getByText(event.title, { exact: true })).toBeVisible()
+  await expect(page.getByText(event.title, { exact: true }).first()).toBeVisible()
   state.readFailure = '/alert-rules/rule-qa'
   state.readStatus = 503
   await page.getByRole('button', { name: '刷新告警详情' }).click()
@@ -425,7 +426,7 @@ test('alert detail reads independently and unknown acknowledgement blocks replay
   await page.getByRole('button', { name: '刷新告警详情' }).click()
   await expect(page.getByText('告警事件无访问权限')).toBeVisible()
   await expect(page.getByText(/确认告警：请求结果不明/)).toBeVisible()
-  await expect(page.getByText(event.title, { exact: true })).toBeHidden()
+  await expect(page.getByText(event.title, { exact: true })).toHaveCount(0)
   verifyBrowserEvidence(evidence)
 })
 
@@ -435,7 +436,7 @@ test('healing submission preserves its event and policy and shows a run receipt'
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/alerts')
-  await page.getByRole('button', { name: '触发自愈' }).click()
+  await chooseRowAction(page, event.title, '触发自愈')
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').click()
   await page
@@ -454,7 +455,7 @@ test('rule business errors remain retryable reads', async ({ context, page }) =>
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/rules')
   state.testState = 'error'
-  await page.getByRole('button', { name: '测试告警规则' }).click()
+  await chooseRowAction(page, rule.name, '测试告警规则')
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('规则测试业务错误 QA', { exact: true }).first()).toBeVisible()
   await expect(page.locator('.soha-operation-feedback').getByText(/请求结果不明/)).toBeHidden()
@@ -468,7 +469,7 @@ test('rule business errors remain retryable reads', async ({ context, page }) =>
 test('unknown rule saves keep the editor and original form locked', async ({ context, page }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/rules')
-  await page.getByRole('button', { name: '编辑告警规则' }).click()
+  await chooseRowAction(page, rule.name, '编辑告警规则')
   await page.getByLabel('名称', { exact: true }).fill('Rule draft QA')
   await page.getByRole('button', { name: '下一步' }).click()
   state.writeStatus = 503
@@ -492,7 +493,7 @@ test('notification channel unknown saves preserve the private draft in the locke
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/notifications')
   await page.getByRole('tab', { name: '通知渠道', exact: true }).click()
-  await page.getByRole('button', { name: '编辑通知渠道' }).click()
+  await chooseRowAction(page, channel.name, '编辑通知渠道')
   await page
     .getByLabel('配置(JSON)', { exact: true })
     .fill('{"url":"https://example.test/qa-draft"}')
@@ -522,7 +523,7 @@ test('notification preview isolates evidence when selecting a different event', 
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/notifications')
-  await page.getByRole('button', { name: '预览通知策略' }).click()
+  await chooseRowAction(page, policy.name, '预览通知策略')
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('Preview first QA', { exact: true })).toBeVisible()
   state.readFailure = '/notification-policies/policy-qa/preview'
@@ -544,7 +545,7 @@ test('integration one-time token stays in its private display and clears on clos
 }) => {
   const { state, evidence } = await mocks(context, page)
   await page.goto('/monitoring-workbench/integrations')
-  await page.getByRole('button', { name: '编辑告警集成' }).click()
+  await chooseRowAction(page, integration.name, '编辑告警集成')
   state.returnedToken = 'qa-one-time-token'
   await page
     .getByRole('dialog')
@@ -610,7 +611,7 @@ test('oncall auxiliary errors can be retried without discarding the rotation dra
   state.readStatus = 503
   await page.goto('/monitoring-workbench/oncall/settings')
   await page.getByRole('tab', { name: '轮值', exact: true }).click()
-  await page.getByRole('button', { name: '编辑轮值' }).click()
+  await chooseRowAction(page, rotation.name, '编辑轮值')
   await expect(page.getByText('值班人员选项读取失败')).toBeVisible()
   await expect(page.getByLabel('名称', { exact: true })).toHaveValue(rotation.name)
   state.readStatus = 200
@@ -694,10 +695,10 @@ test('unknown healing approval blocks the other run commands', async ({ context,
   await page.goto('/monitoring-workbench/healing')
   await page.getByRole('tab', { name: '执行记录', exact: true }).click()
   state.writeStatus = 503
-  await page.getByRole('button', { name: /通过/ }).click()
+  await chooseRowAction(page, run.id, '通过')
   await expect(page.getByText(/请求结果不明/)).toBeVisible()
   for (const name of ['通过', '拒绝', '重试']) {
-    await expect(page.getByRole('button', { name: new RegExp(name) })).toBeDisabled()
+    await expectRowActionDisabled(page, run.id, name)
   }
   expect(state.writes).toHaveLength(1)
   expect(state.writes[0].path).toBe('/healing-runs/run-qa/approve')

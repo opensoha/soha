@@ -17,6 +17,10 @@
   gap: 6px;
   min-width: 0;
   max-width: 100%;
+  padding: 4px 10px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  font-size: 12px;
 }
 .soha-workload-conditions[open] > .soha-admin-table-shell {
   margin-top: 12px;

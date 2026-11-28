@@ -1,13 +1,6 @@
 .soha-sc-detail {
   min-width: 0;
 }
-.soha-sc-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-/* Match the storage detail shell tab spacing; the shell owns the Antd Tabs nav. */
-.soha-sc-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-sc-detail .soha-sc-section-title {
   display: flex;
   align-items: center;
@@ -24,7 +17,7 @@
 .soha-sc-detail .soha-sc-relations-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
+  gap: 12px;
 }
 .soha-sc-detail .soha-sc-relations-summary section {
   display: flex;
@@ -32,6 +25,9 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 .soha-sc-detail .soha-sc-relations-summary dl {
   margin: 0;

@@ -1,6 +1,24 @@
 .soha-step-form__steps {
-  max-width: 520px;
-  margin: 0 auto 28px;
+  max-width: 560px;
+  margin: 0 auto 24px;
+  padding: 10px 16px;
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: var(--soha-radius-panel, 12px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 76%, var(--soha-bg-surface));
+}
+
+.soha-step-form__steps .ant-steps-item-icon {
+  width: 24px !important;
+  height: 24px !important;
+  line-height: 22px !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  border-radius: 999px !important;
+}
+
+.soha-step-form__steps .ant-steps-item-title {
+  font-size: 13px !important;
+  font-weight: 600;
 }
 
 .soha-step-form__content {
@@ -35,10 +53,11 @@
   box-sizing: border-box;
   width: 100%;
   max-width: none;
-  margin-bottom: 16px;
-  padding-top: 4px;
-  padding-bottom: 16px;
-  background: var(--soha-bg-surface);
+  margin-bottom: 18px;
+  padding: 10px 16px;
+  border-radius: var(--soha-radius-panel, 12px);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 84%, var(--soha-bg-surface));
+  backdrop-filter: blur(12px);
 }
 
 @media (max-width: 640px) {

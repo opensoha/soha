@@ -25,9 +25,9 @@
 
 .soha-rbac-role-ref {
   display: inline-block;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--soha-bg-surface-muted);
+  padding: 2px 8px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 
 .soha-rbac-subject-list.is-compact {
@@ -45,10 +45,10 @@
   display: inline-flex;
   align-items: center;
   margin-inline-end: 0;
-  padding-inline: 7px;
-  border-color: var(--soha-border-color);
-  border-radius: 6px;
-  background: var(--soha-bg-surface-muted);
+  padding-inline: 8px;
+  border-color: transparent;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
   color: var(--soha-text-secondary);
   line-height: 20px;
   white-space: normal;
@@ -74,7 +74,6 @@
 
 .soha-access-control-rule-item {
   padding: 10px 12px;
-  border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-control);
   background: var(--soha-fill-weak);
   overflow-wrap: anywhere;

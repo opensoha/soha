@@ -15,14 +15,32 @@ export default function App() {
   const lightCanvasColor = usePreferencesStore((state) => state.lightCanvasColor)
   const darkCanvasColor = usePreferencesStore((state) => state.darkCanvasColor)
   const paperGrain = usePreferencesStore((state) => state.paperGrain)
+  const overviewHeroStyle = usePreferencesStore((state) => state.overviewHeroStyle)
+  const overviewGradientPreset = usePreferencesStore((state) => state.overviewGradientPreset)
+  const overviewGradientStops = usePreferencesStore((state) => state.overviewGradientStops)
+  const cornerRadius = usePreferencesStore((state) => state.cornerRadius)
 
   useLayoutEffect(() => {
     const resolved = resolveThemeMode(themeMode)
     const canvasColor = resolved === 'dark' ? darkCanvasColor : lightCanvasColor
     applyAppTheme(DEFAULT_APP_THEME_ID, themeMode, accentColor, canvasColor, {
       paperGrain,
+      overviewHeroStyle,
+      overviewGradientPreset,
+      overviewGradientStops,
+      cornerRadius,
     })
-  }, [accentColor, darkCanvasColor, lightCanvasColor, paperGrain, themeMode])
+  }, [
+    accentColor,
+    cornerRadius,
+    darkCanvasColor,
+    lightCanvasColor,
+    overviewGradientPreset,
+    overviewGradientStops,
+    overviewHeroStyle,
+    paperGrain,
+    themeMode,
+  ])
 
   useLayoutEffect(() => {
     if (themeMode !== 'system') {
@@ -33,9 +51,23 @@ export default function App() {
       const canvasColor = resolved === 'dark' ? darkCanvasColor : lightCanvasColor
       applyAppTheme(DEFAULT_APP_THEME_ID, themeMode, accentColor, canvasColor, {
         paperGrain,
+        overviewHeroStyle,
+        overviewGradientPreset,
+        overviewGradientStops,
+        cornerRadius,
       })
     })
-  }, [accentColor, darkCanvasColor, lightCanvasColor, paperGrain, themeMode])
+  }, [
+    accentColor,
+    cornerRadius,
+    darkCanvasColor,
+    lightCanvasColor,
+    overviewGradientPreset,
+    overviewGradientStops,
+    overviewHeroStyle,
+    paperGrain,
+    themeMode,
+  ])
 
   return (
     <AppErrorBoundary>

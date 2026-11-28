@@ -1,7 +1,6 @@
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -12,6 +11,7 @@ import {
 import { operationModalStyles } from '@/components/modal-styles'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { isApiError } from '@/services/api-error'
@@ -51,7 +51,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -227,7 +226,7 @@ function SecretValueFields({
   )
 }
 export function SecretsPage() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const [queryForm] = Form.useForm<SecretPageFilters>()
   const [editorForm] = Form.useForm<SecretEditorValues>()
@@ -462,7 +461,15 @@ export function SecretsPage() {
         width: 260,
         render: (name: string, secret) => (
           <Space orientation="vertical" size={2}>
-            <Text strong>{name}</Text>
+            <Button
+              type="link"
+              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+              onClick={() =>
+                secret.status === 'active' ? setUsageSecret(secret) : setVersionSecret(secret)
+              }
+            >
+              {name}
+            </Button>
             <Text code copyable={false} type="secondary">
               {secret.id}
             </Text>
@@ -519,62 +526,64 @@ export function SecretsPage() {
         ...tableColumnPresets.action,
         key: 'actions',
         render: (_, secret) => (
-          <Space size={2}>
-            <ManagementIconButton
-              aria-label="使用 Secret"
-              disabled={secret.status !== 'active'}
-              icon={<LinkOutlined />}
-              tooltip="使用"
-              onClick={() => setUsageSecret(secret)}
-            />
-            <ManagementIconButton
-              aria-label="查看 Secret 版本"
-              icon={<HistoryOutlined />}
-              tooltip="版本"
-              onClick={() => setVersionSecret(secret)}
-            />
-            <ManagementIconButton
-              aria-label="轮换 Secret"
-              disabled={operationBlocked || !canRotate || secret.status !== 'active'}
-              icon={<ReloadOutlined />}
-              tooltip="轮换"
-              onClick={() => {
-                rotateForm.resetFields()
-                rotateForm.setFieldsValue({ source: 'local', value: '', vaultKv2: { version: 1 } })
-                setRotating(secret)
-              }}
-            />
-            <ManagementIconButton
-              aria-label="编辑 Secret"
-              disabled={operationBlocked || !canUpdate}
-              icon={<EditOutlined />}
-              tooltip="编辑"
-              onClick={() => openEdit(secret)}
-            />
-            <Popconfirm
-              cancelText="取消"
-              disabled={operationBlocked || !canUpdate || secret.status === 'disabled'}
-              okButtonProps={{
-                ...{ danger: true, loading: disableMutation.isPending },
-                disabled: operationBlocked,
-              }}
-              okText="停用"
-              title={`停用 ${secret.name}`}
-              onConfirm={() => disableMutation.mutate(secret.id)}
-            >
-              <ManagementIconButton
-                aria-label="停用 Secret"
-                danger
-                disabled={!canUpdate || secret.status === 'disabled'}
-                icon={<StopOutlined />}
-                tooltip="停用"
-              />
-            </Popconfirm>
-          </Space>
+          <TableRowActionMenu
+            targetLabel={secret.name}
+            loading={disableMutation.isPending && disableMutation.variables === secret.id}
+            items={[
+              {
+                key: 'use',
+                label: '使用',
+                icon: <LinkOutlined />,
+                disabled: secret.status !== 'active',
+                onClick: () => setUsageSecret(secret),
+              },
+              {
+                key: 'versions',
+                label: '版本',
+                icon: <HistoryOutlined />,
+                onClick: () => setVersionSecret(secret),
+              },
+              {
+                key: 'rotate',
+                label: '轮换',
+                icon: <ReloadOutlined />,
+                disabled: operationBlocked || !canRotate || secret.status !== 'active',
+                onClick: () => {
+                  rotateForm.resetFields()
+                  rotateForm.setFieldsValue({ source: 'local', value: '', vaultKv2: { version: 1 } })
+                  setRotating(secret)
+                },
+              },
+              {
+                key: 'edit',
+                label: '编辑',
+                icon: <EditOutlined />,
+                disabled: operationBlocked || !canUpdate,
+                onClick: () => openEdit(secret),
+              },
+              { type: 'divider' },
+              {
+                key: 'disable',
+                label: '停用',
+                icon: <StopOutlined />,
+                danger: true,
+                disabled: operationBlocked || !canUpdate || secret.status === 'disabled',
+                onClick: () => {
+                  modal.confirm({
+                    title: `停用 ${secret.name}`,
+                    okText: '停用',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true, disabled: operationBlocked },
+                    onOk: () => disableMutation.mutateAsync(secret.id).catch(() => undefined),
+                  })
+                },
+              },
+            ]}
+          />
         ),
       },
     ],
-    [canRotate, canUpdate, disableMutation, message, rotateForm],
+    [canRotate, canUpdate, disableMutation, message, modal, operationBlocked, rotateForm],
   )
   const versionColumns: TableColumnsType<SecretVersionMetadata> = [
     {
@@ -592,40 +601,43 @@ export function SecretsPage() {
     { title: 'Created by', dataIndex: 'createdBy', ellipsis: true },
     { title: 'Created', dataIndex: 'createdAt', width: 180, render: formatDateTime },
     {
+      ...tableColumnPresets.action,
+      title: '操作',
       key: 'actions',
-      fixed: 'right',
-      width: 92,
       render: (_, version) => (
-        <Space size={2}>
-          <ManagementIconButton
-            aria-label="复制版本引用"
-            icon={<CopyOutlined />}
-            tooltip="复制引用"
-            onClick={() => versionSecret && copyReference(versionSecret, version.version)}
-          />
-          <Popconfirm
-            cancelText="取消"
-            disabled={operationBlocked || !canRevoke || version.status === 'revoked'}
-            okButtonProps={{
-              ...{ danger: true, loading: revokeMutation.isPending },
-              disabled: operationBlocked,
-            }}
-            okText="撤销"
-            title={`撤销 v${version.version}`}
-            onConfirm={() =>
-              versionSecret &&
-              revokeMutation.mutate({ secretId: versionSecret.id, version: version.version })
-            }
-          >
-            <ManagementIconButton
-              aria-label="撤销 Secret 版本"
-              danger
-              disabled={!canRevoke || version.status === 'revoked'}
-              icon={<DeleteOutlined />}
-              tooltip="撤销"
-            />
-          </Popconfirm>
-        </Space>
+        <TableRowActionMenu
+          targetLabel={`v${version.version}`}
+          loading={revokeMutation.isPending}
+          items={[
+            {
+              key: 'copy',
+              label: '复制引用',
+              icon: <CopyOutlined />,
+              onClick: () => versionSecret && copyReference(versionSecret, version.version),
+            },
+            { type: 'divider' },
+            {
+              key: 'revoke',
+              label: '撤销',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: operationBlocked || !canRevoke || version.status === 'revoked',
+              onClick: () => {
+                if (!versionSecret) return
+                modal.confirm({
+                  title: `撤销 v${version.version}`,
+                  okText: '撤销',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true, disabled: operationBlocked },
+                  onOk: () =>
+                    revokeMutation
+                      .mutateAsync({ secretId: versionSecret.id, version: version.version })
+                      .catch(() => undefined),
+                })
+              },
+            },
+          ]}
+        />
       ),
     },
   ]

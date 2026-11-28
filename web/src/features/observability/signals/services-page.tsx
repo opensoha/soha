@@ -3,15 +3,17 @@ import { AdminTable } from '@/components/admin-table'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useAIPageContext } from '@/features/copilot'
 import { ApiError } from '@/services/api-error'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { EyeOutlined, LineChartOutlined, ReloadOutlined, ShareAltOutlined } from '@ant-design/icons'
 import type { ObservabilityService } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Descriptions, Drawer, Form, Space, Typography } from 'antd'
+import { Button, Descriptions, Drawer, Form, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { ObservabilityServiceQuery } from './api'
@@ -114,7 +116,15 @@ export function ObservabilityServicesPage() {
       title: '服务',
       dataIndex: 'displayName',
       key: 'name',
-      render: (_, item) => item.displayName || item.name,
+      render: (_, item) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => setSelectedServiceId(item.id)}
+        >
+          {item.displayName || item.name}
+        </Button>
+      ),
     },
     {
       title: '状态',
@@ -149,29 +159,32 @@ export function ObservabilityServicesPage() {
       render: (value?: number) => (value === undefined ? '-' : `${value.toFixed(1)} ms`),
     },
     {
-      key: 'actions',
-      width: 132,
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, item) => (
-        <Space size={0}>
-          <ManagementIconButton
-            aria-label="查看服务详情"
-            icon={<EyeOutlined />}
-            tooltip="查看服务详情"
-            onClick={() => setSelectedServiceId(item.id)}
-          />
-          <ManagementIconButton
-            aria-label="查看服务指标"
-            icon={<LineChartOutlined />}
-            tooltip="查看服务指标"
-            onClick={() => navigate(signalPath('metrics', item.name))}
-          />
-          <ManagementIconButton
-            aria-label="查看服务链路"
-            icon={<ShareAltOutlined />}
-            tooltip="查看服务链路"
-            onClick={() => navigate(signalPath('traces', item.name))}
-          />
-        </Space>
+        <TableRowActionMenu
+          targetLabel={item.displayName || item.name}
+          items={[
+            {
+              key: 'detail',
+              label: '查看服务详情',
+              icon: <EyeOutlined />,
+              onClick: () => setSelectedServiceId(item.id),
+            },
+            {
+              key: 'metrics',
+              label: '查看服务指标',
+              icon: <LineChartOutlined />,
+              onClick: () => navigate(signalPath('metrics', item.name)),
+            },
+            {
+              key: 'traces',
+              label: '查看服务链路',
+              icon: <ShareAltOutlined />,
+              onClick: () => navigate(signalPath('traces', item.name)),
+            },
+          ]}
+        />
       ),
     },
   ]

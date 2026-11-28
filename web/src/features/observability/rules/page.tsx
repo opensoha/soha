@@ -1,13 +1,14 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
 import { StepForm } from '@/components/step-form'
 import { StepFormModal } from '@/components/step-form-modal'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -187,7 +188,26 @@ export function AlertRulesPage() {
   }
 
   const columns: TableProps<AlertRule>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => {
+            if (canManageRule && !writeBlocked && !denied && !testMutation.isPending) {
+              openEditor(record)
+              return
+            }
+            setSelectedRuleId(record.id)
+            setRunsOpen(true)
+          }}
+        >
+          {value || record.id}
+        </Button>
+      ),
+    },
     {
       title: '类型',
       dataIndex: 'ruleType',
@@ -224,40 +244,42 @@ export function AlertRulesPage() {
     },
     { title: '更新时间', dataIndex: 'updatedAt', render: formatDateTime },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      key: 'actions',
       dataIndex: 'id',
       render: (_: string, record) => (
-        <Space className="soha-row-action-icons" size={2}>
-          <ManagementIconButton
-            aria-label="测试告警规则"
-            disabled={!canTestRule || testMutation.isPending || denied}
-            size="small"
-            tooltip="测试"
-            icon={<PlayCircleOutlined />}
-            onClick={() => testRule(record)}
-          />
-          <ManagementIconButton
-            aria-label="查看运行记录"
-            size="small"
-            tooltip="运行记录"
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              setSelectedRuleId(record.id)
-              setRunsOpen(true)
-            }}
-          />
-          {canManageRule ? (
-            <ManagementIconButton
-              aria-label="编辑告警规则"
-              disabled={writeBlocked || denied || testMutation.isPending}
-              size="small"
-              tooltip="编辑"
-              icon={<EditOutlined />}
-              onClick={() => openEditor(record)}
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name || record.id}
+          items={[
+            {
+              key: 'test',
+              label: '测试告警规则',
+              icon: <PlayCircleOutlined />,
+              disabled: !canTestRule || testMutation.isPending || denied,
+              onClick: () => testRule(record),
+            },
+            {
+              key: 'runs',
+              label: '查看运行记录',
+              icon: <ReloadOutlined />,
+              onClick: () => {
+                setSelectedRuleId(record.id)
+                setRunsOpen(true)
+              },
+            },
+            ...(canManageRule
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑告警规则',
+                    icon: <EditOutlined />,
+                    disabled: writeBlocked || denied || testMutation.isPending,
+                    onClick: () => openEditor(record),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

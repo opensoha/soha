@@ -6,7 +6,7 @@
   display: grid;
   grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .soha-identity-providers-page .soha-identity-provider-picker {
@@ -14,10 +14,20 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--soha-data-panel-border);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-data-panel-bg);
 }
 
 .soha-identity-providers-page .soha-management-searchable-list-pane {
-  max-height: 680px;
+  flex: 1 1 auto;
+  min-height: 360px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .soha-identity-providers-page .soha-management-searchable-list-pane__items {
@@ -46,6 +56,11 @@
   overflow-wrap: anywhere;
 }
 
+.soha-identity-providers-page .soha-identity-provider-list-heading > :last-child {
+  flex-shrink: 0;
+  max-width: none;
+}
+
 .soha-identity-providers-page .soha-identity-provider-list-state {
   display: flex;
   align-items: flex-start;
@@ -60,12 +75,28 @@
 }
 
 .soha-identity-providers-page .soha-identity-provider-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
   min-height: 400px;
   padding: 16px;
   border: 1px solid var(--soha-data-panel-border);
   border-radius: var(--soha-radius-panel);
   background: var(--soha-data-panel-bg);
+}
+
+.soha-identity-providers-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
+  padding: 0 18px;
+  min-height: 44px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, var(--soha-radius-lg, 12px));
+  background: var(--soha-bg-surface);
+  margin-bottom: 12px;
+}
+
+.soha-identity-providers-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav::before {
+  display: none;
 }
 
 .soha-identity-providers-page .soha-identity-provider-detail-heading {
@@ -199,7 +230,7 @@
 .soha-proxy-snippet {
   min-width: 0;
   border: 1px solid var(--soha-border-color);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control, 8px);
   overflow: hidden;
 }
 
@@ -234,7 +265,7 @@
   margin: 4px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--soha-border-color);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control, 8px);
   background: var(--soha-fill-weak);
 }
 

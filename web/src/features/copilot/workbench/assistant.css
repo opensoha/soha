@@ -197,7 +197,7 @@
 .soha-ai-message-avatar {
   width: 24px;
   height: 24px;
-  border-radius: 8px;
+  border-radius: var(--soha-radius-sm, 8px);
 }
 @keyframes soha-ai-avatar-speaking {
   50% {
@@ -568,7 +568,7 @@
 .soha-ai-assistant-event > span:first-child {
   flex: 0 0 auto;
   padding: 7px;
-  border-radius: 9px;
+  border-radius: var(--soha-radius-control, 8px);
   background: var(--soha-fill-weak);
   color: var(--ant-color-text-secondary, #8c8c8c);
 }
@@ -784,7 +784,7 @@
   width: 40px;
   height: 40px;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: var(--soha-radius-md, 10px);
 }
 .soha-ai-assistant-chat-task.is-chat-image img {
   object-fit: contain;
@@ -807,7 +807,7 @@
 .soha-ai-user-message .soha-ai-chat-image {
   max-height: 260px;
   object-fit: contain;
-  border-radius: 12px;
+  border-radius: var(--soha-radius-lg, 12px);
 }
 .soha-ai-message-reaction {
   position: absolute;
@@ -818,7 +818,7 @@
   min-width: 28px;
   height: 24px;
   padding-inline: 4px;
-  border-radius: 14px;
+  border-radius: 999px;
   background: var(--soha-bg-container, #fff);
   box-shadow: 0 1px 3px #0000000f;
   font-size: 15px;
@@ -836,7 +836,7 @@
   max-width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 18px;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 4px);
 }
 @media (max-width: 767px) {
   .soha-ai-assistant-chat-task .ant-btn,
@@ -961,7 +961,7 @@
   background: transparent;
   color: inherit;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--soha-radius-lg, 12px);
   text-align: left;
   cursor: pointer;
 }
@@ -1001,7 +1001,7 @@
 .soha-message-hit mark {
   background: #ffec99;
   color: #262626;
-  border-radius: 3px;
+  border-radius: var(--soha-radius-xs, 4px);
   padding: 0 2px;
 }
 @media (max-width: 767px) {
@@ -1018,13 +1018,36 @@
   margin: auto;
   padding: 24px;
   display: grid;
-  gap: 20px;
+  gap: 16px;
+}
+.soha-heya-access__bezel {
+  padding: 5px;
+  border-radius: calc(var(--soha-radius-lg, 12px) + 5px);
+  border: 1px solid var(--soha-border-color);
+  background: color-mix(in srgb, var(--soha-fill-weak) 62%, var(--soha-bg-surface) 38%);
+}
+.soha-heya-access__hero {
+  border-radius: var(--soha-radius-lg, 12px);
+  border: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface);
+}
+.soha-heya-access__card.ant-card {
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+  box-shadow: none;
 }
 .soha-heya-access__avatar {
-  width: 120px;
-  height: 120px;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto;
 }
 .soha-heya-access__request {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border-radius: var(--soha-radius-control);
+  background: color-mix(in srgb, var(--soha-fill-weak) 55%, var(--soha-bg-surface) 45%);
+}
+.soha-heya-access__request:last-child {
+  margin-bottom: 0;
 }

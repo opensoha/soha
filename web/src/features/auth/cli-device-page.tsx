@@ -2,6 +2,8 @@ import { ContextFeedback } from '@/components/context-feedback'
 import { useInlineApiError } from '@/components/request-feedback'
 import { isApiError } from '@/services/api-error'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePreferencesStore } from '@/stores/preferences-store'
+import { resolveThemeMode } from '@/theme/app-theme'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import type {
@@ -13,6 +15,8 @@ import {
   CloseOutlined,
   CodeOutlined,
   ExclamationOutlined,
+  MoonOutlined,
+  SunOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Button, Form, Input, Spin } from 'antd'
@@ -43,6 +47,9 @@ export function CLIDevicePage() {
   const navigate = useNavigate()
   const accessToken = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
+  const themeMode = usePreferencesStore((state) => state.themeMode)
+  const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const resolvedTheme = resolveThemeMode(themeMode)
   const [handle, setHandle] = useState(captureDeviceHandle)
   const [auth, setAuth] = useState<'checking' | 'ready' | 'login' | 'unavailable'>(
     accessToken ? 'ready' : 'checking',
@@ -265,7 +272,15 @@ export function CLIDevicePage() {
       : `${remainingLabel}，不到 1 分钟`
   return (
     <main className="soha-cli-device-page">
-      <section className="soha-cli-device-content" aria-labelledby="device-title">
+      <Button
+        type="text"
+        className="soha-cli-device-theme-toggle"
+        aria-label={resolvedTheme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+        icon={resolvedTheme === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+        onClick={() => setThemeMode(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      />
+      <div className="soha-cli-device-bezel">
+        <section className="soha-cli-device-content" aria-labelledby="device-title">
         <div className="soha-cli-device-brand">
           <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" />
           <span>Soha</span>
@@ -502,7 +517,8 @@ export function CLIDevicePage() {
           </>
         )}
         <footer className="soha-cli-device-footer">Soha CLI · 设备授权</footer>
-      </section>
+        </section>
+      </div>
     </main>
   )
 }

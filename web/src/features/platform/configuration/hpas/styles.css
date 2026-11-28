@@ -1,12 +1,6 @@
 .soha-hpa-detail {
   min-width: 0;
 }
-.soha-hpa-detail > .soha-workload-detail-page {
-  gap: 0;
-}
-.soha-hpa-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
-  margin-bottom: 20px;
-}
 .soha-hpa-detail .soha-workload-overview-config dd {
   min-width: 0;
   overflow-wrap: anywhere;

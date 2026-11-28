@@ -263,10 +263,18 @@ describe('observability signal evidence links', () => {
       '/monitoring-workbench/traces?dataSourceId=jaeger-main&cluster=cluster-a&namespace=apps&application=shop&environment=prod&service=checkout&workload=api&traceId=trace-1&from=2026-08-30T00%3A00%3A00Z&to=2026-08-30T00%3A15%3A00Z',
     )
 
-    const relatedLogs = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看关联日志"]',
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="更多操作：checkout GET /checkout"]',
     )
-    expect(relatedLogs).not.toBeNull()
+    expect(trigger).not.toBeNull()
+    await act(async () => {
+      trigger?.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    const relatedLogs = Array.from(
+      document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((item) => item.textContent?.includes('查看关联日志'))
+    expect(relatedLogs).toBeTruthy()
     await act(async () => relatedLogs?.click())
 
     const location = new URL(
@@ -388,11 +396,19 @@ describe('observability signal evidence links', () => {
     })
 
     await renderPage(<ObservabilityServicesPage />, '/monitoring-workbench/services')
-    const detailButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="查看服务详情"]',
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="更多操作：Checkout"]',
     )
-    expect(detailButton).not.toBeNull()
-    await act(async () => detailButton?.click())
+    expect(trigger).not.toBeNull()
+    await act(async () => {
+      trigger?.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    const detailItem = Array.from(
+      document.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item'),
+    ).find((item) => item.textContent?.includes('查看服务详情'))
+    expect(detailItem).toBeTruthy()
+    await act(async () => detailItem?.click())
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })

@@ -4,7 +4,11 @@ import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubern
 import { formatContainerStateLabel } from '@/features/platform/workloads-model'
 import type { PodDetail, WorkloadContainer } from '@/types'
 import { formatDateTime } from '@/utils/time'
-import { WorkloadOverview, WorkloadOverviewMetadata } from '../shared/workload-overview'
+import {
+  WorkloadOverview,
+  WorkloadOverviewConfiguration,
+  WorkloadOverviewMetadata,
+} from '../shared/workload-overview'
 import { CheckCircleFilled, WarningOutlined } from '@ant-design/icons'
 import { Card, Collapse, Descriptions, Tooltip, Typography } from 'antd'
 import type { ReactNode } from 'react'
@@ -100,31 +104,25 @@ export function PodDetailOverview({
             className="soha-detail-card soha-pod-detail-card"
             title={zh ? '运行信息' : 'Runtime'}
           >
-            <Descriptions
-              column={1}
-              size="small"
+            <WorkloadOverviewConfiguration
               items={[
-                { key: 'namespace', label: zh ? '命名空间' : 'Namespace', children: namespaceLink },
-                { key: 'node', label: zh ? '节点' : 'Node', children: nodeLink },
+                { label: zh ? '命名空间' : 'Namespace', children: namespaceLink },
+                { label: zh ? '节点' : 'Node', children: nodeLink },
                 {
-                  key: 'podip',
                   label: 'Pod IP',
                   children: <Text copyable={Boolean(pod.podIp)}>{pod.podIp || '—'}</Text>,
                 },
-                { key: 'hostip', label: 'Host IP', children: pod.hostIp || '—' },
-                { key: 'qos', label: 'QoS', children: pod.qosClass || '—' },
+                { label: 'Host IP', children: pod.hostIp || '—' },
+                { label: 'QoS', children: pod.qosClass || '—' },
                 {
-                  key: 'account',
                   label: zh ? '服务账号' : 'Service account',
                   children: accountLink,
                 },
                 {
-                  key: 'created',
                   label: zh ? '创建时间' : 'Created',
                   children: formatDateTime(pod.createdAt),
                 },
                 {
-                  key: 'started',
                   label: zh ? '启动时间' : 'Started',
                   children: formatDateTime(pod.startTime),
                 },

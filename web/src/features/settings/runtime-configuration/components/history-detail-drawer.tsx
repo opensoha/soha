@@ -48,6 +48,7 @@ export function RuntimeConfigurationHistoryDrawer({
     { title: '配置键', dataIndex: 'key', width: 280 },
     {
       title: '操作',
+      dataIndex: 'reset',
       key: 'operation',
       width: 100,
       render: (_, change) => (

@@ -1,17 +1,14 @@
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useMemo, useState } from 'react'
-import { Button, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Typography } from 'antd'
+import { App, Button, Col, Form, Input, Modal, Row, Select, Typography } from 'antd'
 import { MetadataTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { DeleteOutlined, EditOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import {
-  ManagementIconButton,
-  ManagementState,
-  useManagementTextFilter,
-} from '@/components/management-list'
+import { ManagementState, useManagementTextFilter } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { AccessManagementTablePage } from '../shared/management-page'
@@ -45,6 +42,7 @@ const directoryProviderLabels: Record<string, string> = {
 }
 
 export function AccessTeamsPage() {
+  const { modal } = App.useApp()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
   const canViewGroups = hasPermission(snapshot, 'access.groups.view')
@@ -94,7 +92,19 @@ export function AccessTeamsPage() {
     {
       title: '组织名称',
       dataIndex: 'name',
-      render: (value: string) => <Text strong>{value}</Text>,
+      render: (value: string, record: AccessTeam) =>
+        canUpdateGroups ? (
+          <Button
+            type="link"
+            disabled={crud.saveBlocked && crud.editing?.id !== record.id}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => crud.openEdit(record)}
+          >
+            {value}
+          </Button>
+        ) : (
+          <Text strong>{value}</Text>
+        ),
     },
     {
       title: '上级组织',
@@ -133,50 +143,57 @@ export function AccessTeamsPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      dataIndex: 'id',
+      key: 'actions',
       render: (_: unknown, record: AccessTeam) => (
-        <Space className="soha-row-action-icons">
-          {canUpdateGroups || canDeleteGroups || canViewScopeGrants ? (
-            <>
-              {canViewScopeGrants ? (
-                <ManagementIconButton
-                  aria-label="授权范围"
-                  icon={<FolderOpenOutlined />}
-                  size="small"
-                  tooltip="授权范围"
-                  onClick={() => setGrantTeam(record)}
-                />
-              ) : null}
-              {canUpdateGroups ? (
-                <ManagementIconButton
-                  aria-label="编辑组织"
-                  disabled={crud.saveBlocked && crud.editing?.id !== record.id}
-                  icon={<EditOutlined />}
-                  size="small"
-                  tooltip="编辑"
-                  onClick={() => crud.openEdit(record)}
-                />
-              ) : null}
-              {canDeleteGroups ? (
-                <Popconfirm
-                  title={`确认删除 ${record.name}？`}
-                  onConfirm={() => crud.deleteRecord(record.id)}
-                >
-                  <ManagementIconButton
-                    aria-label="删除组织"
-                    disabled={crud.deleteBlocked}
-                    danger
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    tooltip="删除"
-                  />
-                </Popconfirm>
-              ) : null}
-            </>
-          ) : (
-            '-'
-          )}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canViewScopeGrants
+              ? [
+                  {
+                    key: 'grants',
+                    label: '授权范围',
+                    icon: <FolderOpenOutlined />,
+                    onClick: () => setGrantTeam(record),
+                  },
+                ]
+              : []),
+            ...(canUpdateGroups
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    disabled: crud.saveBlocked && crud.editing?.id !== record.id,
+                    onClick: () => crud.openEdit(record),
+                  },
+                ]
+              : []),
+            ...(canDeleteGroups
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: '删除',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: crud.deleteBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `确认删除 ${record.name}？`,
+                        okText: '删除',
+                        cancelText: '取消',
+                        okButtonProps: { danger: true, disabled: crud.deleteBlocked },
+                        onOk: () => {
+                          crud.deleteRecord(record.id)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

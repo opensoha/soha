@@ -66,3 +66,22 @@
   text-align: start;
   overflow-wrap: anywhere;
 }
+
+.soha-network-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav,
+.soha-server-proxy-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav,
+.soha-endpoint-response-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav,
+.soha-managed-content-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
+  padding: 0 18px;
+  min-height: 44px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel, var(--soha-radius-lg, 12px));
+  background: var(--soha-bg-surface);
+  margin-bottom: 12px;
+}
+
+.soha-network-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav::before,
+.soha-server-proxy-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav::before,
+.soha-endpoint-response-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav::before,
+.soha-managed-content-page .soha-resource-tabs.ant-tabs > .ant-tabs-nav::before {
+  display: none;
+}

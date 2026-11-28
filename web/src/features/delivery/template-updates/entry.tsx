@@ -18,6 +18,9 @@ export function TemplateUpdateEntry({
   initialVersion,
   initialTargetIds,
   iconOnly = false,
+  hideTrigger = false,
+  open: controlledOpen,
+  onOpenChange,
   label = '检查模板更新',
 }: TemplateUpdateScope & {
   serviceId?: string
@@ -25,9 +28,17 @@ export function TemplateUpdateEntry({
   initialVersion?: number
   initialTargetIds?: string[]
   iconOnly?: boolean
+  hideTrigger?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   label?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const permissions = usePermissionSnapshot()
   const group =
     kind === 'build'
@@ -38,7 +49,7 @@ export function TemplateUpdateEntry({
   if (!templateId || !hasPermission(permissions.data?.data, `delivery.${group}.view`)) return null
   return (
     <>
-      {iconOnly ? (
+      {hideTrigger ? null : iconOnly ? (
         <ManagementIconButton
           aria-label={label}
           tooltip={label}

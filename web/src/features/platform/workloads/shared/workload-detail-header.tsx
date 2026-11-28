@@ -42,30 +42,34 @@ export function WorkloadDetailHeader({
   )
   return (
     <header className="soha-workload-detail-header">
-      <div className="soha-workload-detail-title-row">
-        <div className="soha-workload-detail-title">
-          <Link
-            to={href}
-            aria-label={backLabel ?? (zh ? `返回${kind}列表` : `Back to ${kind} list`)}
-          >
-            <ArrowLeftOutlined />
-          </Link>
-          <h1>{name}</h1>
-          <Typography.Text copyable={{ text: name }} />
+      <div className="soha-workload-detail-header-surface">
+        <div className="soha-workload-detail-title-row">
+          <div className="soha-workload-detail-title">
+            <Link
+              className="soha-workload-detail-back"
+              to={href}
+              aria-label={backLabel ?? (zh ? `返回${kind}列表` : `Back to ${kind} list`)}
+            >
+              <ArrowLeftOutlined />
+            </Link>
+            <span className="soha-workload-detail-kind-pill">{kind}</span>
+            <h1>{name}</h1>
+            <Typography.Text copyable={{ text: name }} />
+          </div>
+          <div className="soha-workload-detail-actions">{actions}</div>
         </div>
-        <div className="soha-workload-detail-actions">{actions}</div>
-      </div>
-      <div className="soha-workload-detail-meta">
-        {status}
-        {namespace && namespace !== '—' && namespace !== '-' && (
-          <MetadataTag
-            tone="blue"
-            title={namespace}
-            className="soha-workload-detail-namespace"
-            label={<span>{namespaceContent ?? namespace}</span>}
-          />
-        )}
-        {facts}
+        <div className="soha-workload-detail-meta">
+          {status}
+          {namespace && namespace !== '—' && namespace !== '-' && (
+            <MetadataTag
+              tone="blue"
+              title={namespace}
+              className="soha-workload-detail-namespace"
+              label={<span>{namespaceContent ?? namespace}</span>}
+            />
+          )}
+          {facts}
+        </div>
       </div>
     </header>
   )

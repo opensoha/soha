@@ -715,17 +715,23 @@ async function clickButtonByText(container: ParentNode, text: string) {
   })
 }
 
-async function chooseVmAction(container: ParentNode, label: string) {
-  await clickButtonByLabel(container, '更多操作：build-vm')
+async function chooseRowAction(container: ParentNode, triggerLabel: string, label: string) {
+  await clickButtonByLabel(container, triggerLabel)
   await waitForText(label)
-  const item = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
-    (node) => node.textContent?.trim() === label,
-  )
+  const item = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"]',
+    ),
+  ).find((node) => node.textContent?.trim() === label)
   expect(item).toBeDefined()
   await act(async () => {
     item!.click()
     await Promise.resolve()
   })
+}
+
+async function chooseVmAction(container: ParentNode, label: string) {
+  await chooseRowAction(container, '更多操作：build-vm', label)
 }
 
 function hasButtonByLabel(container: ParentNode, label: string) {
@@ -1586,7 +1592,7 @@ describe('virtualization pages', () => {
         <VirtualizationClustersPage />,
         '/virtualization/clusters',
       )
-      await clickButtonByLabel(container, '测试连接')
+      await chooseRowAction(container, '更多操作：pve-a', '测试连接')
       await waitForText('连接测试结果')
       expect(document.body.textContent).toContain(label)
       expect(document.body.textContent).toContain('probe details')
@@ -1631,7 +1637,7 @@ describe('virtualization pages', () => {
       </StrictMode>,
       '/virtualization/clusters',
     )
-    await clickButtonByLabel(container, '编辑连接')
+    await chooseRowAction(container, '更多操作：pve-a', '编辑连接')
     expect(document.querySelector<HTMLInputElement>('#name')?.value).toBe('pve-a')
     await act(async () => {
       const name = document.querySelector<HTMLInputElement>('#name')!
@@ -1649,7 +1655,7 @@ describe('virtualization pages', () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 400)))
     expect(document.querySelector('.ant-modal')).toBeNull()
 
-    await clickButtonByLabel(container, '编辑连接')
+    await chooseRowAction(container, '更多操作：pve-a', '编辑连接')
     expect(document.querySelector<HTMLInputElement>('#name')?.value).toBe('pve-a')
     await clickButtonByText(document.body, '下一步')
     expect(document.querySelector<HTMLInputElement>('#endpoint')?.value).toBe(
@@ -1691,6 +1697,7 @@ describe('virtualization pages', () => {
       label: '连接',
       page: <VirtualizationClustersPage />,
       route: '/virtualization/clusters',
+      trigger: '更多操作：pve-a',
       edit: '编辑连接',
       steps: 2,
     },
@@ -1698,6 +1705,7 @@ describe('virtualization pages', () => {
       label: '镜像',
       page: <VirtualizationImagesPage />,
       route: '/virtualization/images',
+      trigger: '更多操作：ubuntu-24.04',
       edit: '编辑镜像',
       steps: 0,
     },
@@ -1705,12 +1713,13 @@ describe('virtualization pages', () => {
       label: '规格',
       page: <VirtualizationFlavorsPage />,
       route: '/virtualization/flavors',
+      trigger: '更多操作：standard-2c4g',
       edit: '编辑规格',
       steps: 0,
     },
   ])(
     'clears the previous $label save error when opening a fresh editor',
-    async ({ page, route, edit, steps }) => {
+    async ({ page, route, trigger, edit, steps }) => {
       testState.permissionSnapshot.permissionKeys.push(
         'virtualization.images.view',
         'virtualization.images.update',
@@ -1720,7 +1729,7 @@ describe('virtualization pages', () => {
       testState.catalogAllowedActions = ['update']
       testState.apiPut.mockRejectedValueOnce(new Error('previous save rejected'))
       const container = await renderWithProviders(page, route)
-      await clickButtonByLabel(container, edit)
+      await chooseRowAction(container, trigger, edit)
       for (let index = 0; index < steps; index++) await clickButtonByText(document.body, '下一步')
       if (steps) await clickButtonByText(document.body, '保存连接')
       else
@@ -1730,7 +1739,7 @@ describe('virtualization pages', () => {
       await waitForText('previous save rejected')
       await act(async () => document.querySelector<HTMLButtonElement>('.ant-modal-close')!.click())
       await act(async () => new Promise((resolve) => setTimeout(resolve, 400)))
-      await clickButtonByLabel(container, edit)
+      await chooseRowAction(container, trigger, edit)
       expect(document.querySelector('.ant-modal')?.textContent).not.toContain(
         'previous save rejected',
       )
@@ -1744,13 +1753,11 @@ describe('virtualization pages', () => {
       </StrictMode>,
       '/virtualization/clusters',
     )
-    await clickButtonByLabel(container, '编辑连接')
+    await chooseRowAction(container, '更多操作：pve-a', '编辑连接')
     await act(async () => document.querySelector<HTMLButtonElement>('.ant-modal-close')!.click())
     await act(async () => new Promise((resolve) => setTimeout(resolve, 400)))
 
-    await act(async () => {
-      container.querySelectorAll<HTMLButtonElement>('button[aria-label="编辑连接"]')[1]!.click()
-    })
+    await chooseRowAction(container, '更多操作：kubevirt-a', '编辑连接')
     expect(document.querySelector<HTMLInputElement>('#name')?.value).toBe('kubevirt-a')
     await clickButtonByText(document.body, '下一步')
     expect(document.body.textContent).toContain('Kubernetes 集群')
@@ -1783,14 +1790,14 @@ describe('virtualization pages', () => {
       <VirtualizationFlavorsPage />,
       '/virtualization/flavors',
     )
-    await clickButtonByLabel(container, '编辑规格')
+    await chooseRowAction(container, '更多操作：standard-2c4g', '编辑规格')
     await act(async () =>
       document.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!.click(),
     )
     await waitForText('pending record verification')
     await act(async () => document.querySelector<HTMLButtonElement>('.ant-modal-close')!.click())
     await act(async () => new Promise((resolve) => setTimeout(resolve, 400)))
-    await clickButtonByLabel(container, '编辑规格')
+    await chooseRowAction(container, '更多操作：standard-2c4g', '编辑规格')
     await vi.waitFor(() =>
       expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
         '请求结果不明',
@@ -1805,7 +1812,7 @@ describe('virtualization pages', () => {
       '/virtualization/clusters',
     )
 
-    await clickButtonByLabel(container, '编辑连接')
+    await chooseRowAction(container, '更多操作：pve-a', '编辑连接')
 
     expect(document.body.textContent).toContain('更新凭证')
     expect(document.body.textContent).not.toContain('Token Secret')
@@ -1820,7 +1827,7 @@ describe('virtualization pages', () => {
     const latestTaskHeader = Array.from(container.querySelectorAll('th')).find(
       (header) => header.textContent?.trim() === '最近任务',
     )
-    expect(latestTaskHeader?.className).toContain('ant-table-cell-fix-end')
+    expect(latestTaskHeader?.className).not.toContain('ant-table-cell-fix-end')
 
     const expandButton = container.querySelector<HTMLButtonElement>(
       'button.ant-table-row-expand-icon',
@@ -1842,7 +1849,7 @@ describe('virtualization pages', () => {
       '/virtualization/clusters',
     )
 
-    await clickButtonByLabel(container, '删除连接')
+    await chooseRowAction(container, '更多操作：pve-a', '删除连接')
     await waitForText('仅删除 Soha 中的连接与同步记录')
 
     expect(testState.apiGet).toHaveBeenCalledWith(
@@ -1867,7 +1874,7 @@ describe('virtualization pages', () => {
       '/virtualization/clusters',
     )
 
-    await clickButtonByLabel(container, '删除连接')
+    await chooseRowAction(container, '更多操作：pve-a', '删除连接')
     await waitForText('仅删除 Soha 中的连接与同步记录')
     await clickButtonByText(document.body, '确认从 Soha 删除')
     await waitForText('历史任务快照写入失败')
@@ -1998,8 +2005,7 @@ describe('virtualization pages', () => {
     )
     expect(imageContainer.textContent).toContain('ubuntu-24.04')
     expect(imageContainer.textContent).toContain('新增镜像入口')
-    expect(hasButtonByLabel(imageContainer, '编辑镜像')).toBe(false)
-    expect(hasButtonByLabel(imageContainer, '删除镜像')).toBe(false)
+    expect(hasButtonByLabel(imageContainer, '更多操作：ubuntu-24.04')).toBe(false)
 
     const flavorContainer = await renderWithProviders(
       <VirtualizationFlavorsPage />,
@@ -2007,7 +2013,6 @@ describe('virtualization pages', () => {
     )
     expect(flavorContainer.textContent).toContain('standard-2c4g')
     expect(flavorContainer.textContent).toContain('新增规格')
-    expect(hasButtonByLabel(flavorContainer, '编辑规格')).toBe(false)
-    expect(hasButtonByLabel(flavorContainer, '删除规格')).toBe(false)
+    expect(hasButtonByLabel(flavorContainer, '更多操作：standard-2c4g')).toBe(false)
   })
 })

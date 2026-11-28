@@ -138,22 +138,77 @@ async function render(
   await settle(client)
   return client
 }
+async function openActiveRowMenu(expectedText?: string) {
+  if (expectedText && findDropdownItem(expectedText)) return
+  const drawerTrigger = document.querySelector<HTMLButtonElement>(
+    '.ant-drawer:not(.ant-drawer-close) button.soha-table-row-action-trigger',
+  )
+  const trigger =
+    drawerTrigger ??
+    document.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+  expect(trigger).not.toBeNull()
+  if (trigger?.classList.contains('ant-dropdown-open')) {
+    await act(async () => trigger.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  }
+  await act(async () => trigger?.click())
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+}
+function findDropdownItem(text: string) {
+  const menus = Array.from(
+    document.querySelectorAll<HTMLElement>('.ant-dropdown:not(.ant-dropdown-hidden)'),
+  )
+  for (let i = menus.length - 1; i >= 0; i -= 1) {
+    const found = Array.from(menus[i].querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')).find(
+      (item) => item.textContent?.replace(/\s/g, '') === text,
+    )
+    if (found) return found
+  }
+  return undefined
+}
 async function click(text: string) {
-  const button = Array.from(document.querySelectorAll('button')).find(
+  const direct = Array.from(document.querySelectorAll('button')).find(
     (item) => item.textContent?.replace(/\s/g, '') === text,
   )
-  expect(button).toBeDefined()
-  await act(async () => button?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  if (direct) {
+    await act(async () => direct.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    return
+  }
+  await openActiveRowMenu(text)
+  const item = findDropdownItem(text)
+  expect(item).toBeDefined()
+  if (
+    item?.getAttribute('aria-disabled') === 'true' ||
+    item?.classList.contains('ant-dropdown-menu-item-disabled')
+  ) {
+    return
+  }
+  await act(async () => item?.click())
 }
 async function confirm() {
-  const button = document.querySelector<HTMLButtonElement>('.ant-popconfirm .ant-btn-primary')
-  expect(button).not.toBeNull()
-  await act(async () => button?.click())
+  const btn = document.querySelector<HTMLButtonElement>(
+    '.ant-modal-confirm-btns .ant-btn-primary, .ant-popconfirm .ant-btn-primary',
+  )
+  expect(btn).not.toBeNull()
+  await act(async () => btn?.click())
 }
 function button(text: string) {
   return Array.from(document.querySelectorAll('button')).find(
     (item) => item.textContent?.replace(/\s/g, '') === text,
   )!
+}
+async function isActionDisabled(text: string) {
+  const direct = Array.from(document.querySelectorAll('button')).find(
+    (item) => item.textContent?.replace(/\s/g, '') === text,
+  )
+  if (direct) return direct.disabled
+  await openActiveRowMenu(text)
+  const item = findDropdownItem(text)
+  expect(item).toBeDefined()
+  return (
+    item?.getAttribute('aria-disabled') === 'true' ||
+    Boolean(item?.classList.contains('ant-dropdown-menu-item-disabled'))
+  )
 }
 async function setValue(id: string, value: string) {
   const input = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement
@@ -252,8 +307,7 @@ describe('endpoint response policies', () => {
       'network_access.endpoint_response_policies.view',
       'network_access.endpoint_response_policies.update',
     ])
-    const edit = document.querySelector('[aria-label="编辑策略"]')
-    await act(async () => edit?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await click('编辑策略')
     await click('保存草稿')
     await settle(client)
     expect(mocks.saveEndpointResponsePolicy.mock.calls[0][0]).toMatchObject({
@@ -375,8 +429,8 @@ describe('endpoint response policies', () => {
       expect(mutation.mock.calls[0][0]).toEqual({ policyId: 'policy-1', expectedRevision: 3 })
       expect(document.body.textContent).toContain('请求结果不明')
       expect(document.body.textContent).toContain(`unknown-${action}`)
-      expect(button('发布').disabled).toBe(true)
-      expect(button('删除').disabled).toBe(true)
+      expect(await isActionDisabled('发布')).toBe(true)
+      expect(await isActionDisabled('删除')).toBe(true)
       expect(button('新增规则').disabled).toBe(true)
       await act(async () => document.querySelector<HTMLElement>('[aria-label="刷新策略"]')?.click())
       await settle(client)
@@ -398,7 +452,7 @@ describe('endpoint response policies', () => {
       'network_access.endpoint_response_policies.view',
       'network_access.endpoint_response_policies.publish',
     ])
-    await act(async () => document.querySelector<HTMLElement>('[aria-label="查看与预览"]')?.click())
+    await click('查看与预览')
     await settle(client)
     const history = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find((tab) =>
       tab.textContent?.includes('发布历史'),
@@ -417,11 +471,11 @@ describe('endpoint response policies', () => {
     expect(document.querySelector('.soha-operation-feedback')?.textContent).toContain(
       'unknown-rollback',
     )
-    expect(button('回滚发布').disabled).toBe(true)
+    expect(await isActionDisabled('回滚发布')).toBe(true)
     await act(async () => document.querySelector<HTMLElement>('.ant-drawer-close')?.click())
     await settle(client)
     expect(document.body.textContent).toContain('unknown-rollback')
-    expect(button('发布').disabled).toBe(true)
+    expect(await isActionDisabled('发布')).toBe(true)
   })
 
   it('fences an uncertain maintenance end without allowing a new exception', async () => {
@@ -450,7 +504,7 @@ describe('endpoint response policies', () => {
     await settle(client)
     expect(mocks.endEndpointMaintenance).toHaveBeenCalledTimes(1)
     expect(mocks.endEndpointMaintenance.mock.calls[0][0]).toBe('window-1')
-    expect(button('结束').disabled).toBe(true)
+    expect(await isActionDisabled('结束')).toBe(true)
     expect(button('新增维护例外').disabled).toBe(true)
     await act(async () =>
       document.querySelector<HTMLElement>('[aria-label="刷新维护例外"]')?.click(),
@@ -499,9 +553,7 @@ describe('endpoint response policies', () => {
       ],
       'events',
     )
-    await act(async () =>
-      document.querySelector<HTMLElement>('[aria-label="查看会话处置"]')?.click(),
-    )
+    await click('查看会话处置')
     await settle(client)
     await click('申请受控恢复')
     await setValue('reason', 'Check current authorization')
@@ -522,9 +574,7 @@ describe('endpoint response policies', () => {
     expect(document.body.textContent).toContain('unknown-restore')
     expect(document.body.textContent).toContain('请求结果不明')
     expect(document.body.textContent).not.toContain('恢复未完成，限制仍保留')
-    await act(async () =>
-      document.querySelector<HTMLElement>('[aria-label="查看会话处置"]')?.click(),
-    )
+    await click('查看会话处置')
     await settle(client)
     expect(button('申请受控恢复').disabled).toBe(true)
     expect(mocks.restoreEndpointResponse).toHaveBeenCalledTimes(1)

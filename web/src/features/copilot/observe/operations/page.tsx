@@ -1,8 +1,8 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { AISettingsPage } from '@/features/settings'
@@ -19,6 +19,7 @@ import {
   RobotOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import '../../copilot-pages.css'
 import {
   App,
   Button,
@@ -27,7 +28,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -133,7 +133,7 @@ export function AIOperationsPage() {
 }
 
 function AIOperationsContent({ userId }: { userId: string }) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -573,7 +573,22 @@ function AIOperationsContent({ userId }: { userId: string }) {
           tableSize="small"
           pageSize={10}
           columns={[
-            { title: '任务名称', dataIndex: 'title' },
+            {
+              title: '任务名称',
+              dataIndex: 'title',
+              render: (_value: string, record: InspectionTask) =>
+                canUpdateInspection && !blocked ? (
+                  <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                    onClick={() => openEditTask(record)}
+                  >
+                    {record.title}
+                  </Button>
+                ) : (
+                  <Text strong>{record.title}</Text>
+                ),
+            },
             {
               title: '范围',
               dataIndex: 'scopeType',
@@ -611,52 +626,44 @@ function AIOperationsContent({ userId }: { userId: string }) {
               title: '操作',
               dataIndex: 'id',
               render: (_value: string, record: InspectionTask) => (
-                <Space className="soha-row-action-icons">
-                  <ManagementIconButton
-                    aria-label="编辑巡检任务"
-                    size="small"
-                    tooltip="编辑"
-                    icon={<EditOutlined />}
-                    onClick={() => openEditTask(record)}
-                    disabled={blocked || !canUpdateInspection}
-                    title={
-                      canUpdateInspection ? undefined : '缺少 observe.ai.inspection.update 权限'
-                    }
-                  />
-                  <ManagementIconButton
-                    aria-label="立即执行巡检"
-                    size="small"
-                    tooltip="立即执行"
-                    icon={<PlayCircleOutlined />}
-                    loading={executeMutation.isPending}
-                    onClick={() => void executeInspection(record)}
-                    disabled={blocked || !canRunInspection}
-                    title={canRunInspection ? undefined : '缺少 observe.ai.inspection.run 权限'}
-                  />
-                  <Popconfirm
-                    disabled={blocked}
-                    title="确认删除巡检任务？"
-                    description={
-                      record.capabilityPlan
-                        ? '有执行历史的能力注册应停用并保留。'
-                        : '关联巡检运行记录会一并删除。'
-                    }
-                    onConfirm={() => deleteTaskMutation.mutate(record.id)}
-                    okButtonProps={{ danger: true, loading: deleteTaskMutation.isPending }}
-                  >
-                    <ManagementIconButton
-                      aria-label="删除巡检任务"
-                      size="small"
-                      tooltip="删除"
-                      icon={<DeleteOutlined />}
-                      danger
-                      disabled={blocked || !canDeleteInspection}
-                      title={
-                        canDeleteInspection ? undefined : '缺少 observe.ai.inspection.delete 权限'
-                      }
-                    />
-                  </Popconfirm>
-                </Space>
+                <TableRowActionMenu
+                  ariaLabel={`更多操作 ${record.title}`}
+                  items={[
+                    {
+                      key: 'edit',
+                      label: '编辑',
+                      icon: <EditOutlined />,
+                      disabled: blocked || !canUpdateInspection,
+                      onClick: () => openEditTask(record),
+                    },
+                    {
+                      key: 'execute',
+                      label: '立即执行',
+                      icon: <PlayCircleOutlined />,
+                      disabled: blocked || !canRunInspection,
+                      onClick: () => void executeInspection(record),
+                    },
+                    { type: 'divider' as const },
+                    {
+                      key: 'delete',
+                      label: '删除',
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      disabled: blocked || !canDeleteInspection,
+                      onClick: () =>
+                        modal.confirm({
+                          title: '确认删除巡检任务？',
+                          content: record.capabilityPlan
+                            ? '有执行历史的能力注册应停用并保留。'
+                            : '关联巡检运行记录会一并删除。',
+                          okText: '删除',
+                          cancelText: '取消',
+                          okButtonProps: { danger: true },
+                          onOk: () => deleteTaskMutation.mutateAsync(record.id),
+                        }),
+                    },
+                  ]}
+                />
               ),
             },
           ]}
@@ -951,23 +958,27 @@ function AIOperationsContent({ userId }: { userId: string }) {
               },
               {
                 ...tableColumnPresets.action,
-                title: '联动',
+                title: '操作',
                 dataIndex: 'id',
                 render: (value: string) => (
-                  <ManagementIconButton
-                    aria-label="创建 AI 会话"
-                    size="small"
-                    tooltip="创建 AI 会话"
-                    icon={<RobotOutlined />}
-                    onClick={() => createSessionMutation.mutate(value)}
-                    disabled={blocked || !canCreateSessionFromRun}
-                    title={
-                      canCreateSessionFromRun
-                        ? undefined
-                        : !canUseChat
-                          ? '缺少 observe.ai.chat 权限'
-                          : '缺少 observe.ai.view 权限'
-                    }
+                  <TableRowActionMenu
+                    ariaLabel={`更多操作 ${value}`}
+                    items={[
+                      {
+                        key: 'create-session',
+                        label: '创建 AI 会话',
+                        icon: <RobotOutlined />,
+                        disabled: blocked || !canCreateSessionFromRun,
+                        extra: !canCreateSessionFromRun
+                          ? !canViewAI
+                            ? '缺少 observe.ai.view 权限'
+                            : !canUseChat
+                              ? '缺少 observe.ai.chat 权限'
+                              : undefined
+                          : undefined,
+                        onClick: () => createSessionMutation.mutate(value),
+                      },
+                    ]}
                   />
                 ),
               },
@@ -1013,7 +1024,22 @@ function AIOperationsContent({ userId }: { userId: string }) {
             tableSize="small"
             pageSize={10}
             columns={[
-              { title: '名称', dataIndex: 'name' },
+              {
+                title: '名称',
+                dataIndex: 'name',
+                render: (_value: string, record: AutomationPolicy) =>
+                  canUpdateAISettings && !blocked ? (
+                    <Button
+                      type="link"
+                      style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                      onClick={() => openEditPolicy(record)}
+                    >
+                      {record.name}
+                    </Button>
+                  ) : (
+                    <Text strong>{record.name}</Text>
+                  ),
+              },
               { title: '触发类型', dataIndex: 'triggerType' },
               {
                 title: '分析类型',
@@ -1051,34 +1077,35 @@ function AIOperationsContent({ userId }: { userId: string }) {
                 title: '操作',
                 dataIndex: 'id',
                 render: (_value: string, record: AutomationPolicy) => (
-                  <Space className="soha-row-action-icons">
-                    <ManagementIconButton
-                      aria-label="编辑自动化策略"
-                      size="small"
-                      tooltip="编辑"
-                      icon={<EditOutlined />}
-                      onClick={() => openEditPolicy(record)}
-                      disabled={blocked || !canUpdateAISettings}
-                      title={canUpdateAISettings ? undefined : '缺少 settings.ai.update 权限'}
-                    />
-                    <Popconfirm
-                      disabled={blocked}
-                      title="确认删除自动化策略？"
-                      description="删除后不会再由该策略触发新的 AI 分析。"
-                      onConfirm={() => deletePolicyMutation.mutate(record.id)}
-                      okButtonProps={{ danger: true, loading: deletePolicyMutation.isPending }}
-                    >
-                      <ManagementIconButton
-                        aria-label="删除自动化策略"
-                        size="small"
-                        tooltip="删除"
-                        icon={<DeleteOutlined />}
-                        danger
-                        disabled={blocked || !canUpdateAISettings}
-                        title={canUpdateAISettings ? undefined : '缺少 settings.ai.update 权限'}
-                      />
-                    </Popconfirm>
-                  </Space>
+                  <TableRowActionMenu
+                    ariaLabel={`更多操作 ${record.name}`}
+                    items={[
+                      {
+                        key: 'edit',
+                        label: '编辑',
+                        icon: <EditOutlined />,
+                        disabled: blocked || !canUpdateAISettings,
+                        onClick: () => openEditPolicy(record),
+                      },
+                      { type: 'divider' as const },
+                      {
+                        key: 'delete',
+                        label: '删除',
+                        icon: <DeleteOutlined />,
+                        danger: true,
+                        disabled: blocked || !canUpdateAISettings,
+                        onClick: () =>
+                          modal.confirm({
+                            title: '确认删除自动化策略？',
+                            content: '删除后不会再由该策略触发新的 AI 分析。',
+                            okText: '删除',
+                            cancelText: '取消',
+                            okButtonProps: { danger: true },
+                            onOk: () => deletePolicyMutation.mutateAsync(record.id),
+                          }),
+                      },
+                    ]}
+                  />
                 ),
               },
             ]}

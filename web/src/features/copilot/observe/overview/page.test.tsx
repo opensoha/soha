@@ -92,16 +92,16 @@ describe('AIObserveOverviewPage', () => {
       )
     })
 
-    const operationalChips = [...container.querySelectorAll('.soha-overview-chip')].slice(-5)
-    expect(operationalChips).toHaveLength(5)
-    expect(operationalChips.map((chip) => chip.textContent)).toEqual([
-      '知识库1异常知识库',
-      '评测回归1失败评测',
-      '审批请求1待审批',
-      'Agent Runs1异常运行',
-      '生产操作1进行中或待执行',
+    const radarTargets = [...container.querySelectorAll('.soha-spatial-radar-target')]
+    expect(radarTargets).toHaveLength(3)
+    expect(radarTargets.map((item) => item.textContent)).toEqual([
+      '评测回归1 · 失败评测',
+      '审批请求1 · 待审批',
+      '生产操作1 · 进行中或待执行',
     ])
-    expect(operationalChips.every((chip) => chip.classList.contains('is-warning'))).toBe(true)
+    expect(
+      radarTargets.every((item) => Boolean(item.querySelector('.soha-spatial-tone-dot.is-warning'))),
+    ).toBe(true)
     expect(container.querySelector('.soha-ai-overview-action')).toBeNull()
     expect(container.querySelector('.soha-overview-section-bar')).toBeNull()
     expect(container.querySelector('a[href="/ai-gateway/governance?tab=approvals"]')).not.toBeNull()

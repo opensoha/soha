@@ -247,7 +247,7 @@ export function ClustersPage() {
         ...tableColumnPresets.status,
         title: localeCode === 'zh_CN' ? '状态' : 'Status',
         dataIndex: 'health',
-        width: 104,
+        width: 120,
         sorter: (a, b) =>
           nameCollator.compare(
             formatClusterHealth(a.health?.status || 'unknown', localeCode),
@@ -288,7 +288,7 @@ export function ClustersPage() {
       {
         title: localeCode === 'zh_CN' ? '连接方式' : 'Mode',
         dataIndex: 'connectionMode',
-        width: 104,
+        width: 120,
         sorter: (a, b) =>
           nameCollator.compare(
             formatConnectionMode(a.connectionMode, localeCode),

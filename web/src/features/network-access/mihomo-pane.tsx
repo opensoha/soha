@@ -1,11 +1,12 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { MihomoBundleFields, type ProfileBundle } from './mihomo-bundle-fields'
-import { ManagementIconButton } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type {
   NetworkMihomoDNSMode,
@@ -19,6 +20,7 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Checkbox,
   Divider,
@@ -26,7 +28,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -74,6 +75,7 @@ function textList(value?: string) {
     .filter(Boolean)
 }
 export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMihomoPaneProps) {
+  const { modal } = App.useApp()
   const { t } = useI18n()
   const permissions = usePermissionSnapshot()
   const canBrowseBundles = hasPermission(
@@ -308,35 +310,44 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
     ...(canUpdate || canDelete
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 96,
             render: (_: unknown, profile: NetworkMihomoProfile) => (
-              <Space size={4}>
-                {canUpdate ? (
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.mihomo.edit', '编辑 mihomo 配置')}
-                    icon={<EditOutlined />}
-                    tooltip={t('networkAccess.mihomo.edit', '编辑 mihomo 配置')}
-                    onClick={() => openEdit(profile)}
-                    disabled={operationBlocked}
-                  />
-                ) : null}
-                {canDelete ? (
-                  <Popconfirm
-                    title={t('networkAccess.mihomo.confirmDelete', '确认删除此 mihomo 配置？')}
-                    onConfirm={() => deleteProfile.mutate(profile.id)}
-                    okButtonProps={{ disabled: operationBlocked }}
-                    disabled={operationBlocked}
-                  >
-                    <ManagementIconButton
-                      aria-label={t('networkAccess.mihomo.delete', '删除 mihomo 配置')}
-                      danger
-                      icon={<DeleteOutlined />}
-                      tooltip={t('networkAccess.mihomo.delete', '删除 mihomo 配置')}
-                    />
-                  </Popconfirm>
-                ) : null}
-              </Space>
+              <TableRowActionMenu
+                targetLabel={profile.name}
+                items={[
+                  ...(canUpdate
+                    ? [
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('networkAccess.mihomo.edit', '编辑 mihomo 配置'),
+                          disabled: operationBlocked,
+                          onClick: () => openEdit(profile),
+                        },
+                      ]
+                    : []),
+                  { type: 'divider' as const },
+                  ...(canDelete
+                    ? [
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('networkAccess.mihomo.delete', '删除 mihomo 配置'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.mihomo.confirmDelete', '确认删除此 mihomo 配置？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => deleteProfile.mutateAsync(profile.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ),
           },
         ]

@@ -11,15 +11,13 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  ManagementIconButton,
-  ManagementState,
-  useManagementTextFilter,
-} from '@/components/management-list'
+import { ManagementState, useManagementTextFilter } from '@/components/management-list'
 import { visuallyHiddenModalTitleStyle } from '@/components/modal-styles'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { settingsQueries } from '@/features/settings'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { AccessManagementTablePage } from '../shared/management-page'
 import { directorySyncApi } from './api'
@@ -229,7 +227,15 @@ export function DirectorySyncPage() {
       title: '名称',
       dataIndex: 'name',
       width: 180,
-      render: (value: string) => <Text strong>{value}</Text>,
+      render: (value: string, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+          onClick={() => setSelectedId(record.id)}
+        >
+          {value}
+        </Button>
+      ),
     },
     {
       title: '目录类型',
@@ -263,67 +269,79 @@ export function DirectorySyncPage() {
       render: (value?: string) => (value ? formatDateTime(value) : '-'),
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
       key: 'actions',
-      fixed: 'right',
-      width: 180,
       render: (_value, record) => (
-        <Space size={2}>
-          <ManagementIconButton
-            aria-label="查看同步记录"
-            tooltip="同步记录"
-            icon={<EyeOutlined />}
-            onClick={() => setSelectedId(record.id)}
-          />
-          {canSync ? (
-            <ManagementIconButton
-              aria-label="预览变更"
-              tooltip="预览变更"
-              icon={<CloudSyncOutlined />}
-              loading={previewMutation.isPending && previewMutation.variables === record.id}
-              disabled={previewMutation.isPending}
-              onClick={() => void loadPreview(record)}
-            />
-          ) : null}
-          {canValidate ? (
-            <ManagementIconButton
-              aria-label="验证连接"
-              tooltip="验证连接"
-              icon={<SafetyCertificateOutlined />}
-              loading={validateMutation.isPending && validateMutation.variables === record.id}
-              disabled={validateMutation.isPending}
-              onClick={async () => {
-                if (validating.current) return
-                validating.current = true
-                try {
-                  await validateMutation.mutateAsync(record.id)
-                } catch {
-                  /* Feedback is persistent. */
-                } finally {
-                  validating.current = false
-                }
-              }}
-            />
-          ) : null}
-          {canUpdate ? (
-            <ManagementIconButton
-              aria-label="编辑目录连接"
-              tooltip="编辑"
-              icon={<EditOutlined />}
-              onClick={() => openForm(record)}
-            />
-          ) : null}
-          {canSync ? (
-            <ManagementIconButton
-              aria-label="立即同步"
-              tooltip="立即同步"
-              icon={<CloudSyncOutlined />}
-              disabled={writesBlocked || connectionsQuery.isError}
-              loading={syncMutation.isPending && syncMutation.variables === record.id}
-              onClick={() => runSync(record)}
-            />
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          loading={
+            (previewMutation.isPending && previewMutation.variables === record.id) ||
+            (validateMutation.isPending && validateMutation.variables === record.id) ||
+            (syncMutation.isPending && syncMutation.variables === record.id)
+          }
+          items={[
+            {
+              key: 'records',
+              label: '同步记录',
+              icon: <EyeOutlined />,
+              onClick: () => setSelectedId(record.id),
+            },
+            ...(canSync
+              ? [
+                  {
+                    key: 'preview',
+                    label: '预览变更',
+                    icon: <CloudSyncOutlined />,
+                    disabled: previewMutation.isPending,
+                    onClick: () => void loadPreview(record),
+                  },
+                ]
+              : []),
+            ...(canValidate
+              ? [
+                  {
+                    key: 'validate',
+                    label: '验证连接',
+                    icon: <SafetyCertificateOutlined />,
+                    disabled: validateMutation.isPending,
+                    onClick: async () => {
+                      if (validating.current) return
+                      validating.current = true
+                      try {
+                        await validateMutation.mutateAsync(record.id)
+                      } catch {
+                        /* Feedback is persistent. */
+                      } finally {
+                        validating.current = false
+                      }
+                    },
+                  },
+                ]
+              : []),
+            ...(canUpdate
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑',
+                    icon: <EditOutlined />,
+                    onClick: () => openForm(record),
+                  },
+                ]
+              : []),
+            ...(canSync
+              ? [
+                  {
+                    key: 'sync',
+                    label: '立即同步',
+                    icon: <CloudSyncOutlined />,
+                    disabled: writesBlocked || connectionsQuery.isError,
+                    onClick: () => runSync(record),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
@@ -490,6 +508,7 @@ export function DirectorySyncPage() {
         </Space>
         <Tabs
           activeKey={runtimeTab}
+          className="soha-resource-tabs"
           onChange={setRuntimeTab}
           items={[
             {

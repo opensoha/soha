@@ -9,7 +9,6 @@ import { MetadataTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { ResourceNameLink } from '../shared/resource-table-cells'
 import { NodeStateTags } from '../shared/node-state-tags'
-import { NodeResourcePanel } from '../node-resource-utils'
 import { useAIPageContext } from '@/features/copilot'
 import { useKubernetesResourceStream } from '../shared/resource-stream'
 import { ResourceStreamStatus } from '../shared/resource-stream-status'
@@ -222,14 +221,6 @@ export function ClusterNodesPage() {
       monitoringFailed,
     ],
   )
-  const expandable = useMemo(
-    () => ({
-      columnWidth: 48,
-      fixed: pinColumns ? ('left' as const) : undefined,
-      expandedRowRender: (node: ClusterNode) => <NodeResourcePanel node={node} />,
-    }),
-    [pinColumns],
-  )
   return (
     <div className="soha-page soha-cluster-nodes-page">
       <WorkloadQueryPanel
@@ -336,8 +327,7 @@ export function ClusterNodesPage() {
           localSorting
           tableSize={tableSize}
           tableLayout="fixed"
-          scroll={{ x: 1700 }}
-          expandable={expandable}
+          scroll={{ x: 1650 }}
         />
       )}
       {actions.dialogs}

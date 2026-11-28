@@ -1,7 +1,7 @@
 import { AdminTable } from '@/components/admin-table'
-import { ManagementIconButton } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag, MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
@@ -522,7 +522,23 @@ export function NotificationsPage() {
   }
 
   const channelColumns: TableProps<NotificationChannel>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateNotification ? (
+          <Button
+            type="link"
+            disabled={channelWriteBlocked || channelDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openChannelEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '类型',
       dataIndex: 'channelType',
@@ -552,20 +568,39 @@ export function NotificationsPage() {
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateNotification ? (
-          <ManagementIconButton
-            aria-label="编辑通知渠道"
-            disabled={channelWriteBlocked || channelDenied}
-            icon={<BellOutlined />}
-            size="small"
-            tooltip="编辑"
-            onClick={() => openChannelEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑通知渠道',
+                icon: <BellOutlined />,
+                disabled: channelWriteBlocked || channelDenied,
+                onClick: () => openChannelEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
   ]
 
   const routeColumns: TableProps<NotificationRoute>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateNotification ? (
+          <Button
+            type="link"
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openRouteEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '匹配规则',
       dataIndex: 'matchers',
@@ -607,19 +642,39 @@ export function NotificationsPage() {
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateNotification ? (
-          <ManagementIconButton
-            aria-label="编辑通知路由"
-            icon={<NotificationOutlined />}
-            size="small"
-            tooltip="编辑"
-            onClick={() => openRouteEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑通知路由',
+                icon: <NotificationOutlined />,
+                onClick: () => openRouteEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
   ]
 
   const silenceColumns: TableProps<NotificationSilence>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateNotification ? (
+          <Button
+            type="link"
+            disabled={silenceWriteBlocked || silenceDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openSilenceEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '匹配器',
       dataIndex: 'matchers',
@@ -650,20 +705,40 @@ export function NotificationsPage() {
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateNotification ? (
-          <ManagementIconButton
-            aria-label="编辑静默规则"
-            disabled={silenceWriteBlocked || silenceDenied}
-            icon={<EditOutlined />}
-            size="small"
-            tooltip="编辑"
-            onClick={() => openSilenceEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑静默规则',
+                icon: <EditOutlined />,
+                disabled: silenceWriteBlocked || silenceDenied,
+                onClick: () => openSilenceEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
   ]
 
   const policyColumns: TableProps<NotificationPolicy>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateNotification ? (
+          <Button
+            type="link"
+            disabled={policyWriteBlocked || policyDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openPolicyEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '处理链',
       dataIndex: 'processorChain',
@@ -708,36 +783,55 @@ export function NotificationsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record) => (
-        <Space className="soha-row-action-icons" size={2}>
-          {canUpdateNotification ? (
-            <ManagementIconButton
-              aria-label="编辑通知策略"
-              disabled={policyWriteBlocked || policyDenied}
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => openPolicyEditor(record)}
-            />
-          ) : null}
-          <ManagementIconButton
-            aria-label="预览通知策略"
-            icon={<EyeOutlined />}
-            size="small"
-            tooltip="预览"
-            onClick={() => {
-              const firstEvent = readableQueryData(alertEventsQuery)?.[0]?.id || ''
-              setPreviewPolicy(record)
-              setPreviewEventId(firstEvent)
-              setPreviewOpen(true)
-            }}
-          />
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name || record.id}
+          items={[
+            {
+              key: 'preview',
+              label: '预览通知策略',
+              icon: <EyeOutlined />,
+              onClick: () => {
+                const firstEvent = readableQueryData(alertEventsQuery)?.[0]?.id || ''
+                setPreviewPolicy(record)
+                setPreviewEventId(firstEvent)
+                setPreviewOpen(true)
+              },
+            },
+            ...(canUpdateNotification
+              ? [
+                  {
+                    key: 'edit',
+                    label: '编辑通知策略',
+                    icon: <EditOutlined />,
+                    disabled: policyWriteBlocked || policyDenied,
+                    onClick: () => openPolicyEditor(record),
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]
 
   const templateColumns: TableProps<NotificationTemplate>['columns'] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record) =>
+        canUpdateNotification ? (
+          <Button
+            type="link"
+            disabled={templateWriteBlocked || templateDenied}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => openTemplateEditor(record)}
+          >
+            {value || record.id}
+          </Button>
+        ) : (
+          value
+        ),
+    },
     {
       title: '模板类型',
       dataIndex: 'templateType',
@@ -755,13 +849,17 @@ export function NotificationsPage() {
       dataIndex: 'id',
       render: (_: string, record) =>
         canUpdateNotification ? (
-          <ManagementIconButton
-            aria-label="编辑通知模板"
-            disabled={templateWriteBlocked || templateDenied}
-            icon={<EditOutlined />}
-            size="small"
-            tooltip="编辑"
-            onClick={() => openTemplateEditor(record)}
+          <TableRowActionMenu
+            targetLabel={record.name || record.id}
+            items={[
+              {
+                key: 'edit',
+                label: '编辑通知模板',
+                icon: <EditOutlined />,
+                disabled: templateWriteBlocked || templateDenied,
+                onClick: () => openTemplateEditor(record),
+              },
+            ]}
           />
         ) : null,
     },
@@ -800,6 +898,7 @@ export function NotificationsPage() {
         </>
       ) : null}
       <Tabs
+        className="soha-resource-tabs"
         items={[
           {
             key: 'policies',

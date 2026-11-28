@@ -174,7 +174,7 @@
 .soha-volume-type-tag.ant-tag,
 .soha-volume-mount-badge.ant-tag {
   margin-inline-end: 0;
-  border-radius: 6px;
+  border-radius: var(--soha-radius-control);
 }
 
 .soha-volume-type-tag.ant-tag {
@@ -241,7 +241,7 @@
   height: 24px;
   padding: 0 8px;
   border: 1px solid rgba(var(--soha-primary-rgb), 0.22);
-  border-radius: 8px;
+  border-radius: var(--soha-radius-control);
   background: rgba(var(--soha-primary-rgb), 0.06);
   color: var(--soha-primary);
   font-weight: 600;
@@ -300,9 +300,10 @@
 .soha-related-pod-cards .soha-related-pod-item,
 .soha-rollout-history-row {
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--soha-border-color);
+  padding: 12px 14px;
+  border: 0;
   border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
 }
 
 .soha-related-pod-heading,
@@ -794,7 +795,18 @@
 }
 
 .soha-workloads-overview-page {
-  gap: 12px;
+  gap: 14px;
+}
+
+.soha-workload-overview-bezel {
+  padding: 4px;
+  border-radius: calc(var(--soha-radius-panel) + 4px);
+  border: 1px solid var(--soha-border-color);
+  background: color-mix(in srgb, var(--soha-bg-surface) 58%, transparent);
+}
+
+:root[data-theme-mode='dark'] .soha-workload-overview-bezel {
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .soha-workload-overview-metric-grid {
@@ -811,10 +823,17 @@
 
 .soha-workload-overview-metric-link .soha-overview-metric-card {
   height: 100%;
+  border-radius: var(--soha-radius-panel);
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .soha-workload-overview-metric-link:hover .soha-overview-metric-card {
+  transform: translateY(-1px);
   border-color: rgba(var(--soha-primary-rgb), 0.45);
+  box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.18);
 }
 
 .soha-workload-overview-metric-link:focus-visible {
@@ -828,7 +847,7 @@
 }
 
 .soha-workload-overview-events.ant-card .ant-card-head {
-  min-height: 56px;
+  min-height: 52px;
   padding-inline: 18px;
   border-bottom-color: var(--soha-border-color);
 }
@@ -860,5 +879,9 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  min-height: 40px;
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: var(--soha-radius-panel);
+  border: 1px solid color-mix(in srgb, var(--soha-border-color) 72%, transparent);
+  background: var(--soha-bg-surface);
 }

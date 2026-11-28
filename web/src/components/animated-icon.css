@@ -151,6 +151,147 @@
     animation: soha-icon-tile 780ms ease both;
     animation-delay: var(--icon-delay, 0ms);
   }
+
+  /* Tactile spring lift & icon-specific choreography on hover/focus */
+  .soha-icon-trigger .soha-animated-icon {
+    transition:
+      transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 240ms ease;
+  }
+
+  .soha-icon-trigger:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true'])
+    .soha-animated-icon {
+    transform: translateY(-1px) scale(1.08);
+  }
+
+  .soha-icon-trigger:active:not(:disabled, [aria-disabled='true']) .soha-animated-icon {
+    transform: scale(0.93);
+  }
+
+  /* Settings / Cog subtle gear rotation */
+  .soha-icon-trigger:is(:hover, :focus-visible)
+    .soha-animated-icon[data-icon='settings']
+    svg,
+  .soha-icon-trigger:is(:hover, :focus-visible) .soha-animated-icon[data-icon='cog'] svg {
+    animation: soha-icon-gear-turn 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Sync 180deg spin */
+  .soha-icon-trigger:is(:hover, :focus-visible) .soha-animated-icon[data-icon='sync'] svg {
+    animation: soha-icon-sync-spin 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Bell gentle chime swing */
+  .soha-icon-trigger:is(:hover, :focus-visible) .soha-animated-icon[data-icon='bell'] svg {
+    transform-origin: 50% 15%;
+    animation: soha-icon-bell-swing 680ms ease-in-out both;
+  }
+
+  /* Active state: duotone accent fill + living subtle ambient pulse */
+  .soha-icon-trigger.is-active .soha-animated-icon {
+    filter: drop-shadow(0 2px 6px rgba(var(--soha-primary-rgb), 0.24));
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon :is(.soha-icon-tile, .soha-icon-knob) {
+    fill: rgba(var(--soha-primary-rgb), 0.16);
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon .soha-icon-draw {
+    animation: soha-icon-draw 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon :is(.soha-icon-check, .soha-icon-write) {
+    animation: soha-icon-write 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon .soha-icon-tile {
+    animation:
+      soha-icon-tile 640ms cubic-bezier(0.22, 1, 0.36, 1) both,
+      soha-icon-ambient-breathe 3.4s ease-in-out 700ms infinite;
+    animation-delay: var(--icon-delay, 0ms), calc(700ms + var(--icon-delay, 0ms));
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon .soha-icon-dot {
+    animation: soha-icon-ambient-dot 2.8s ease-in-out infinite;
+    animation-delay: var(--icon-delay, 0ms);
+  }
+
+  .soha-icon-trigger.is-active .soha-animated-icon .soha-icon-eyes {
+    animation: soha-icon-ambient-blink 4.6s ease-in-out infinite;
+  }
+
+  @keyframes soha-icon-gear-turn {
+    0% {
+      transform: rotate(0deg);
+    }
+    65% {
+      transform: rotate(52deg);
+    }
+    100% {
+      transform: rotate(45deg);
+    }
+  }
+
+  @keyframes soha-icon-sync-spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(180deg);
+    }
+  }
+
+  @keyframes soha-icon-bell-swing {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    25% {
+      transform: rotate(12deg);
+    }
+    55% {
+      transform: rotate(-9deg);
+    }
+    80% {
+      transform: rotate(5deg);
+    }
+  }
+
+  @keyframes soha-icon-ambient-breathe {
+    0%,
+    100% {
+      transform: scale(1);
+      fill-opacity: 0.9;
+    }
+    50% {
+      transform: scale(1.06);
+      fill-opacity: 1;
+    }
+  }
+
+  @keyframes soha-icon-ambient-dot {
+    0%,
+    100% {
+      opacity: 0.72;
+      transform: scale(0.92);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.22);
+    }
+  }
+
+  @keyframes soha-icon-ambient-blink {
+    0%,
+    44%,
+    52%,
+    100% {
+      transform: scaleY(1);
+    }
+    48% {
+      transform: scaleY(0.12);
+    }
+  }
   @keyframes soha-icon-draw {
     0%,
     8% {

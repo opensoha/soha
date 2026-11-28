@@ -32,6 +32,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { StatusTag } from '@/components/status-tag'
 import { AdminTable } from '@/components/admin-table'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { ManifestResourceInventoryTable } from './resource-inventory'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryQueries } from '../queries'
@@ -392,59 +394,77 @@ export function ManifestOperationsPanel({ item }: { item: ManifestPackage }) {
       width: 110,
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
-      width: 240,
-      render: (_, value) => (
-        <Space size={4} wrap>
-          {canTriggerDeployment && !value.spec.deliverySnapshot ? (
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={() =>
-                runDeploymentAction(value, 'reconcile', deploymentMutation, message.success)
-              }
-            >
-              协调
-            </Button>
-          ) : null}
-          {canRepair && !value.spec.deliverySnapshot ? (
-            <Button
-              size="small"
-              icon={<ToolOutlined />}
-              onClick={() =>
-                runDeploymentAction(value, 'repair', deploymentMutation, message.success)
-              }
-            >
-              修复
-            </Button>
-          ) : null}
-          {canAdopt && !value.spec.deliverySnapshot ? (
-            <Button
-              size="small"
-              icon={<ImportOutlined />}
-              onClick={() =>
-                runDeploymentAction(value, 'adopt', deploymentMutation, message.success)
-              }
-            >
-              采纳
-            </Button>
-          ) : null}
-          {canTriggerDeployment &&
-          value.status.lastKnownGoodRevision &&
-          !value.spec.deliverySnapshot ? (
-            <Button
-              size="small"
-              icon={<RollbackOutlined />}
-              onClick={() =>
-                runDeploymentAction(value, 'rollback', deploymentMutation, message.success)
-              }
-            >
-              回滚
-            </Button>
-          ) : null}
-          {value.spec.deliverySnapshot ? <Text type="secondary">通过应用交付计划更新</Text> : null}
-        </Space>
-      ),
+      key: 'actions',
+      render: (_, value) =>
+        value.spec.deliverySnapshot ? (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            受管
+          </Text>
+        ) : (
+          <TableRowActionMenu
+            targetLabel={value.bindingId}
+            items={[
+              canTriggerDeployment
+                ? {
+                    key: 'reconcile',
+                    label: '协调',
+                    icon: <ReloadOutlined />,
+                    onClick: () =>
+                      void runDeploymentAction(
+                        value,
+                        'reconcile',
+                        deploymentMutation,
+                        message.success,
+                      ),
+                  }
+                : null,
+              canRepair
+                ? {
+                    key: 'repair',
+                    label: '修复',
+                    icon: <ToolOutlined />,
+                    onClick: () =>
+                      void runDeploymentAction(
+                        value,
+                        'repair',
+                        deploymentMutation,
+                        message.success,
+                      ),
+                  }
+                : null,
+              canAdopt
+                ? {
+                    key: 'adopt',
+                    label: '采纳',
+                    icon: <ImportOutlined />,
+                    onClick: () =>
+                      void runDeploymentAction(
+                        value,
+                        'adopt',
+                        deploymentMutation,
+                        message.success,
+                      ),
+                  }
+                : null,
+              canTriggerDeployment && value.status.lastKnownGoodRevision
+                ? {
+                    key: 'rollback',
+                    label: '回滚',
+                    icon: <RollbackOutlined />,
+                    onClick: () =>
+                      void runDeploymentAction(
+                        value,
+                        'rollback',
+                        deploymentMutation,
+                        message.success,
+                      ),
+                  }
+                : null,
+            ]}
+          />
+        ),
     },
   ]
 

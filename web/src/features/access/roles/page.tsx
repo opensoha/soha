@@ -2,14 +2,11 @@ import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Form, Input, Modal, Popconfirm, Select, Space } from 'antd'
+import { App, Button, Form, Input, Modal, Select, Typography } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
-import {
-  ManagementIconButton,
-  ManagementState,
-  useManagementTextFilter,
-} from '@/components/management-list'
+import { ManagementState, useManagementTextFilter } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { useI18n } from '@/i18n'
@@ -28,9 +25,11 @@ import {
 import { RolePermissionBrowser } from './permission-browser'
 import '../shared/styles.css'
 
+const { Text } = Typography
 type ColumnProps<T> = TableColumnsType<T>[number]
 
 export function AccessRolesPage() {
+  const { modal } = App.useApp()
   const { localeCode, t } = useI18n()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
@@ -61,7 +60,24 @@ export function AccessRolesPage() {
   })
   const [searchKeyword, setSearchKeyword] = useState('')
   const columns: ColumnProps<AccessRole>[] = [
-    { title: t('access.roles.column.name', '角色名称'), dataIndex: 'name', width: 128 },
+    {
+      title: t('access.roles.column.name', '角色名称'),
+      dataIndex: 'name',
+      width: 128,
+      render: (value: string, record: AccessRole) =>
+        canUpdateRoles ? (
+          <Button
+            type="link"
+            disabled={crud.saveBlocked && crud.editing?.id !== record.id}
+            style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+            onClick={() => crud.openEdit(record)}
+          >
+            {value}
+          </Button>
+        ) : (
+          <Text strong>{value}</Text>
+        ),
+    },
     {
       title: t('access.roles.column.scope', '范围'),
       dataIndex: 'scope',
@@ -85,41 +101,47 @@ export function AccessRolesPage() {
     {
       ...tableColumnPresets.action,
       title: t('common.actions', '操作'),
-      dataIndex: 'id',
+      key: 'actions',
       render: (_: unknown, record: AccessRole) => (
-        <Space className="soha-row-action-icons">
-          {canUpdateRoles || canDeleteRoles ? (
-            <>
-              {canUpdateRoles ? (
-                <ManagementIconButton
-                  aria-label={t('access.roles.edit', '编辑角色')}
-                  disabled={crud.saveBlocked && crud.editing?.id !== record.id}
-                  icon={<EditOutlined />}
-                  size="small"
-                  tooltip={t('common.edit', '编辑')}
-                  onClick={() => crud.openEdit(record)}
-                />
-              ) : null}
-              {canDeleteRoles ? (
-                <Popconfirm
-                  title={`${t('access.roles.confirmDelete', '确认删除？')} ${record.name}`}
-                  onConfirm={() => crud.deleteRecord(record.id)}
-                >
-                  <ManagementIconButton
-                    aria-label={t('access.roles.delete', '删除角色')}
-                    disabled={crud.deleteBlocked}
-                    danger
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    tooltip={t('common.delete', '删除')}
-                  />
-                </Popconfirm>
-              ) : null}
-            </>
-          ) : (
-            '-'
-          )}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canUpdateRoles
+              ? [
+                  {
+                    key: 'edit',
+                    label: t('common.edit', '编辑'),
+                    icon: <EditOutlined />,
+                    disabled: crud.saveBlocked && crud.editing?.id !== record.id,
+                    onClick: () => crud.openEdit(record),
+                  },
+                ]
+              : []),
+            ...(canDeleteRoles
+              ? [
+                  { type: 'divider' as const },
+                  {
+                    key: 'delete',
+                    label: t('common.delete', '删除'),
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    disabled: crud.deleteBlocked,
+                    onClick: () => {
+                      modal.confirm({
+                        title: `${t('access.roles.confirmDelete', '确认删除？')} ${record.name}`,
+                        okText: t('common.delete', '删除'),
+                        cancelText: t('common.cancel', '取消'),
+                        okButtonProps: { danger: true, disabled: crud.deleteBlocked },
+                        onOk: () => {
+                          crud.deleteRecord(record.id)
+                        },
+                      })
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
       ),
     },
   ]

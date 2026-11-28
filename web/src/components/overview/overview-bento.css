@@ -1,0 +1,1656 @@
+/* ============================================================================
+ * Soha Unified Full-Space 3D Dashboard, 3-Stop Mesh Gradient & Spatial Glass Deck
+ * Default Primary Mode: Style B (`data-overview-hero="prism"` — 冰晶折射浅舱)
+ * Optional Mode: Style A (`data-overview-hero="spotlight"` — 深邃极光暗舱)
+ * ============================================================================ */
+
+.soha-overview-bento-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* Visually hide redundant outer page headings when unified 3D dashboard is active (preserves a11y/tests) */
+.soha-overview-page:has(.is-full-spatial-dashboard)
+  > :is(
+    .soha-platform-overview-heading,
+    .soha-compute-page-heading,
+    .soha-monitoring-overview-heading,
+    .soha-delivery-overview-heading
+  ) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================================
+ * 3-Color Domain Gradient Triads (Overridden globally when user picks a 3-Stop Palette)
+ * ============================================================================ */
+
+.soha-overview-hero-shell {
+  --soha-stage-d1: #3b82f6;
+  --soha-stage-d2: #6366f1;
+  --soha-stage-d3: #06b6d4;
+}
+
+.soha-overview-hero-shell.is-platform {
+  --soha-stage-d1: #2563eb;
+  --soha-stage-d2: #4f46e5;
+  --soha-stage-d3: #06b6d4;
+}
+
+.soha-overview-hero-shell.is-compute {
+  --soha-stage-d1: #0d9488;
+  --soha-stage-d2: #10b981;
+  --soha-stage-d3: #0284c7;
+}
+
+.soha-overview-hero-shell.is-delivery {
+  --soha-stage-d1: #7c3aed;
+  --soha-stage-d2: #db2777;
+  --soha-stage-d3: #f59e0b;
+}
+
+.soha-overview-hero-shell.is-monitoring {
+  --soha-stage-d1: #0891b2;
+  --soha-stage-d2: #4f46e5;
+  --soha-stage-d3: #e11d48;
+}
+
+.soha-overview-hero-shell.is-ai {
+  --soha-stage-d1: #9333ea;
+  --soha-stage-d2: #ec4899;
+  --soha-stage-d3: #06b6d4;
+}
+
+.soha-overview-hero-shell.is-identity,
+.soha-overview-hero-shell.is-security {
+  --soha-stage-d1: #0284c7;
+  --soha-stage-d2: #059669;
+  --soha-stage-d3: #6366f1;
+}
+
+.soha-overview-hero-shell.is-governance {
+  --soha-stage-d1: #4f46e5;
+  --soha-stage-d2: #d97706;
+  --soha-stage-d3: #0ea5e9;
+}
+
+/* Active 3-Color Stops: Workbench Adaptive by default, or Custom/Preset 3-Stop Blend! */
+.soha-overview-hero-shell {
+  --soha-stage-c1: var(--soha-stage-d1);
+  --soha-stage-c2: var(--soha-stage-d2);
+  --soha-stage-c3: var(--soha-stage-d3);
+}
+
+:root:not([data-overview-gradient='workbench']) .soha-overview-hero-shell {
+  --soha-stage-c1: var(--soha-stage-custom-c1, var(--soha-stage-d1));
+  --soha-stage-c2: var(--soha-stage-custom-c2, var(--soha-stage-d2));
+  --soha-stage-c3: var(--soha-stage-custom-c3, var(--soha-stage-d3));
+}
+
+/* Double-Bezel Outer Tray for Signature Panoramic 3D Workspace */
+.soha-overview-hero-shell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  padding: 3px;
+  border-radius: var(--soha-radius-bezel, 15px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--soha-stage-c1) 10%, var(--soha-bg-surface));
+  border: 1px solid color-mix(in srgb, var(--soha-stage-c1) 18%, var(--soha-border-color));
+  box-shadow:
+    0 24px 56px -22px color-mix(in srgb, var(--soha-stage-c1) 20%, rgba(15, 23, 42, 0.14)),
+    0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+:root[data-theme-mode='dark'] .soha-overview-hero-shell {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 28px 64px -20px rgba(0, 0, 0, 0.68),
+    0 2px 10px rgba(0, 0, 0, 0.36);
+}
+
+/* ============================================================================
+ * Style A (`spotlight`): Deep Cosmic 3-Color Mesh Stage ("深邃极光暗舱")
+ * ============================================================================ */
+
+.soha-overview-hero-card {
+  --soha-hero-text: #f8fafc;
+  --soha-hero-text-muted: rgba(226, 232, 240, 0.8);
+  --soha-hero-eyebrow-bg: rgba(15, 23, 42, 0.5);
+  --soha-hero-eyebrow-border: rgba(255, 255, 255, 0.18);
+  --soha-hero-art-stroke: #cbd5e1;
+  --soha-hero-art-grid: rgba(255, 255, 255, 0.1);
+  --soha-hero-art-accent: var(--soha-stage-c2);
+  --soha-hero-art-cyan: var(--soha-stage-c3);
+  --soha-hero-art-node: #ffffff;
+  --soha-hero-art-surface: rgba(10, 16, 32, 0.9);
+  --soha-hero-pill-bg: rgba(10, 16, 34, 0.5);
+  --soha-hero-pill-border: rgba(255, 255, 255, 0.15);
+  --soha-spatial-pod-bg: rgba(10, 16, 34, 0.56);
+  --soha-spatial-pod-hover-bg: rgba(15, 24, 48, 0.72);
+  --soha-spatial-pod-border: rgba(255, 255, 255, 0.14);
+  --soha-spatial-pod-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --soha-spatial-pod-icon-bg: rgba(255, 255, 255, 0.1);
+  --soha-spatial-deck-card-bg: rgba(11, 17, 34, 0.62);
+  --soha-spatial-deck-row-bg: rgba(255, 255, 255, 0.045);
+  --soha-spatial-deck-row-hover: rgba(255, 255, 255, 0.085);
+  --soha-spatial-deck-border: rgba(255, 255, 255, 0.13);
+
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  min-height: 520px;
+  padding: 26px 28px;
+  border-radius: var(--soha-radius-lg, 12px);
+  color: var(--soha-hero-text);
+  background:
+    radial-gradient(
+      52% 48% at 14% 16%,
+      color-mix(in srgb, var(--soha-stage-c1) 42%, transparent) 0%,
+      transparent 72%
+    ),
+    radial-gradient(
+      54% 52% at 52% 28%,
+      color-mix(in srgb, var(--soha-stage-c2) 34%, transparent) 0%,
+      transparent 74%
+    ),
+    radial-gradient(
+      58% 58% at 88% 82%,
+      color-mix(in srgb, var(--soha-stage-c3) 32%, transparent) 0%,
+      transparent 74%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--soha-stage-c1) 36%, #070c1a) 0%,
+      color-mix(in srgb, var(--soha-stage-c2) 28%, #080d1c) 50%,
+      color-mix(in srgb, var(--soha-stage-c3) 26%, #060a14) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.soha-overview-hero-shell.is-full-spatial-dashboard .soha-overview-hero-card {
+  min-height: calc(100dvh - 88px);
+  height: auto;
+}
+
+/* ============================================================================
+ * Style B (`prism` — DEFAULT PRIMARY): Luminous 3-Color Frosted Crystal Stage ("冰晶折射浅舱")
+ * ============================================================================ */
+
+:root:not([data-overview-hero='spotlight']):not([data-theme-mode='dark']) .soha-overview-hero-card {
+  --soha-hero-text: #0f172a;
+  --soha-hero-text-muted: #475569;
+  --soha-hero-eyebrow-bg: rgba(255, 255, 255, 0.82);
+  --soha-hero-eyebrow-border: color-mix(
+    in srgb,
+    var(--soha-stage-c1) 24%,
+    rgba(255, 255, 255, 0.9)
+  );
+  --soha-hero-art-stroke: color-mix(in srgb, var(--soha-stage-c1) 68%, #334155);
+  --soha-hero-art-grid: color-mix(in srgb, var(--soha-stage-c1) 16%, transparent);
+  --soha-hero-art-accent: var(--soha-stage-c2);
+  --soha-hero-art-cyan: var(--soha-stage-c3);
+  --soha-hero-art-node: var(--soha-stage-c1);
+  --soha-hero-art-surface: #ffffff;
+  --soha-hero-pill-bg: rgba(255, 255, 255, 0.82);
+  --soha-hero-pill-border: color-mix(in srgb, var(--soha-stage-c1) 18%, #e2e8f0);
+  --soha-spatial-pod-bg: rgba(255, 255, 255, 0.72);
+  --soha-spatial-pod-hover-bg: rgba(255, 255, 255, 0.9);
+  --soha-spatial-pod-border: rgba(255, 255, 255, 0.94);
+  --soha-spatial-pod-highlight:
+    inset 0 1px 0 #ffffff,
+    0 12px 28px -14px color-mix(in srgb, var(--soha-stage-c1) 22%, rgba(15, 23, 42, 0.1));
+  --soha-spatial-pod-icon-bg: color-mix(in srgb, var(--soha-stage-c1) 10%, #ffffff);
+  --soha-spatial-deck-card-bg: rgba(255, 255, 255, 0.74);
+  --soha-spatial-deck-row-bg: rgba(255, 255, 255, 0.66);
+  --soha-spatial-deck-row-hover: rgba(255, 255, 255, 0.94);
+  --soha-spatial-deck-border: color-mix(
+    in srgb,
+    var(--soha-stage-c1) 14%,
+    rgba(255, 255, 255, 0.92)
+  );
+
+  background:
+    radial-gradient(
+      52% 50% at 12% 10%,
+      color-mix(in srgb, var(--soha-stage-c1) 20%, transparent) 0%,
+      transparent 72%
+    ),
+    radial-gradient(
+      50% 52% at 50% 24%,
+      color-mix(in srgb, var(--soha-stage-c2) 18%, transparent) 0%,
+      transparent 74%
+    ),
+    radial-gradient(
+      58% 60% at 88% 84%,
+      color-mix(in srgb, var(--soha-stage-c3) 20%, transparent) 0%,
+      transparent 74%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--soha-stage-c1) 9%, #ffffff) 0%,
+      color-mix(in srgb, var(--soha-stage-c2) 8%, #f9fbff) 50%,
+      color-mix(in srgb, var(--soha-stage-c3) 12%, #f2f7fd) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 #ffffff,
+    inset 0 0 0 1px color-mix(in srgb, var(--soha-stage-c1) 16%, rgba(15, 23, 42, 0.05));
+}
+
+:root:not([data-overview-hero='spotlight'])[data-theme-mode='dark'] .soha-overview-hero-card {
+  --soha-spatial-pod-bg: rgba(20, 26, 40, 0.6);
+  --soha-spatial-pod-hover-bg: rgba(28, 36, 54, 0.78);
+  --soha-spatial-deck-card-bg: rgba(18, 24, 38, 0.68);
+  --soha-spatial-deck-row-bg: rgba(255, 255, 255, 0.04);
+  --soha-spatial-deck-row-hover: rgba(255, 255, 255, 0.08);
+  --soha-spatial-deck-border: rgba(255, 255, 255, 0.11);
+
+  background:
+    radial-gradient(
+      52% 48% at 16% 14%,
+      color-mix(in srgb, var(--soha-stage-c1) 28%, transparent) 0%,
+      transparent 72%
+    ),
+    radial-gradient(
+      50% 50% at 52% 26%,
+      color-mix(in srgb, var(--soha-stage-c2) 24%, transparent) 0%,
+      transparent 72%
+    ),
+    radial-gradient(
+      56% 58% at 88% 82%,
+      color-mix(in srgb, var(--soha-stage-c3) 24%, transparent) 0%,
+      transparent 74%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(15, 20, 30, 0.98) 0%,
+      rgba(17, 23, 36, 0.96) 52%,
+      color-mix(in srgb, var(--soha-stage-c2) 24%, #0d1320) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px color-mix(in srgb, var(--soha-stage-c1) 26%, rgba(255, 255, 255, 0.08));
+}
+
+/* ============================================================================
+ * Upper 3D Spatial Viewport Layer (Anchored at Top 530px of the Unified Stage)
+ * ============================================================================ */
+
+.soha-overview-hero-art-stage {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 536px;
+  z-index: 1;
+  pointer-events: auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 82%, transparent 100%);
+}
+
+.soha-overview-hero-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.soha-overview-hero-aurora {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  pointer-events: none;
+}
+
+.soha-overview-hero-aurora--primary {
+  top: -18%;
+  left: 32%;
+  width: 440px;
+  height: 320px;
+  background: radial-gradient(circle, var(--soha-stage-c1) 0%, transparent 70%);
+  opacity: 0.28;
+}
+
+.soha-overview-hero-aurora--secondary {
+  bottom: -18%;
+  right: 22%;
+  width: 380px;
+  height: 280px;
+  background: radial-gradient(circle, var(--soha-stage-c3) 0%, transparent 72%);
+  opacity: 0.24;
+}
+
+:root:not([data-overview-hero='spotlight']):not([data-theme-mode='dark'])
+  .soha-overview-hero-aurora--primary {
+  opacity: 0.18;
+}
+
+:root:not([data-overview-hero='spotlight']):not([data-theme-mode='dark'])
+  .soha-overview-hero-aurora--secondary {
+  opacity: 0.15;
+}
+
+.soha-overview-hero-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: pan-y;
+}
+
+/* Interactive 3D Node Hover Inspector Glass Tooltip */
+.soha-overview-3d-tooltip {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -100%);
+  min-width: 158px;
+  max-width: 240px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(9, 14, 28, 0.88);
+  border: 1px solid rgba(103, 232, 249, 0.42);
+  color: #f8fafc;
+  box-shadow: 0 14px 32px -8px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+:root:not([data-overview-hero='spotlight']):not([data-theme-mode='dark'])
+  .soha-overview-3d-tooltip {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: color-mix(in srgb, var(--soha-stage-c1) 34%, transparent);
+  color: #0f172a;
+  box-shadow: 0 14px 32px -10px rgba(15, 23, 42, 0.18);
+}
+
+.soha-overview-3d-tooltip.is-warning {
+  border-color: rgba(251, 191, 36, 0.62);
+}
+
+.soha-overview-3d-tooltip.is-critical {
+  border-color: rgba(251, 113, 133, 0.68);
+}
+
+.soha-overview-3d-tooltip__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.soha-overview-3d-tooltip__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+}
+
+.soha-overview-3d-tooltip.is-healthy .soha-overview-3d-tooltip__dot {
+  background: #34d399;
+}
+
+.soha-overview-3d-tooltip.is-warning .soha-overview-3d-tooltip__dot {
+  background: #fbbf24;
+}
+
+.soha-overview-3d-tooltip.is-critical .soha-overview-3d-tooltip__dot {
+  background: #fb7185;
+}
+
+.soha-overview-3d-tooltip__metric {
+  margin-top: 3px;
+  font-family: var(--soha-font-mono);
+  font-size: 11.5px;
+  opacity: 0.85;
+}
+
+.soha-overview-3d-tooltip__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--soha-stage-c1);
+}
+
+/* ============================================================================
+ * Upper 3-Zone Panoramic Stage Grid (Left HUD + Wide 3D Arena + Right Glass Pods)
+ * ============================================================================ */
+
+.soha-overview-stage-grid {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 28px;
+  min-height: 446px;
+  pointer-events: none;
+}
+
+.soha-overview-hero-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 1 324px;
+  max-width: 332px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.soha-overview-hero-top,
+.soha-overview-hero-kpis,
+.soha-overview-spectrum__legend,
+.soha-overview-hero-actions-row,
+.soha-overview-hero-extra {
+  pointer-events: auto;
+}
+
+.soha-overview-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.soha-overview-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: var(--soha-radius-btn, 8px);
+  background: var(--soha-hero-eyebrow-bg);
+  border: 1px solid var(--soha-hero-eyebrow-border);
+  color: var(--soha-hero-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  backdrop-filter: blur(14px);
+}
+
+.soha-overview-hero-eyebrow .ant-btn {
+  color: var(--soha-hero-text-muted) !important;
+}
+
+.soha-overview-hero-eyebrow__icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--soha-stage-c1);
+}
+
+:root[data-overview-hero='spotlight'] .soha-overview-hero-eyebrow__icon {
+  color: #ffffff;
+}
+
+.soha-overview-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.soha-overview-hero-figure-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.soha-overview-hero-value {
+  font-family: var(--soha-font-sans, 'Plus Jakarta Sans', -apple-system, sans-serif);
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  color: var(--soha-hero-text);
+}
+
+.soha-overview-hero-suffix {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-overview-hero-caption {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-overview-hero-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-overview-hero-kpi {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: var(--soha-radius, 8px);
+  background: var(--soha-hero-pill-bg);
+  border: 1px solid var(--soha-hero-pill-border);
+  backdrop-filter: blur(12px);
+}
+
+.soha-overview-hero-kpi__label {
+  font-size: 12px;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-overview-hero-kpi__val {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--soha-hero-text);
+}
+
+.soha-overview-hero-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: auto;
+}
+
+.soha-overview-hero-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.soha-overview-stage-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--soha-hero-text-muted);
+  opacity: 0.84;
+}
+
+/* ============================================================================
+ * Right Zone: Embedded Spatial Glass Dashboard Pods (Floating Inside 3D Space)
+ * ============================================================================ */
+
+.soha-overview-spatial-pods {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-content: center;
+  flex: 0 1 282px;
+  width: min(27%, 282px);
+  pointer-events: auto;
+}
+
+.soha-overview-spatial-pods.is-two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 1 384px;
+  width: min(35%, 384px);
+  align-content: space-between;
+}
+
+.soha-overview-spatial-pod-link,
+.soha-overview-spatial-pod-wrap {
+  display: flex;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.soha-overview-spatial-pod {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--soha-radius-panel, 10px);
+  background: var(--soha-spatial-pod-bg);
+  border: 1px solid var(--soha-spatial-pod-border);
+  box-shadow: var(--soha-spatial-pod-highlight);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.soha-overview-spatial-pod-link:hover .soha-overview-spatial-pod {
+  transform: translateY(-2px);
+  background: var(--soha-spatial-pod-hover-bg);
+  border-color: color-mix(in srgb, var(--soha-stage-c1) 44%, var(--soha-spatial-pod-border));
+}
+
+.soha-overview-spatial-pod.is-warning {
+  border-color: rgba(245, 158, 11, 0.44);
+}
+
+.soha-overview-spatial-pod.is-danger {
+  border-color: rgba(244, 63, 94, 0.48);
+}
+
+.soha-overview-spatial-pod__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.soha-overview-spatial-pod__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.soha-overview-spatial-pod__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-overview-spatial-pod__label .ant-btn {
+  color: var(--soha-hero-text-muted) !important;
+}
+
+.soha-overview-spatial-pod__value {
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 29px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  color: var(--soha-hero-text);
+}
+
+.soha-overview-spatial-pod.is-danger .soha-overview-spatial-pod__value {
+  color: #fda4af;
+}
+
+:root:not([data-overview-hero='spotlight']):not([data-theme-mode='dark'])
+  .soha-overview-spatial-pod.is-danger
+  .soha-overview-spatial-pod__value {
+  color: #e11d48;
+}
+
+.soha-overview-spatial-pod__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 10px;
+  background: var(--soha-spatial-pod-icon-bg);
+  border: 1px solid var(--soha-spatial-pod-border);
+  color: var(--soha-stage-c1);
+  font-size: 14px;
+}
+
+:root[data-overview-hero='spotlight'] .soha-overview-spatial-pod__icon {
+  color: #f8fafc;
+}
+
+.soha-overview-spatial-pod.is-warning .soha-overview-spatial-pod__icon {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.36);
+}
+
+.soha-overview-spatial-pod.is-danger .soha-overview-spatial-pod__icon {
+  color: #f43f5e;
+  border-color: rgba(244, 63, 94, 0.42);
+}
+
+.soha-overview-spatial-pod__visual {
+  flex: 0 0 auto;
+}
+
+.soha-overview-spatial-pod__helper {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--soha-hero-text-muted);
+}
+
+/* ============================================================================
+ * Lower Zone: Embedded Full-Space Spatial Glass Deck (All Remaining Cards Inside 3D Space!)
+ * ============================================================================ */
+
+.soha-overview-spatial-deck {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--soha-stage-c1) 14%, var(--soha-spatial-deck-border));
+}
+
+/* Every Card & Chip inside the 3D Spatial Deck becomes a Translucent Refractive Glass Island! */
+.soha-overview-spatial-deck .ant-card,
+.soha-overview-spatial-deck .soha-overview-chip {
+  border-radius: var(--soha-radius-panel, 10px) !important;
+  background: var(--soha-spatial-deck-card-bg) !important;
+  border: 1px solid var(--soha-spatial-deck-border) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 12px 30px -18px rgba(15, 23, 42, 0.1) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  color: var(--soha-hero-text);
+}
+
+:root[data-overview-hero='spotlight'] .soha-overview-spatial-deck .ant-card,
+:root[data-overview-hero='spotlight'] .soha-overview-spatial-deck .soha-overview-chip,
+:root[data-theme-mode='dark'] .soha-overview-spatial-deck .ant-card,
+:root[data-theme-mode='dark'] .soha-overview-spatial-deck .soha-overview-chip {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 40px -18px rgba(0, 0, 0, 0.52) !important;
+}
+
+.soha-overview-spatial-deck .ant-card-head {
+  min-height: 46px !important;
+  padding: 0 18px !important;
+  border-bottom: 1px solid var(--soha-spatial-deck-border) !important;
+}
+
+.soha-overview-spatial-deck .ant-card-body {
+  padding: 14px 18px !important;
+}
+
+.soha-overview-spatial-deck :is(.ant-card-head-title, .ant-typography, h2, h3, strong) {
+  color: var(--soha-hero-text);
+}
+
+.soha-overview-spatial-deck
+  :is(.ant-typography-secondary, .soha-overview-inline-caption, small, .soha-overview-chip-helper) {
+  color: var(--soha-hero-text-muted) !important;
+}
+
+/* Inner list rows inside Spatial Glass Cards */
+.soha-overview-spatial-deck
+  :is(
+    .soha-overview-attention-row,
+    .soha-platform-active-alert-row,
+    .soha-overview-namespace-row,
+    .soha-overview-cluster-row,
+    .soha-delivery-overview-record,
+    .soha-settings-account-row,
+    .soha-settings-activity-row
+  ) {
+  border-radius: 13px !important;
+  background: var(--soha-spatial-deck-row-bg) !important;
+  border: 1px solid var(--soha-spatial-deck-border) !important;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.soha-overview-spatial-deck
+  :is(
+    .soha-overview-attention-row,
+    .soha-platform-active-alert-row,
+    .soha-overview-namespace-row,
+    .soha-overview-cluster-row,
+    .soha-delivery-overview-record
+  ):hover {
+  background: var(--soha-spatial-deck-row-hover) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--soha-stage-c1) 36%,
+    var(--soha-spatial-deck-border)
+  ) !important;
+}
+
+/* Keep Spatial Glass Lists compact so the unified 3D dashboard stays tight and scannable */
+.soha-overview-spatial-deck
+  :is(
+    .soha-overview-attention-list,
+    .soha-monitoring-alert-list,
+    .soha-overview-namespace-list,
+    .soha-overview-cluster-list
+  ) {
+  max-height: 256px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+ * Palette-Synced 3-Color Gradient Rounded Pill CTA Button (.soha-overview-hero-cta)
+ * Morphs seamlessly with the 3-Stop Gradient Palette!
+ * ============================================================================ */
+
+.soha-overview-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 6px 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    132deg,
+    var(--soha-stage-c1) 0%,
+    var(--soha-stage-c2) 52%,
+    var(--soha-stage-c3) 100%
+  );
+  color: #ffffff !important;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    0 10px 26px -6px color-mix(in srgb, var(--soha-stage-c2) 56%, transparent),
+    0 3px 10px -3px color-mix(in srgb, var(--soha-stage-c1) 46%, transparent);
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.25s ease;
+}
+
+.soha-overview-hero-cta:hover {
+  color: #ffffff !important;
+  transform: translateY(-1.5px);
+  filter: saturate(1.1) brightness(1.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 14px 32px -6px color-mix(in srgb, var(--soha-stage-c2) 66%, transparent),
+    0 4px 12px -2px color-mix(in srgb, var(--soha-stage-c3) 50%, transparent);
+}
+
+.soha-overview-hero-cta__circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  font-size: 11px;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.soha-overview-hero-cta:hover .soha-overview-hero-cta__circle {
+  transform: translate(1.5px, -1px) scale(1.06);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================================
+ * Segmented Luminous Spectrum Bar & Node Matrix
+ * ============================================================================ */
+
+.soha-overview-spectrum {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.soha-overview-spectrum__track {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 340px;
+  height: 7px;
+  padding: 1px;
+  border-radius: 999px;
+  background: rgba(128, 138, 160, 0.22);
+}
+
+.soha-overview-spectrum__bar {
+  height: 100%;
+  min-width: 8px;
+  border-radius: 999px;
+  transition: flex-grow 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.soha-overview-spectrum__bar.is-success {
+  background: linear-gradient(90deg, #34d399, #10b981);
+}
+
+.soha-overview-spectrum__bar.is-primary {
+  background: linear-gradient(90deg, var(--soha-stage-c1), var(--soha-stage-c2));
+}
+
+.soha-overview-spectrum__bar.is-warning {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+
+.soha-overview-spectrum__bar.is-danger {
+  background: linear-gradient(90deg, #fb7185, #ef4444);
+}
+
+.soha-overview-spectrum__bar.is-neutral,
+.soha-overview-spectrum__bar.is-empty {
+  background: rgba(148, 163, 184, 0.46);
+}
+
+.soha-overview-spectrum__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.soha-overview-spectrum__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soha-hero-pill-bg);
+  border: 1px solid var(--soha-hero-pill-border);
+  font-size: 11.5px;
+  color: var(--soha-hero-text-muted);
+  backdrop-filter: blur(10px);
+}
+
+.soha-overview-spectrum__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.soha-overview-spectrum__pill.is-success .soha-overview-spectrum__dot {
+  background: #10b981;
+}
+.soha-overview-spectrum__pill.is-primary .soha-overview-spectrum__dot {
+  background: var(--soha-stage-c1);
+}
+.soha-overview-spectrum__pill.is-warning .soha-overview-spectrum__dot {
+  background: #f59e0b;
+}
+.soha-overview-spectrum__pill.is-danger .soha-overview-spectrum__dot {
+  background: #f43f5e;
+}
+
+.soha-overview-spectrum__pill-val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--soha-hero-text);
+}
+
+.soha-overview-node-matrix {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 112px;
+  justify-content: flex-end;
+  align-content: flex-start;
+}
+
+.soha-overview-node-matrix__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2.5px;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.soha-overview-node-matrix__dot.is-success {
+  background: #10b981;
+}
+
+.soha-overview-node-matrix__dot.is-primary {
+  background: var(--soha-stage-c1);
+}
+
+.soha-overview-node-matrix__dot.is-warning {
+  background: #f59e0b;
+}
+
+.soha-overview-node-matrix__dot.is-danger {
+  background: #f43f5e;
+}
+
+/* ============================================================================
+ * Fallback Standalone Overview Cards & Inline Pill Bars
+ * ============================================================================ */
+
+.soha-overview-metric-card.ant-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--soha-border-color) 88%, transparent) !important;
+  background: var(--soha-bg-surface) !important;
+}
+
+.soha-overview-page
+  :is(
+    .soha-overview-value,
+    .soha-compute-metric-value,
+    .soha-overview-metric-card .ant-statistic-content-value,
+    .soha-overview-chip-value
+  ) {
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.035em !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-overview-page
+  :is(
+    .soha-compute-section-heading,
+    .soha-overview-panel-card .ant-card-head-title,
+    .soha-overview-runtime-card .ant-card-head-title
+  ) {
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.015em !important;
+}
+
+.soha-overview-inline-pill-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--soha-spatial-deck-border, var(--soha-hairline));
+}
+
+.soha-overview-inline-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.soha-overview-inline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--soha-spatial-deck-row-bg, var(--soha-bg-subtle));
+  border: 1px solid var(--soha-spatial-deck-border, var(--soha-border-color));
+  font-size: 12px;
+  color: var(--soha-hero-text-muted, var(--soha-text-secondary));
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-overview-inline-pill strong {
+  color: var(--soha-hero-text, var(--soha-text-primary));
+  font-weight: 700;
+}
+
+.soha-overview-inline-pill.is-warning strong {
+  color: #d97706;
+}
+
+.soha-overview-inline-pill.is-danger strong {
+  color: #e11d48;
+}
+
+.soha-overview-inline-pill.is-success strong {
+  color: #059669;
+}
+
+:root[data-theme-mode='dark'] .soha-overview-inline-pill.is-warning strong,
+:root[data-overview-hero='spotlight'] .soha-overview-inline-pill.is-warning strong {
+  color: #fbbf24;
+}
+
+:root[data-theme-mode='dark'] .soha-overview-inline-pill.is-danger strong,
+:root[data-overview-hero='spotlight'] .soha-overview-inline-pill.is-danger strong {
+  color: #fb7185;
+}
+
+:root[data-theme-mode='dark'] .soha-overview-inline-pill.is-success strong,
+:root[data-overview-hero='spotlight'] .soha-overview-inline-pill.is-success strong {
+  color: #34d399;
+}
+
+.soha-compute-infrastructure-grid > :only-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1120px) {
+  .soha-overview-stage-grid {
+    flex-direction: column;
+  }
+
+  .soha-overview-hero-body {
+    max-width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .soha-overview-spatial-pods {
+    width: 100%;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .soha-overview-spatial-pods {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ============================================================================
+ * Full-Screen 3D + Graphical Spatial Cockpit (`is-graphic-cockpit`)
+ * Replaces lower-half flat list cards with SVG Radial Rings, Spectrum Waves & Polar Radar
+ * ============================================================================ */
+
+.soha-overview-hero-shell.is-graphic-cockpit .soha-overview-hero-card {
+  min-height: calc(100dvh - 88px);
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+}
+
+.soha-overview-hero-shell.is-graphic-cockpit .soha-overview-hero-art-stage {
+  inset: 0;
+  height: 100%;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.soha-overview-hero-shell.is-graphic-cockpit .soha-overview-stage-grid {
+  flex: 1 1 auto;
+  min-height: 400px;
+}
+
+.soha-overview-hero-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.soha-overview-detail-drawer-trigger.ant-btn {
+  height: 27px;
+  padding: 0 10px !important;
+  border-radius: var(--soha-radius-btn, 8px) !important;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--soha-hero-eyebrow-bg) !important;
+  border: 1px solid var(--soha-hero-eyebrow-border) !important;
+  color: var(--soha-hero-text) !important;
+  backdrop-filter: blur(12px);
+}
+
+.soha-overview-detail-drawer-trigger.ant-btn:hover {
+  border-color: var(--soha-stage-c1) !important;
+  color: var(--soha-stage-c1) !important;
+}
+
+.soha-overview-drawer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.soha-overview-drawer-details [class*='-grid'],
+.soha-overview-drawer-details [class*='-panels'],
+.soha-overview-drawer-details .soha-overview-runtime-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+.soha-overview-drawer-details .soha-overview-runtime-main {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.soha-overview-graphic-dock {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  pointer-events: none;
+}
+
+.soha-spatial-graphic-pod {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px 15px;
+  border-radius: var(--soha-radius-panel, 10px);
+  background: var(--soha-spatial-pod-bg);
+  border: 1px solid var(--soha-spatial-pod-border);
+  box-shadow: var(--soha-spatial-pod-highlight);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  color: var(--soha-hero-text);
+  transition:
+    transform 0.22s ease,
+    background-color 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.soha-spatial-graphic-pod:hover {
+  background: var(--soha-spatial-pod-hover-bg);
+  transform: translateY(-1.5px);
+}
+
+.soha-spatial-graphic__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soha-spatial-graphic__titles {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.soha-spatial-graphic__title {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--soha-hero-text);
+  white-space: nowrap;
+}
+
+.soha-spatial-graphic__sub {
+  font-size: 11px;
+  color: var(--soha-hero-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-spatial-graphic__more {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--soha-stage-c1) 12%, transparent);
+  color: var(--soha-stage-c1);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.16s ease;
+}
+
+:root[data-overview-hero='spotlight'] .soha-spatial-graphic__more {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.soha-spatial-graphic__more:hover {
+  background: color-mix(in srgb, var(--soha-stage-c1) 22%, transparent);
+}
+
+.soha-spatial-tone-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.soha-spatial-tone-dot.is-primary {
+  background: var(--soha-stage-c1, #3b82f6);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--soha-stage-c1, #3b82f6) 55%, transparent);
+}
+
+.soha-spatial-tone-dot.is-success {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.55);
+}
+
+.soha-spatial-tone-dot.is-warning {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.55);
+}
+
+.soha-spatial-tone-dot.is-danger {
+  background: #f43f5e;
+  box-shadow: 0 0 7px rgba(244, 63, 94, 0.65);
+}
+
+/* ─── Pod 1: Concentric Multi-Ring Orbit Gauge ─── */
+
+.soha-spatial-rings-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.soha-spatial-rings-dial-wrap {
+  flex: 0 0 92px;
+}
+
+.soha-spatial-rings-dial {
+  position: relative;
+  width: 92px;
+  height: 92px;
+}
+
+.soha-spatial-rings-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--soha-hero-text);
+}
+
+.soha-spatial-rings-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.soha-spatial-rings-center strong {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--soha-hero-text);
+}
+
+.soha-spatial-rings-center small {
+  font-size: 9.5px;
+  color: var(--soha-hero-text-muted);
+  margin-top: 1px;
+}
+
+.soha-spatial-rings-legend {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.soha-spatial-rings-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: var(--soha-spatial-deck-row-bg);
+  color: var(--soha-hero-text);
+  font-size: 11.5px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.soha-spatial-rings-legend__row.is-link:hover {
+  background: var(--soha-spatial-deck-row-hover);
+}
+
+.soha-spatial-rings-legend__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-spatial-rings-legend__val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--soha-hero-text);
+}
+
+/* ─── Pod 2: Multi-Bar Spectrum & Cubic Spline Wave ─── */
+
+.soha-spatial-spectrum-chart {
+  width: 100%;
+  height: 66px;
+}
+
+.soha-spatial-spectrum-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--soha-hero-text);
+}
+
+.soha-spatial-spectrum-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.soha-spatial-spectrum-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soha-spatial-deck-row-bg);
+  color: var(--soha-hero-text);
+  font-size: 11px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.soha-spatial-spectrum-pill.is-link:hover {
+  background: var(--soha-spatial-deck-row-hover);
+}
+
+.soha-spatial-spectrum-pill__name {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--soha-hero-text-muted);
+}
+
+.soha-spatial-spectrum-pill__val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Pod 3: Polar Radar Scope & Target Constellation ─── */
+
+@keyframes sohaRadarSweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.soha-spatial-radar-body {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.soha-spatial-radar-scope {
+  position: relative;
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--soha-stage-c1) 12%, transparent) 0%,
+    transparent 74%
+  );
+}
+
+.soha-spatial-radar-scope.is-alert {
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.12) 0%, transparent 74%);
+}
+
+.soha-spatial-radar-sweep {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 285deg,
+    color-mix(in srgb, var(--soha-stage-c1) 24%, transparent) 360deg
+  );
+  animation: sohaRadarSweep 7s linear infinite;
+  pointer-events: none;
+}
+
+.soha-spatial-radar-scope.is-alert .soha-spatial-radar-sweep {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 285deg,
+    rgba(245, 158, 11, 0.28) 360deg
+  );
+}
+
+.soha-spatial-radar-svg {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--soha-hero-text);
+}
+
+.soha-spatial-radar-targets {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.soha-spatial-radar-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--soha-hero-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.soha-spatial-radar-target {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  border-radius: 9px;
+  background: var(--soha-spatial-deck-row-bg);
+  color: var(--soha-hero-text);
+  font-size: 11.5px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.soha-spatial-radar-target.is-link:hover {
+  background: var(--soha-spatial-deck-row-hover);
+}
+
+.soha-spatial-radar-target__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.soha-spatial-radar-target__badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.soha-spatial-radar-target__badge.is-danger {
+  background: rgba(244, 63, 94, 0.16);
+  color: #e11d48;
+}
+
+.soha-spatial-radar-target__badge.is-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
+}
+
+.soha-spatial-radar-target__badge.is-success {
+  background: rgba(16, 185, 129, 0.16);
+  color: #059669;
+}
+
+:root[data-theme-mode='dark'] .soha-spatial-radar-target__badge.is-danger,
+:root[data-overview-hero='spotlight'] .soha-spatial-radar-target__badge.is-danger {
+  color: #fda4af;
+}
+
+:root[data-theme-mode='dark'] .soha-spatial-radar-target__badge.is-warning,
+:root[data-overview-hero='spotlight'] .soha-spatial-radar-target__badge.is-warning {
+  color: #fcd34d;
+}
+
+:root[data-theme-mode='dark'] .soha-spatial-radar-target__badge.is-success,
+:root[data-overview-hero='spotlight'] .soha-spatial-radar-target__badge.is-success {
+  color: #6ee7b7;
+}
+
+@media (max-width: 1120px) {
+  .soha-overview-graphic-dock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,15 +1,17 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
+import { usePreferencesStore } from '@/stores/preferences-store'
+import { resolveThemeMode } from '@/theme/app-theme'
+import { appBrowserPath } from '@/utils/app-base'
 import { readableQueryData } from '@/utils/query-feedback'
-import { AppstoreOutlined, UserOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, MoonOutlined, SunOutlined, UserOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Avatar, Button, Card, Spin, Typography } from 'antd'
+import { Avatar, Button, Spin, Typography } from 'antd'
 import { useParams } from 'react-router-dom'
 import { completeBrowserHandoff, inspectBrowserHandoff } from './browser-handoff-api'
 import './browser-handoff-page.css'
 import { authKeys } from './keys'
-import { appBrowserPath } from '@/utils/app-base'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -25,6 +27,10 @@ export function BrowserHandoffPage({
   navigate?: (destinationUrl: string) => void
 }) {
   const { handoffId = '' } = useParams()
+  const themeMode = usePreferencesStore((state) => state.themeMode)
+  const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const resolvedTheme = resolveThemeMode(themeMode)
+
   const handoffQuery = useQuery({
     queryKey: authKeys.browserHandoff(handoffId),
     queryFn: () => inspectBrowserHandoff(handoffId),
@@ -44,69 +50,79 @@ export function BrowserHandoffPage({
 
   return (
     <main className="soha-browser-handoff-page">
-      <Card className="soha-browser-handoff-card" variant="outlined">
-        <div className="soha-browser-handoff-brand">
-          <img src={appBrowserPath('/logo.svg')} alt="" />
-          <Text strong>Soha 浏览器登录</Text>
-        </div>
-
-        <ReadFeedback label="登录交接" query={handoffQuery} />
-        {completion.feedback}
-        {handoffQuery.isLoading ? (
-          <div className="soha-browser-handoff-loading">
-            <Spin description="正在检查安全交接" />
+      <Button
+        type="text"
+        className="soha-browser-handoff-theme-toggle"
+        aria-label={resolvedTheme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+        icon={resolvedTheme === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+        onClick={() => setThemeMode(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      />
+      <div className="soha-browser-handoff-bezel">
+        <section className="soha-browser-handoff-card">
+          <div className="soha-browser-handoff-brand">
+            <img src={appBrowserPath('/logo.svg')} alt="" />
+            <Text strong>Soha 浏览器登录</Text>
           </div>
-        ) : handoffQuery.isError ? null : !handoff ? (
-          <ContextFeedback
-            showIcon
-            type="error"
-            title="无法继续"
-            description={errorMessage(handoffQuery.error)}
-          />
-        ) : (
-          <>
-            <div className="soha-browser-handoff-heading">
-              <Title level={3}>在浏览器中继续</Title>
-              <Paragraph type="secondary">
-                确认后将为浏览器创建独立会话，不会把 App 凭据交给网页。
-              </Paragraph>
-            </div>
 
-            <div className="soha-browser-handoff-binding">
-              <div>
-                <Avatar icon={<UserOutlined />} />
-                <span>
-                  <Text strong>{handoff.accountName}</Text>
-                  <Text type="secondary">Soha App 账号</Text>
-                </span>
-              </div>
-              <div>
-                <Avatar
-                  shape="square"
-                  src={handoff.application.iconUrl || undefined}
-                  icon={handoff.application.iconUrl ? undefined : <AppstoreOutlined />}
-                />
-                <span>
-                  <Text strong>{handoff.application.name}</Text>
-                  <Text type="secondary">来自 Soha App</Text>
-                </span>
-              </div>
+          <ReadFeedback label="登录交接" query={handoffQuery} />
+          {completion.feedback}
+          {handoffQuery.isLoading ? (
+            <div className="soha-browser-handoff-loading">
+              <Spin description="正在检查安全交接" />
             </div>
+          ) : handoffQuery.isError ? null : !handoff ? (
+            <ContextFeedback
+              showIcon
+              type="error"
+              title="无法继续"
+              description={errorMessage(handoffQuery.error)}
+            />
+          ) : (
+            <>
+              <div className="soha-browser-handoff-heading">
+                <Title level={3}>在浏览器中继续</Title>
+                <Paragraph type="secondary">
+                  确认后将为浏览器创建独立会话，不会把 App 凭据交给网页。
+                </Paragraph>
+              </div>
 
-            <div className="soha-browser-handoff-actions">
-              <Button href={appBrowserPath('/')}>取消</Button>
-              <Button
-                type="primary"
-                loading={completion.isPending}
-                disabled={completion.blocked}
-                onClick={() => completion.mutate()}
-              >
-                继续登录
-              </Button>
-            </div>
-          </>
-        )}
-      </Card>
+              <div className="soha-browser-handoff-binding">
+                <div className="soha-browser-handoff-tile">
+                  <Avatar className="soha-browser-handoff-avatar" icon={<UserOutlined />} />
+                  <span>
+                    <Text strong>{handoff.accountName}</Text>
+                    <Text type="secondary">Soha App 账号</Text>
+                  </span>
+                </div>
+                <div className="soha-browser-handoff-tile">
+                  <Avatar
+                    className="soha-browser-handoff-avatar"
+                    shape="square"
+                    src={handoff.application.iconUrl || undefined}
+                    icon={handoff.application.iconUrl ? undefined : <AppstoreOutlined />}
+                  />
+                  <span>
+                    <Text strong>{handoff.application.name}</Text>
+                    <Text type="secondary">来自 Soha App</Text>
+                  </span>
+                </div>
+              </div>
+
+              <div className="soha-browser-handoff-actions">
+                <Button href={appBrowserPath('/')}>取消</Button>
+                <Button
+                  type="primary"
+                  loading={completion.isPending}
+                  disabled={completion.blocked}
+                  onClick={() => completion.mutate()}
+                >
+                  继续登录
+                </Button>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </main>
   )
 }

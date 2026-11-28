@@ -40,8 +40,12 @@ export function OperationalPlanModal({
     onConfirm()
   }
 
+  const isHighRisk =
+    approvalRequired || plan?.riskLevel === 'mutate' || plan?.riskLevel === 'execute'
+
   return (
     <Modal
+      className={`soha-operational-plan-modal ${isHighRisk ? 'is-risk-high' : 'is-risk-normal'}`}
       style={{ top: 32, paddingBottom: 0 }}
       styles={{
         container: { display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 64px)' },

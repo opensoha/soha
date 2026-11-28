@@ -270,8 +270,6 @@ describe('compute overview page', () => {
     expect(text).toContain('部分资源暂不可用')
     expect(text).not.toContain('运行时数据暂不可用')
     expect(text).toContain('虚拟化')
-    expect(text).toContain('接入状态')
-    expect(text).toContain('任务运行')
     expect(text).not.toContain('运行健康')
     expect(text).toContain('提供方概况')
     expect(text).toContain('pve')
@@ -294,9 +292,7 @@ describe('compute overview page', () => {
     expect(text).not.toContain('查看已加载计算提供方的激活代际与健康状态')
     expect(container.querySelector('.soha-overview-page')).not.toBeNull()
     expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(4)
-    expect(
-      container.querySelector('a[href="/compute/virtualization/vms"] .soha-overview-metric-card'),
-    ).not.toBeNull()
+    expect(container.querySelector('a[href="/compute/virtualization/vms"]')).not.toBeNull()
     expect(
       container.querySelector('a[href="/compute/tasks/operations"] .soha-overview-metric-card'),
     ).not.toBeNull()
@@ -304,7 +300,7 @@ describe('compute overview page', () => {
     expect(container.querySelector('a[href="/compute/virtualization/clusters"]')).not.toBeNull()
     expect(container.querySelector('.soha-compute-section')).toBeNull()
     const headings = [...container.querySelectorAll('h2')].map((heading) => heading.textContent)
-    expect(headings).toEqual(['需要关注', '任务运行', '接入状态', '提供方概况'])
+    expect(headings).toEqual(['需要关注', '提供方概况'])
     expect(container.querySelector('.soha-overview-metric-card.is-success')).toBeNull()
     const notes = openDataNotes(container)?.textContent
     expect(notes).toContain('运行时数据暂不可用')
@@ -400,12 +396,10 @@ describe('compute overview page', () => {
     const text = render(<ComputeOverviewPage />).textContent ?? ''
 
     expect(text).toContain('Virtual machines')
-    expect(text).toContain('Access status')
-    expect(text).toContain('Task activity')
+    expect(text).toContain('Provider overview')
     expect(text).toContain('Needs attention')
     expect(text).not.toContain('虚拟机')
-    expect(text).not.toContain('接入状态')
-    expect(text).not.toContain('任务运行')
+    expect(text).not.toContain('提供方概况')
     expect(text).not.toContain('需要关注')
   })
   it('shows errors as resource facts without treating a successful read as healthy', () => {
@@ -450,11 +444,7 @@ describe('compute overview page', () => {
       expect(container.querySelector('.soha-compute-metric-services')?.textContent).toContain(
         '运行时服务—',
       )
-      expect(
-        container.querySelector(
-          '.soha-compute-access-row.soha-compute-metric-vms .soha-compute-access-total',
-        )?.textContent,
-      ).toContain('2总数')
+      expect(container.textContent).toContain('1/2')
       expect(openDataNotes(container)?.textContent).toContain('VM counts unavailable')
     },
   )
@@ -520,12 +510,6 @@ describe('compute overview page', () => {
     )
     const button = container.querySelector<HTMLButtonElement>('.soha-compute-task-footer button')
     expect(button?.textContent).toContain('查看失败任务')
-    expect(
-      container
-        .querySelector('.soha-compute-task-grid .soha-compute-metric-failed')
-        ?.closest('a')
-        ?.getAttribute('href'),
-    ).toBe('/compute/tasks/operations')
     expect(
       container.querySelector(
         '.soha-compute-task-footer a[href="/compute/tasks/operations?status=timeout"]',

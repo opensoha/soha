@@ -1,7 +1,6 @@
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
@@ -11,6 +10,7 @@ import {
 } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
@@ -19,9 +19,9 @@ import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined, EditOutlined, KeyOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  App,
   Button,
   Form,
-  Popconfirm,
   Select,
   Space,
   Tooltip,
@@ -84,6 +84,7 @@ function formatDateTime(value?: string) {
   }).format(date)
 }
 export function IdentityOutpostsPage() {
+  const { modal } = App.useApp()
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const [queryForm] = Form.useForm<IdentityOutpostPageFilters>()
@@ -244,59 +245,58 @@ export function IdentityOutpostsPage() {
     pagination.current,
     Math.max(1, Math.ceil(filteredOutposts.length / pagination.pageSize)),
   )
-  const nodeActions = (outpost: IdentityOutpost) => (
-    <Space size={4}>
-      <ManagementIconButton
-        disabled={operationBlocked || !canUpdate}
-        icon={<EditOutlined />}
-        onClick={() => openEdit(outpost)}
-        tooltip="编辑 Outpost"
-      />
-      <Popconfirm
-        title="轮换 Outpost token"
-        description="旧 token 将立即失效。确认已准备更新 Outpost 配置。"
-        disabled={operationBlocked || !canRotate}
-        okButtonProps={{
-          ...{ loading: rotateTokenMutation.isPending },
-          disabled: operationBlocked,
-        }}
-        okText="轮换"
-        onConfirm={() =>
-          rotateTokenMutation.mutate(outpost.id, {
-            onSuccess: (result) => {
-              if (result.token) setCreatedToken({ name: result.name, token: result.token })
-            },
-          })
-        }
-      >
-        <ManagementIconButton disabled={!canRotate} icon={<KeyOutlined />} tooltip="轮换 token" />
-      </Popconfirm>
-      <Popconfirm
-        title="删除 Outpost"
-        description={`确认删除 ${outpost.name}？`}
-        disabled={operationBlocked || !canDelete}
-        okButtonProps={{
-          ...{ danger: true, loading: deleteMutation.isPending },
-          disabled: operationBlocked,
-        }}
-        okText="删除"
-        onConfirm={() =>
-          deleteMutation.mutate(outpost.id, {
-            onSuccess: () => {
-              if (params.get('outpost') === outpost.id) closeDetails()
-            },
-          })
-        }
-      >
-        <ManagementIconButton
-          danger
-          disabled={!canDelete}
-          icon={<DeleteOutlined />}
-          tooltip="删除 Outpost"
-        />
-      </Popconfirm>
-    </Space>
-  )
+  const nodeActionItems = (outpost: IdentityOutpost) => [
+    {
+      key: 'edit',
+      icon: <EditOutlined />,
+      label: '编辑 Outpost',
+      disabled: operationBlocked || !canUpdate,
+      onClick: () => openEdit(outpost),
+    },
+    {
+      key: 'rotate',
+      icon: <KeyOutlined />,
+      label: '轮换 token',
+      disabled: operationBlocked || !canRotate,
+      onClick: () => {
+        modal.confirm({
+          title: '轮换 Outpost token',
+          content: '旧 token 将立即失效。确认已准备更新 Outpost 配置。',
+          okText: '轮换',
+          cancelText: '取消',
+          onOk: () =>
+            rotateTokenMutation.mutateAsync(outpost.id, {
+              onSuccess: (result) => {
+                if (result.token) setCreatedToken({ name: result.name, token: result.token })
+              },
+            }),
+        })
+      },
+    },
+    { type: 'divider' as const },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      label: '删除 Outpost',
+      danger: true,
+      disabled: operationBlocked || !canDelete,
+      onClick: () => {
+        modal.confirm({
+          title: '删除 Outpost',
+          content: `确认删除 ${outpost.name}？`,
+          okText: '删除',
+          cancelText: '取消',
+          okButtonProps: { danger: true },
+          onOk: () =>
+            deleteMutation.mutateAsync(outpost.id, {
+              onSuccess: () => {
+                if (params.get('outpost') === outpost.id) closeDetails()
+              },
+            }),
+        })
+      },
+    },
+  ]
   const columns: TableColumnsType<IdentityOutpost> = [
     {
       title: '接入节点',
@@ -388,8 +388,11 @@ export function IdentityOutpostsPage() {
     },
     {
       ...tableColumnPresets.action,
+      title: '操作',
       key: 'actions',
-      render: (_, outpost) => nodeActions(outpost),
+      render: (_, outpost) => (
+        <TableRowActionMenu targetLabel={outpost.name} items={nodeActionItems(outpost)} />
+      ),
     },
   ]
   return (

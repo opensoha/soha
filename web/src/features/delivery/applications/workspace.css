@@ -1160,7 +1160,18 @@
   border-top: 1px solid var(--soha-border-color);
 }
 .soha-service-summary > .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
-  border-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+@media (max-width: 640px) {
+  .soha-service-summary > .soha-resource-tabs {
+    padding-inline: 10px;
+  }
+  .soha-service-summary > .soha-resource-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin-inline-start: 14px;
+  }
 }
 .soha-service-configuration {
   background: var(--soha-bg-surface);

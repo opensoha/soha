@@ -1,6 +1,6 @@
 import { ContextFeedback } from '@/components/context-feedback'
 import { useEffect, useRef, useState } from 'react'
-import { Button, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd'
+import { App, Button, Input, Modal, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   ManagedContentRecord,
@@ -9,9 +9,11 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { AdminTable } from '@/components/admin-table'
 import { ReadFeedback } from '@/components/request-feedback'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useAuthStore } from '@/stores/auth-store'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import {
   recordsQuery,
   recordQuery,
@@ -29,6 +31,7 @@ import { NetworkStateDialog } from './network-state'
 import { TransferState, recordReceipt, uncertainRecord } from './feedback'
 
 export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
+  const { modal } = App.useApp()
   const { viewer, scope, access, text, resume } = useTransferContext()
   const client = useQueryClient()
   const [offset, setOffset] = useState(0)
@@ -131,103 +134,114 @@ export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
         retry: true,
       })
   }
-  const actions = (r: ManagedContentRecord) => {
+  const actionItems = (r: ManagedContentRecord) => {
     if (kind === 'files')
-      return (
-        <Space wrap>
-          <Button
-            size="small"
-            disabled={!access.download || operation.blocked}
-            onClick={() => operation.mutate({ record: r, action: 'read' })}
-          >
-            {text('检查并下载', 'Inspect and download')}
-          </Button>
-          <Button
-            size="small"
-            disabled={!access.create || !access.download || operation.blocked}
-            onClick={() => {
-              setCopyTarget('')
-              setCopyFile(r)
-            }}
-          >
-            {text('复制到批准目的地', 'Copy to approved destination')}
-          </Button>
-          <Popconfirm
-            title={text('删除这条记录对应的存储对象？', 'Delete the stored object for this file?')}
-            description={text(
-              '仅操作自己的已完成文件，保留传输与审计记录。',
-              'Only your completed file is removed. Transfer and audit records remain.',
-            )}
-            onConfirm={() => operation.mutate({ record: r, action: 'delete' })}
-          >
-            <Button danger size="small" disabled={!access.remove || operation.blocked}>
-              {text('删除文件', 'Delete file')}
-            </Button>
-          </Popconfirm>
-        </Space>
-      )
+      return [
+        {
+          key: 'download',
+          label: text('检查并下载', 'Inspect and download'),
+          disabled: !access.download || operation.blocked,
+          onClick: () => operation.mutate({ record: r, action: 'read' }),
+        },
+        {
+          key: 'copy',
+          label: text('复制到批准目的地', 'Copy to approved destination'),
+          disabled: !access.create || !access.download || operation.blocked,
+          onClick: () => {
+            setCopyTarget('')
+            setCopyFile(r)
+          },
+        },
+        { type: 'divider' as const },
+        {
+          key: 'delete',
+          label: text('删除文件', 'Delete file'),
+          danger: true,
+          disabled: !access.remove || operation.blocked,
+          onClick: () => {
+            modal.confirm({
+              title: text(
+                '删除这条记录对应的存储对象？',
+                'Delete the stored object for this file?',
+              ),
+              content: text(
+                '仅操作自己的已完成文件，保留传输与审计记录。',
+                'Only your completed file is removed. Transfer and audit records remain.',
+              ),
+              okButtonProps: { danger: true },
+              onOk: () => operation.mutateAsync({ record: r, action: 'delete' }).catch(() => undefined),
+            })
+          },
+        },
+      ]
     const own = r.actorId === viewer
     const retryFresh = Date.now() < Date.parse(r.createdAt) + 24 * 60 * 60 * 1000
-    return (
-      <Space wrap>
-        {own &&
-        r.state === 'blocked' &&
-        (r.decision?.requiredAction === 'acknowledge' || r.appealStatus === 'approved') ? (
-          <Popconfirm
-            title={text(
-              '仅重试原内容、目标和版本？',
-              'Retry only the original content, destination and version?',
-            )}
-            onConfirm={() => retry(r)}
-          >
-            <Button
-              size="small"
-              disabled={
+    return [
+      ...(own &&
+      r.state === 'blocked' &&
+      (r.decision?.requiredAction === 'acknowledge' || r.appealStatus === 'approved')
+        ? [
+            {
+              key: 'retry',
+              label:
+                r.action === 'upload' || r.action === 'paste'
+                  ? text('重新提供原内容', 'Provide original content again')
+                  : text('确认并重试原传输', 'Confirm and retry original transfer'),
+              disabled:
                 operation.blocked ||
                 !access.view ||
                 !retryFresh ||
                 (r.action === 'download' ? !access.download : !access.create) ||
-                (r.action === 'copy' && !access.download)
-              }
-            >
-              {r.action === 'upload' || r.action === 'paste'
-                ? text('重新提供原内容', 'Provide original content again')
-                : text('确认并重试原传输', 'Confirm and retry original transfer')}
-            </Button>
-          </Popconfirm>
-        ) : null}
-        {own &&
-        r.state === 'blocked' &&
-        r.decision?.requiredAction === 'appeal' &&
-        r.appealStatus === 'none' ? (
-          <Button
-            size="small"
-            disabled={operation.blocked || !access.view}
-            onClick={() => setDialog({ record: r, review: false })}
-          >
-            {text('提交申诉', 'Submit appeal')}
-          </Button>
-        ) : null}
-        {r.networkHoldId ? (
-          <Button size="small" onClick={() => setNetworkRecord(r)}>
-            {text('网络限制与回执', 'Network hold and receipts')}
-          </Button>
-        ) : null}
-        {kind === 'cases' &&
-        access.review &&
-        !own &&
-        (r.appealStatus === 'pending' ||
-          (Boolean(r.networkHoldId) && r.appealStatus === 'rejected')) ? (
-          <Button
-            size="small"
-            disabled={Boolean(r.networkHoldId) && !access.link}
-            onClick={() => setDialog({ record: r, review: true })}
-          >
-            {text('独立审查', 'Independent review')}
-          </Button>
-        ) : null}
-      </Space>
-    )
+                (r.action === 'copy' && !access.download),
+              onClick: () => {
+                modal.confirm({
+                  title: text(
+                    '仅重试原内容、目标和版本？',
+                    'Retry only the original content, destination and version?',
+                  ),
+                  onOk: () => retry(r),
+                })
+              },
+            },
+          ]
+        : []),
+      ...(own &&
+      r.state === 'blocked' &&
+      r.decision?.requiredAction === 'appeal' &&
+      r.appealStatus === 'none'
+        ? [
+            {
+              key: 'appeal',
+              label: text('提交申诉', 'Submit appeal'),
+              disabled: operation.blocked || !access.view,
+              onClick: () => setDialog({ record: r, review: false }),
+            },
+          ]
+        : []),
+      ...(r.networkHoldId
+        ? [
+            {
+              key: 'network',
+              label: text('网络限制与回执', 'Network hold and receipts'),
+              onClick: () => setNetworkRecord(r),
+            },
+          ]
+        : []),
+      ...(kind === 'cases' &&
+      access.review &&
+      !own &&
+      (r.appealStatus === 'pending' ||
+        (Boolean(r.networkHoldId) && r.appealStatus === 'rejected'))
+        ? [
+            {
+              key: 'review',
+              label: text('独立审查', 'Independent review'),
+              disabled: Boolean(r.networkHoldId) && !access.link,
+              onClick: () => setDialog({ record: r, review: true }),
+            },
+          ]
+        : []),
+    ]
   }
   return (
     <Space orientation="vertical" size={16} style={{ width: '100%' }}>
@@ -348,9 +362,12 @@ export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
             ),
           },
           {
+            ...tableColumnPresets.action,
             title: text('操作', 'Actions'),
             key: 'actions',
-            render: (_: unknown, r: ManagedContentRecord) => actions(r),
+            render: (_: unknown, r: ManagedContentRecord) => (
+              <TableRowActionMenu targetLabel={r.fileName} items={actionItems(r)} />
+            ),
           },
         ]}
       />
@@ -373,7 +390,7 @@ export function Records({ kind }: { kind: 'files' | 'records' | 'cases' }) {
                 <>
                   <Typography.Text copyable>{found.id}</Typography.Text>
                   <TransferState record={found} />
-                  {actions(found)}
+                  <TableRowActionMenu targetLabel={found.fileName} items={actionItems(found)} />
                 </>
               ) : null}
             </>

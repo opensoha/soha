@@ -9,9 +9,7 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
-  Space,
   Tabs,
   Typography,
 } from 'antd'
@@ -29,14 +27,15 @@ import { useSearchParams } from 'react-router-dom'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementRefreshButton,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 import { deliveryQueries } from '../queries'
@@ -93,7 +92,7 @@ export function ManifestLibraryWorkspace({
   services?: ApplicationServiceDirectoryItem[]
   readOnly?: boolean
 }) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const [queryForm] = Form.useForm()
   const [editorForm] = Form.useForm<ManifestPackageInput>()
@@ -296,52 +295,58 @@ export function ManifestLibraryWorkspace({
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
       title: '操作',
       key: 'actions',
-      fixed: 'right',
       render: (_, item) => (
-        <Space size={4}>
-          {canEdit ? (
-            <ManagementIconButton
-              aria-label="编辑清单"
-              icon={<EditOutlined />}
-              tooltip="编辑"
-              onClick={() => openEditor(item)}
-            />
-          ) : null}
-          <ManagementIconButton
-            aria-label="查看版本"
-            icon={<HistoryOutlined />}
-            tooltip="版本记录"
-            onClick={() => setRevisionTarget(item)}
-          />
-          {canPublish ? (
-            <ManagementIconButton
-              aria-label="发布版本"
-              icon={<RocketOutlined />}
-              tooltip="发布版本"
-              onClick={() => setPublishTarget(item)}
-            />
-          ) : null}
-          {canDelete ? (
-            <Popconfirm
-              title={item.currentRevision > 0 ? '归档清单包？' : '删除清单草稿？'}
-              description={
-                item.currentRevision > 0
-                  ? '清单将从工作台隐藏，已发布版本和审计历史会保留。'
-                  : '未发布草稿将被永久删除，此操作不可恢复。'
-              }
-              onConfirm={() => removeMutation.mutateAsync(item.id)}
-            >
-              <ManagementIconButton
-                aria-label="删除清单"
-                danger
-                icon={<DeleteOutlined />}
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
+        <TableRowActionMenu
+          targetLabel={item.name}
+          items={[
+            canEdit
+              ? {
+                  key: 'edit',
+                  label: '编辑清单',
+                  icon: <EditOutlined />,
+                  onClick: () => openEditor(item),
+                }
+              : null,
+            {
+              key: 'revisions',
+              label: '查看版本',
+              icon: <HistoryOutlined />,
+              onClick: () => setRevisionTarget(item),
+            },
+            canPublish
+              ? {
+                  key: 'publish',
+                  label: '发布版本',
+                  icon: <RocketOutlined />,
+                  onClick: () => setPublishTarget(item),
+                }
+              : null,
+            canDelete ? { type: 'divider' } : null,
+            canDelete
+              ? {
+                  key: 'delete',
+                  label: '删除清单',
+                  icon: <DeleteOutlined />,
+                  danger: true,
+                  onClick: () => {
+                    modal.confirm({
+                      title: item.currentRevision > 0 ? '归档清单包？' : '删除清单草稿？',
+                      content:
+                        item.currentRevision > 0
+                          ? '清单将从工作台隐藏，已发布版本和审计历史会保留。'
+                          : '未发布草稿将被永久删除，此操作不可恢复。',
+                      okText: item.currentRevision > 0 ? '确认归档' : '确认删除',
+                      okButtonProps: { danger: true },
+                      onOk: () => removeMutation.mutateAsync(item.id),
+                    })
+                  },
+                }
+              : null,
+          ]}
+        />
       ),
     },
   ]

@@ -6,11 +6,11 @@ export const tableColumnPresets = {
     width: 180,
   },
   task: {
-    width: 160,
-    fixed: 'right' as const,
+    width: 156,
   },
   action: {
-    width: 140,
+    key: 'actions' as const,
+    width: 64,
     align: 'center' as const,
     className: 'soha-table-actions-column',
     fixed: 'right' as const,

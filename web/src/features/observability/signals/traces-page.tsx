@@ -1,15 +1,13 @@
 import { AdminTable } from '@/components/admin-table'
-import {
-  ManagementIconButton,
-  ManagementQueryField,
-  ManagementState,
-} from '@/components/management-list'
+import { ManagementQueryField, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useAIPageContext } from '@/features/copilot'
 import { ApiError } from '@/services/api-error'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { FileSearchOutlined } from '@ant-design/icons'
 import type {
@@ -104,25 +102,31 @@ export function ObservabilityTracesPage({ embedded = false }: { embedded?: boole
       ),
     },
     {
-      key: 'actions',
+      ...tableColumnPresets.action,
+      title: '操作',
       render: (_, span) => (
-        <ManagementIconButton
-          aria-label="查看关联日志"
-          icon={<FileSearchOutlined />}
-          tooltip="查看关联日志"
-          onClick={() => {
-            const next = signalSearchParams(searchParams, {
-              signal: undefined,
-              compare: undefined,
-              dataSourceId: undefined,
-              metricKey: undefined,
-              minDurationMs: undefined,
-              limit: undefined,
-              traceId: span.traceId,
-              spanId: span.spanId,
-            })
-            navigate(`/monitoring-workbench/logs?${next.toString()}`)
-          }}
+        <TableRowActionMenu
+          targetLabel={`${span.service} ${span.operation}`}
+          items={[
+            {
+              key: 'logs',
+              label: '查看关联日志',
+              icon: <FileSearchOutlined />,
+              onClick: () => {
+                const next = signalSearchParams(searchParams, {
+                  signal: undefined,
+                  compare: undefined,
+                  dataSourceId: undefined,
+                  metricKey: undefined,
+                  minDurationMs: undefined,
+                  limit: undefined,
+                  traceId: span.traceId,
+                  spanId: span.spanId,
+                })
+                navigate(`/monitoring-workbench/logs?${next.toString()}`)
+              },
+            },
+          ]}
         />
       ),
     },

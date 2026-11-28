@@ -128,9 +128,24 @@ async function render() {
   await settle()
 }
 async function click(label: string) {
-  const button = [...document.querySelectorAll('button')].find(
+  const findMenuItem = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.replace(/\s/g, '') === label.replace(/\s/g, ''),
+    )
+  let button: HTMLElement | undefined = [...document.querySelectorAll<HTMLElement>('button')].find(
     (b) => b.textContent?.replace(/\s/g, '') === label.replace(/\s/g, ''),
   )
+  if (!button) {
+    button = findMenuItem()
+  }
+  if (!button) {
+    const more = document.querySelector<HTMLButtonElement>('button[aria-label^="更多操作"]')
+    if (more) {
+      await act(async () => more.click())
+      await settle()
+      button = findMenuItem()
+    }
+  }
   expect(button, label).toBeDefined()
   await act(async () => button!.click())
   await settle()

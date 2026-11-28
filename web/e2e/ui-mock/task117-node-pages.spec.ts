@@ -19,7 +19,7 @@ async function expectNodeFrame(page: Page) {
             )!
             .getBoundingClientRect()
           return (
-            Math.abs(h.bottom - tabs.top) <= 1 &&
+            Math.abs(tabs.top - h.bottom - 12) <= 1 &&
             Math.abs(h.left - body.left) <= 1 &&
             Math.abs(h.right - body.right) <= 1 &&
             document.documentElement.scrollWidth <= innerWidth

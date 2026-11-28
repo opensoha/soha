@@ -379,8 +379,14 @@ describe('network access page', () => {
       await vi.waitFor(() => expect(container.textContent).toContain('macOS 15.6.1'))
     })
     expect(container.textContent).toContain('笔记本')
-    const view = container.querySelector<HTMLButtonElement>('button[aria-label="查看终端详情"]')
-    expect(view).not.toBeNull()
+    const trigger = container.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+    expect(trigger).not.toBeNull()
+    await act(async () => trigger?.click())
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+    const view = Array.from(document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')).find(
+      (item) => item.textContent?.includes('查看终端详情'),
+    )
+    expect(view).toBeDefined()
     await act(async () => view?.click())
     const basicTab = Array.from(document.body.querySelectorAll<HTMLElement>('[role="tab"]')).find(
       (tab) => tab.textContent?.includes('基本信息'),
@@ -889,6 +895,13 @@ describe('network access page', () => {
     expect(container.textContent).toContain('gateway-a')
     expect(container.textContent).toContain('10.20.0.0/16')
     expect(container.textContent).toContain('新增网关')
-    expect(container.querySelector('[aria-label="编辑网关"]')).not.toBeNull()
+    const trigger = container.querySelector<HTMLButtonElement>('button.soha-table-row-action-trigger')
+    expect(trigger).not.toBeNull()
+    await act(async () => trigger?.click())
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+    const editGw = Array.from(document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')).find(
+      (item) => item.textContent?.includes('编辑网关'),
+    )
+    expect(editGw).toBeDefined()
   })
 })

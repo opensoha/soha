@@ -5,6 +5,26 @@ import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
+import { tableRowActionMenuRule } from './scripts/eslint-rules/table-row-action-menu.mjs'
+
+const ROW_ACTION_MENU_ENFORCED_FILES = [
+  'src/utils/table-columns.ts',
+  'src/features/platform/**/*.{ts,tsx}',
+  'src/features/compute/**/*.{ts,tsx}',
+  'src/features/virtualization/**/*.{ts,tsx}',
+  'src/features/docker/**/*.{ts,tsx}',
+  'src/features/delivery/**/*.{ts,tsx}',
+  'src/features/observability/**/*.{ts,tsx}',
+  'src/features/copilot/**/*.{ts,tsx}',
+  'src/features/companion/**/*.{ts,tsx}',
+  'src/features/settings/**/*.{ts,tsx}',
+  'src/features/access/**/*.{ts,tsx}',
+  'src/features/secrets/**/*.{ts,tsx}',
+  'src/features/plugins/**/*.{ts,tsx}',
+  'src/features/system/**/*.{ts,tsx}',
+  'src/features/identity/**/*.{ts,tsx}',
+  'src/features/network-access/**/*.{ts,tsx}',
+]
 
 const webRoot = dirname(fileURLToPath(import.meta.url))
 const definedCssClasses = (() => {
@@ -198,6 +218,7 @@ const sohaUiPlugin = {
         }
       },
     },
+    'table-row-action-menu': tableRowActionMenuRule,
   },
 }
 
@@ -272,6 +293,21 @@ export default tseslint.config(
     },
     rules: {
       'soha-style/no-undefined-utility-class': 'error',
+    },
+  },
+  {
+    files: ROW_ACTION_MENU_ENFORCED_FILES,
+    ignores: [
+      '**/*.test.*',
+      '**/*.spec.*',
+      // YAML apply result summary dialog links directly to created resources rather than row CRUD actions.
+      'src/features/platform/resource-creation/components/result-table.tsx',
+    ],
+    plugins: {
+      'soha-ui': sohaUiPlugin,
+    },
+    rules: {
+      'soha-ui/table-row-action-menu': 'error',
     },
   },
   {

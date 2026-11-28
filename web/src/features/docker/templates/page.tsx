@@ -8,7 +8,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -20,13 +19,14 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { scrollableModalBodyStyle } from '@/components/modal-styles'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import {
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
 } from '@/components/management-list'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import { localeText, useI18n } from '@/i18n'
 import { dockerApi } from '../docker-api'
@@ -64,7 +64,7 @@ function TemplatesTable() {
   const { dockerModuleEnabled, canCreateTemplates, canUpdateTemplates, canDeleteTemplates } =
     useDockerPermissions()
   const queryClient = useQueryClient()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { localeCode } = useI18n()
   const templatesQuery = useQuery(dockerQueries.templates(filters, dockerModuleEnabled))
   const saveMutation = useMutation({
@@ -134,46 +134,51 @@ function TemplatesTable() {
       render: formatDateTime,
     },
     {
+      ...tableColumnPresets.action,
+      key: 'actions',
       title: localeText(localeCode, '操作', 'Actions'),
-      align: 'center',
-      className: 'soha-table-actions-column',
-      fixed: 'right',
-      width: 96,
-      render: (_value, record) =>
-        canUpdateTemplates || canDeleteTemplates ? (
-          <Space className="soha-row-action-icons">
-            {canUpdateTemplates ? (
-              <ManagementIconButton
-                aria-label={localeText(localeCode, '编辑模板', 'Edit template')}
-                size="small"
-                tooltip={localeText(localeCode, '编辑', 'Edit')}
-                icon={<EditOutlined />}
-                onClick={() => {
-                  if (saveMutation.isPending) return
-                  if (!writeOutcomeUnknown(saveMutation.error)) saveMutation.reset()
-                  form.resetFields()
-                  setEditing(record)
-                  form.setFieldsValue(record)
-                  setDrawerOpen(true)
-                }}
-              />
-            ) : null}
-            {canDeleteTemplates ? (
-              <Popconfirm
-                title={localeText(localeCode, '确认删除模板？', 'Delete this template?')}
-                onConfirm={() => deleteMutation.mutate(record.id)}
-              >
-                <ManagementIconButton
-                  aria-label={localeText(localeCode, '删除模板', 'Delete template')}
-                  size="small"
-                  tooltip={localeText(localeCode, '删除', 'Delete')}
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        ) : null,
+      render: (_value, record) => (
+        <TableRowActionMenu
+          targetLabel={record.name}
+          items={[
+            ...(canUpdateTemplates
+              ? [
+                  {
+                    key: 'edit',
+                    icon: <EditOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '编辑模板', 'Edit template'),
+                    onClick: () => {
+                      if (saveMutation.isPending) return
+                      if (!writeOutcomeUnknown(saveMutation.error)) saveMutation.reset()
+                      form.resetFields()
+                      setEditing(record)
+                      form.setFieldsValue(record)
+                      setDrawerOpen(true)
+                    },
+                  },
+                ]
+              : []),
+            { type: 'divider' as const },
+            ...(canDeleteTemplates
+              ? [
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined aria-hidden="true" />,
+                    label: localeText(localeCode, '删除模板', 'Delete template'),
+                    danger: true,
+                    onClick: () =>
+                      modal.confirm({
+                        title: localeText(localeCode, '确认删除模板？', 'Delete this template?'),
+                        content: record.name,
+                        okButtonProps: { danger: true },
+                        onOk: () => deleteMutation.mutateAsync(record.id),
+                      }),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ),
     },
   ]
   return (

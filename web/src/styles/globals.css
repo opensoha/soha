@@ -174,8 +174,8 @@ body::before {
 }
 
 .soha-bezel-outer {
-  padding: 5px;
-  border-radius: 26px;
+  padding: 4px;
+  border-radius: var(--soha-radius-bezel, 15px);
   background: var(--soha-bezel-bg);
   box-shadow:
     0 0 0 1px var(--soha-hairline),
@@ -183,7 +183,7 @@ body::before {
 }
 
 .soha-bezel-inner {
-  border-radius: 21px;
+  border-radius: var(--soha-radius-lg, 12px);
   background: var(--soha-bg-surface);
   box-shadow:
     var(--soha-inner-highlight),
@@ -305,21 +305,26 @@ a {
 }
 
 .soha-shell {
+  --soha-shell-recessed: color-mix(in srgb, var(--soha-bg-layout) 91%, #cbd5e1);
   height: 100vh;
-  background: var(--soha-bg-layout);
+  background: var(--soha-shell-recessed);
   color: var(--soha-text-primary);
   overflow: hidden;
   box-sizing: border-box;
 }
 
+:root[data-theme-mode='dark'] .soha-shell {
+  --soha-shell-recessed: #080a0f;
+}
+
 @media (min-width: 769px) {
   .soha-shell {
-    padding: 12px 14px 12px 12px;
-    gap: 10px;
+    padding: 0;
+    gap: 0;
   }
 
   .soha-shell:not(.ant-layout-has-sider) {
-    padding: 12px;
+    padding: 8px;
   }
 }
 
@@ -327,22 +332,32 @@ a {
   flex: 0 0 auto !important;
   flex-shrink: 0 !important;
   height: 100%;
+  padding: 8px 4px 8px 8px;
+  box-sizing: border-box;
   border-right: none;
   background: transparent !important;
   overflow: visible;
 }
 
+.soha-sider.ant-layout-sider-collapsed {
+  padding: 8px 3px 8px 7px;
+}
+
+/* ─── Style 1 (Default `frosted`): Apple macOS Tahoe Symmetric Frosted Acrylic Island ─── */
 .soha-sider .ant-layout-sider-children {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 5px;
-  border-radius: 26px;
-  background: var(--soha-bezel-bg);
+  padding: 0;
+  border-radius: 18px;
+  background: transparent;
   box-shadow:
-    0 0 0 1px var(--soha-hairline-strong),
-    0 20px 44px -20px rgba(23, 33, 28, 0.12);
+    0 0 0 1px rgba(15, 23, 42, 0.065),
+    0 8px 22px -14px rgba(15, 23, 42, 0.08);
   overflow: hidden;
+  transition:
+    background-color 0.24s ease,
+    box-shadow 0.24s ease;
 }
 
 .soha-nav {
@@ -350,12 +365,986 @@ a {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  border-radius: 21px;
-  background: color-mix(in srgb, var(--soha-bg-surface) 93%, var(--soha-bg-layout)) !important;
-  box-shadow:
-    var(--soha-inner-highlight),
-    0 0 0 1px var(--soha-hairline);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.54) !important;
+  backdrop-filter: blur(26px) saturate(1.35);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
   overflow: hidden;
+  transition:
+    background-color 0.24s ease,
+    box-shadow 0.24s ease;
+}
+
+.soha-sider.ant-layout-sider-collapsed .ant-layout-sider-children,
+.soha-sider.ant-layout-sider-collapsed .soha-nav {
+  border-radius: 16px;
+}
+
+:root[data-theme-mode='dark'] .soha-sider .ant-layout-sider-children {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.075),
+    0 12px 28px -16px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme-mode='dark'] .soha-nav {
+  background: rgba(17, 22, 34, 0.62) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ─── Style 4 (`split-pods` — DEFAULT): Figma UI3 / Miro Modular Split Floating Pods ─── */
+:root[data-sider-style='split-pods'] .soha-sider .ant-layout-sider-children {
+  box-shadow: none !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+:root[data-sider-style='split-pods'] .soha-nav {
+  gap: 10px;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+:root[data-sider-style='split-pods'] .soha-sider-head-pod {
+  flex: 0 0 auto;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 10px 24px -14px rgba(15, 23, 42, 0.1);
+}
+
+:root[data-sider-style='split-pods'] .soha-nav-business {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  max-height: 100%;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 12px 28px -14px rgba(15, 23, 42, 0.1);
+}
+
+:root[data-sider-style='split-pods'] .soha-nav-menu {
+  height: auto !important;
+  max-height: calc(100vh - 170px);
+  padding: 8px 10px !important;
+}
+
+:root[data-sider-style='split-pods'] .soha-nav-menu.ant-menu-inline-collapsed {
+  padding: 8px 0 !important;
+}
+
+:root[data-theme-mode='dark'][data-sider-style='split-pods'] .soha-sider-head-pod,
+:root[data-theme-mode='dark'][data-sider-style='split-pods'] .soha-nav-business {
+  background: rgba(17, 22, 34, 0.82);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.085),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 16px 34px -14px rgba(0, 0, 0, 0.55);
+}
+
+/* ─── Style 5 (`dual-rail`): Cool-Mist Centered Dual-Rail + User Pod + Immersive Fullscreen ─── */
+.soha-shell.is-immersive-fullscreen .soha-sider,
+.soha-shell.is-immersive-fullscreen .soha-sider.ant-layout-sider-collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  flex: 0 0 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0;
+  overflow: hidden !important;
+  pointer-events: none;
+}
+
+.soha-shell.is-immersive-fullscreen .soha-header {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0;
+  overflow: hidden !important;
+  pointer-events: none;
+}
+
+.soha-shell.is-immersive-fullscreen .soha-content {
+  padding: 10px !important;
+}
+
+.soha-immersive-exit-pill {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 95;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 10px 26px -10px rgba(15, 23, 42, 0.18);
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.76;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.soha-immersive-exit-pill:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--soha-primary);
+}
+
+:root[data-theme-mode='dark'] .soha-immersive-exit-pill {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(15, 22, 36, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  color: #e2e8f0;
+}
+
+:root[data-theme-mode='dark'] .soha-immersive-exit-pill:hover {
+  background: rgba(22, 31, 50, 0.95);
+  color: #ffffff;
+}
+
+:root[data-sider-style='dual-rail'] .soha-sider.ant-layout-sider-collapsed {
+  padding: 8px 4px 8px 8px;
+}
+
+:root[data-sider-style='dual-rail'] .soha-sider .ant-layout-sider-children {
+  box-shadow: none !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+.soha-dual-rail-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+  height: 100%;
+  min-height: 0;
+}
+
+.soha-dual-rail__left-col {
+  flex: 0 0 48px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Calm Neutral Luminance-Stepped Dual-Rail:
+ * - Canvas (`--soha-bg-canvas`): soft neutral mist (#f0f2f7)
+ * - Left Master Rail + User Pod: quiet recessed neutral stone (#e6e9f0), zero colored gradient wash
+ * - Right Sub-Menu Pod: crisp pure frosted white (#ffffff / 88%)
+ */
+.soha-dual-rail__dock,
+.soha-dual-rail__user-pod {
+  background: color-mix(in srgb, var(--soha-bg-canvas, #eff1f6) 68%, #dfe4ec 32%);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__dock,
+:root[data-theme-mode='dark'] .soha-dual-rail__user-pod {
+  background: rgba(14, 18, 26, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.068),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.soha-dual-rail__dock {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-radius: var(--soha-radius-lg, 12px);
+}
+
+.soha-dual-rail__user-pod {
+  flex: 0 0 48px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--soha-radius-lg, 12px);
+}
+
+.soha-dual-rail__user-btn {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.soha-dual-rail__user-btn:hover {
+  background: rgba(255, 255, 255, 0.65);
+  transform: translateY(-1px);
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__user-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.soha-dual-rail__avatar.ant-avatar {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px;
+  line-height: 30px !important;
+  font-size: 13px !important;
+  font-weight: 650;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.soha-dual-rail__user-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 0 1.5px #e6e9f0;
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__user-dot {
+  box-shadow: 0 0 0 1.5px #0e121a;
+}
+
+.soha-dual-rail__top {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.soha-dual-rail__brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.soha-dual-rail__brand:hover {
+  background: rgba(255, 255, 255, 0.62);
+  transform: translateY(-1px);
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__brand:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.soha-dual-rail__logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.soha-dual-rail__center {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+/* Bare Vertically-Centered Workbench Icon List (No Nested Inner Capsule!) */
+.soha-dual-rail__wb-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-height: 100%;
+  padding: 2px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.soha-dual-rail__wb-list::-webkit-scrollbar {
+  display: none;
+}
+
+.soha-dual-rail__bottom-spacer {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  pointer-events: none;
+}
+
+.soha-dual-rail__wb-btn {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--soha-radius, 8px);
+  background: transparent;
+  color: #5b667a;
+  font-size: 17px;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.soha-dual-rail__wb-btn:hover {
+  background: rgba(255, 255, 255, 0.62);
+  color: #0f172a;
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__wb-btn {
+  color: #8b98ae;
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__wb-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+/* Crisp Tactile Keycap Active State + 3px Left Primary Pill (Calm, Zero Neon Clutter) */
+.soha-dual-rail__wb-btn.is-active {
+  color: var(--soha-primary) !important;
+  background: #ffffff !important;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.06),
+    0 3px 9px -2px rgba(15, 23, 42, 0.1);
+}
+
+.soha-dual-rail__wb-btn.is-active::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 15px;
+  border-radius: 0 3px 3px 0;
+  background: var(--soha-primary);
+  transform: translateY(-50%);
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__wb-btn.is-active {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 4px 12px -2px rgba(0, 0, 0, 0.45);
+}
+
+.soha-dual-rail__wb-btn.is-util {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  font-size: 15px;
+  background: transparent;
+  color: #64748b;
+}
+
+.soha-dual-rail__wb-btn.is-util:hover {
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--soha-primary);
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__wb-btn.is-util {
+  background: transparent;
+  color: #8b98ae;
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__wb-btn.is-util:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+/* Right Sub-Navigation Pod (Crisp Elevated Frosted White — Clear Step Above Left Stone Rail) */
+.soha-dual-rail__subnav {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--soha-radius-lg, 12px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(24px) saturate(1.25);
+  -webkit-backdrop-filter: blur(24px) saturate(1.25);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 #ffffff,
+    0 10px 26px -18px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+:root[data-theme-mode='dark'] .soha-dual-rail__subnav {
+  background: rgba(21, 26, 37, 0.86);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.soha-dual-rail__subnav.is-narrow {
+  flex: 0 0 48px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  align-items: center;
+}
+
+.soha-dual-rail__narrow-head {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--soha-hairline);
+}
+
+.soha-dual-rail__narrow-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  padding: 8px 0 12px;
+  scrollbar-width: none;
+}
+
+.soha-dual-rail__narrow-body::-webkit-scrollbar {
+  display: none;
+}
+
+.soha-rail-narrow-nav,
+.soha-rail-narrow-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.soha-rail-narrow-divider {
+  width: 18px;
+  height: 1px;
+  margin: 4px auto;
+  border-radius: 999px;
+  background: var(--soha-hairline-strong);
+}
+
+.soha-rail-narrow-btn {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--soha-radius, 8px);
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.soha-rail-narrow-btn.is-search {
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-tertiary);
+  font-size: 14px;
+}
+
+.soha-rail-narrow-btn:hover {
+  background: rgba(15, 23, 42, 0.055);
+  color: var(--soha-text-primary);
+}
+
+:root[data-theme-mode='dark'] .soha-rail-narrow-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.soha-rail-narrow-btn.is-active {
+  background: rgba(var(--soha-primary-rgb), 0.13);
+  color: var(--soha-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.22);
+}
+
+:root[data-theme-mode='dark'] .soha-rail-narrow-btn.is-active {
+  background: rgba(var(--soha-primary-rgb), 0.24);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.38);
+}
+
+.soha-dual-rail__subhead {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 10px 9px;
+  border-bottom: 1px solid var(--soha-hairline);
+}
+
+.soha-dual-rail__subhead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-inline: 3px 1px;
+}
+
+.soha-dual-rail__subhead-row > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--soha-text-primary);
+}
+
+.soha-dual-rail__subbody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 7px 12px;
+  scrollbar-width: thin;
+}
+
+/* Unified Lightweight Collapsible Groups (Linear / Slack Flat Hierarchy) */
+.soha-rail-grouped-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.soha-rail-grouped-nav.is-compact {
+  gap: 7px;
+}
+
+.soha-rail-grouped-nav__direct,
+.soha-rail-group__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soha-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soha-rail-group__header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 25px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--soha-text-tertiary);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.soha-rail-group__header:hover {
+  background: rgba(15, 23, 42, 0.045);
+  color: var(--soha-text-primary);
+}
+
+.soha-rail-nav-item__badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--soha-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme-mode='dark'] .soha-rail-nav-item__badge {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.soha-rail-nav-item.is-active .soha-rail-nav-item__badge {
+  background: rgba(var(--soha-primary-rgb), 0.14);
+  color: var(--soha-primary);
+}
+
+:root[data-theme-mode='dark'] .soha-rail-nav-item.is-active .soha-rail-nav-item__badge {
+  background: rgba(var(--soha-primary-rgb), 0.3);
+  color: #ffffff;
+}
+
+:root[data-theme-mode='dark'] .soha-rail-group__header:hover {
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.soha-rail-group.is-folded.has-active .soha-rail-group__header {
+  color: var(--soha-primary);
+  background: rgba(var(--soha-primary-rgb), 0.08);
+}
+
+.soha-rail-group__chevron {
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  opacity: 0.72;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.soha-rail-group.is-open .soha-rail-group__chevron {
+  transform: rotate(90deg);
+}
+
+.soha-rail-group__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-rail-group__count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 17px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--soha-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+:root[data-theme-mode='dark'] .soha-rail-group__count {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.soha-rail-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--soha-radius, 8px);
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.soha-rail-grouped-nav.is-compact .soha-rail-nav-item {
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+
+.soha-rail-nav-item:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--soha-text-primary);
+}
+
+:root[data-theme-mode='dark'] .soha-rail-nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.soha-rail-nav-item.is-active {
+  background: rgba(var(--soha-primary-rgb), 0.11);
+  color: var(--soha-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.16);
+}
+
+:root[data-theme-mode='dark'] .soha-rail-nav-item.is-active {
+  background: rgba(var(--soha-primary-rgb), 0.2);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.34);
+}
+
+.soha-rail-nav-item__icon {
+  display: inline-flex;
+  flex: 0 0 15px;
+  width: 15px;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.86;
+}
+
+.soha-rail-nav-item.is-active .soha-rail-nav-item__icon {
+  opacity: 1;
+}
+
+.soha-rail-nav-item__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Style 6 (`vision-glass`): Apple visionOS Spatial Specular Glass Pod ─── */
+:root[data-sider-style='vision-glass']:not([data-theme-mode='dark'])
+  .soha-sider
+  .ant-layout-sider-children {
+  border-radius: 24px;
+  padding: 1.5px;
+  background: linear-gradient(
+    148deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(var(--soha-primary-rgb), 0.22) 52%,
+    rgba(255, 255, 255, 0.65) 100%
+  );
+  box-shadow:
+    0 18px 42px -16px rgba(var(--soha-primary-rgb), 0.18),
+    0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+:root[data-sider-style='vision-glass']:not([data-theme-mode='dark']) .soha-nav {
+  border-radius: 22.5px;
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(246, 249, 255, 0.64) 100%
+  ) !important;
+  backdrop-filter: blur(32px) saturate(1.5);
+  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+
+/* ─── Style 7 (`ghost-rail`): Notion / Stripe / Vercel Borderless Ghost Rail ─── */
+:root[data-sider-style='ghost-rail'] .soha-sider .ant-layout-sider-children,
+:root[data-sider-style='ghost-rail'] .soha-nav {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+:root[data-sider-style='ghost-rail'] .soha-nav-menu.ant-menu .ant-menu-item-selected::before {
+  content: '';
+  display: block !important;
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--soha-primary);
+}
+
+/* ─── Style 2 (`recessed-well`): Linear / Raycast Symmetric Machined Inset Well ─── */
+:root[data-sider-style='recessed-well']:not([data-theme-mode='dark'])
+  .soha-sider
+  .ant-layout-sider-children {
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+}
+
+:root[data-sider-style='recessed-well']:not([data-theme-mode='dark']) .soha-nav {
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.038) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 2px 5px rgba(15, 23, 42, 0.055);
+}
+
+/* ─── Style 3 (`obsidian`): Arc / Pitch / Framer Contrast Graphite Floating Dock ─── */
+:root[data-sider-style='obsidian'] .soha-sider .ant-layout-sider-children {
+  border-radius: 20px;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.48),
+    0 18px 38px -14px rgba(15, 23, 42, 0.32);
+}
+
+:root[data-sider-style='obsidian'] .soha-nav {
+  border-radius: 20px;
+  background: linear-gradient(180deg, #161c2b 0%, #0f1420 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  color: #cbd5e1;
+}
+
+:root[data-sider-style='obsidian'] .soha-brand-wordmark__title,
+:root[data-sider-style='obsidian'] .soha-workbench-switcher__label,
+:root[data-sider-style='obsidian'] .soha-workspace-switcher__label {
+  color: #f8fafc !important;
+}
+
+:root[data-sider-style='obsidian'] .soha-workspace-switcher.ant-btn,
+:root[data-sider-style='obsidian'] .soha-workbench-switcher.ant-btn {
+  background: rgba(255, 255, 255, 0.07) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  color: #f8fafc !important;
+}
+
+:root[data-sider-style='obsidian'] .soha-workspace-switcher.ant-btn:hover,
+:root[data-sider-style='obsidian'] .soha-workbench-switcher.ant-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+:root[data-sider-style='obsidian'] .soha-workbench-switcher__icon,
+:root[data-sider-style='obsidian'] .soha-workspace-switcher__icon {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+}
+
+:root[data-sider-style='obsidian'] .soha-cmdk-trigger {
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+:root[data-sider-style='obsidian'] .soha-cmdk-trigger:hover {
+  background: rgba(255, 255, 255, 0.085);
+  color: #f8fafc;
+}
+
+:root[data-sider-style='obsidian'] .soha-cmdk-kbd {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: #94a3b8;
+}
+
+:root[data-sider-style='obsidian'] .soha-nav-section-title {
+  color: #64748b;
+}
+
+:root[data-sider-style='obsidian']
+  .soha-nav-menu.ant-menu
+  :is(.ant-menu-item, .ant-menu-submenu-title) {
+  color: #94a3b8 !important;
+}
+
+:root[data-sider-style='obsidian']
+  .soha-nav-menu.ant-menu
+  .ant-menu-item:not(.ant-menu-item-selected):hover,
+:root[data-sider-style='obsidian'] .soha-nav-menu.ant-menu .ant-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.065) !important;
+  color: #f8fafc !important;
+}
+
+:root[data-sider-style='obsidian'] .soha-nav-menu.ant-menu .ant-menu-item-selected,
+:root[data-sider-style='obsidian']
+  .soha-nav-menu.ant-menu-inline-collapsed
+  .ant-menu-submenu-selected
+  > .ant-menu-submenu-title {
+  color: #ffffff !important;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.34) 0%,
+    rgba(56, 189, 248, 0.22) 100%
+  ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 0 1px rgba(129, 140, 248, 0.35) !important;
+}
+
+:root[data-sider-style='obsidian']
+  .soha-nav-menu
+  .ant-menu-item-selected
+  :is(.ant-menu-item-icon, .soha-animated-icon) {
+  color: #7dd3fc !important;
+}
+
+:root[data-sider-style='obsidian']
+  .soha-nav-menu:not(.ant-menu-inline-collapsed)
+  .ant-menu-sub.ant-menu-inline {
+  border-inline-start-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 .soha-sider-topbar {
@@ -368,6 +1357,11 @@ a {
   padding: 8px 14px 4px;
   border-bottom: none;
   background: transparent;
+}
+
+.ant-layout-sider-collapsed .soha-sider-topbar {
+  justify-content: center;
+  padding: 8px 0 4px;
 }
 
 .soha-sider-brand {
@@ -444,35 +1438,41 @@ a {
 .soha-workbench-switcher.ant-btn {
   display: flex;
   width: 100%;
-  height: 34px;
-  min-height: 34px;
+  height: 33px;
+  min-height: 33px;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
   padding: 0 11px 0 7px !important;
-  border-radius: 999px;
-  background: var(--soha-bg-surface) !important;
-  box-shadow:
-    0 0 0 1px var(--soha-hairline-strong),
-    var(--soha-inner-highlight),
-    0 4px 12px -4px rgba(23, 33, 28, 0.07) !important;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.76) !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.075) !important;
   color: var(--soha-text-primary);
   transition:
-    background-color 0.28s var(--soha-ease-fluid),
-    box-shadow 0.28s var(--soha-ease-fluid),
-    transform 0.28s var(--soha-ease-fluid);
+    background-color 0.22s var(--soha-ease-fluid),
+    box-shadow 0.22s var(--soha-ease-fluid);
+}
+
+:root[data-theme-mode='dark'] .soha-workspace-switcher.ant-btn,
+:root[data-theme-mode='dark'] .soha-workbench-switcher.ant-btn {
+  background: rgba(255, 255, 255, 0.045) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.075) !important;
 }
 
 .soha-workspace-switcher.ant-btn:hover,
 .soha-workspace-switcher.ant-btn:focus,
 .soha-workbench-switcher.ant-btn:hover,
 .soha-workbench-switcher.ant-btn:focus {
-  background: var(--soha-bg-surface) !important;
-  transform: translateY(-0.5px);
+  background: rgba(255, 255, 255, 0.72) !important;
   box-shadow:
-    0 0 0 1px rgba(var(--soha-primary-rgb), 0.26),
-    var(--soha-inner-highlight),
-    0 8px 18px -8px rgba(23, 33, 28, 0.12) !important;
+    inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.24),
+    0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+:root[data-theme-mode='dark'] .soha-workspace-switcher.ant-btn:hover,
+:root[data-theme-mode='dark'] .soha-workbench-switcher.ant-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.35) !important;
 }
 
 .soha-workspace-switcher__icon,
@@ -525,31 +1525,38 @@ a {
 .soha-cmdk-trigger {
   display: flex;
   width: 100%;
-  height: 31px;
+  height: 30px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   padding: 0 7px 0 11px;
   border: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--soha-bg-surface-muted) 88%, transparent);
-  box-shadow: inset 0 0 0 1px var(--soha-hairline);
+  border-radius: var(--soha-radius, 8px);
+  background: rgba(15, 23, 42, 0.038);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
   color: var(--soha-text-tertiary);
   font-size: 12px;
   cursor: pointer;
   transition:
-    background-color 0.24s var(--soha-ease-fluid),
-    color 0.24s var(--soha-ease-fluid),
-    box-shadow 0.24s var(--soha-ease-fluid),
-    transform 0.24s var(--soha-ease-fluid);
+    background-color 0.2s var(--soha-ease-fluid),
+    color 0.2s var(--soha-ease-fluid),
+    box-shadow 0.2s var(--soha-ease-fluid);
+}
+
+:root[data-theme-mode='dark'] .soha-cmdk-trigger {
+  background: rgba(255, 255, 255, 0.036);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.065);
 }
 
 .soha-cmdk-trigger:hover {
-  background: var(--soha-bg-surface);
+  background: rgba(255, 255, 255, 0.66);
   color: var(--soha-text-primary);
-  box-shadow:
-    inset 0 0 0 1px var(--soha-hairline-strong),
-    0 4px 10px -4px rgba(23, 33, 28, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1);
+}
+
+:root[data-theme-mode='dark'] .soha-cmdk-trigger:hover {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .soha-cmdk-trigger__left {
@@ -567,7 +1574,7 @@ a {
   align-items: center;
   height: 19px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--soha-radius-xs, 5px);
   background: var(--soha-bg-surface);
   box-shadow: 0 0 0 1px var(--soha-hairline);
   color: var(--soha-text-tertiary);
@@ -689,7 +1696,7 @@ a {
   padding: 0 !important;
 }
 
-/* Compact app navigation; standard menus outside the shell use Antd's Menu tokens. */
+/* Compact app navigation on Layer 0 Recessed Shell (Linear / macOS / OpenAI style) */
 .soha-nav-menu.ant-menu .ant-menu-item,
 .soha-nav-menu.ant-menu .ant-menu-submenu-title {
   position: relative;
@@ -700,31 +1707,41 @@ a {
   line-height: var(--soha-sidebar-item-height);
   width: 100% !important;
   margin-inline: 0 !important;
-  margin-block: 2px !important;
+  margin-block: 1.5px !important;
   padding-block: 0 !important;
-  padding-inline: 12px !important;
-  border-radius: 999px;
+  padding-inline: 11px !important;
+  border-radius: 10px;
+  color: var(--soha-text-secondary);
   font-size: 13px;
   font-weight: 500;
   transition:
-    background-color 0.24s var(--soha-ease-fluid),
-    color 0.24s var(--soha-ease-fluid),
-    box-shadow 0.24s var(--soha-ease-fluid),
-    transform 0.24s var(--soha-ease-fluid);
+    background-color 0.18s var(--soha-ease-fluid),
+    color 0.18s var(--soha-ease-fluid),
+    box-shadow 0.18s var(--soha-ease-fluid);
+}
+
+.soha-nav-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover,
+.soha-nav-menu.ant-menu .ant-menu-submenu-title:hover {
+  background: rgba(15, 23, 42, 0.048) !important;
+  color: var(--soha-text-primary) !important;
+}
+
+:root[data-theme-mode='dark']
+  .soha-nav-menu.ant-menu
+  .ant-menu-item:not(.ant-menu-item-selected):hover,
+:root[data-theme-mode='dark'] .soha-nav-menu.ant-menu .ant-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.055) !important;
+  color: #f8fafc !important;
 }
 
 .soha-nav-menu.ant-menu .ant-menu-item-selected,
 .soha-nav-menu.ant-menu-inline-collapsed .ant-menu-submenu-selected > .ant-menu-submenu-title {
   font-weight: 600;
-  color: #f8fafc !important;
-  background: linear-gradient(
-    135deg,
-    var(--soha-primary) 0%,
-    var(--soha-primary-hover) 100%
-  ) !important;
+  color: var(--soha-primary) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 8px 18px -6px rgba(var(--soha-primary-rgb), 0.34);
+    0 2px 8px -2px rgba(15, 23, 42, 0.07),
+    inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.16);
 }
 
 :root[data-theme-mode='dark'] .soha-nav-menu.ant-menu .ant-menu-item-selected,
@@ -732,15 +1749,11 @@ a {
   .soha-nav-menu.ant-menu-inline-collapsed
   .ant-menu-submenu-selected
   > .ant-menu-submenu-title {
-  color: #f1f5f9 !important;
-  background: linear-gradient(
-    135deg,
-    rgba(var(--soha-primary-rgb), 0.22) 0%,
-    rgba(var(--soha-primary-rgb), 0.14) 100%
-  ) !important;
+  color: #f8fafc !important;
+  background: rgba(255, 255, 255, 0.095) !important;
   box-shadow:
-    inset 0 0 0 1px rgba(var(--soha-primary-rgb), 0.38),
-    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+    0 2px 6px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .soha-nav-menu:not(.ant-menu-inline-collapsed)
@@ -818,7 +1831,7 @@ a {
   .ant-menu-submenu-selected
   > .ant-menu-submenu-title
   :is(.ant-menu-item-icon, .soha-animated-icon) {
-  color: #ffffff !important;
+  color: var(--soha-primary) !important;
 }
 
 :root[data-theme-mode='dark']
@@ -1003,13 +2016,14 @@ a {
 
 @media (min-width: 769px) {
   .soha-main {
+    margin: 0;
     border-radius: 0;
     border: none;
     box-shadow: none;
   }
 }
 
-/* ─── Stroll Floating Frosted Capsule Islands (Top Bar) ─── */
+/* ─── Floating Frosted Capsule Islands (Top Bar Over Recessed Shell) ─── */
 .soha-header {
   position: relative;
   z-index: 20;
@@ -1020,7 +2034,7 @@ a {
   height: var(--soha-app-chrome-height);
   min-height: var(--soha-app-chrome-height);
   line-height: normal;
-  padding: 2px 16px 4px 10px;
+  padding: 6px 12px 4px 6px;
   border-bottom: none;
   background: transparent !important;
   backdrop-filter: none;
@@ -1048,17 +2062,17 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 4px 16px 4px 6px;
+  min-height: 38px;
+  padding: 3px 14px 3px 6px;
   min-width: 0;
-  border-radius: 999px;
+  border-radius: var(--soha-radius-header, 12px);
   background: var(--soha-glass-bg);
   backdrop-filter: blur(20px) saturate(1.25);
   -webkit-backdrop-filter: blur(20px) saturate(1.25);
   box-shadow:
     0 0 0 1px var(--soha-hairline-strong),
     var(--soha-inner-highlight),
-    0 12px 28px -12px rgba(23, 33, 28, 0.1);
+    0 10px 24px -12px rgba(15, 23, 42, 0.1);
 }
 
 .soha-account-brand {
@@ -1181,14 +2195,14 @@ a {
   min-height: 34px;
   margin-inline-start: auto;
   padding: 1px 6px 1px 10px;
-  border-radius: 999px;
+  border-radius: var(--soha-radius-header, 12px);
   background: var(--soha-glass-bg);
   backdrop-filter: blur(20px) saturate(1.25);
   -webkit-backdrop-filter: blur(20px) saturate(1.25);
   box-shadow:
     0 0 0 1px var(--soha-hairline-strong),
     var(--soha-inner-highlight),
-    0 12px 28px -12px rgba(23, 33, 28, 0.1);
+    0 10px 24px -12px rgba(15, 23, 42, 0.1);
 }
 
 .soha-header-preferences {
@@ -1208,7 +2222,7 @@ a {
   height: 30px;
   padding: 0 10px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--soha-radius, 8px);
   background: transparent;
   box-shadow: none;
   color: var(--soha-text-secondary);
@@ -1222,7 +2236,7 @@ a {
 .soha-header-action.ant-btn {
   padding: 0 8px !important;
   border-color: transparent !important;
-  border-radius: 999px !important;
+  border-radius: var(--soha-radius, 8px) !important;
   box-shadow: none !important;
 }
 
@@ -1381,16 +2395,29 @@ a {
 .soha-content {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 14px 18px 32px 10px !important;
+  padding: 6px 8px 24px 6px !important;
   background: transparent !important;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
   overflow: auto;
+}
+
+.soha-content:has(.soha-overview-hero-shell.is-full-spatial-dashboard) {
+  padding: 1px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* ─── Stroll Double-Bezel Command Surface (⌘K) ─── */
 .soha-cmdk-modal .ant-modal-container,
 .soha-cmdk-modal .ant-modal-content {
-  padding: 6px !important;
-  border-radius: 26px !important;
+  padding: 4px !important;
+  border-radius: var(--soha-radius-bezel, 15px) !important;
   background: var(--soha-bezel-bg) !important;
   box-shadow:
     0 0 0 1px var(--soha-hairline-strong),
@@ -1400,7 +2427,7 @@ a {
 
 .soha-cmdk-surface {
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: var(--soha-radius-lg, 12px);
   background: var(--soha-bg-surface);
   box-shadow:
     var(--soha-inner-highlight),
@@ -1567,7 +2594,7 @@ a {
   padding: 2px 4px;
   overflow: hidden;
   border: 1px solid var(--soha-hairline-strong);
-  border-radius: 999px;
+  border-radius: var(--soha-radius, 8px);
   background: color-mix(in srgb, var(--soha-bg-surface) 84%, var(--soha-fill-weak));
   flex: 0 1 auto;
   transition:
@@ -1792,6 +2819,7 @@ a {
   }
 
   .soha-header-action-button.is-wide {
+    min-width: 76px;
     padding-inline: 6px;
   }
 
@@ -1836,14 +2864,6 @@ a {
   border-radius: 50%;
   background: var(--soha-primary);
   box-shadow: 0 0 0 1.5px var(--soha-bg-surface);
-}
-
-@media (max-width: 480px) {
-  .soha-header-right {
-    gap: 5px;
-    min-height: 40px;
-    padding-block: 4px;
-  }
 }
 
 .soha-palette-popover-body {
@@ -2131,6 +3151,53 @@ a {
   line-height: 1.2;
 }
 
+.soha-palette-radius-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.soha-palette-radius-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--soha-hairline-strong);
+  border-radius: var(--soha-radius, 8px);
+  background: var(--soha-bg-surface);
+  color: var(--soha-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.soha-palette-radius-pill:hover {
+  border-color: var(--soha-primary);
+  color: var(--soha-text-primary);
+}
+
+.soha-palette-radius-pill.is-selected {
+  border-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+  color: var(--soha-primary);
+}
+
+.soha-palette-radius-pill__glyph {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+}
+
 .soha-palette-toggle-row {
   display: flex;
   align-items: center;
@@ -2162,4 +3229,563 @@ a {
   border-radius: 9px !important;
   font-size: 13px !important;
   font-weight: 500;
+}
+
+/* ============================================================================
+ * Soha Overlay System: Soft-Focus Backdrop, Double-Bezel Modal & Floating Sheet Drawer
+ * ============================================================================ */
+
+@media (min-width: 769px) {
+  .ant-notification-bottomLeft {
+    inset-inline-start: 256px !important;
+  }
+}
+
+.ant-select-dropdown,
+.ant-dropdown,
+.ant-picker-dropdown,
+.ant-cascader-dropdown {
+  z-index: 2100 !important;
+}
+
+.ant-modal-root .ant-modal-mask,
+.ant-drawer .ant-drawer-mask {
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+
+/* Standard Modals (excluding custom ⌘K Command Surface) */
+.ant-modal {
+  transform-origin: 50% 50% !important;
+}
+
+.ant-modal:not(.soha-cmdk-modal) > .ant-modal-container,
+.ant-modal:not(.soha-cmdk-modal) > .ant-modal-content {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--soha-radius-lg, 12px) !important;
+  border: 1px solid color-mix(in srgb, var(--soha-border-color) 88%, transparent) !important;
+  background: var(--soha-bg-surface) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 28px 72px -18px rgba(15, 23, 42, 0.24),
+    0 6px 20px -6px rgba(15, 23, 42, 0.08) !important;
+}
+
+:root[data-theme-mode='dark'] .ant-modal:not(.soha-cmdk-modal) > .ant-modal-container,
+:root[data-theme-mode='dark'] .ant-modal:not(.soha-cmdk-modal) > .ant-modal-content {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 32px 80px -16px rgba(0, 0, 0, 0.72),
+    0 8px 24px -6px rgba(0, 0, 0, 0.48) !important;
+}
+
+.ant-modal:not(.soha-cmdk-modal) .ant-modal-close {
+  top: 16px;
+  inset-inline-end: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px !important;
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-secondary);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.ant-modal:not(.soha-cmdk-modal) .ant-modal-close:hover {
+  background: var(--soha-fill-medium);
+  color: var(--soha-text-primary);
+}
+
+.ant-modal:not(.soha-cmdk-modal) .ant-modal-title {
+  font-weight: 650 !important;
+  letter-spacing: -0.015em;
+}
+
+.ant-modal:not(.soha-cmdk-modal) .ant-modal-footer {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--soha-hairline);
+}
+
+/* Operational Plan / Risk Confirmation Modal Semantic Top Radial Mask */
+.soha-operational-plan-modal > .ant-modal-container::before,
+.soha-operational-plan-modal > .ant-modal-content::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 68px;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 80% 100% at 24% 0%,
+    rgba(var(--soha-primary-rgb), 0.16) 0%,
+    transparent 76%
+  );
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+}
+
+.soha-operational-plan-modal.is-risk-high > .ant-modal-container::before,
+.soha-operational-plan-modal.is-risk-high > .ant-modal-content::before {
+  background: radial-gradient(
+    ellipse 85% 100% at 24% 0%,
+    rgba(245, 158, 11, 0.22) 0%,
+    rgba(239, 68, 68, 0.1) 48%,
+    transparent 78%
+  );
+}
+
+/* Transform legacy bordered Descriptions inside OperationalPlanModal into sleek rounded Key-Value Islands */
+.soha-operational-plan-modal .ant-descriptions-bordered .ant-descriptions-view {
+  overflow: hidden;
+  border-radius: var(--soha-radius-panel, 14px) !important;
+  border: 1px solid var(--soha-hairline-strong) !important;
+}
+
+.soha-operational-plan-modal .ant-descriptions-bordered .ant-descriptions-item-label {
+  background: color-mix(
+    in srgb,
+    var(--soha-bg-surface-muted) 72%,
+    var(--soha-bg-surface)
+  ) !important;
+  color: var(--soha-text-secondary) !important;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.soha-operational-plan-modal .ant-Checkbox-wrapper,
+.soha-operational-plan-modal .ant-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--soha-warning) 30%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--soha-warning) 7%, var(--soha-bg-surface));
+  font-weight: 500;
+}
+
+/* Floating Island Sheet Drawer (Desktop >= 768px detached 8px with 20px squircle corners) */
+@media (min-width: 768px) {
+  .ant-drawer-right .ant-drawer-content-wrapper {
+    top: 8px !important;
+    bottom: 8px !important;
+    inset-inline-end: 8px !important;
+    height: auto !important;
+    border-radius: var(--soha-radius-lg, 12px) !important;
+    box-shadow: none !important;
+  }
+
+  .ant-drawer-left .ant-drawer-content-wrapper {
+    top: 8px !important;
+    bottom: 8px !important;
+    inset-inline-start: 8px !important;
+    height: auto !important;
+    border-radius: var(--soha-radius-lg, 12px) !important;
+    box-shadow: none !important;
+  }
+
+  .ant-drawer:is(.ant-drawer-right, .ant-drawer-left)
+    :is(.ant-drawer-section, .ant-drawer-content) {
+    overflow: hidden;
+    border-radius: var(--soha-radius-lg, 12px) !important;
+    border: 1px solid color-mix(in srgb, var(--soha-border-color) 88%, transparent) !important;
+    background: var(--soha-bg-surface) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.84),
+      -20px 12px 54px -16px rgba(15, 23, 42, 0.2),
+      0 4px 16px -4px rgba(15, 23, 42, 0.06) !important;
+  }
+
+  :root[data-theme-mode='dark']
+    .ant-drawer:is(.ant-drawer-right, .ant-drawer-left)
+    :is(.ant-drawer-section, .ant-drawer-content) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      -24px 14px 64px -14px rgba(0, 0, 0, 0.72),
+      0 6px 20px -4px rgba(0, 0, 0, 0.45) !important;
+  }
+}
+
+.ant-drawer .ant-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 16px 20px !important;
+  border-bottom: 1px solid var(--soha-hairline) !important;
+  background: color-mix(in srgb, var(--soha-bg-surface) 88%, transparent) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+@media (max-width: 480px) {
+  .soha-header-right {
+    gap: 5px;
+    min-height: 40px;
+    padding-block: 4px;
+  }
+}
+
+.soha-palette-popover-body {
+  padding: 6px !important;
+  border-radius: 22px !important;
+  box-shadow:
+    0 0 0 1px var(--soha-hairline-strong),
+    0 24px 56px -14px rgba(15, 23, 42, 0.2) !important;
+}
+
+.ant-drawer .ant-drawer-title {
+  font-size: 15.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.015em;
+}
+
+.ant-drawer .ant-drawer-close {
+  width: 28px !important;
+  height: 28px !important;
+  margin-inline-end: 0 !important;
+  border-radius: 999px !important;
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-secondary);
+}
+
+.ant-drawer .ant-drawer-close:hover {
+  background: var(--soha-fill-medium);
+  color: var(--soha-text-primary);
+}
+
+.ant-drawer .ant-drawer-footer {
+  padding: 12px 20px !important;
+  border-top: 1px solid var(--soha-hairline) !important;
+  background: color-mix(in srgb, var(--soha-bg-surface) 90%, transparent) !important;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Muted Surface Islands inside Drawers & Modals */
+.soha-drawer-island {
+  padding: 14px 16px;
+  border-radius: var(--soha-radius-panel, 10px);
+  border: 1px solid var(--soha-hairline-strong);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 68%, var(--soha-bg-surface));
+}
+
+.soha-drawer-island + .soha-drawer-island {
+  margin-top: 12px;
+}
+
+/* Top-Right Hero Style A/B Switcher & UI Lab Popover */
+.soha-header-hero-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--soha-fill-weak);
+  border: 1px solid var(--soha-hairline);
+}
+
+.soha-header-hero-switch__btn {
+  height: 22px;
+  padding: 0 6.5px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.soha-header-hero-switch__btn.is-active {
+  background: var(--soha-primary);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(var(--soha-primary-rgb), 0.34);
+}
+
+.soha-palette-segmented.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #ffffff !important;
+}
+
+/* ============================================================================
+ * 3-Color Overview Gradient Mixer & Live CTA Preview (Appearance Palette)
+ * ============================================================================ */
+
+.soha-palette-panel {
+  max-height: min(82dvh, 720px);
+  overflow-y: auto;
+}
+
+.soha-palette-grad-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.soha-palette-grad-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--soha-hairline-strong);
+  background: var(--soha-bg-surface);
+  color: var(--soha-text-primary);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.soha-palette-grad-pill:hover {
+  border-color: var(--soha-primary);
+}
+
+.soha-palette-grad-pill.is-selected {
+  border-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+  color: var(--soha-primary);
+}
+
+.soha-palette-grad-pill__bar {
+  width: 22px;
+  height: 14px;
+  flex: 0 0 22px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+}
+
+.soha-palette-grad-pill__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-palette-tri-mixer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--soha-hairline-strong);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 65%, var(--soha-bg-surface));
+}
+
+.soha-palette-tri-mixer__head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--soha-text-secondary);
+}
+
+.soha-palette-tri-mixer__stops {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.soha-palette-tri-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 9px;
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-hairline);
+  cursor: pointer;
+}
+
+.soha-palette-tri-stop__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.soha-palette-tri-stop__copy strong {
+  font-size: 10.5px;
+  color: var(--soha-text-primary);
+}
+
+.soha-palette-tri-stop__copy code {
+  font-family: var(--soha-font-mono);
+  font-size: 9.5px;
+  color: var(--soha-text-tertiary);
+}
+
+.soha-palette-cta-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 5px 0 13px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.soha-palette-cta-preview__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.24);
+  font-size: 11px;
+}
+
+/* ============================================================================
+ * Multi-Card Workspace Body & Inline Right-Side Split-Card Island Drawer
+ * ============================================================================ */
+
+.soha-workspace-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  gap: 10px;
+  padding: 4px 12px 10px 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.soha-workspace-body > .soha-content {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.soha-split-card-drawer {
+  display: flex;
+  flex: 0 0 clamp(376px, 31vw, 452px);
+  max-width: 48%;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  border-radius: var(--soha-radius-bezel, 16px);
+  background: color-mix(in srgb, var(--soha-border-color) 36%, var(--soha-bg-surface));
+  border: 1px solid rgba(15, 23, 42, 0.085);
+  box-shadow:
+    0 12px 32px -14px rgba(15, 23, 42, 0.12),
+    0 1px 3px rgba(15, 23, 42, 0.04);
+  animation: sohaSplitCardEnter 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root[data-theme-mode='dark'] .soha-split-card-drawer {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 24px 56px -18px rgba(0, 0, 0, 0.65),
+    0 2px 10px rgba(0, 0, 0, 0.36);
+}
+
+@keyframes sohaSplitCardEnter {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.soha-split-card-drawer__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--soha-radius-lg, 12px);
+  background: var(--soha-bg-surface);
+  box-shadow: var(--soha-inner-highlight);
+}
+
+.soha-split-card-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--soha-hairline);
+}
+
+.soha-split-card-drawer__title {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--soha-text-primary);
+}
+
+.soha-split-card-drawer__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.soha-split-card-drawer__mode-btn.ant-btn,
+.soha-split-card-drawer__close-btn.ant-btn {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 999px !important;
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-secondary);
+}
+
+.soha-split-card-drawer__mode-btn.ant-btn:hover,
+.soha-split-card-drawer__close-btn.ant-btn:hover {
+  background: var(--soha-fill-medium);
+  color: var(--soha-text-primary);
+}
+
+.soha-split-card-drawer__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.soha-split-card-drawer__footer {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--soha-hairline);
+  background: color-mix(in srgb, var(--soha-bg-surface-muted) 45%, var(--soha-bg-surface));
+}
+
+@media (max-width: 768px) {
+  .soha-workspace-body {
+    padding: 0;
+    gap: 0;
+  }
+}
+
+@media (max-width: 1024px) {
+  .soha-workspace-body {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .soha-split-card-drawer {
+    flex: 0 0 auto;
+    max-width: calc(100% - 28px);
+    margin: 0 14px 16px;
+  }
 }

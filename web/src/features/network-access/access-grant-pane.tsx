@@ -1,9 +1,10 @@
 import { ContextFeedback } from '@/components/context-feedback'
-import { ManagementIconButton } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
+import { TableRowActionMenu } from '@/components/table-row-action-menu'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { useI18n } from '@/i18n'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { PlusOutlined, StopOutlined } from '@ant-design/icons'
 import type {
   NetworkAccessGrant,
@@ -13,12 +14,12 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  App,
   Button,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Typography,
@@ -38,6 +39,7 @@ type GrantFormValues = Omit<NetworkAccessGrantInput, 'resourceIds'> & {
 }
 const LIST_FILTER = { limit: 200 } as const
 export function NetworkAccessGrantPane({ canCreate, canRevoke }: NetworkAccessGrantPaneProps) {
+  const { modal } = App.useApp()
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const grants = useQuery(networkAccessQueries.accessGrants(LIST_FILTER))
@@ -149,24 +151,33 @@ export function NetworkAccessGrantPane({ canCreate, canRevoke }: NetworkAccessGr
     ...(canRevoke
       ? [
           {
+            ...tableColumnPresets.action,
             key: 'actions',
-            width: 70,
-            render: (_: unknown, item: NetworkAccessGrant) =>
-              item.status === 'issued' ? (
-                <Popconfirm
-                  title={t('networkAccess.grant.confirmRevoke', '确认吊销此访问授权？')}
-                  onConfirm={() => revokeGrant.mutate(item.id)}
-                  okButtonProps={{ disabled: operationBlocked }}
-                  disabled={operationBlocked}
-                >
-                  <ManagementIconButton
-                    aria-label={t('networkAccess.grant.revoke', '吊销访问授权')}
-                    danger
-                    icon={<StopOutlined />}
-                    tooltip={t('networkAccess.grant.revoke', '吊销访问授权')}
-                  />
-                </Popconfirm>
-              ) : null,
+            render: (_: unknown, item: NetworkAccessGrant) => (
+              <TableRowActionMenu
+                targetLabel={item.id}
+                items={
+                  item.status === 'issued'
+                    ? [
+                        {
+                          key: 'revoke',
+                          icon: <StopOutlined />,
+                          label: t('networkAccess.grant.revoke', '吊销访问授权'),
+                          danger: true,
+                          disabled: operationBlocked,
+                          onClick: () => {
+                            modal.confirm({
+                              title: t('networkAccess.grant.confirmRevoke', '确认吊销此访问授权？'),
+                              okButtonProps: { danger: true },
+                              onOk: () => revokeGrant.mutateAsync(item.id).catch(() => undefined),
+                            })
+                          },
+                        },
+                      ]
+                    : []
+                }
+              />
+            ),
           },
         ]
       : []),
