@@ -28,7 +28,8 @@ jobs:
           persist-credentials: false
       - name: Impact selector and summary counterexamples
         run: |
-          python3 -m unittest discover -s scripts -p 'test_ci_impact.py'
+          python3 -m unittest discover -v -s scripts -p 'test_ci_impact.py'
+          python3 -m unittest discover -s scripts -p 'test_test_runner.py'
           python3 -m unittest discover -s scripts -p 'test_prepare_pr_lint_patch.py'
           python3 -m unittest discover -s scripts -p 'test_check_dev_guidance.py'
       - name: Development guidance local links and skill metadata

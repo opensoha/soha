@@ -258,6 +258,35 @@ class ImpactTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         impact.check_summary(needs)
 
+    def test_summary_cli_rejects_selected_cancelled_omitted_and_skipped_jobs(self):
+        root = Path(impact.__file__).resolve().parents[1]
+        needs = {"route": {"result": "success", "outputs": dict.fromkeys(impact.JOBS, "true")}}
+        needs.update({job: {"result": "success"} for job in impact.JOBS})
+
+        def summary(data):
+            return subprocess.run(
+                ["python3", "scripts/ci-impact.py", "summary"],
+                cwd=root,
+                env={**os.environ, "CI_NEEDS": json.dumps(data)},
+                capture_output=True,
+                text=True,
+            )
+
+        clean = summary(needs)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(clean.stdout, "All required component gates succeeded\n")
+        cases = [
+            ("cancelled", {**needs, "core": {"result": "cancelled"}}, "core: required=true, result='cancelled'"),
+            ("omitted", {key: value for key, value in needs.items() if key != "web"}, "web: required=true, result=None"),
+            ("skipped", {**needs, "cli": {"result": "skipped"}}, "cli: required=true, result='skipped'"),
+        ]
+        for name, broken, diagnostic in cases:
+            with self.subTest(name=name):
+                result = summary(broken)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertNotIn("All required component gates succeeded", result.stdout)
+
 
 class WorkflowWiringTests(unittest.TestCase):
     directory = Path(__file__).resolve().parents[1] / ".github/workflows"
@@ -285,6 +314,7 @@ class WorkflowWiringTests(unittest.TestCase):
         self.assertIn("CI_NEEDS: ${{ toJSON(needs) }}", summary)
         self.assertIn("python3 scripts/ci-impact.py summary", summary)
         route = blocks["route"]
+        self.assertIn("python3 -m unittest discover -v -s scripts -p 'test_ci_impact.py'", route)
         self.assertIn("python3 -m unittest discover -s scripts -p 'test_check_dev_guidance.py'", route)
         self.assertIn("run: python3 scripts/check_dev_guidance.py", route)
         self.assertNotIn("continue-on-error", route)

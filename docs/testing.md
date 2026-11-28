@@ -10,6 +10,17 @@ Web/Midscene 不成为普通 Go 测试依赖。公开协议仍由 `contracts/` �
 处于 OpenSoha 工作区时，操作与保护边界见其 `docs/guides/local-build-cache/runbook.md`；独立克隆保留本仓验证入口。
 `python3 -m unittest discover -s scripts -p "test_local_*.py"` 验证缓存、归属、容量与失败清理保护。
 
+运行 `python3 scripts/test-runner.py plan --json` 查看变更命中的 CI 任务和本地命令。
+`python3 scripts/test-runner.py run --jobs 2 --json` 在同一次缓存保护会话内默认并行运行可用的
+Go lint、Go 测试、Web lint、类型检查和 Vitest。`--jobs 1` 串行执行同一批命令。
+默认使用上游 `main` 和 `HEAD` 的共同基点，依次查找本地的 `opensoha/main`、`origin/main`
+和 `main` 引用。可用 `--base HEAD` 仅检查当前工作树，也可用 `--go-package` 和
+`--web-test` 缩小本地测试范围，例如
+`python3 scripts/test-runner.py run --base HEAD --go-package ./internal/application/... --jobs 2`。
+本地 Go lint 沿用该实际基点和与 PR 相同的 gofmt、`golangci-lint --new-from-patch` 规则，
+检查已提交、已暂存、未暂存及未忽略的未跟踪 Go 变更，使用已安装的 golangci-lint v2.14.0。
+`make lint` 仍是全仓审计。输出列出本地未执行的 CI 任务，完整门禁由 CI 执行。
+
 `python3 scripts/run-deletion-integration.py` 复用已有 deletion-integration 测试，
 创建独立 pgvector:0.8.5-pg18-trixie 容器，动态127.0.0.1端口、run label/ID/image验证、
 独立 test-only账号，实际 `-race -count=1 -json` 运行父测试及16个必要子场景。
