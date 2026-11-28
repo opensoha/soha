@@ -81,6 +81,38 @@ class PreparePRLintPatchTest(unittest.TestCase):
         self.git("switch", "-q", "base")
         self.assertNotEqual(self.prepare(topic).returncode, 0)
 
+    def test_worktree_patch_covers_the_files_under_test_without_mutating_the_index(self):
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        stable = self.source.parent / "stable.go"
+        stable.write_text("package fixture\n")
+        self.git("add", str(stable))
+        self.commit(self.body + "var result = 1\n")
+        self.source.write_text(self.body + "var result = 2\n")
+        self.git("add", str(self.source))
+        index = self.repo / ".git" / "index"
+        before = index.read_bytes()
+        mtime = stable.stat().st_mtime + 10
+        os.utime(stable, (mtime, mtime))
+        self.source.write_text(self.body + "var result = 3\n")
+        (self.source.parent / "new file.go").write_text("package fixture\n\nvar New = 4\n")
+        (self.source.parent / "café.go").write_text("package fixture\n\nvar Cafe = 4\n")
+        (self.source.parent / ".gitignore").write_text("ignored.go\n")
+        (self.source.parent / "ignored.go").write_text("package fixture\n\nvar Ignored = 5\n")
+        self.git("config", "diff.noprefix", "true")
+
+        result = subprocess.run(["bash", SCRIPT, base, self.patch, "--worktree"],
+                                cwd=self.source.parent, env=self.env, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        patch = self.patch.read_bytes()
+        self.assertIn(b"+++ b/fixture.go", patch)
+        self.assertIn(b"-var result = 0", patch)
+        self.assertIn(b"+var result = 3", patch)
+        self.assertIn(b"+++ b/new file.go\n", patch)
+        self.assertIn("+++ b/café.go\n".encode(), patch)
+        self.assertIn(b"+var New = 4", patch)
+        self.assertNotIn(b"ignored.go", patch)
+        self.assertEqual(index.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

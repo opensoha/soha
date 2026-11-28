@@ -2,8 +2,19 @@
 set -euo pipefail
 
 LINT_BASE_SHA="$1"
+mode="${2:-}"
+[[ $# -eq 1 || ($# -eq 2 && "$mode" == --worktree) ]] || exit 1
 [[ "$LINT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
-git diff --no-ext-diff --no-textconv --relative --name-only -z --diff-filter=ACMRT "$LINT_BASE_SHA" HEAD -- '*.go' | (
+revisions=("$LINT_BASE_SHA")
+if [[ "$mode" != --worktree ]]; then
+  revisions+=(HEAD)
+fi
+{
+  git --no-optional-locks diff --no-ext-diff --no-textconv --relative --name-only -z --diff-filter=ACMRT "${revisions[@]}" -- '*.go' || exit $?
+  if [[ "$mode" == --worktree ]]; then
+    git ls-files --others --exclude-standard -z -- '*.go'
+  fi
+} | (
   files=(--)
   while IFS= read -r -d '' file; do
     [[ -f "./$file" && ! -L "./$file" ]] || continue
